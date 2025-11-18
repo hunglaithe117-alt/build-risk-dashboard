@@ -28,7 +28,7 @@ Add the following variables to `.env` (see `.env.example`):
 ```
 GITHUB_CLIENT_ID=<github-oauth-app-client-id>
 GITHUB_CLIENT_SECRET=<github-oauth-app-client-secret>
-GITHUB_REDIRECT_URI=http://localhost:8000/api/integrations/github/callback
+GITHUB_REDIRECT_URI=http://localhost:8000/api/auth/github/callback
 FRONTEND_BASE_URL=http://localhost:3000
 ```
 

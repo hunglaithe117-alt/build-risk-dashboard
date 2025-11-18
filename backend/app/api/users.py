@@ -27,27 +27,10 @@ from app.config import settings
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-def _serialize_user(doc: dict) -> UserResponse:
-    # Ensure ObjectIds are converted to strings for Pydantic validation
-    payload = doc.copy()
-    if payload.get("_id") is not None:
-        payload["_id"] = str(payload["_id"])
-    return UserResponse.model_validate(payload)
-
-
-def _serialize_identity(doc: dict) -> OAuthIdentityResponse:
-    payload = doc.copy()
-    if payload.get("_id") is not None:
-        payload["_id"] = str(payload["_id"])
-    if payload.get("user_id") is not None:
-        payload["user_id"] = str(payload["user_id"])
-    return OAuthIdentityResponse.model_validate(payload)
-
-
 @router.get("/", response_model=List[UserResponse])
 def list_users(db: Database = Depends(get_db)):
     documents = list_users_service(db)
-    return [_serialize_user(doc) for doc in documents]
+    return [UserResponse.model_validate(doc) for doc in documents]
 
 
 async def _fetch_github_profile(access_token: str) -> dict:
@@ -125,8 +108,8 @@ async def github_login(payload: GithubLoginRequest, db: Database = Depends(get_d
     )
 
     return {
-        "user": _serialize_user(user_doc),
-        "identity": _serialize_identity(identity_doc),
+        "user": UserResponse.model_validate(user_doc),
+        "identity": OAuthIdentityResponse.model_validate(identity_doc),
     }
 
 
@@ -148,4 +131,4 @@ def get_current_user(db: Database = Depends(get_db)):
             detail="No user found for the current GitHub connection.",
         )
 
-    return _serialize_user(user_doc)
+    return UserResponse.model_validate(user_doc)

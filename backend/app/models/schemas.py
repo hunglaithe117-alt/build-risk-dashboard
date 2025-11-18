@@ -3,9 +3,23 @@ Pydantic schemas for request/response validation
 """
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from bson import ObjectId
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+
+# Custom validator for MongoDB ObjectId
+def validate_object_id(v: Any) -> str:
+    """Validate and convert ObjectId to string."""
+    if isinstance(v, ObjectId):
+        return str(v)
+    if isinstance(v, str) and ObjectId.is_valid(v):
+        return v
+    raise ValueError("Invalid ObjectId")
+
+
+PyObjectId = Annotated[str, BeforeValidator(validate_object_id)]
 
 
 # Build schemas
@@ -94,12 +108,11 @@ class BuildCreate(BuildBase):
 class BuildResponse(BuildBase):
     """Schema for build response"""
 
-    id: str
+    id: PyObjectId = Field(..., alias="_id")
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class BuildListItem(BuildResponse):
@@ -137,17 +150,11 @@ class RepoDistributionEntry(BaseModel):
     repository: str
     builds: int
 
-    class Config:
-        populate_by_name = True
-
 
 class DashboardSummaryResponse(BaseModel):
     metrics: DashboardMetrics
     trends: List[DashboardTrendPoint]
     repo_distribution: List[RepoDistributionEntry]
-
-    class Config:
-        from_attributes = True
 
 
 BuildListItem.model_rebuild()
@@ -160,19 +167,6 @@ class GithubRepositoryStatus(BaseModel):
     lastSync: Optional[datetime] = None
     buildCount: int
     status: str
-
-
-class GithubIntegrationStatusResponse(BaseModel):
-    connected: bool
-    organization: Optional[str] = None
-    connectedAt: Optional[datetime] = None
-    scopes: List[str]
-    repositories: List[GithubRepositoryStatus] = []
-    lastSyncStatus: str
-    lastSyncMessage: Optional[str] = None
-    accountLogin: Optional[str] = None
-    accountName: Optional[str] = None
-    accountAvatarUrl: Optional[str] = None
 
 
 class GithubAuthorizeResponse(BaseModel):
@@ -229,12 +223,12 @@ class GithubImportRequest(BaseModel):
 
 
 class GithubImportJobResponse(BaseModel):
-    id: str
+    id: PyObjectId = Field(..., alias="_id")
     repository: str
     branch: str
-    user_id: Optional[str] = None
+    user_id: Optional[PyObjectId] = None
     installation_id: Optional[str] = None
-    status: Literal["pending", "running", "completed", "failed"]
+    status: Literal["pending", "running", "completed", "failed", "waiting_webhook"]
     progress: int = Field(..., ge=0, le=100)
     builds_imported: int
     commits_analyzed: int
@@ -246,8 +240,7 @@ class GithubImportJobResponse(BaseModel):
     last_error: Optional[str] = None
     notes: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class RepoImportRequest(BaseModel):
@@ -263,8 +256,8 @@ class RepoImportRequest(BaseModel):
 
 
 class RepoResponse(BaseModel):
-    id: str
-    user_id: Optional[str] = None
+    id: PyObjectId = Field(..., alias="_id")
+    user_id: Optional[PyObjectId] = None
     provider: str
     full_name: str
     default_branch: Optional[str] = None
@@ -284,8 +277,7 @@ class RepoResponse(BaseModel):
     last_sync_error: Optional[str] = None
     notes: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class RepoDetailResponse(RepoResponse):
@@ -324,8 +316,8 @@ class RepoScanRequest(BaseModel):
 
 
 class RepoScanJobResponse(BaseModel):
-    id: str
-    repo_id: int
+    id: PyObjectId = Field(..., alias="_id")
+    repo_id: PyObjectId
     mode: Literal["latest", "full"]
     status: Literal["pending", "running", "completed", "failed"]
     progress: int = Field(..., ge=0, le=100)
@@ -336,66 +328,7 @@ class RepoScanJobResponse(BaseModel):
     notes: Optional[str] = None
     last_error: Optional[str] = None
 
-
-# Settings & admin schemas
-class SystemSettings(BaseModel):
-    auto_rescan_enabled: bool = False
-    updated_at: datetime
-    updated_by: str
-
-
-class SystemSettingsUpdate(BaseModel):
-    auto_rescan_enabled: Optional[bool] = None
-    updated_by: Optional[str] = None
-    auto_rescan_enabled: Optional[bool] = None
-    updated_by: Optional[str] = None
-
-
-class ActivityLogEntry(BaseModel):
-    id: str = Field(..., alias="_id")
-    action: str
-    actor: str
-    scope: str
-    message: str
-    created_at: datetime
-    metadata: Dict[str, str] = Field(default_factory=dict)
-
-    class Config:
-        populate_by_name = True
-
-
-class ActivityLogListResponse(BaseModel):
-    logs: List[ActivityLogEntry]
-
-
-class NotificationPolicy(BaseModel):
-    channels: List[str]
-    muted_repositories: List[str] = []
-    last_updated_at: datetime
-    last_updated_by: str
-
-
-class NotificationPolicyUpdate(BaseModel):
-    channels: Optional[List[str]] = None
-    muted_repositories: Optional[List[str]] = None
-    updated_by: str
-
-
-class NotificationItem(BaseModel):
-    id: str = Field(..., alias="_id")
-    build_id: int
-    repository: str
-    branch: str
-    status: Literal["new", "sent", "acknowledged"]
-    created_at: datetime
-    message: str
-
-    class Config:
-        populate_by_name = True
-
-
-class NotificationListResponse(BaseModel):
-    notifications: List[NotificationItem]
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class UserRoleDefinition(BaseModel):
@@ -407,7 +340,7 @@ class UserRoleDefinition(BaseModel):
 
 # GitHub App Installation schemas
 class GithubInstallationResponse(BaseModel):
-    id: str = Field(..., alias="_id")
+    id: PyObjectId = Field(..., alias="_id")
     installation_id: str
     account_login: Optional[str] = None
     account_type: Optional[str] = None  # "User" or "Organization"
@@ -417,8 +350,7 @@ class GithubInstallationResponse(BaseModel):
     suspended_at: Optional[datetime] = None
     created_at: datetime
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class GithubInstallationListResponse(BaseModel):
@@ -426,27 +358,25 @@ class GithubInstallationListResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: str = Field(..., alias="_id")
+    id: PyObjectId = Field(..., alias="_id")
     email: str
     name: Optional[str] = None
     role: Literal["admin", "user"] = "user"
     created_at: datetime
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class OAuthIdentityResponse(BaseModel):
-    id: str = Field(..., alias="_id")
-    user_id: str
+    id: PyObjectId = Field(..., alias="_id")
+    user_id: PyObjectId
     provider: str
     external_user_id: str
     scopes: Optional[str] = None
     token_expires_at: Optional[datetime] = None
     created_at: datetime
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class GithubLoginRequest(BaseModel):
@@ -459,3 +389,10 @@ class GithubLoginRequest(BaseModel):
 class UserLoginResponse(BaseModel):
     user: UserResponse
     identity: OAuthIdentityResponse
+
+
+class AuthVerifyResponse(BaseModel):
+    authenticated: bool
+    reason: Optional[str] = None
+    user: Optional[Dict[str, Optional[str]]] = None
+    github: Optional[Dict[str, Optional[str]]] = None

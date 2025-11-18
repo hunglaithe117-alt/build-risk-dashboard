@@ -14,43 +14,6 @@ from app.models.schemas import BuildDetailResponse, BuildListResponse, BuildCrea
 router = APIRouter()
 
 
-def _ensure_iso(value: Any) -> Optional[str]:
-    if value is None:
-        return None
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, str):
-        return value
-    return str(value)
-
-
-def _serialize_feature_value(value: Any) -> Any:
-    if isinstance(value, datetime):
-        return value.isoformat()
-    if isinstance(value, list):
-        return [_serialize_feature_value(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _serialize_feature_value(val) for key, val in value.items()}
-    return value
-
-
-def _serialize_build(document: Dict[str, Any]) -> Dict[str, Any]:
-    build = document.copy()
-    build["id"] = str(build.pop("_id"))
-
-    for key in ["created_at", "updated_at", "started_at", "completed_at"]:
-        if key in build:
-            build[key] = _ensure_iso(build.get(key))
-
-    if build.get("features"):
-        features = build["features"]
-        build["features"] = {
-            key: _serialize_feature_value(value) for key, value in features.items()
-        }
-
-    return build
-
-
 def _parse_build_identifier(build_id: str) -> int | ObjectId:
     """Allow querying builds by numeric Travis/GitHub run id or Mongo ObjectId."""
     if isinstance(build_id, str):
@@ -90,7 +53,7 @@ async def get_builds(
     total = db.builds.count_documents(filters)
     cursor = db.builds.find(filters).sort("created_at", -1).skip(skip).limit(limit)
 
-    builds = [_serialize_build(doc) for doc in cursor]
+    builds = [BuildDetailResponse.model_validate(doc) for doc in cursor]
 
     return {
         "total": total,
@@ -106,7 +69,7 @@ async def get_build(build_id: str, db: Database = Depends(get_db)):
     build = db.builds.find_one({"_id": identifier})
     if not build:
         raise HTTPException(status_code=404, detail="Build not found")
-    return _serialize_build(build)
+    return BuildDetailResponse.model_validate(build)
 
 
 @router.post("/", response_model=BuildDetailResponse)
@@ -140,7 +103,7 @@ async def create_build(payload: BuildCreate, db: Database = Depends(get_db)):
     insert_result = db.builds.insert_one(build_document)
     build_document["_id"] = insert_result.inserted_id
     persisted = db.builds.find_one({"_id": insert_result.inserted_id}) or build_document
-    return _serialize_build(persisted)
+    return BuildDetailResponse.model_validate(persisted)
 
 
 @router.delete("/{build_id}")

@@ -18,6 +18,25 @@ GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_USER_URL = "https://api.github.com/user"
 
 
+async def verify_github_token(access_token: str) -> bool:
+    """Verify if a GitHub access token is still valid."""
+    if not access_token:
+        return False
+    
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                GITHUB_USER_URL,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+            return response.status_code == 200
+    except Exception:
+        return False
+
+
 def _require_github_credentials() -> None:
     if not settings.GITHUB_CLIENT_ID or not settings.GITHUB_CLIENT_SECRET:
         raise HTTPException(

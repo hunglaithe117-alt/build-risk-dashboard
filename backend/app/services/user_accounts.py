@@ -1,4 +1,3 @@
-"""Persistence helpers for user accounts and OAuth identities."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -7,40 +6,6 @@ from typing import Dict, Optional, Tuple
 from pymongo.database import Database
 
 PROVIDER_GITHUB = "github"
-
-
-def _stringify_object_id(document: Dict[str, object]) -> Dict[str, object]:
-    payload = document.copy()
-    identifier = payload.pop("_id", None)
-    if identifier is not None:
-        try:
-            from bson import ObjectId
-
-            if isinstance(identifier, ObjectId):
-                payload["_id"] = str(identifier)
-            else:
-                payload["_id"] = identifier
-        except Exception:
-            payload["_id"] = identifier
-    return payload
-
-
-def _serialize_user(document: Dict[str, object]) -> Dict[str, object]:
-    payload = document.copy()
-    identifier = payload.pop("_id", None)
-    payload["id"] = str(identifier) if identifier is not None else None
-    return payload
-
-
-def _serialize_identity(document: Dict[str, object]) -> Dict[str, object]:
-    payload = document.copy()
-    identifier = payload.pop("_id", None)
-    payload["id"] = str(identifier) if identifier is not None else None
-    # Ensure user_id is string for client-facing schema
-    uid = payload.get("user_id")
-    if uid is not None:
-        payload["user_id"] = str(uid)
-    return payload
 
 
 def upsert_github_identity(
@@ -94,10 +59,14 @@ def upsert_github_identity(
         if user_doc and name and user_doc.get("name") != name:
             users.update_one({"_id": user_doc["_id"]}, {"$set": {"name": name}})
             user_doc["name"] = name
-        identity_doc = identities.find_one({"_id": existing_identity["_id"]}) or existing_identity
+        identity_doc = (
+            identities.find_one({"_id": existing_identity["_id"]}) or existing_identity
+        )
         return user_doc, identity_doc
 
-    result = users.insert_one({"email": email, "name": name, "role": "user", "created_at": now})
+    result = users.insert_one(
+        {"email": email, "name": name, "role": "user", "created_at": now}
+    )
     user_doc = users.find_one({"_id": result.inserted_id})
 
     identity_doc = {

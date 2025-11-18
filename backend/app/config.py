@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     GITHUB_APP_PRIVATE_KEY: Optional[str] = None
     GITHUB_CLIENT_ID: Optional[str] = None
     GITHUB_CLIENT_SECRET: Optional[str] = None
-    GITHUB_REDIRECT_URI: str = "http://localhost:8000/api/integrations/github/callback"
+    GITHUB_REDIRECT_URI: str = "http://localhost:8000/api/auth/github/callback"
     GITHUB_SCOPES: List[str] = ["read:user", "user:email", "repo", "read:org", "workflow"]
     PIPELINE_PRIMARY_LANGUAGES: List[str] = ["python", "ruby"]
     FRONTEND_BASE_URL: str = "http://localhost:3000"

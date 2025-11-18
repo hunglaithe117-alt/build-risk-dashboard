@@ -1,4 +1,5 @@
 """FastAPI application entry point."""
+
 import logging
 
 from fastapi import FastAPI
@@ -9,11 +10,11 @@ from app.api import (
     health,
     builds,
     integrations,
+    auth,
     repos,
     pipeline,
     settings,
     logs,
-    notifications,
     users,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
@@ -43,11 +44,11 @@ app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(builds.router, prefix="/api/builds", tags=["Builds"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(integrations.router, prefix="/api", tags=["Integrations"])
+app.include_router(auth.router, prefix="/api", tags=["Auth"])
 app.include_router(repos.router, prefix="/api", tags=["Repositories"])
 app.include_router(pipeline.router, prefix="/api", tags=["Pipeline"])
 app.include_router(settings.router, prefix="/api", tags=["Settings"])
 app.include_router(logs.router, prefix="/api", tags=["Logging"])
-app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
 app.include_router(users.router, prefix="/api", tags=["Users"])
 
 

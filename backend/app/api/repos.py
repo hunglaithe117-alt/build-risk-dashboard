@@ -6,7 +6,6 @@ from typing import Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pymongo.database import Database
-from bson import ObjectId
 
 from app.database.mongo import get_db
 from app.models.schemas import (
@@ -31,32 +30,29 @@ router = APIRouter(prefix="/repos", tags=["Repositories"])
 
 
 def _prepare_repo_payload(doc: dict, build_count: int | None = None) -> dict:
+    """Prepare repository document for Pydantic validation with computed fields."""
     payload = doc.copy()
-    repo_id = payload.pop("_id", None)
-    if repo_id is not None:
-        payload["id"] = str(repo_id)
-    # Normalize owner id to string for API response
-    user_id = payload.get("user_id")
-    if user_id is not None:
-        try:
-            if isinstance(user_id, ObjectId):
-                payload["user_id"] = str(user_id)
-            else:
-                payload["user_id"] = user_id
-        except Exception:
-            payload["user_id"] = user_id
+    # PyObjectId in Pydantic will auto-handle _id and user_id conversion
+
+    # Set defaults for optional fields
     payload.setdefault("ci_provider", "github_actions")
     payload.setdefault("monitoring_enabled", True)
     payload.setdefault("sync_status", "healthy")
     payload.setdefault("webhook_status", "inactive")
     payload.setdefault("ci_token_status", "valid")
+
+    # Normalize tracked branches
     branches = payload.get("tracked_branches") or []
     default_branch = payload.get("default_branch")
     if not branches and default_branch:
         branches = [default_branch]
     payload["tracked_branches"] = branches
+
+    # Sync status logic
     if payload.get("monitoring_enabled") is False:
         payload["sync_status"] = "disabled"
+
+    # Computed field: build count
     payload["total_builds_imported"] = (
         build_count
         if build_count is not None

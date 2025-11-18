@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pymongo.database import Database
 
 from app.database.mongo import get_db
-from app.models.schemas import (
+from app.dtos import (
     GithubImportJobResponse,
     RepoDetailResponse,
     RepoImportRequest,
@@ -18,12 +18,12 @@ from app.models.schemas import (
     RepoUpdateRequest,
 )
 from app.services.github_client import get_pipeline_github_client
-from app.services.github_integration import create_import_job
+from app.services.github_integration_service import create_import_job
 from app.services.pipeline_exceptions import (
     PipelineConfigurationError,
     PipelineRetryableError,
 )
-from app.services.pipeline_store import PipelineStore
+from app.services.pipeline_store_service import PipelineStore
 from app.tasks.repositories import enqueue_repo_import
 
 router = APIRouter(prefix="/repos", tags=["Repositories"])

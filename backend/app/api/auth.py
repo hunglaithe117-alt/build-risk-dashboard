@@ -6,7 +6,7 @@ from pymongo.database import Database
 
 from app.config import settings
 from app.database.mongo import get_db
-from app.models.schemas import (
+from app.dtos import (
     GithubOAuthInitRequest,
     GithubAuthorizeResponse,
     AuthVerifyResponse,

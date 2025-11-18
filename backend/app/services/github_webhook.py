@@ -11,7 +11,7 @@ from pymongo.database import Database
 
 from app.config import settings
 from app.services.github_client import get_pipeline_github_client
-from app.services.pipeline_store import PipelineStore
+from app.services.pipeline_store_service import PipelineStore
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:

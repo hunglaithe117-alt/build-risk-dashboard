@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends
 from pymongo.database import Database
 
 from app.database.mongo import get_db
-from app.models.schemas import DashboardSummaryResponse
-from app.services.analytics import compute_dashboard_summary
+from app.dtos import DashboardSummaryResponse
+from app.services.analytics_service import compute_dashboard_summary
 
 router = APIRouter()
 

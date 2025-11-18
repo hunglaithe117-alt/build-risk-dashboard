@@ -7,7 +7,7 @@ from typing import Dict, List
 
 from pymongo.database import Database
 
-from app.services.pipeline_store import PipelineStore
+from app.services.pipeline_store_service import PipelineStore
 from app.tasks.repositories import enqueue_repo_import
 
 

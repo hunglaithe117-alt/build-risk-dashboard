@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.database import Database
 
 from app.database.mongo import get_db
-from app.models.schemas import BuildDetailResponse, BuildListResponse, BuildCreate
+from app.dtos import BuildDetailResponse, BuildListResponse, BuildCreate
 
 router = APIRouter()
 

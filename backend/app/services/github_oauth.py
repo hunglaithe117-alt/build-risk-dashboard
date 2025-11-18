@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from pymongo.database import Database
 
 from app.config import settings
-from app.services.user_accounts import upsert_github_identity
+from app.services.user_service import upsert_github_identity
 
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"

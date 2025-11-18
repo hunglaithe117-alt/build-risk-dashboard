@@ -15,7 +15,7 @@ from app.services.pipeline_exceptions import (
     PipelineRateLimitError,
     PipelineRetryableError,
 )
-from app.services.pipeline_store import PipelineStore
+from app.services.pipeline_store_service import PipelineStore
 
 
 logger = logging.getLogger(__name__)

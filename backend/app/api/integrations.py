@@ -7,13 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pymongo.database import Database
 
 from app.database.mongo import get_db
-from app.models.schemas import (
+from app.dtos import (
     GithubImportJobResponse,
     GithubImportRequest,
     GithubInstallationListResponse,
     GithubInstallationResponse,
 )
-from app.services.github_integration import (
+from app.services.github_integration_service import (
     create_import_job,
     list_import_jobs,
 )

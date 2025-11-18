@@ -11,13 +11,13 @@ from app.services.auth import create_access_token
 from pymongo.database import Database
 
 from app.database.mongo import get_db
-from app.models.schemas import (
+from app.dtos import (
     GithubLoginRequest,
     OAuthIdentityResponse,
     UserLoginResponse,
     UserResponse,
 )
-from app.services.user_accounts import (
+from app.services.user_service import (
     PROVIDER_GITHUB,
     list_users as list_users_service,
     upsert_github_identity,

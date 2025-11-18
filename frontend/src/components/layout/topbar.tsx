@@ -7,29 +7,30 @@ import { useRouter } from 'next/navigation'
 
 import { integrationApi, usersApi } from '@/lib/api'
 import type { UserAccount } from '@/types'
+import { useAuth } from '@/contexts/auth-context'
 
 export function Topbar() {
   const router = useRouter()
   const [user, setUser] = useState<UserAccount | null>(null)
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [signingOut, setSigningOut] = useState(false)
+  const { authenticated, loading: authLoading, githubProfile, refresh } = useAuth()
 
   useEffect(() => {
+    if (authLoading || !authenticated) {
+      return
+    }
+
     const fetchProfile = async () => {
       try {
-        const [userData, integration] = await Promise.all([
-          usersApi.getCurrentUser(),
-          integrationApi.getGithubStatus(),
-        ])
+        const userData = await usersApi.getCurrentUser()
         setUser(userData)
-        setAvatarUrl(integration.accountAvatarUrl ?? null)
       } catch (err) {
         console.error('Unable to load current user profile', err)
       }
     }
 
     void fetchProfile()
-  }, [])
+  }, [authenticated, authLoading])
 
   const initials = useMemo(() => {
     if (user?.name) {
@@ -54,6 +55,7 @@ export function Topbar() {
     } catch (err) {
       console.error('Failed to revoke GitHub token during logout', err)
     } finally {
+      await refresh()
       router.replace('/login')
       setSigningOut(false)
     }
@@ -85,8 +87,14 @@ export function Topbar() {
 
         <div className="flex items-center gap-3 rounded-xl border px-3 py-2">
           <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-slate-200 text-xs font-semibold uppercase text-slate-600">
-            {avatarUrl ? (
-              <Image src={avatarUrl} alt={displayName} fill className="object-cover" sizes="32px" />
+            {githubProfile?.avatar_url ? (
+              <Image
+                src={githubProfile.avatar_url}
+                alt={displayName}
+                fill
+                className="object-cover"
+                sizes="32px"
+              />
             ) : (
               initials
             )}

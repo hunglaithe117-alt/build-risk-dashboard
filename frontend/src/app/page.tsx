@@ -2,42 +2,28 @@
 
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
-import { integrationApi } from "@/lib/api";
+import { useAuth } from "@/contexts/auth-context";
 
 export default function RootRedirect() {
   const router = useRouter();
-  const [checking, setChecking] = useState(true);
+  const { authenticated, loading } = useAuth();
 
   useEffect(() => {
-    const check = async () => {
-      try {
-        const status = await integrationApi.getGithubStatus();
-        if (status.connected) {
-          router.replace("/dashboard");
-        } else {
-          router.replace("/login");
-        }
-      } catch (err) {
-        console.error("Failed to verify integration status:", err);
-        router.replace("/login");
-      } finally {
-        setChecking(false);
-      }
-    };
+    if (loading) {
+      return;
+    }
 
-    void check();
-  }, [router]);
+    router.replace(authenticated ? "/dashboard" : "/login");
+  }, [authenticated, loading, router]);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
-      {checking ? (
-        <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
-          <span>Redirecting...</span>
-        </div>
-      ) : null}
+      <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+        <span>{loading ? "Checking session..." : "Redirecting..."}</span>
+      </div>
     </main>
   );
 }

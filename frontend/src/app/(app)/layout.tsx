@@ -1,26 +1,36 @@
- 'use client'
+'use client'
+
+import { useEffect, type ReactNode } from 'react'
+import { Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 import { AppShell } from '@/components/layout/app-shell'
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { integrationApi } from '@/lib/api'
+import { useAuth } from '@/contexts/auth-context'
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter()
+  const { authenticated, loading } = useAuth()
 
   useEffect(() => {
-    const check = async () => {
-      try {
-        const status = await integrationApi.getGithubStatus()
-        if (!status.connected) {
-          router.replace('/login')
-        }
-      } catch (err) {
-        console.error('Failed to verify auth status:', err)
-      }
+    if (loading) {
+      return
     }
 
-    void check()
-  }, [router])
+    if (!authenticated) {
+      router.replace('/login')
+    }
+  }, [authenticated, loading, router])
+
+  if (loading || !authenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-6 w-6 animate-spin text-blue-500" />
+          <span>{loading ? 'Checking session…' : 'Redirecting to login…'}</span>
+        </div>
+      </div>
+    )
+  }
+
   return <AppShell>{children}</AppShell>
 }

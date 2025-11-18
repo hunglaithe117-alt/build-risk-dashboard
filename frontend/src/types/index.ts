@@ -180,69 +180,6 @@ export interface GithubImportJob {
   notes?: string;
 }
 
-export interface SystemSettings {
-  auto_rescan_enabled: boolean;
-  updated_at: string;
-  updated_by: string;
-}
-
-export interface SystemSettingsUpdateRequest {
-  auto_rescan_enabled?: boolean;
-  updated_by?: string;
-}
-
-export interface ActivityLogEntry {
-  _id: string;
-  action: string;
-  actor: string;
-  scope: string;
-  message: string;
-  created_at: string;
-  metadata: Record<string, string>;
-}
-
-export interface ActivityLogListResponse {
-  logs: ActivityLogEntry[];
-}
-
-export interface NotificationPolicy {
-  channels: string[];
-  muted_repositories: string[];
-  last_updated_at: string;
-  last_updated_by: string;
-}
-
-export interface NotificationItem {
-  _id: string;
-  build_id: number;
-  repository: string;
-  branch: string;
-  status: "new" | "sent" | "acknowledged";
-  created_at: string;
-  message: string;
-}
-
-export interface NotificationListResponse {
-  notifications: NotificationItem[];
-}
-
-export interface NotificationPolicyUpdateRequest {
-  channels?: string[];
-  muted_repositories?: string[];
-  updated_by: string;
-}
-
-export interface UserRoleDefinition {
-  role: string;
-  description: string;
-  permissions: string[];
-  admin_only: boolean;
-}
-
-export interface RoleListResponse {
-  roles: UserRoleDefinition[];
-}
-
 export interface UserAccount {
   id: string;
   email: string;

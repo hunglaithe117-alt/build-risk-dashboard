@@ -12,30 +12,22 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { integrationApi } from "@/lib/api";
+import { useAuth } from "@/contexts/auth-context";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const { authenticated, loading: authLoading, error: authError } = useAuth();
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const check = async () => {
-      try {
-        const data = await integrationApi.getGithubStatus();
-        if (data.connected) {
-          router.replace("/dashboard");
-          return;
-        }
-      } catch (err) {
-        console.error(err);
-        setError("Unable to check login status. Please verify backend.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    check();
-  }, [router]);
+    if (authLoading) {
+      return;
+    }
+    if (authenticated) {
+      router.replace("/dashboard");
+    }
+  }, [authenticated, authLoading, router]);
 
   const handleLogin = async () => {
     setError(null);
@@ -51,6 +43,8 @@ export default function LoginPage() {
     }
   };
 
+  const combinedError = error ?? authError;
+
   return (
     <main className="min-h-screen flex items-center justify-center">
       <Card className="w-full max-w-lg">
@@ -62,16 +56,16 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent className="flex flex-col items-center justify-center">
           <div className="flex flex-col items-center justify-center space-y-4 w-full">
-            {error ? (
-              <p className="text-sm text-red-600 text-center">{error}</p>
+            {combinedError ? (
+              <p className="text-sm text-red-600 text-center">{combinedError}</p>
             ) : null}
             <div className="flex items-center justify-center pt-4 w-full">
               <Button
                 onClick={handleLogin}
                 size="lg"
-                disabled={loading || actionLoading}
+                disabled={authLoading || actionLoading}
               >
-                {actionLoading || loading ? (
+                {actionLoading || authLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     {actionLoading ? "Signing in..." : "Checking..."}

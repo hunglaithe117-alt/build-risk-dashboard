@@ -10,12 +10,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { buildApi, dashboardApi, integrationApi } from "@/lib/api";
+import { buildApi, dashboardApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import type { BuildDetail, DashboardSummaryResponse } from "@/types";
+import { useAuth } from "@/contexts/auth-context";
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { authenticated, loading: authLoading } = useAuth();
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(null);
   const [recentBuilds, setRecentBuilds] = useState<BuildDetail[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,18 +25,15 @@ export default function DashboardPage() {
   const [buildsError, setBuildsError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (authLoading || !authenticated) {
+      return;
+    }
+
     let isActive = true;
 
     const loadData = async () => {
-      try {
-        const status = await integrationApi.getGithubStatus();
-        if (!status.connected) {
-          router.replace("/login");
-          return;
-        }
-      } catch (err) {
-        console.error("Failed to check integration status:", err);
-      }
+      setLoading(true);
+      setError(null);
 
       try {
         const [summaryResult, buildsResult] = await Promise.allSettled([
@@ -78,7 +77,7 @@ export default function DashboardPage() {
     return () => {
       isActive = false;
     };
-  }, [router]);
+  }, [authenticated, authLoading]);
 
   const handleRowClick = (buildId: string) => {
     router.push(`/builds/${buildId}`);

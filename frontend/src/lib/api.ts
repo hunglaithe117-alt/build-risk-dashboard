@@ -16,6 +16,7 @@ import type {
   NotificationPolicy,
   NotificationPolicyUpdateRequest,
   RoleListResponse,
+  UserAccount,
 } from '@/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'
@@ -34,7 +35,7 @@ export const buildApi = {
     return response.data
   },
   
-  getById: async (id: number) => {
+  getById: async (id: string) => {
     const response = await api.get<BuildDetail>(`/builds/${id}`)
     return response.data
   },
@@ -44,7 +45,7 @@ export const buildApi = {
     return response.data
   },
   
-  delete: async (id: number) => {
+  delete: async (id: string) => {
     const response = await api.delete(`/builds/${id}`)
     return response.data
   },
@@ -132,6 +133,10 @@ export const notificationsApi = {
 export const usersApi = {
   listRoles: async () => {
     const response = await api.get<RoleListResponse>('/users/roles')
+    return response.data
+  },
+  getCurrentUser: async () => {
+    const response = await api.get<UserAccount>('/users/me')
     return response.data
   },
 }

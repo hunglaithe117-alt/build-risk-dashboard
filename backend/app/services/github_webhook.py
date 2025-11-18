@@ -133,11 +133,11 @@ def handle_github_event(db: Database, event: str, payload: Dict[str, object]) ->
     repository = payload.get("repository") or workflow_run.get("repository") or {}
     full_name = repository.get("full_name")
     if not full_name:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thiếu repository full_name trong payload")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing repository full_name in payload")
 
     run_id = workflow_run.get("id")
     if not run_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Thiếu workflow_run id")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing workflow_run id")
 
     actor_login = _actor_login(payload)
     if actor_login and "dependabot" in actor_login:

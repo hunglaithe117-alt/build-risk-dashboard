@@ -94,7 +94,7 @@ class BuildCreate(BuildBase):
 class BuildResponse(BuildBase):
     """Schema for build response"""
 
-    id: int
+    id: str
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -266,7 +266,7 @@ class RepoImportRequest(BaseModel):
 
 
 class RepoResponse(BaseModel):
-    id: int
+    id: str
     user_id: int
     provider: str
     full_name: str

@@ -58,7 +58,7 @@ def revoke_github_token(db: Database = Depends(get_db)):
     if result.deleted_count == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Không tìm thấy token để thu hồi.",
+            detail="No token found to revoke.",
         )
 
 

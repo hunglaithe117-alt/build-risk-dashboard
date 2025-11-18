@@ -54,7 +54,7 @@ def fetch_repo_snapshot(
             status="waiting_webhook",
             started_at=now,
             progress=20,
-            notes="Đã thu thập metadata repo. Cần cấu hình GitHub webhook để nhận workflow runs.",
+            notes="Repository metadata collected. Configure the GitHub webhook to receive workflow runs.",
         )
 
     return {

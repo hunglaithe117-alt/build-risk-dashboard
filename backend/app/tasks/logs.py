@@ -80,7 +80,7 @@ def collect_log_artifacts(self: PipelineTask, build_id: int, repository: str, jo
         summarize_build.delay([], build_id, repository, job_id)
 
     if job_id:
-        self.store.update_import_job(job_id, progress=80, notes="Đã tải logs và lên lịch parser")
+        self.store.update_import_job(job_id, progress=80, notes="Downloaded logs and scheduled parser")
 
     return {"jobs_enqueued": len(signatures)}
 
@@ -171,6 +171,6 @@ def summarize_build(
     self.store.update_build_features(build_id, **updates)
 
     if job_id:
-        self.store.update_import_job(job_id, progress=92, notes="Đã tổng hợp log test")
+        self.store.update_import_job(job_id, progress=92, notes="Aggregated test logs")
 
     return {"build_id": build_id, "log_jobs": total_jobs}

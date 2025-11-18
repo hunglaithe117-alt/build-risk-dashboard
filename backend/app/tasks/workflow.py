@@ -112,11 +112,11 @@ def poll_workflow_runs(
     if job_id:
         progress = min(40, 10 + len(ingested_runs) * 3)
         if ingested_runs:
-            notes = f"Đang thu {len(ingested_runs)} build còn log"
+            notes = f"Ingesting {len(ingested_runs)} builds with logs"
         else:
-            notes = "Không tìm thấy build với log còn tồn tại"
+            notes = "No builds with logs found"
             if skipped_due_to_logs:
-                notes += f" (bỏ qua {skipped_due_to_logs} build hết log)"
+                notes += f" (skipped {skipped_due_to_logs} builds with no logs)"
         self.store.update_import_job(job_id, status="running", progress=progress, notes=notes)
 
     return {

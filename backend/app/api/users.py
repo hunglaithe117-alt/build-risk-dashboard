@@ -16,15 +16,18 @@ from app.models.schemas import (
     UserLoginResponse,
     UserResponse,
 )
-from app.services.user_accounts import list_users as list_users_service
-from app.services.user_accounts import upsert_github_identity
+from app.services.user_accounts import (
+    PROVIDER_GITHUB,
+    list_users as list_users_service,
+    upsert_github_identity,
+)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 ROLE_DEFINITIONS = [
     {
         "role": "admin",
-        "description": "Quản lý người dùng và cấu hình hệ thống.",
+        "description": "Manage users and system configuration.",
         "permissions": [
             "manage_repositories",
             "configure_settings",
@@ -34,7 +37,7 @@ ROLE_DEFINITIONS = [
     },
     {
         "role": "user",
-        "description": "Đăng nhập bằng GitHub để xem dashboard và nhận cảnh báo.",
+        "description": "Log in with GitHub to view the dashboard and receive alerts.",
         "permissions": [
             "view_dashboard",
             "receive_alerts",
@@ -73,7 +76,7 @@ async def _fetch_github_profile(access_token: str) -> dict:
         try:
             user_response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="GitHub token không hợp lệ") from exc
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid GitHub token") from exc
 
         user_data = user_response.json()
         email = user_data.get("email")
@@ -85,7 +88,7 @@ async def _fetch_github_profile(access_token: str) -> dict:
             fallback = emails[0]["email"] if emails else None
             email = primary or fallback
         if not email:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Không thể lấy email từ GitHub user")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to retrieve email from GitHub user")
         user_data["resolved_email"] = email
         return user_data
 
@@ -95,7 +98,7 @@ async def github_login(payload: GithubLoginRequest, db: Database = Depends(get_d
     profile = await _fetch_github_profile(payload.access_token)
     external_id = profile.get("id")
     if not external_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Không nhận được GitHub user id")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Did not receive GitHub user id")
     expires_at = None
     if payload.expires_in:
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=payload.expires_in)
@@ -115,3 +118,35 @@ async def github_login(payload: GithubLoginRequest, db: Database = Depends(get_d
         "user": _serialize_user(user_doc),
         "identity": _serialize_identity(identity_doc),
     }
+
+
+@router.get("/me", response_model=UserResponse)
+def get_current_user(db: Database = Depends(get_db)):
+    connection = db.github_connection.find_one({})
+    if not connection:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No user is currently logged in.",
+        )
+
+    user_doc = None
+    user_id = connection.get("user_id")
+    if user_id is not None:
+        user_doc = db.users.find_one({"_id": user_id})
+
+    if user_doc is None:
+        github_user_id = connection.get("github_user_id")
+        if github_user_id:
+            identity = db.oauth_identities.find_one(
+                {"provider": PROVIDER_GITHUB, "external_user_id": str(github_user_id)}
+            )
+            if identity:
+                user_doc = db.users.find_one({"_id": identity["user_id"]})
+
+    if user_doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No user found for the current GitHub connection.",
+        )
+
+    return _serialize_user(user_doc)

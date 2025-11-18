@@ -152,7 +152,7 @@ export default function GithubIntegrationPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
-              Vui lòng chờ trong giây lát.
+              Please wait a moment.
             </p>
           </CardContent>
         </Card>
@@ -223,7 +223,7 @@ export default function GithubIntegrationPage() {
               <>
                 <button
                   className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-400 transition"
-                  title="Collector thực chưa sẵn sàng"
+                  title="Collector not yet ready"
                   disabled
                   type="button"
                 >
@@ -366,19 +366,19 @@ export default function GithubIntegrationPage() {
                 authentication screen.
               </li>
               <li>
-                2. GitHub hiển thị các quyền truy cập: read:user, repo,
+                2. GitHub will display requested scopes: read:user, repo,
                 read:org, workflow.
               </li>
               <li>
-                3. Sau khi đồng ý, hệ thống nhận authorization code và trao đổi
-                lấy access token.
+                3. After consenting, the app receives an authorization code and exchanges
+                it for an access token.
               </li>
               <li>
                 4. Token is securely stored (encrypted at rest) · no write or
                 delete permissions are requested.
               </li>
               <li>
-                5. BuildGuard chạy background job để thu thập dữ liệu commits &
+                5. BuildGuard runs a background job to collect commit metadata and
                 workflow runs.
               </li>
             </ol>
@@ -428,10 +428,10 @@ export default function GithubIntegrationPage() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Import lịch sử repository</CardTitle>
+          <CardHeader>
+          <CardTitle>Import repository history</CardTitle>
           <CardDescription>
-            Tự động lấy toàn bộ workflow runs + commit metadata
+            Automatically ingest all workflow runs and commit metadata
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

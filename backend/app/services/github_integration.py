@@ -58,7 +58,7 @@ def get_github_status(db: Database) -> Dict[str, object]:
             "scopes": scopes,
             "repositories": [],
             "lastSyncStatus": "warning",
-            "lastSyncMessage": "Chưa ủy quyền GitHub OAuth.",
+            "lastSyncMessage": "GitHub OAuth not authorized.",
             "accountLogin": None,
             "accountName": None,
             "accountAvatarUrl": None,
@@ -69,7 +69,7 @@ def get_github_status(db: Database) -> Dict[str, object]:
 
     status = connection.get("last_sync_status", "warning")
     message = connection.get(
-        "last_sync_message", "Chưa chạy collector kể từ khi ủy quyền."
+        "last_sync_message", "Collector has not run since authorization."
     )
 
     connected_at = connection.get("connected_at")
@@ -121,11 +121,11 @@ def create_import_job(
         status="queued",
         progress=1,
         started_at=start_time,
-        notes="Đang thu thập metadata repository",
+        notes="Collecting repository metadata",
     )
     enqueue_repo_import.delay(repository, branch, job_id, owner_id, installation_id)
     return store.update_import_job(
         job_id,
         status="waiting_webhook",
-        notes="Đã thu thập metadata. Cấu hình GitHub webhook để nhận workflow events.",
+        notes="Metadata collected. Configure the GitHub webhook to receive workflow events.",
     )

@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 from pymongo.database import Database
 
 from app.config import settings
+from app.services.user_accounts import upsert_github_identity
 
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
@@ -86,8 +87,53 @@ async def exchange_code_for_token(db: Database, code: str, state: str) -> Tuple[
                 "Authorization": f"Bearer {access_token}",
             },
         )
-    user_response.raise_for_status()
-    user_data = user_response.json()
+        user_response.raise_for_status()
+        user_data = user_response.json()
+
+        email = user_data.get("email")
+        if not email:
+            try:
+                emails_response = await client.get(
+                    "https://api.github.com/user/emails",
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                        "Authorization": f"Bearer {access_token}",
+                    },
+                )
+                emails_response.raise_for_status()
+                emails = emails_response.json()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code != 404:
+                    raise
+                emails = []
+            primary = next((item.get("email") for item in emails if item.get("primary")), None)
+            fallback = emails[0]["email"] if emails else None
+            email = primary or fallback
+
+    if not email:
+        login = user_data.get("login")
+        if login:
+            email = f"{login}@users.noreply.github.com"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unable to retrieve email from GitHub user",
+            )
+
+    github_user_id = user_data.get("id")
+    if not github_user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="GitHub did not return user id")
+
+    user_doc, identity_doc = upsert_github_identity(
+        db,
+        github_user_id=str(github_user_id),
+        email=email,
+        name=user_data.get("name") or user_data.get("login"),
+        access_token=access_token,
+        refresh_token=None,
+        token_expires_at=None,
+        scopes=scope,
+    )
 
     connection_doc = {
         "_id": "primary",
@@ -101,6 +147,10 @@ async def exchange_code_for_token(db: Database, code: str, state: str) -> Tuple[
         "connected_at": datetime.now(timezone.utc),
         "last_sync_status": "success",
         "last_sync_message": "GitHub OAuth token stored successfully.",
+        "github_user_id": str(github_user_id),
+        "user_id": user_doc["_id"],
+        "user_role": user_doc.get("role", "user"),
+        "user_email": user_doc.get("email"),
     }
 
     db.github_connection.replace_one({"_id": "primary"}, connection_doc, upsert=True)

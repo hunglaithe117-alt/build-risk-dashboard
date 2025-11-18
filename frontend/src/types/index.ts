@@ -1,5 +1,5 @@
 export interface Build {
-  id: number;
+  id: string;
   repository: string;
   branch: string;
   commit_sha: string;
@@ -179,6 +179,14 @@ export interface UserRoleDefinition {
 
 export interface RoleListResponse {
   roles: UserRoleDefinition[];
+}
+
+export interface UserAccount {
+  id: number;
+  email: string;
+  name?: string | null;
+  role: "admin" | "user";
+  created_at: string;
 }
 
 export interface GithubInstallation {

@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pymongo.database import Database
 
@@ -34,7 +36,7 @@ def _serialize_feature_value(value: Any) -> Any:
 
 def _serialize_build(document: Dict[str, Any]) -> Dict[str, Any]:
     build = document.copy()
-    build["id"] = build.pop("_id")
+    build["id"] = str(build.pop("_id"))
 
     for key in ["created_at", "updated_at", "started_at", "completed_at"]:
         if key in build:
@@ -49,11 +51,17 @@ def _serialize_build(document: Dict[str, Any]) -> Dict[str, Any]:
     return build
 
 
-def _generate_build_id(db: Database) -> int:
-    latest = db.builds.find_one(sort=[("_id", -1)])
-    if latest:
-        return int(latest["_id"]) + 1
-    return 1
+def _parse_build_identifier(build_id: str) -> int | ObjectId:
+    """Allow querying builds by numeric Travis/GitHub run id or Mongo ObjectId."""
+    if isinstance(build_id, str):
+        stripped = build_id.strip()
+        if stripped.isdigit():
+            return int(stripped)
+        try:
+            return ObjectId(stripped)
+        except (InvalidId, TypeError):
+            pass
+    raise HTTPException(status_code=400, detail="Invalid build id format")
 
 
 def _parse_datetime(value: Any) -> Any:
@@ -93,8 +101,9 @@ async def get_builds(
 
 
 @router.get("/{build_id}", response_model=BuildDetailResponse)
-async def get_build(build_id: int, db: Database = Depends(get_db)):
-    build = db.builds.find_one({"_id": build_id})
+async def get_build(build_id: str, db: Database = Depends(get_db)):
+    identifier = _parse_build_identifier(build_id)
+    build = db.builds.find_one({"_id": identifier})
     if not build:
         raise HTTPException(status_code=404, detail="Build not found")
     return _serialize_build(build)
@@ -102,13 +111,11 @@ async def get_build(build_id: int, db: Database = Depends(get_db)):
 
 @router.post("/", response_model=BuildDetailResponse)
 async def create_build(payload: BuildCreate, db: Database = Depends(get_db)):
-    build_id = _generate_build_id(db)
     build_data = payload.model_dump(exclude_unset=True)
     features_data = build_data.pop("features", None)
 
     now = datetime.utcnow()
     build_document: Dict[str, Any] = {
-        "_id": build_id,
         "created_at": _parse_datetime(build_data.get("created_at", now)),
         "updated_at": _parse_datetime(build_data.get("updated_at")),
         "repository": build_data.get("repository"),
@@ -130,13 +137,16 @@ async def create_build(payload: BuildCreate, db: Database = Depends(get_db)):
     if features_data:
         build_document["features"] = features_data
 
-    db.builds.insert_one(build_document)
-    return _serialize_build(build_document)
+    insert_result = db.builds.insert_one(build_document)
+    build_document["_id"] = insert_result.inserted_id
+    persisted = db.builds.find_one({"_id": insert_result.inserted_id}) or build_document
+    return _serialize_build(persisted)
 
 
 @router.delete("/{build_id}")
-async def delete_build(build_id: int, db: Database = Depends(get_db)):
-    result = db.builds.delete_one({"_id": build_id})
+async def delete_build(build_id: str, db: Database = Depends(get_db)):
+    identifier = _parse_build_identifier(build_id)
+    result = db.builds.delete_one({"_id": identifier})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Build not found")
     return {"message": "Build deleted successfully"}

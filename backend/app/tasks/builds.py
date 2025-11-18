@@ -30,7 +30,7 @@ def ingest_workflow_run(self: PipelineTask, repository: str, run_id: int, job_id
 
     run = self.db.workflow_runs.find_one({"_id": run_id})
     if not run:
-        raise PipelineRetryableError(f"Workflow run {run_id} chưa sẵn sàng trong DB")
+        raise PipelineRetryableError(f"Workflow run {run_id} not yet available in DB")
 
     started_at = run.get("started_at") or run.get("created_at")
     completed_at = run.get("updated_at") or started_at
@@ -79,7 +79,7 @@ def ingest_workflow_run(self: PipelineTask, repository: str, run_id: int, job_id
     enrichment_chain.delay()
 
     if job_id:
-        self.store.update_import_job(job_id, progress=45, notes="Đang phân tích metadata build")
+        self.store.update_import_job(job_id, progress=45, notes="Analyzing build metadata")
 
     return {"build_id": run_id, "repository": repository}
 
@@ -126,7 +126,7 @@ def resolve_build_context(self: PipelineTask, build_id: int, repository: str, jo
     self.store.update_build_features(build_id, **context_updates)
 
     if job_id:
-        self.store.update_import_job(job_id, progress=50, notes="Đã thu thập metadata pull request")
+        self.store.update_import_job(job_id, progress=50, notes="Collected pull request metadata")
 
     return build_id
 
@@ -137,7 +137,7 @@ def resolve_commit_lineage(self: PipelineTask, build_id: int, repository: str, j
 
     build = self.db.builds.find_one({"_id": build_id})
     if not build:
-        raise PipelineRetryableError(f"Build {build_id} bị thiếu trong DB")
+        raise PipelineRetryableError(f"Build {build_id} missing in DB")
 
     head_sha = build.get("git_trigger_commit")
     if not head_sha:
@@ -145,7 +145,7 @@ def resolve_commit_lineage(self: PipelineTask, build_id: int, repository: str, j
         head_sha = run_doc.get("head_sha")
 
     if not head_sha:
-        raise PipelineRetryableError(f"Không xác định được commit trigger cho build {build_id}")
+        raise PipelineRetryableError(f"Could not determine trigger commit for build {build_id}")
 
     branch = build.get("git_branch") or (self.db.workflow_runs.find_one({"_id": build_id}) or {}).get("head_branch")
     previous_build = (
@@ -197,7 +197,7 @@ def resolve_commit_lineage(self: PipelineTask, build_id: int, repository: str, j
     self.store.update_build_features(build_id, **updates)
 
     if job_id:
-        self.store.update_import_job(job_id, progress=55, notes="Đã xác định chuỗi commits")
+        self.store.update_import_job(job_id, progress=55, notes="Resolved commit lineage")
 
     return build_id
 
@@ -208,7 +208,7 @@ def aggregate_commit_activity(self: PipelineTask, build_id: int, repository: str
 
     build = self.db.builds.find_one({"_id": build_id})
     if not build:
-        raise PipelineRetryableError(f"Build {build_id} không tồn tại")
+        raise PipelineRetryableError(f"Build {build_id} does not exist")
 
     commits = build.get("git_all_built_commits") or []
     pr_number = build.get("gh_pull_req_num")
@@ -236,7 +236,7 @@ def aggregate_commit_activity(self: PipelineTask, build_id: int, repository: str
     self.store.update_build_features(build_id, **updates)
 
     if job_id:
-        self.store.update_import_job(job_id, progress=60, notes="Đã tổng hợp hoạt động thảo luận")
+        self.store.update_import_job(job_id, progress=60, notes="Aggregated discussion activity")
 
     return build_id
 
@@ -279,6 +279,6 @@ def compute_diff_metrics(self: PipelineTask, build_id: int, repository: str, job
     self.store.update_build_features(build_id, **filtered)
 
     if job_id:
-        self.store.update_import_job(job_id, progress=75, notes="Đã tính toán diff/git metrics")
+        self.store.update_import_job(job_id, progress=75, notes="Computed diff/git metrics")
 
     return build_id

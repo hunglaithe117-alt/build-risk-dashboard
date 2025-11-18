@@ -23,7 +23,7 @@ router = APIRouter(prefix="/repos", tags=["Repositories"])
 
 def _serialize_repo(doc: dict) -> RepoResponse:
     payload = doc.copy()
-    payload["id"] = payload.pop("_id")
+    payload["id"] = str(payload.pop("_id"))
     return RepoResponse.model_validate(payload)
 
 
@@ -78,7 +78,7 @@ def list_repositories(
     status_code=status.HTTP_201_CREATED,
 )
 def request_scan(
-    repo_id: int = Path(..., description="Repository numeric id"),
+    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
     payload: RepoScanRequest | None = None,
     db: Database = Depends(get_db),
 ):

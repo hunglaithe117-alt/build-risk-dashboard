@@ -141,7 +141,7 @@ export default function AdminPage() {
         <Card className="w-full max-w-md border-red-200 bg-red-50/60 dark:border-red-800 dark:bg-red-900/20">
           <CardHeader>
             <CardTitle className="text-red-700 dark:text-red-300">
-              Không thể tải dữ liệu
+              Unable to load data
             </CardTitle>
             <CardDescription>{error}</CardDescription>
           </CardHeader>
@@ -271,40 +271,6 @@ export default function AdminPage() {
                   {new Date(log.created_at).toLocaleString("en-US")}
                 </p>
                 <p className="mt-1 text-sm">{log.message}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Roles & Permissions</CardTitle>
-            <CardDescription>Current role definitions.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            {roles.map((role) => (
-              <div
-                key={role.role}
-                className="rounded-lg border border-slate-200 bg-white/70 p-3 dark:border-slate-800 dark:bg-slate-900/70"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold">{role.role}</p>
-                  {role.admin_only ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase text-amber-700 dark:bg-amber-900/30">
-                      Admin
-                    </span>
-                  ) : (
-                    <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {role.description}
-                </p>
-                <ul className="mt-2 list-inside list-disc text-xs text-muted-foreground">
-                  {role.permissions.map((perm) => (
-                    <li key={perm}>{perm}</li>
-                  ))}
-                </ul>
               </div>
             ))}
           </CardContent>

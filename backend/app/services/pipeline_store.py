@@ -6,17 +6,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from pymongo.database import Database
 
 from app.config import settings
-
-
-def _generate_numeric_id(collection) -> int:
-    latest = collection.find_one(sort=[("_id", -1)])
-    latest_id = latest.get("_id") if latest else None
-    if isinstance(latest_id, int):
-        return latest_id + 1
-    return 1
 
 
 def _utcnow() -> datetime:
@@ -89,9 +83,9 @@ class PipelineStore:
             )
             return self.db.repositories.find_one({"_id": repo_id})
 
-        repo_id = _generate_numeric_id(self.db.repositories)
-        document.update({"_id": repo_id, "created_at": now})
-        self.db.repositories.insert_one(document)
+        document["created_at"] = now
+        insert_result = self.db.repositories.insert_one(document)
+        document["_id"] = insert_result.inserted_id
         return document
 
     def list_repositories(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -101,8 +95,14 @@ class PipelineStore:
         cursor = self.db.repositories.find(query).sort("created_at", -1)
         return list(cursor)
 
-    def get_repository(self, repo_id: int) -> Optional[Dict[str, Any]]:
-        return self.db.repositories.find_one({"_id": repo_id})
+    def get_repository(self, repo_id: str | ObjectId) -> Optional[Dict[str, Any]]:
+        identifier = repo_id
+        if isinstance(repo_id, str):
+            try:
+                identifier = ObjectId(repo_id)
+            except (InvalidId, TypeError):
+                return None
+        return self.db.repositories.find_one({"_id": identifier})
 
     # --- Workflow runs ----------------------------------------------------
     def upsert_workflow_run(
@@ -212,7 +212,7 @@ class PipelineStore:
             "tests_collected": 0,
             "initiated_by": initiated_by,
             "user_id": owner_id,
-             "installation_id": installation_id,
+            "installation_id": installation_id,
             "created_at": now,
             "started_at": None,
             "completed_at": None,

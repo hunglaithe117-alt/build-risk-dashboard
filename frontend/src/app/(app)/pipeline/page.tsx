@@ -129,7 +129,7 @@ export default function PipelinePage() {
         <Card>
           <CardHeader>
             <CardTitle>Normalization readiness</CardTitle>
-            <CardDescription>Điểm nghẽn & hành động khuyến nghị</CardDescription>
+            <CardDescription>Bottlenecks & recommended actions</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
             {normalizationStage ? (
@@ -144,19 +144,19 @@ export default function PipelinePage() {
                 </div>
                 <ul className="space-y-3">
                   <li className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-                    <p className="font-semibold">1. Làm sạch dữ liệu</p>
+                    <p className="font-semibold">1. Data cleaning</p>
                     <p className="text-xs text-muted-foreground">
                       Normalize branch names, timezones, and parse timestamps from GitHub Actions logs.
                     </p>
                   </li>
                   <li className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-                    <p className="font-semibold">2. Chuẩn hóa features</p>
+                    <p className="font-semibold">2. Feature normalization</p>
                     <p className="text-xs text-muted-foreground">
                       StandardScaler + min-max scaling for metrics (duration, code smells, coverage...).
                     </p>
                   </li>
                   <li className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-                    <p className="font-semibold">3. Kiểm tra chất lượng</p>
+                    <p className="font-semibold">3. Quality checks</p>
                     <p className="text-xs text-muted-foreground">
                       Compare with sample schema · detect drift or missing values before scoring.
                     </p>
@@ -164,7 +164,7 @@ export default function PipelinePage() {
                 </ul>
               </>
             ) : (
-              <p className="text-muted-foreground">Không tìm thấy thông tin normalization.</p>
+              <p className="text-muted-foreground">Normalization information not found.</p>
             )}
           </CardContent>
         </Card>
@@ -173,44 +173,8 @@ export default function PipelinePage() {
       <section className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Vai trò & quyền trong pipeline</CardTitle>
-            <CardDescription>Phân quyền truy cập theo mô tả hệ thống</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <RoleMatrix
-              title="Administrator"
-              description="Quản lý người dùng, repositories, cấu hình risk threshold."
-              capabilities={[
-                'Update alert thresholds and pipeline retry',
-                'Quản lý GitHub OAuth + repositories',
-                'Chạy lại toàn bộ build để tái chuẩn hóa',
-              ]}
-            />
-            <RoleMatrix
-              title="DevOps Engineer"
-              description="Theo dõi dashboard, import repo và kiểm tra build rủi ro."
-              capabilities={[
-                'Trigger import dự án mới',
-                'Review detected alerts and pipeline anomalies before deploy',
-                'Xem giải thích rủi ro và log artifacts liên quan',
-              ]}
-            />
-            <RoleMatrix
-              title="Repository Member"
-              description="Sign in via GitHub, view the read-only dashboard, and receive alerts for your repositories."
-              capabilities={[
-                'Xem dashboard, heatmap và báo cáo theo repo được gán',
-                'Nhận cảnh báo và thông báo quan trọng cho repository sở hữu hoặc hợp tác',
-                'Theo dõi lịch sử build và logs trước khi phê duyệt deploy',
-              ]}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Sự cố cần chú ý</CardTitle>
-            <CardDescription>Lấy từ trường <code>issues</code> của các stage</CardDescription>
+            <CardTitle>Issues to review</CardTitle>
+            <CardDescription>Derived from the stages <code>issues</code> field</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {status.stages.some((stage) => stage.issues.length > 0) ? (
@@ -232,7 +196,7 @@ export default function PipelinePage() {
                   </div>
                 ))
             ) : (
-              <p className="text-muted-foreground">Không có lỗi pipeline nào được ghi nhận.</p>
+              <p className="text-muted-foreground">No pipeline issues recorded.</p>
             )}
           </CardContent>
         </Card>
@@ -277,7 +241,7 @@ function StageRow({ stage }: StageRowProps) {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-sm font-semibold">{stage.label}</p>
-          <p className="text-xs text-muted-foreground">{stage.notes ?? 'Không có ghi chú.'}</p>
+          <p className="text-xs text-muted-foreground">{stage.notes ?? 'No notes.'}</p>
         </div>
         <span className={cn('inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold', statusClass)}>
           {statusLabel}
@@ -285,7 +249,7 @@ function StageRow({ stage }: StageRowProps) {
       </div>
       <div className="mt-3">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Tiến độ</span>
+          <span>Progress</span>
           <span>{progressPercent}</span>
         </div>
         <div className="mt-1 h-2 rounded-full bg-slate-100 dark:bg-slate-800">
@@ -303,7 +267,7 @@ function StageRow({ stage }: StageRowProps) {
       </div>
       <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
         {stage.items_processed ? <span>Items: {stage.items_processed.toLocaleString('en-US')}</span> : null}
-        {stage.duration_seconds ? <span>Duration: {Math.round(stage.duration_seconds / 60)} phút</span> : null}
+        {stage.duration_seconds ? <span>Duration: {Math.round(stage.duration_seconds / 60)} minutes</span> : null}
         {stage.started_at ? <span>Started: {new Date(stage.started_at).toLocaleTimeString('en-US')}</span> : null}
       </div>
       {stage.issues.length > 0 ? (

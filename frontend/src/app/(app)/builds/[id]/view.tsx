@@ -163,9 +163,9 @@ export function BuildDetailClient({ build }: BuildDetailClientProps) {
                     intent={"positive"}
                   />
                     <p className="text-muted-foreground">
-                    Sử dụng báo cáo nội bộ để xem chi tiết các issue bảo mật và
-                    chất lượng code. Prediction engine temporarily disabled.
-                  </p>
+                      Use internal reports to view detailed security issues and
+                      code quality. Prediction engine temporarily disabled.
+                    </p>
                 </CardContent>
               </Card>
             </div>
@@ -208,10 +208,10 @@ export function BuildDetailClient({ build }: BuildDetailClientProps) {
             <Card className="border border-slate-200 shadow-none dark:border-slate-800">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold">
-                  Timeline đồng bộ GitHub
+                GitHub sync timeline
                 </CardTitle>
                 <CardDescription>
-                  Quá trình thu thập dữ liệu build (demo)
+                  Build ingestion timeline (demo)
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3 text-xs">

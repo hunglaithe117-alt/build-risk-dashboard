@@ -8,7 +8,7 @@ interface BuildDetailPageProps {
   params: { id: string }
 }
 
-async function fetchBuildDetail(id: number): Promise<BuildDetail | null> {
+async function fetchBuildDetail(id: string): Promise<BuildDetail | null> {
   try {
     const build = await buildApi.getById(id)
     return build
@@ -19,12 +19,12 @@ async function fetchBuildDetail(id: number): Promise<BuildDetail | null> {
 }
 
 export default async function BuildDetailPage({ params }: BuildDetailPageProps) {
-  const id = Number(params.id)
-  if (Number.isNaN(id)) {
+  const buildId = params.id
+  if (!buildId) {
     notFound()
   }
 
-  const build = await fetchBuildDetail(id)
+  const build = await fetchBuildDetail(buildId)
 
   if (!build) {
     notFound()

@@ -6,7 +6,7 @@ const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'Build Risk Assessment - CI/CD Monitor',
-  description: 'Monitor and assess CI/CD build risks using Bayesian CNN',
+  description: 'Monitor CI/CD builds and collect commit/workflow metadata for feature extraction',
 }
 
 export default function RootLayout({

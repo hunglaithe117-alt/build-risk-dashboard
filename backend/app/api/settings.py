@@ -1,4 +1,5 @@
 """System settings management endpoints."""
+
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
@@ -11,10 +12,6 @@ router = APIRouter(prefix="/settings", tags=["Settings"])
 
 DEFAULT_SETTINGS = {
     "_id": "primary",
-    "model_version": "bayesian-cnn-v0.3.1",
-    "risk_threshold_high": 0.7,
-    "risk_threshold_medium": 0.45,
-    "uncertainty_threshold": 0.2,
     "auto_rescan_enabled": True,
     "updated_at": datetime.utcnow(),
     "updated_by": "system",
@@ -32,7 +29,9 @@ def _serialize_settings(document: dict) -> SystemSettings:
 def get_settings(db: Database = Depends(get_db)):
     document = db.system_settings.find_one({"_id": "primary"})
     if not document:
-        db.system_settings.update_one({"_id": "primary"}, {"$setOnInsert": DEFAULT_SETTINGS}, upsert=True)
+        db.system_settings.update_one(
+            {"_id": "primary"}, {"$setOnInsert": DEFAULT_SETTINGS}, upsert=True
+        )
         document = db.system_settings.find_one({"_id": "primary"})
     return _serialize_settings(document)
 

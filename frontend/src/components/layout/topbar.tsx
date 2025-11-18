@@ -14,8 +14,8 @@ export function Topbar() {
     <header className="flex h-16 items-center justify-between border-b bg-white/70 px-6 backdrop-blur dark:bg-slate-950/90">
       <div>
         <h1 className="text-lg font-semibold text-foreground">BuildGuard Dashboard</h1>
-        <p className="text-xs text-muted-foreground">
-          Theo dõi rủi ro builds · GitHub OAuth đã ủy quyền đọc dữ liệu workflow
+          <p className="text-xs text-muted-foreground">
+          Track builds & extracted features · GitHub OAuth with read access to workflow data
         </p>
       </div>
 
@@ -55,7 +55,7 @@ export function Topbar() {
           </div>
           <button
             className="rounded-full border border-slate-200 p-2 text-muted-foreground transition hover:bg-red-50 hover:text-red-600 dark:border-slate-700 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-            aria-label="Đăng xuất"
+            aria-label="Sign out"
             type="button"
           >
             <LogOut className="h-4 w-4" />

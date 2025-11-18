@@ -1,6 +1,6 @@
 # BuildGuard Backend
 
-FastAPI backend service for the BuildGuard DevSecOps risk dashboard. This service exposes mocked data for CI/CD build telemetry, integrates with GitHub OAuth (read-only) in future iterations, and is managed using [uv](https://github.com/astral-sh/uv) for dependency management.
+FastAPI backend service for the BuildGuard DevSecOps dashboard. This service exposes mocked data for CI/CD build telemetry, integrates with GitHub OAuth (read-only), and is managed using [uv](https://github.com/astral-sh/uv) for dependency management. Model/prediction features are temporarily disabled.
 
 ## Quick start with uv
 
@@ -15,8 +15,6 @@ The default configuration uses MongoDB (`mongodb://localhost:27017/buildguard`).
 ### Useful commands
 
 ```bash
-# Re-seed the database with deterministic mock data
-uv run python -m app.services.mock_seed --force
 
 # Run unit tests / linters (extras defined in pyproject)
 uv run pytest
@@ -38,6 +36,6 @@ Start the backend then visit `http://localhost:3000/integrations/github` to trig
 
 ### Key endpoints
 
-- `GET /api/builds/` – Paginated builds including SonarQube & Risk data
+- `GET /api/builds/` – Paginated builds including full telemetry (commits, workflows, features)
 - `GET /api/dashboard/summary` – Aggregated metrics for dashboard widgets
 - `GET /api/integrations/github` – GitHub OAuth status + repository summary

@@ -5,9 +5,10 @@ import type {
   DashboardSummaryResponse,
   GithubIntegrationStatus,
   GithubAuthorizeResponse,
-  RiskExplanation,
   PipelineStatus,
   GithubImportJob,
+  GithubInstallation,
+  GithubInstallationListResponse,
   SystemSettings,
   SystemSettingsUpdateRequest,
   ActivityLogListResponse,
@@ -74,25 +75,16 @@ export const integrationApi = {
     const response = await api.get<GithubImportJob[]>('/integrations/github/imports')
     return response.data
   },
-  startGithubImport: async (payload: { repository: string; branch: string; initiated_by?: string }) => {
+  startGithubImport: async (payload: { repository: string; branch: string; initiated_by?: string; user_id?: number }) => {
     const response = await api.post<GithubImportJob>('/integrations/github/imports', payload)
     return response.data
   },
-}
-
-// Risk API
-export const riskApi = {
-  getRiskScore: async (buildId: number) => {
-    const response = await api.get(`/risk/${buildId}`)
+  listGithubInstallations: async () => {
+    const response = await api.get<GithubInstallationListResponse>('/integrations/github/installations')
     return response.data
   },
-  
-  recalculate: async (buildId: number) => {
-    const response = await api.post(`/risk/${buildId}/recalculate`)
-    return response.data
-  },
-  getRiskExplanation: async (buildId: number) => {
-    const response = await api.get<RiskExplanation>(`/risk/${buildId}/explanation`)
+  getGithubInstallation: async (installationId: string) => {
+    const response = await api.get<GithubInstallation>(`/integrations/github/installations/${installationId}`)
     return response.data
   },
 }

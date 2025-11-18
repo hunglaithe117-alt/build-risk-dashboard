@@ -39,11 +39,6 @@ def compute_pipeline_status(db: Database) -> Dict[str, object]:
     builds = list(db.builds.find())
     total_builds = len(builds)
     repositories = {build.get("repository", "unknown") for build in builds}
-    high_risk = sum(
-        1
-        for build in builds
-        if (build.get("risk_assessment") or {}).get("risk_level") in {"high", "critical"}
-    )
 
     now = datetime.now(timezone.utc)
     last_run = now - timedelta(minutes=12)
@@ -74,7 +69,7 @@ def compute_pipeline_status(db: Database) -> Dict[str, object]:
             started_at=last_run - timedelta(minutes=19),
             duration_minutes=5,
             items=enriched,
-            notes="Đã ghép SonarQube & test artifacts.",
+            notes="Đã ghép test artifacts và metrics nội bộ.",
         ),
         _stage(
             key="normalization",
@@ -87,7 +82,7 @@ def compute_pipeline_status(db: Database) -> Dict[str, object]:
             notes="Chuẩn hóa dữ liệu đầu vào mô hình Bayesian CNN.",
             issues=[
                 "Thiếu coverage report từ buildguard/ui-dashboard",
-                "Chưa tìm thấy SonarQube metrics mới cho branch feature/github-sync",
+                "Chưa tìm thấy metrics mới cho branch feature/github-sync",
             ],
         ),
         _stage(
@@ -101,14 +96,14 @@ def compute_pipeline_status(db: Database) -> Dict[str, object]:
             notes="Đẩy vector đặc trưng sang Redis/Parquet.",
         ),
         _stage(
-            key="risk_scoring",
-            label="Risk scoring & cảnh báo",
-            status="pending",
-            percent=45,
-            started_at=last_run - timedelta(minutes=3),
-            duration_minutes=5,
-            items=scored,
-            notes="Chờ dữ liệu normalization hoàn tất.",
+            key="analysis",
+                label="Scoring & analysis",
+                status="pending",
+                percent=45,
+                started_at=last_run - timedelta(minutes=3),
+                duration_minutes=5,
+                items=scored,
+                notes="Model scoring currently disabled — analysis placeholder.",
         ),
     ]
 
@@ -117,6 +112,5 @@ def compute_pipeline_status(db: Database) -> Dict[str, object]:
         "next_run": next_run,
         "normalized_features": normalized * 128,
         "pending_repositories": max(0, 6 - len(repositories)),
-        "anomalies_detected": high_risk,
         "stages": stages,
     }

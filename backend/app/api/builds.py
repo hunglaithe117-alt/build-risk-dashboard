@@ -22,6 +22,16 @@ def _ensure_iso(value: Any) -> Optional[str]:
     return str(value)
 
 
+def _serialize_feature_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, list):
+        return [_serialize_feature_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _serialize_feature_value(val) for key, val in value.items()}
+    return value
+
+
 def _serialize_build(document: Dict[str, Any]) -> Dict[str, Any]:
     build = document.copy()
     build["id"] = build.pop("_id")
@@ -30,17 +40,11 @@ def _serialize_build(document: Dict[str, Any]) -> Dict[str, Any]:
         if key in build:
             build[key] = _ensure_iso(build.get(key))
 
-    if build.get("sonarqube_result"):
-        sq = build["sonarqube_result"].copy()
-        if "analyzed_at" in sq:
-            sq["analyzed_at"] = _ensure_iso(sq.get("analyzed_at"))
-        build["sonarqube_result"] = sq
-
-    if build.get("risk_assessment"):
-        risk = build["risk_assessment"].copy()
-        if "calculated_at" in risk:
-            risk["calculated_at"] = _ensure_iso(risk.get("calculated_at"))
-        build["risk_assessment"] = risk
+    if build.get("features"):
+        features = build["features"]
+        build["features"] = {
+            key: _serialize_feature_value(value) for key, value in features.items()
+        }
 
     return build
 
@@ -76,12 +80,7 @@ async def get_builds(
         filters["status"] = status
 
     total = db.builds.count_documents(filters)
-    cursor = (
-        db.builds.find(filters)
-        .sort("created_at", -1)
-        .skip(skip)
-        .limit(limit)
-    )
+    cursor = db.builds.find(filters).sort("created_at", -1).skip(skip).limit(limit)
 
     builds = [_serialize_build(doc) for doc in cursor]
 
@@ -105,6 +104,7 @@ async def get_build(build_id: int, db: Database = Depends(get_db)):
 async def create_build(payload: BuildCreate, db: Database = Depends(get_db)):
     build_id = _generate_build_id(db)
     build_data = payload.model_dump(exclude_unset=True)
+    features_data = build_data.pop("features", None)
 
     now = datetime.utcnow()
     build_document: Dict[str, Any] = {
@@ -125,9 +125,10 @@ async def create_build(payload: BuildCreate, db: Database = Depends(get_db)):
         "author_email": build_data.get("author_email"),
         "url": build_data.get("url"),
         "logs_url": build_data.get("logs_url"),
-        "sonarqube_result": build_data.get("sonarqube_result"),
-        "risk_assessment": build_data.get("risk_assessment"),
     }
+
+    if features_data:
+        build_document["features"] = features_data
 
     db.builds.insert_one(build_document)
     return _serialize_build(build_document)

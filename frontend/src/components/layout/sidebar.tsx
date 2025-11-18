@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { BadgeCheck, Building2, ChartBar, Github, Home, PlugZap, ShieldAlert, SlidersHorizontal, Workflow } from 'lucide-react'
+import { BadgeCheck, Building2, BarChart, Github, Home, PlugZap, ShieldAlert, SlidersHorizontal, Workflow } from 'lucide-react'
 
 const navigation = [
   {
@@ -14,7 +14,8 @@ const navigation = [
   {
     label: 'Builds',
     href: '/builds',
-    icon: ChartBar,
+    icon: BarChart,
+    hint: 'In development',
   },
   {
     label: 'Pipeline',
@@ -58,7 +59,7 @@ export function Sidebar() {
         </div>
         <div>
           <p className="text-lg font-semibold">BuildGuard</p>
-          <p className="text-xs text-muted-foreground">DevSecOps Risk Intelligence</p>
+          <p className="text-xs text-muted-foreground">DevSecOps Insights</p>
         </div>
       </div>
 
@@ -103,11 +104,11 @@ export function Sidebar() {
       <div className="border-t px-4 py-4 text-xs text-muted-foreground">
         <p className="font-semibold text-foreground">BuildGuard Thesis 2025</p>
         <p className="mt-1 leading-relaxed">
-          Phiên bản prototype tập trung vào quan sát builds và đánh giá rủi ro trước khi tích hợp mô hình AI.
+          This prototype focuses on observing builds and extracting features for later analysis.
         </p>
         <p className="mt-2 flex items-center gap-2 text-muted-foreground/80">
           <PlugZap className="h-4 w-4" />
-          GitHub OAuth chỉ truy cập đọc để thu thập dữ liệu phân tích.
+          GitHub OAuth provides read-only access to collect analytics data.
         </p>
       </div>
     </div>

@@ -16,10 +16,10 @@ const STATUS_BADGE: Record<PipelineStage['status'], string> = {
 }
 
 const STATUS_LABEL: Record<PipelineStage['status'], string> = {
-  completed: 'Hoàn tất',
-  running: 'Đang chạy',
-  pending: 'Chờ dữ liệu',
-  blocked: 'Tắc nghẽn',
+  completed: 'Completed',
+  running: 'Running',
+  pending: 'Pending',
+  blocked: 'Blocked',
 }
 
 export default function PipelinePage() {
@@ -34,7 +34,7 @@ export default function PipelinePage() {
         setStatus(response)
       } catch (err) {
         console.error(err)
-        setError('Không thể tải trạng thái pipeline. Kiểm tra backend `/api/pipeline/status`.')
+        setError('Unable to load pipeline status. Check backend `/api/pipeline/status`.')
       } finally {
         setLoading(false)
       }
@@ -53,12 +53,12 @@ export default function PipelinePage() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>Đang tải pipeline...</CardTitle>
-            <CardDescription>Truy xuất thông tin preprocessing/normalization.</CardDescription>
+            <CardTitle>Loading pipeline...</CardTitle>
+            <CardDescription>Retrieving preprocessing/normalization status.</CardDescription>
           </CardHeader>
           <CardContent className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Vui lòng chờ trong giây lát.
+            Please wait a moment.
           </CardContent>
         </Card>
       </div>
@@ -70,54 +70,54 @@ export default function PipelinePage() {
       <div className="flex min-h-[60vh] items-center justify-center">
         <Card className="w-full max-w-md border-red-200 bg-red-50/60 dark:border-red-800 dark:bg-red-900/20">
           <CardHeader>
-            <CardTitle className="text-red-700 dark:text-red-300">Pipeline chưa sẵn sàng</CardTitle>
-            <CardDescription>{error ?? 'Không nhận được dữ liệu từ API.'}</CardDescription>
+            <CardTitle className="text-red-700 dark:text-red-300">Pipeline not ready</CardTitle>
+            <CardDescription>{error ?? 'No data received from API.'}</CardDescription>
           </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            Kiểm tra service FastAPI và đảm bảo MongoDB có dữ liệu mẫu.
+            <CardContent className="text-sm text-muted-foreground">
+            Check the FastAPI service and ensure MongoDB has sample data.
           </CardContent>
         </Card>
       </div>
     )
   }
 
-  const lastRun = new Date(status.last_run).toLocaleString('vi-VN')
-  const nextRun = new Date(status.next_run).toLocaleString('vi-VN')
+  const lastRun = new Date(status.last_run).toLocaleString('en-US')
+  const nextRun = new Date(status.next_run).toLocaleString('en-US')
 
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <PipelineMetric
           icon={<RefreshCw className="h-5 w-5 text-blue-500" />}
-          label="Feature vectors đã chuẩn hóa"
-          value={status.normalized_features.toLocaleString('vi-VN')}
-          sublabel="128 feature / build · đầu vào Bayesian CNN"
+          label="Normalized feature vectors"
+          value={status.normalized_features.toLocaleString('en-US')}
+          sublabel="128 features / build · used for analysis (model disabled)"
         />
         <PipelineMetric
           icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
-          label="Repo chờ đồng bộ"
+          label="Pending repositories"
           value={status.pending_repositories}
-          sublabel="Ưu tiên repositories chưa import đầy đủ"
+          sublabel="Prioritize repos that are not fully imported"
         />
         <PipelineMetric
           icon={<ShieldCheck className="h-5 w-5 text-emerald-500" />}
-          label="Build rủi ro cao"
+          label="Anomalies detected"
           value={status.anomalies_detected}
-          sublabel="Dùng làm ground truth để huấn luyện lại"
+          sublabel="Used for manual review"
         />
         <PipelineMetric
           icon={<PlugZap className="h-5 w-5 text-purple-500" />}
-          label="Lần chạy gần nhất"
+          label="Last run"
           value={lastRun}
-          sublabel={`Kế tiếp: ${nextRun}`}
+          sublabel={`Next: ${nextRun}`}
         />
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Dòng xử lý dữ liệu</CardTitle>
-            <CardDescription>Trạng thái từng giai đoạn pipeline</CardDescription>
+            <CardTitle>Data pipeline</CardTitle>
+              <CardDescription>Stage-by-stage pipeline status</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {status.stages.map((stage) => (
@@ -135,30 +135,30 @@ export default function PipelinePage() {
             {normalizationStage ? (
               <>
                 <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                  <p className="text-xs uppercase font-semibold text-amber-600 dark:text-amber-300">Tiến độ</p>
-                  <p className="text-lg font-semibold">{normalizationStage.percent_complete}% hoàn thành</p>
+                  <p className="text-xs uppercase font-semibold text-amber-600 dark:text-amber-300">Progress</p>
+                  <p className="text-lg font-semibold">{normalizationStage.percent_complete}% complete</p>
                   <p className="text-xs text-muted-foreground">
-                    {normalizationStage.items_processed?.toLocaleString('vi-VN')} /{' '}
-                    {Math.round(status.normalized_features / 128).toLocaleString('vi-VN')} builds đã chuẩn hóa
+                    {normalizationStage.items_processed?.toLocaleString('en-US')} /{' '}
+                    {Math.round(status.normalized_features / 128).toLocaleString('en-US')} processed builds
                   </p>
                 </div>
                 <ul className="space-y-3">
                   <li className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
                     <p className="font-semibold">1. Làm sạch dữ liệu</p>
                     <p className="text-xs text-muted-foreground">
-                      Chuẩn hóa branch names, timezone, parse timestamps từ GitHub Actions logs.
+                      Normalize branch names, timezones, and parse timestamps from GitHub Actions logs.
                     </p>
                   </li>
                   <li className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
                     <p className="font-semibold">2. Chuẩn hóa features</p>
                     <p className="text-xs text-muted-foreground">
-                      StandardScaler + min-max cho metrics (duration, code smells, coverage...).
+                      StandardScaler + min-max scaling for metrics (duration, code smells, coverage...).
                     </p>
                   </li>
                   <li className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
                     <p className="font-semibold">3. Kiểm tra chất lượng</p>
                     <p className="text-xs text-muted-foreground">
-                      So sánh với schema mẫu · phát hiện drift hoặc missing values trước khi scoring.
+                      Compare with sample schema · detect drift or missing values before scoring.
                     </p>
                   </li>
                 </ul>
@@ -181,7 +181,7 @@ export default function PipelinePage() {
               title="Administrator"
               description="Quản lý người dùng, repositories, cấu hình risk threshold."
               capabilities={[
-                'Cập nhật ngưỡng cảnh báo và retry pipeline',
+                'Update alert thresholds and pipeline retry',
                 'Quản lý GitHub OAuth + repositories',
                 'Chạy lại toàn bộ build để tái chuẩn hóa',
               ]}
@@ -191,16 +191,16 @@ export default function PipelinePage() {
               description="Theo dõi dashboard, import repo và kiểm tra build rủi ro."
               capabilities={[
                 'Trigger import dự án mới',
-                'Review cảnh báo risk/uncertainty trước deploy',
-                'Xem giải thích rủi ro và SonarQube findings',
+                'Review detected alerts and pipeline anomalies before deploy',
+                'Xem giải thích rủi ro và log artifacts liên quan',
               ]}
             />
             <RoleMatrix
               title="Repository Member"
-              description="Đăng nhập qua GitHub, đọc-only dashboard và nhận cảnh báo cho repos của mình."
+              description="Sign in via GitHub, view the read-only dashboard, and receive alerts for your repositories."
               capabilities={[
                 'Xem dashboard, heatmap và báo cáo theo repo được gán',
-                'Nhận cảnh báo risk/uncertainty cho repository sở hữu hoặc hợp tác',
+                'Nhận cảnh báo và thông báo quan trọng cho repository sở hữu hoặc hợp tác',
                 'Theo dõi lịch sử build và logs trước khi phê duyệt deploy',
               ]}
             />
@@ -302,9 +302,9 @@ function StageRow({ stage }: StageRowProps) {
         </div>
       </div>
       <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted-foreground">
-        {stage.items_processed ? <span>Items: {stage.items_processed.toLocaleString('vi-VN')}</span> : null}
+        {stage.items_processed ? <span>Items: {stage.items_processed.toLocaleString('en-US')}</span> : null}
         {stage.duration_seconds ? <span>Duration: {Math.round(stage.duration_seconds / 60)} phút</span> : null}
-        {stage.started_at ? <span>Bắt đầu: {new Date(stage.started_at).toLocaleTimeString('vi-VN')}</span> : null}
+        {stage.started_at ? <span>Started: {new Date(stage.started_at).toLocaleTimeString('en-US')}</span> : null}
       </div>
       {stage.issues.length > 0 ? (
         <ul className="mt-3 space-y-2 rounded-lg border border-amber-100 bg-amber-50/50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">

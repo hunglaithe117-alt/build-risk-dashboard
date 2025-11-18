@@ -8,23 +8,16 @@ from app.api import (
     dashboard,
     health,
     builds,
-    risk,
     integrations,
+    repos,
     pipeline,
     settings,
     logs,
     notifications,
     users,
 )
-from app.services.mock_seed import seed_database
 
 logger = logging.getLogger(__name__)
-
-# Seed database with mock data (no-op if data already exists)
-try:
-    seed_database()
-except Exception as exc:  # pragma: no cover - best effort seed
-    logger.warning("Skipping mock data seeding: %s", exc)
 
 app = FastAPI(
     title="Build Risk Assessment API",
@@ -44,9 +37,9 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(builds.router, prefix="/api/builds", tags=["Builds"])
-app.include_router(risk.router, prefix="/api/risk", tags=["Risk Assessment"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(integrations.router, prefix="/api", tags=["Integrations"])
+app.include_router(repos.router, prefix="/api", tags=["Repositories"])
 app.include_router(pipeline.router, prefix="/api", tags=["Pipeline"])
 app.include_router(settings.router, prefix="/api", tags=["Settings"])
 app.include_router(logs.router, prefix="/api", tags=["Logging"])

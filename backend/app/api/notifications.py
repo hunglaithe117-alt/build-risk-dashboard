@@ -11,8 +11,6 @@ router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 DEFAULT_POLICY = {
     "_id": "primary",
-    "risk_threshold_high": 0.75,
-    "uncertainty_threshold": 0.25,
     "channels": ["email", "slack"],
     "muted_repositories": [],
     "last_updated_at": datetime.utcnow(),

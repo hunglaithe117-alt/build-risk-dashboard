@@ -1,5 +1,3 @@
-"""Helpers for GitHub App authentication (installation access tokens)."""
-
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
@@ -12,8 +10,7 @@ from jose import jwt
 
 from app.config import settings
 from app.services.pipeline_exceptions import PipelineConfigurationError
-
-_installation_tokens: Dict[str, Tuple[str, datetime]] = {}
+from app.core.redis import get_redis
 
 
 def _load_private_key(raw: str) -> str:
@@ -80,7 +77,6 @@ def get_installation_token(installation_id: str | None = None, db=None) -> str:
             "Installation id is required to generate a GitHub App token"
         )
 
-    # Check if installation is still active (not revoked/suspended)
     if db is not None:
         installation_doc = db.github_installations.find_one({"_id": installation_id})
         if installation_doc:
@@ -97,23 +93,29 @@ def get_installation_token(installation_id: str | None = None, db=None) -> str:
                 )
 
     app_id, private_key = _require_app_config()
-    now = datetime.now(timezone.utc)
-    cached = _installation_tokens.get(installation_id)
-    if cached:
-        token, expires_at = cached
-        if now < (expires_at - timedelta(seconds=60)):
-            return token
+
+    redis_client = get_redis()
+    redis_key = f"github_installation_token:{installation_id}"
+
+    cached_token = redis_client.get(redis_key)
+    if cached_token:
+        return cached_token
 
     jwt_token = _generate_jwt(app_id, private_key)
     token, expires_at = _request_installation_token(jwt_token, installation_id)
-    _installation_tokens[installation_id] = (token, expires_at)
+
+    now = datetime.now(timezone.utc)
+    ttl = int((expires_at - now).total_seconds() - 60)
+    if ttl > 0:
+        redis_client.set(redis_key, token, ex=ttl)
+
     return token
 
 
 def clear_installation_token(installation_id: str) -> None:
     """Remove cached installation token when app is uninstalled or suspended."""
-    if installation_id in _installation_tokens:
-        del _installation_tokens[installation_id]
+    redis_client = get_redis()
+    redis_client.delete(f"github_installation_token:{installation_id}")
 
 
 def github_app_configured() -> bool:

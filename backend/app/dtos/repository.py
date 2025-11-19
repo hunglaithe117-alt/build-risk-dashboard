@@ -80,12 +80,9 @@ class RepoSuggestion(BaseModel):
     owner: Optional[str] = None
     installed: bool = False
     requires_installation: bool = False
-    source: Literal["owned", "app"] = "owned"
     installation_id: Optional[str] = None
     html_url: Optional[str] = None
 
 
 class RepoSuggestionListResponse(BaseModel):
     items: List[RepoSuggestion]
-
-

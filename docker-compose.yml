@@ -14,15 +14,26 @@ services:
       retries: 5
 
   rabbitmq:
-    image: rabbitmq:3-management
-    container_name: build-risk-rabbitmq
+    image: rabbitmq:management
     ports:
       - "5672:5672"
       - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: myuser
+      RABBITMQ_DEFAULT_PASS: mypass
+
+  redis:
+    image: redis:latest
+    container_name: build-risk-redis
+    ports:
+      - "6379:6379"
+    # volumes:
+    #   - redis_data:/data
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
+      start_period: 20s
       retries: 5
 
   # Celery worker (optional)
@@ -98,3 +109,5 @@ services:
 
 volumes:
   mongo_data:
+  # rabbitmq_data:
+

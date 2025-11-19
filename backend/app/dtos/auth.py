@@ -22,6 +22,7 @@ class UserLoginResponse(BaseModel):
 class AuthVerifyResponse(BaseModel):
     authenticated: bool
     github_connected: Optional[bool] = None
+    app_installed: Optional[bool] = None
     reason: Optional[str] = None
     user: Optional[Dict[str, Optional[str]]] = None
     github: Optional[Dict[str, Optional[str]]] = None

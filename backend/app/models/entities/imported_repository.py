@@ -7,9 +7,7 @@ from bson import ObjectId
 from pydantic import BaseModel, Field
 
 
-class Repository(BaseModel):
-    """Repository entity stored in MongoDB"""
-
+class ImportedRepository(BaseModel):
     id: Optional[ObjectId] = Field(None, alias="_id")
     user_id: Optional[ObjectId] = None
     provider: str

@@ -163,9 +163,12 @@ export const reposApi = {
     const response = await api.post<RepositoryRecord>("/repos/import", payload);
     return response.data;
   },
-  discover: async (query?: string) => {
+  discover: async (query?: string, limit: number = 50) => {
     const response = await api.get<RepoSuggestionResponse>("/repos/available", {
-      params: query ? { q: query } : undefined,
+      params: {
+        q: query,
+        limit,
+      },
     });
     return response.data;
   },

@@ -28,15 +28,22 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_ID: Optional[str] = None
     GITHUB_CLIENT_SECRET: Optional[str] = None
     GITHUB_REDIRECT_URI: str = "http://localhost:8000/api/auth/github/callback"
-    GITHUB_SCOPES: List[str] = ["read:user", "user:email", "repo", "read:org", "workflow"]
+    GITHUB_SCOPES: List[str] = [
+        "read:user",
+        "user:email",
+        "repo",
+        "read:org",
+        "workflow",
+    ]
     PIPELINE_PRIMARY_LANGUAGES: List[str] = ["python", "ruby"]
     FRONTEND_BASE_URL: str = "http://localhost:3000"
 
     # ML Model
-    MODEL_PATH: str = "./app/ml/models/bayesian_cnn.pth"
+    # MODEL_PATH: str = "./app/ml/models/bayesian_cnn.pth"
 
     # Celery / RabbitMQ
-    CELERY_BROKER_URL: str = "amqp://guest:guest@localhost:5672//"
+    CELERY_BROKER_URL: str = "amqp://myuser:mypass@localhost:5672//"
+    REDIS_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: Optional[str] = None
     CELERY_DEFAULT_QUEUE: str = "pipeline.default"
     CELERY_TASK_SOFT_TIME_LIMIT: int = 600

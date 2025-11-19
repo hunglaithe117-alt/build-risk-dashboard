@@ -17,6 +17,7 @@ class AvailableRepository(BaseModel):
     description: Optional[str] = None
     default_branch: str
     installation_id: Optional[str] = None  # If accessible via App
+    imported: bool = False
     updated_at: datetime
 
     class Config:

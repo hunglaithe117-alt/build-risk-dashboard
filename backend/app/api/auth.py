@@ -170,14 +170,7 @@ async def get_current_user_info(
 async def verify_auth_status(
     user: dict = Depends(get_current_user), db: Database = Depends(get_db)
 ):
-    """Verify if the current user has a valid GitHub access token.
-
-    Checks:
-    1. JWT token validity (handled by get_current_user dependency)
-    2. GitHub OAuth identity exists
-    3. GitHub token exists and not expired
-    4. Optionally verifies token with GitHub API
-    """
+    """Verify if the current user has a valid GitHub access token."""
     user_id = user["_id"]
 
     # Check GitHub token status
@@ -185,10 +178,20 @@ async def verify_auth_status(
         db, user_id, verify_with_api=True
     )
 
+    app_installed = False
+    if identity:
+        github_login = identity.get("account_login")
+        if github_login:
+            install_count = db.github_installations.count_documents(
+                {"account_login": github_login}
+            )
+            app_installed = install_count > 0
+
     if token_status == GitHubTokenStatus.MISSING:
         return {
             "authenticated": True,
             "github_connected": False,
+            "app_installed": False,
             "reason": "no_github_identity",
             "user": {
                 "id": str(user["_id"]),
@@ -201,6 +204,7 @@ async def verify_auth_status(
         return {
             "authenticated": True,
             "github_connected": False,
+            "app_installed": app_installed,
             "reason": "github_token_expired",
             "user": {
                 "id": str(user["_id"]),
@@ -218,6 +222,7 @@ async def verify_auth_status(
         return {
             "authenticated": True,
             "github_connected": False,
+            "app_installed": app_installed,
             "reason": "github_token_revoked",
             "user": {
                 "id": str(user["_id"]),
@@ -235,6 +240,7 @@ async def verify_auth_status(
     return {
         "authenticated": True,
         "github_connected": True,
+        "app_installed": app_installed,
         "user": {
             "id": str(user["_id"]),
             "email": user.get("email"),

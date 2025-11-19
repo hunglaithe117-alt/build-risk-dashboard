@@ -107,7 +107,8 @@ export default function AdminReposPage() {
     const normalized = query?.trim();
     try {
       const data: RepoSuggestionResponse = await reposApi.discover(
-        normalized && normalized.length > 0 ? normalized : undefined
+        normalized && normalized.length > 0 ? normalized : undefined,
+        20
       );
       setSuggestions(data.items);
       if (!normalized) {
@@ -588,10 +589,28 @@ export default function AdminReposPage() {
                       repos...
                     </div>
                   ) : suggestions.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      No repositories available. Authorize GitHub or try another
-                      search.
-                    </p>
+                    <div className="flex flex-col items-center justify-center gap-4 py-8 text-center">
+                      <div className="rounded-full bg-slate-100 p-3 dark:bg-slate-800">
+                        <AlertCircle className="h-6 w-6 text-slate-500" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-medium">No repositories found</p>
+                        <p className="text-sm text-muted-foreground">
+                          You must install the GitHub App to import repositories.
+                        </p>
+                      </div>
+                      <Button
+                        variant="default"
+                        onClick={() =>
+                          window.open(
+                            "https://github.com/apps/builddefection",
+                            "_blank"
+                          )
+                        }
+                      >
+                        Install GitHub App
+                      </Button>
+                    </div>
                   ) : (
                     suggestions.map((repo) => {
                       const checked = Boolean(selectedRepos[repo.full_name]);
@@ -622,11 +641,6 @@ export default function AdminReposPage() {
                             </p>
                             <p className="text-sm text-muted-foreground">
                               {repo.description || "No description provided."}
-                              {repo.source === "app" && (
-                                <span className="ml-2 text-xs text-blue-600">
-                                  (via App)
-                                </span>
-                              )}
                             </p>
                           </div>
                         </label>

@@ -8,7 +8,7 @@ from pymongo.database import Database
 from .base import BaseRepository
 
 
-class RepositoryRepository(BaseRepository):
+class ImportedRepositoryRepository(BaseRepository):
     """Repository for repository entities (yes, repo of repos!)"""
 
     def __init__(self, db: Database):

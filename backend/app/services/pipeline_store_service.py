@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from bson import ObjectId
 from pymongo.database import Database
 
-from app.repositories.repository import RepositoryRepository
+from app.repositories.imported_repository import ImportedRepositoryRepository
 from app.repositories.available_repository import AvailableRepositoryRepository
 
 
@@ -18,7 +18,7 @@ class PipelineStore:
 
     def __init__(self, db: Database) -> None:
         self.db = db
-        self.repo_repo = RepositoryRepository(db)
+        self.repo_repo = ImportedRepositoryRepository(db)
         self.available_repo_repo = AvailableRepositoryRepository(db)
 
     def upsert_repository(
@@ -67,23 +67,55 @@ class PipelineStore:
         self,
         user_id: str | ObjectId,
         repo_data: Dict[str, Any],
-        installation_id: Optional[str] = None
+        installation_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Upsert an available repository"""
         return self.available_repo_repo.upsert_available_repo(
-            user_id=user_id,
-            repo_data=repo_data,
-            installation_id=installation_id
+            user_id=user_id, repo_data=repo_data, installation_id=installation_id
         )
 
-    def list_available_repositories(self, user_id: str | ObjectId) -> List[Dict[str, Any]]:
-        """List available repositories for a user"""
-        return self.available_repo_repo.list_by_user(user_id)
-    
+    def discover_available_repositories(
+        self, user_id: str | ObjectId, q: Optional[str] = None, limit: int = 50
+    ) -> List[Dict[str, Any]]:
+        """
+        Discover available repositories that are not yet imported.
+        Supports filtering by name (q) and pagination (limit).
+        """
+        filters = {"imported": {"$ne": True}}
+
+        if q:
+            filters["full_name"] = {"$regex": q, "$options": "i"}
+
+        repos = self.available_repo_repo.list_by_user(user_id, filters)
+        repos = repos[:limit]
+        items = []
+        for repo in repos:
+            full_name = repo.get("full_name")
+            if not full_name:
+                continue
+
+            items.append(
+                {
+                    "full_name": full_name,
+                    "description": repo.get("description"),
+                    "default_branch": repo.get("default_branch"),
+                    "private": bool(repo.get("private")),
+                    "owner": full_name.split("/")[0],
+                    "installed": False,
+                    "requires_installation": False,
+                    "installation_id": repo.get("installation_id"),
+                    "html_url": repo.get("html_url"),
+                }
+            )
+
+        return items
+
     def clear_available_repositories(self, user_id: str):
         """Clear cached available repositories for a user"""
         self.available_repo_repo.delete_by_user(user_id)
 
-    def delete_stale_available_repositories(self, user_id: str, active_full_names: List[str]):
+    def delete_stale_available_repositories(
+        self, user_id: str, active_full_names: List[str]
+    ):
         """Remove available repositories that are no longer active"""
         self.available_repo_repo.delete_stale_repos(user_id, active_full_names)

@@ -116,22 +116,24 @@ class GitHubClient:
         wait_seconds = 60.0
 
         if retry_after_header:
-             try:
-                 wait_seconds = float(retry_after_header)
-             except ValueError:
-                 pass
+            try:
+                wait_seconds = float(retry_after_header)
+            except ValueError:
+                pass
         elif reset_header:
-             try:
-                 reset_epoch = float(reset_header)
-                 now_epoch = datetime.now(timezone.utc).timestamp()
-                 wait_seconds = max(reset_epoch - now_epoch, 1.0)
-             except ValueError:
-                 pass
+            try:
+                reset_epoch = float(reset_header)
+                now_epoch = datetime.now(timezone.utc).timestamp()
+                wait_seconds = max(reset_epoch - now_epoch, 1.0)
+            except ValueError:
+                pass
 
         if self._token_pool and self._token:
             self._token_pool.mark_rate_limited(self._token, reset_epoch=reset_header)
-            
-        raise PipelineRateLimitError("GitHub rate limit reached", retry_after=wait_seconds)
+
+        raise PipelineRateLimitError(
+            "GitHub rate limit reached", retry_after=wait_seconds
+        )
 
     def _rest_request(self, method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
         response = self._rest.request(method, path, headers=self._headers(), **kwargs)
@@ -364,7 +366,7 @@ def get_user_github_client(db: Database, user_id: str) -> GitHubClient:
     """
     if not user_id:
         raise PipelineConfigurationError("user_id is required for user auth")
-    
+
     identity = db.oauth_identities.find_one(
         {"user_id": ObjectId(user_id), "provider": "github"}
     )
@@ -382,10 +384,10 @@ def get_app_github_client(db: Database, installation_id: str) -> GitHubClient:
     """
     if not installation_id:
         raise PipelineConfigurationError("installation_id is required for app auth")
-    
+
     if not github_app_configured():
         raise PipelineConfigurationError("GitHub App is not configured")
-        
+
     token = get_installation_token(installation_id, db=db)
     return GitHubClient(token=token)
 
@@ -396,11 +398,11 @@ def get_public_github_client() -> GitHubClient:
     Used for public data or when no specific auth is needed.
     """
     global _token_pool
-    
+
     tokens = settings.GITHUB_TOKENS or []
     # Filter empty tokens
     tokens = [t for t in tokens if t and t.strip()]
-    
+
     if not tokens:
         raise PipelineConfigurationError(
             "No public GitHub tokens configured in settings"
@@ -432,11 +434,11 @@ def get_pipeline_github_client(
         return get_user_github_client(db, user_id)
     elif auth_type == "app":
         if not installation_id:
-            raise PipelineConfigurationError("installation_id is required for 'app' auth type")
+            raise PipelineConfigurationError(
+                "installation_id is required for 'app' auth type"
+            )
         return get_app_github_client(db, installation_id)
     elif auth_type == "public":
         return get_public_github_client()
     else:
         raise PipelineConfigurationError(f"Invalid auth_type: {auth_type}")
-
-

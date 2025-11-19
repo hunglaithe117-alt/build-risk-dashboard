@@ -84,7 +84,6 @@ export interface RepoSuggestion {
   owner?: string;
   installed: boolean;
   requires_installation: boolean;
-  source: "owned" | "app";
   installation_id?: string;
   html_url?: string;
 }
@@ -216,6 +215,7 @@ export interface GithubInstallationListResponse {
 export interface AuthVerifyResponse {
   authenticated: boolean;
   github_connected?: boolean;
+  app_installed?: boolean;
   reason?: string;
   user?: {
     id: string;

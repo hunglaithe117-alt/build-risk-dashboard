@@ -31,9 +31,9 @@ class PipelineTask(Task):
     abstract = True
     autoretry_for = (PipelineRateLimitError, PipelineRetryableError)
     retry_backoff = True
-    retry_backoff_max = 600
+    retry_backoff_max = 100
     retry_kwargs = {"max_retries": 5}
-    default_retry_delay = 30
+    default_retry_delay = 20
 
     def __init__(self) -> None:
         self._db: Database | None = None
@@ -59,20 +59,6 @@ class PipelineTask(Task):
         if self._store is None:
             self._store = PipelineStore(self.db)
         return self._store
-
-    def github_client(self, installation_id: Optional[str] = None) -> GitHubClient:
-        if installation_id:
-            return get_app_github_client(self.db, installation_id)
-        return get_public_github_client()
-
-    def github_client_for_repository(self, repository: str) -> GitHubClient:
-        repo_doc = self.db.repositories.find_one({"full_name": repository}) or {}
-        installation_id = repo_doc.get("installation_id") or repo_doc.get(
-            "installationId"
-        )
-        if installation_id is not None:
-            return self.github_client(str(installation_id))
-        return self.github_client()
 
     def on_failure(
         self, exc: Exception, task_id: str, args: tuple, kwargs: dict, einfo

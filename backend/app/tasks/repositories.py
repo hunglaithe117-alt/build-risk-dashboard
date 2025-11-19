@@ -54,15 +54,6 @@ def fetch_repo_snapshot(
         last_scanned_at=now,
     )
 
-    if job_id:
-        self.store.update_import_job(
-            job_id,
-            status="waiting_webhook",
-            started_at=now,
-            progress=20,
-            notes="Repository metadata collected. Configure the GitHub webhook to receive workflow runs.",
-        )
-
     return {
         "repository": repository,
         "default_branch": repo_data.get("default_branch", "main"),
@@ -82,7 +73,7 @@ def enqueue_repo_import(
     user_id: Optional[str],
     installation_id: Optional[str],
 ) -> Dict[str, object]:
-    """Entry-point task triggered by the API to ingest a repository."""
+    """Entry-point task triggered to ingest a repository snapshot."""
 
     fetch_repo_snapshot.delay(repository, branch, job_id, user_id, installation_id)
     return {

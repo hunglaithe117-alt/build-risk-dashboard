@@ -12,7 +12,9 @@ import type {
   RepoSuggestionResponse,
   RepoUpdatePayload,
   RepositoryRecord,
-  UserAccount
+  UserAccount,
+  AuthVerifyResponse,
+  RefreshTokenResponse,
 } from "@/types";
 import axios from "axios";
 
@@ -25,6 +27,82 @@ export const api = axios.create({
   },
   withCredentials: true,
 });
+
+// Token refresh flag to prevent multiple refresh attempts
+let isRefreshing = false;
+let failedQueue: Array<{
+  resolve: (value?: any) => void;
+  reject: (reason?: any) => void;
+}> = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
+// Response interceptor to handle token expiration
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Check if error is 401 and we haven't already tried to refresh
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      const authError = error.response?.headers?.["x-auth-error"];
+
+      // Handle GitHub token errors - redirect to re-authenticate
+      if (
+        authError === "github_token_expired" ||
+        authError === "github_token_revoked" ||
+        authError === "github_not_connected"
+      ) {
+        // Don't retry, let the component handle re-authentication
+        return Promise.reject(error);
+      }
+
+      // Handle JWT token expiration - try to refresh
+      if (isRefreshing) {
+        // If already refreshing, queue this request
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then(() => {
+            return api(originalRequest);
+          })
+          .catch((err) => {
+            return Promise.reject(err);
+          });
+      }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      try {
+        // Attempt to refresh the token
+        await api.post<RefreshTokenResponse>("/auth/refresh");
+        processQueue(null);
+        isRefreshing = false;
+        return api(originalRequest);
+      } catch (refreshError) {
+        processQueue(refreshError, null);
+        isRefreshing = false;
+        // Redirect to login page
+        if (typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
+        return Promise.reject(refreshError);
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 // Build API
 export const buildApi = {
@@ -101,12 +179,7 @@ export const dashboardApi = {
 
 export const integrationApi = {
   verifyAuth: async () => {
-    const response = await api.get<{
-      authenticated: boolean;
-      reason?: string;
-      user?: { id: string; email: string; name: string };
-      github?: { login: string; name: string; avatar_url: string };
-    }>("/auth/verify");
+    const response = await api.get<AuthVerifyResponse>("/auth/verify");
     return response.data;
   },
   startGithubOAuth: async (redirectPath?: string) => {
@@ -120,6 +193,14 @@ export const integrationApi = {
   },
   revokeGithubToken: async () => {
     await api.post("/auth/github/revoke");
+  },
+  refreshToken: async () => {
+    const response = await api.post<RefreshTokenResponse>("/auth/refresh");
+    return response.data;
+  },
+  getCurrentUser: async () => {
+    const response = await api.get<UserAccount>("/auth/me");
+    return response.data;
   },
   getGithubImports: async () => {
     const response = await api.get<GithubImportJob[]>(

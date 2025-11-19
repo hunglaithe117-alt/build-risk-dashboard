@@ -61,7 +61,7 @@ export default function AdminReposPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalStep, setModalStep] = useState<1 | 2>(1);
   const [suggestions, setSuggestions] = useState<RepoSuggestion[]>([]);
-  const [privateRepos, setPrivateRepos] = useState<RepoSuggestion[]>([]);
+  const [initialSuggestions, setInitialSuggestions] = useState<RepoSuggestion[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [selectedRepos, setSelectedRepos] = useState<
     Record<string, RepoSuggestion>
@@ -110,9 +110,8 @@ export default function AdminReposPage() {
         normalized && normalized.length > 0 ? normalized : undefined
       );
       setSuggestions(data.items);
-      // Save private repos when first loading
       if (!normalized) {
-        setPrivateRepos(data.items);
+        setInitialSuggestions(data.items);
       }
     } catch (err) {
       console.error(err);
@@ -135,33 +134,45 @@ export default function AdminReposPage() {
     loadSuggestions();
   }, [modalOpen, loadSuggestions]);
 
-  useEffect(() => {
-    if (!modalOpen) return;
-    // When search term is cleared and we were searching, restore private repos
-    if (searchTerm.trim().length === 0 && isSearching) {
-      setSuggestions(privateRepos);
-      setIsSearching(false);
-    }
-  }, [modalOpen, searchTerm, isSearching, privateRepos]);
+    
 
-  useEffect(() => {
-    if (!panelRepo) return;
-    setPanelForm({
-      monitoring_enabled: panelRepo.monitoring_enabled,
-      default_branch: panelRepo.default_branch,
-      sync_status: panelRepo.sync_status,
-      webhook_status: panelRepo.webhook_status,
-      ci_token_status: panelRepo.ci_token_status,
-      notes: panelRepo.notes,
-    });
-    setPanelBranches(panelRepo.tracked_branches ?? []);
-    setPanelNotes(panelRepo.notes ?? "");
-  }, [panelRepo]);
+  
 
-  const selectedList = useMemo(
-    () => Object.values(selectedRepos),
-    [selectedRepos]
-  );
+    useEffect(() => {
+
+      if (!panelRepo) return;
+
+      setPanelForm({
+
+        monitoring_enabled: panelRepo.monitoring_enabled,
+
+        default_branch: panelRepo.default_branch,
+
+        sync_status: panelRepo.sync_status,
+
+        webhook_status: panelRepo.webhook_status,
+
+        ci_token_status: panelRepo.ci_token_status,
+
+        notes: panelRepo.notes,
+
+      });
+
+      setPanelBranches(panelRepo.tracked_branches ?? []);
+
+      setPanelNotes(panelRepo.notes ?? "");
+
+    }, [panelRepo]);
+
+  
+
+    const selectedList = useMemo(
+
+      () => Object.values(selectedRepos),
+
+      [selectedRepos]
+
+    );
 
   const toggleSelection = (item: RepoSuggestion) => {
     setSelectedRepos((prev) => {
@@ -530,7 +541,7 @@ export default function AdminReposPage() {
                   <input
                     type="text"
                     className="flex-1 rounded-lg border px-3 py-2 text-sm"
-                    placeholder="Search all GitHub repositories (owner/repo or keyword)"
+                    placeholder="Search all your private GitHub repositories (owner/repo or keyword)"
                     value={searchTerm}
                     onChange={(event) => setSearchTerm(event.target.value)}
                   />
@@ -544,8 +555,8 @@ export default function AdminReposPage() {
                 </form>
                 <p className="text-xs text-muted-foreground">
                   {isSearching
-                    ? "Searching all GitHub repositories..."
-                    : "Showing your accessible repositories. Enter a search term to find public repositories on GitHub."}
+                    ? "Searching your private GitHub repositories..."
+                    : "Showing your accessible repositories. Enter a search term to find your private repositories on GitHub."}
                 </p>
                 <div className="max-h-[320px] space-y-3 overflow-y-auto pr-2">
                   {suggestionsLoading ? (

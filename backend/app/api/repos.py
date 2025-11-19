@@ -4,32 +4,30 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from pymongo.database import Database
 
 from app.database.mongo import get_db
 from app.dtos import (
-    GithubImportJobResponse,
     RepoDetailResponse,
     RepoImportRequest,
     RepoResponse,
-    RepoScanRequest,
     RepoSuggestionListResponse,
     RepoUpdateRequest,
 )
+from app.middleware.auth import get_current_user
 from app.services.github.github_client import get_pipeline_github_client
-from app.services.github_integration_service import create_import_job
 from app.services.pipeline_exceptions import (
     PipelineConfigurationError,
     PipelineRetryableError,
 )
 from app.services.pipeline_store_service import PipelineStore
-from app.tasks.repositories import enqueue_repo_import
 
 router = APIRouter(prefix="/repos", tags=["Repositories"])
 
 
-def _prepare_repo_payload(doc: dict, build_count: int | None = None) -> dict:
+def _prepare_repo_payload(doc: dict) -> dict:
     """Prepare repository document for Pydantic validation with computed fields."""
     payload = doc.copy()
     # PyObjectId in Pydantic will auto-handle _id and user_id conversion
@@ -52,23 +50,16 @@ def _prepare_repo_payload(doc: dict, build_count: int | None = None) -> dict:
     if payload.get("monitoring_enabled") is False:
         payload["sync_status"] = "disabled"
 
-    # Computed field: build count
-    payload["total_builds_imported"] = (
-        build_count
-        if build_count is not None
-        else payload.get("total_builds_imported", 0)
-    )
+    payload["total_builds_imported"] = payload.get("total_builds_imported", 0)
     return payload
 
 
-def _serialize_repo(doc: dict, build_count: int | None = None) -> RepoResponse:
-    return RepoResponse.model_validate(_prepare_repo_payload(doc, build_count))
+def _serialize_repo(doc: dict) -> RepoResponse:
+    return RepoResponse.model_validate(_prepare_repo_payload(doc))
 
 
-def _serialize_repo_detail(
-    doc: dict, build_count: int | None = None
-) -> RepoDetailResponse:
-    payload = _prepare_repo_payload(doc, build_count)
+def _serialize_repo_detail(doc: dict) -> RepoDetailResponse:
+    payload = _prepare_repo_payload(doc)
     payload["metadata"] = doc.get("metadata")
     return RepoDetailResponse.model_validate(payload)
 
@@ -88,9 +79,14 @@ def _normalize_branches(branches: List[str]) -> List[str]:
 @router.post(
     "/import", response_model=RepoResponse, status_code=status.HTTP_201_CREATED
 )
-def import_repository(payload: RepoImportRequest, db: Database = Depends(get_db)):
+def import_repository(
+    payload: RepoImportRequest,
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
     """Register a repository for ingestion."""
-    user_id = payload.user_id
+    # Use authenticated user's ID if not provided in payload
+    user_id = payload.user_id or str(current_user["_id"])
 
     with get_pipeline_github_client(db, payload.installation_id) as gh:
         repo_data = gh.get_repository(payload.full_name)
@@ -116,21 +112,22 @@ def import_repository(payload: RepoImportRequest, db: Database = Depends(get_db)
         installation_id=payload.installation_id,
         last_scanned_at=None,
     )
-    return _serialize_repo(repo_doc, build_count=0)
+    return _serialize_repo(repo_doc)
 
 
 @router.get("/", response_model=list[RepoResponse])
 def list_repositories(
     db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
     user_id: str | None = Query(default=None, description="Filter by owner id"),
 ):
     """List tracked repositories."""
+    # If user_id not specified, default to current user's repositories
+    filter_user_id = user_id or str(current_user["_id"])
+    
     store = PipelineStore(db)
-    repos = store.list_repositories(user_id=user_id)
-    counts = store.count_builds_by_repository()
-    return [
-        _serialize_repo(repo, counts.get(repo.get("full_name"), 0)) for repo in repos
-    ]
+    repos = store.list_repositories(user_id=filter_user_id)
+    return [_serialize_repo(repo) for repo in repos]
 
 
 @router.get("/available", response_model=RepoSuggestionListResponse)
@@ -141,6 +138,7 @@ def discover_repositories(
     ),
     limit: int = Query(default=10, ge=1, le=50),
     db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     """List GitHub repositories available to connect."""
     store = PipelineStore(db)
@@ -152,7 +150,8 @@ def discover_repositories(
                 if "/" in query:
                     repos = [gh.get_repository(query)]
                 else:
-                    repos = gh.search_repositories(query, per_page=limit)
+                    # Add is:private to the query to search only for private repos
+                    repos = gh.search_repositories(f"{query} is:private", per_page=limit)
                 source = "search"
             else:
                 repos = gh.list_authenticated_repositories(per_page=limit)
@@ -199,6 +198,7 @@ def discover_repositories(
 def get_repository_detail(
     repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
     db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     store = PipelineStore(db)
     repo_doc = store.get_repository(repo_id)
@@ -206,8 +206,17 @@ def get_repository_detail(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
         )
-    build_count = store.count_builds_for_repo(repo_doc.get("full_name"))
-    return _serialize_repo_detail(repo_doc, build_count)
+    
+    # Verify user owns this repository
+    repo_user_id = str(repo_doc.get("user_id", ""))
+    current_user_id = str(current_user["_id"])
+    if repo_user_id != current_user_id and current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this repository"
+        )
+    
+    return _serialize_repo_detail(repo_doc)
 
 
 @router.patch("/{repo_id}", response_model=RepoDetailResponse)
@@ -215,12 +224,22 @@ def update_repository_settings(
     repo_id: str,
     payload: RepoUpdateRequest,
     db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     store = PipelineStore(db)
     repo_doc = store.get_repository(repo_id)
     if not repo_doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
+        )
+    
+    # Verify user owns this repository
+    repo_user_id = str(repo_doc.get("user_id", ""))
+    current_user_id = str(current_user["_id"])
+    if repo_user_id != current_user_id and current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to update this repository"
         )
 
     updates = payload.model_dump(exclude_unset=True)
@@ -247,67 +266,4 @@ def update_repository_settings(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
             )
 
-    build_count = store.count_builds_for_repo(updated.get("full_name"))
-    return _serialize_repo_detail(updated, build_count)
-
-
-@router.get(
-    "/{repo_id}/jobs",
-    response_model=list[GithubImportJobResponse],
-)
-def list_repository_jobs(
-    repo_id: str,
-    limit: int = Query(default=20, ge=1, le=100),
-    db: Database = Depends(get_db),
-):
-    store = PipelineStore(db)
-    repo_doc = store.get_repository(repo_id)
-    if not repo_doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
-        )
-    jobs = store.list_repo_jobs(repo_doc.get("full_name"), limit=limit)
-    return [GithubImportJobResponse.model_validate(job) for job in jobs]
-
-
-@router.post(
-    "/{repo_id}/scan",
-    response_model=GithubImportJobResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-def request_scan(
-    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
-    payload: RepoScanRequest | None = None,
-    db: Database = Depends(get_db),
-):
-    """Trigger a scan job for the selected repository."""
-    payload = payload or RepoScanRequest()
-    store = PipelineStore(db)
-    repo_doc = store.get_repository(repo_id)
-    if not repo_doc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
-        )
-
-    repo_full_name = repo_doc["full_name"]
-    branch = repo_doc.get("default_branch") or "main"
-    user_id = repo_doc.get("user_id")
-    installation_id = repo_doc.get("installation_id")
-    if not installation_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Repository missing installation id",
-        )
-
-    # Create an import/scan job and enqueue the snapshot task
-    import_job = create_import_job(
-        db,
-        repository=repo_full_name,
-        branch=branch,
-        initiated_by=payload.initiated_by or "admin",
-        user_id=user_id,
-        installation_id=installation_id,
-    )
-    job_id = import_job["id"]
-    enqueue_repo_import.delay(repo_full_name, branch, job_id, user_id, installation_id)
-    return GithubImportJobResponse.model_validate(import_job)
+    return _serialize_repo_detail(updated)

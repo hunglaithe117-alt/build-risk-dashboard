@@ -12,9 +12,7 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND or settings.CELERY_BROKER_URL,
     include=[
         "app.tasks.repositories",
-        "app.tasks.workflow",
-        "app.tasks.builds",
-        "app.tasks.logs",
+        "app.tasks.scheduler",
     ],
 )
 
@@ -32,9 +30,7 @@ celery_app.conf.update(
     broker_heartbeat=settings.CELERY_BROKER_HEARTBEAT,
     task_routes={
         "app.tasks.repositories.*": {"queue": "high"},
-        "app.tasks.workflow.*": {"queue": "medium"},
-        "app.tasks.builds.*": {"queue": "medium"},
-        "app.tasks.logs.*": {"queue": "low"},
+        "app.tasks.scheduler.*": {"queue": "low"},
     },
 )
 

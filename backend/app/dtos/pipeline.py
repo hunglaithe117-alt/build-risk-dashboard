@@ -31,7 +31,3 @@ class PipelineStatusResponse(BaseModel):
 class QueueHealthResponse(BaseModel):
     last_heartbeat: datetime
     repositories_scheduled: int
-    pending_import_jobs: int
-    running_import_jobs: int
-    builds_waiting_enrichment: int
-    completed_builds: int

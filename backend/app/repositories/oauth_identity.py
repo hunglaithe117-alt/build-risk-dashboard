@@ -24,6 +24,42 @@ class OAuthIdentityRepository(BaseRepository):
             {"provider": provider, "external_user_id": external_user_id}
         )
 
+    def find_by_user_id_and_provider(self, user_id, provider: str) -> Optional[Dict]:
+        """Find an identity by user ID and provider"""
+        return self.find_one({"user_id": user_id, "provider": provider})
+
+    def mark_token_invalid(self, identity_id, reason: str = "invalid") -> None:
+        """Mark a token as invalid"""
+        self.update_one(
+            identity_id,
+            {
+                "token_status": "invalid",
+                "token_invalid_reason": reason,
+                "token_invalidated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            },
+        )
+
+    def update_token(
+        self,
+        identity_id,
+        access_token: str,
+        refresh_token: Optional[str] = None,
+        token_expires_at: Optional[datetime] = None,
+    ) -> None:
+        """Update token information"""
+        updates = {
+            "access_token": access_token,
+            "token_status": "valid",
+            "updated_at": datetime.now(timezone.utc),
+        }
+        if refresh_token is not None:
+            updates["refresh_token"] = refresh_token
+        if token_expires_at is not None:
+            updates["token_expires_at"] = token_expires_at
+
+        self.update_one(identity_id, updates)
+
     def upsert_github_identity(
         self,
         *,

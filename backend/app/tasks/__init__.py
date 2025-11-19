@@ -2,7 +2,5 @@
 
 __all__ = [
     "repositories",
-    "workflow",
-    "builds",
-    "logs",
+    "scheduler",
 ]

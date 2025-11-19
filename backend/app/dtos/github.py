@@ -1,7 +1,7 @@
 """GitHub integration DTOs"""
 
 from datetime import datetime
-from typing import Annotated, Any, List, Literal, Optional
+from typing import Annotated, Any, List, Optional
 
 from bson import ObjectId
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
@@ -34,38 +34,6 @@ class GithubAuthorizeResponse(BaseModel):
 
 class GithubOAuthInitRequest(BaseModel):
     redirect_path: Optional[str] = None
-
-
-class GithubImportRequest(BaseModel):
-    repository: str
-    branch: str = Field(..., description="Default branch to scan (e.g., main)")
-    initiated_by: Optional[str] = Field(
-        default="admin", description="User requesting the import"
-    )
-    user_id: Optional[str] = Field(
-        default=None, description="Owner user id (defaults to admin)"
-    )
-
-
-class GithubImportJobResponse(BaseModel):
-    id: PyObjectId = Field(..., alias="_id")
-    repository: str
-    branch: str
-    user_id: Optional[PyObjectId] = None
-    installation_id: Optional[str] = None
-    status: Literal["pending", "running", "completed", "failed", "waiting_webhook"]
-    progress: int = Field(..., ge=0, le=100)
-    builds_imported: int
-    commits_analyzed: int
-    tests_collected: int
-    initiated_by: str
-    created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    last_error: Optional[str] = None
-    notes: Optional[str] = None
-
-    model_config = ConfigDict(populate_by_name=True)
 
 
 class GithubInstallationResponse(BaseModel):

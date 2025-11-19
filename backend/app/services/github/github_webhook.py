@@ -1,26 +1,15 @@
-"""Helpers for handling GitHub webhook events for workflow runs."""
+"""Helpers for handling GitHub webhook events."""
 from __future__ import annotations
 
 import hashlib
 import hmac
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict
 
 from fastapi import HTTPException, status
 from pymongo.database import Database
 
 from app.config import settings
-from app.services.github.github_client import get_pipeline_github_client
-from app.services.pipeline_store_service import PipelineStore
-
-
-def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
 
 
 def verify_signature(signature: str | None, body: bytes) -> None:
@@ -42,16 +31,6 @@ def verify_signature(signature: str | None, body: bytes) -> None:
     expected = f"sha256={digest}"
     if not hmac.compare_digest(expected, signature):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Webhook signature mismatch")
-
-
-def _actor_login(payload: Dict[str, object]) -> Optional[str]:
-    actor = payload.get("workflow_run", {}).get("actor") or payload.get("sender")
-    if isinstance(actor, dict):
-        login = actor.get("login")
-        return login.lower() if login else None
-    if isinstance(actor, str):
-        return actor.lower()
-    return None
 
 
 def _handle_installation_event(db: Database, event: str, payload: Dict[str, object]) -> Dict[str, object]:
@@ -119,60 +98,8 @@ def _handle_installation_event(db: Database, event: str, payload: Dict[str, obje
 
 
 def handle_github_event(db: Database, event: str, payload: Dict[str, object]) -> Dict[str, object]:
-    # Handle GitHub App installation events
     if event in {"installation", "installation_repositories"}:
         return _handle_installation_event(db, event, payload)
-    
-    if event != "workflow_run":
-        return {"status": "ignored", "reason": "unsupported_event"}
 
-    if payload.get("action") != "completed":
-        return {"status": "ignored", "reason": "non_completed_action"}
-
-    workflow_run = payload.get("workflow_run") or {}
-    repository = payload.get("repository") or workflow_run.get("repository") or {}
-    full_name = repository.get("full_name")
-    if not full_name:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing repository full_name in payload")
-
-    run_id = workflow_run.get("id")
-    if not run_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing workflow_run id")
-
-    actor_login = _actor_login(payload)
-    if actor_login and "dependabot" in actor_login:
-        return {"status": "ignored", "reason": "dependabot"}
-
-    installation = payload.get("installation") or {}
-    installation_id_raw = installation.get("id")
-    installation_id = str(installation_id_raw) if installation_id_raw is not None else None
-
-    with get_pipeline_github_client(db, installation_id) as gh:
-        if not gh.logs_available(full_name, run_id):
-            return {"status": "skipped", "reason": "logs_expired"}
-
-    store = PipelineStore(db)
-    document = {
-        "_id": run_id,
-        "repository": full_name,
-        "branch": workflow_run.get("head_branch"),
-        "status": workflow_run.get("status"),
-        "conclusion": workflow_run.get("conclusion"),
-        "event": payload.get("action"),
-        "installation_id": installation_id,
-        "created_at": _parse_datetime(workflow_run.get("created_at")),
-        "started_at": _parse_datetime(workflow_run.get("run_started_at")),
-        "updated_at": _parse_datetime(workflow_run.get("updated_at")),
-        "logs_url": workflow_run.get("logs_url"),
-        "check_suite_id": workflow_run.get("check_suite_id"),
-        "display_title": workflow_run.get("display_title"),
-        "head_sha": workflow_run.get("head_sha"),
-        "actor": workflow_run.get("actor") or payload.get("sender"),
-        "pull_requests": workflow_run.get("pull_requests", []),
-    }
-    store.upsert_workflow_run(run_id, document)
-
-    from app.tasks.builds import ingest_workflow_run  # local import to avoid circular dependency
-
-    ingest_workflow_run.delay(full_name, run_id, None)
-    return {"status": "queued", "build_id": run_id}
+    # All other webhook events are ignored because workflow ingestion is disabled.
+    return {"status": "ignored", "reason": "workflow_handling_disabled"}

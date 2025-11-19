@@ -87,22 +87,3 @@ class RepoSuggestionListResponse(BaseModel):
     items: List[RepoSuggestion]
 
 
-class RepoScanRequest(BaseModel):
-    mode: Literal["latest", "full"] = "latest"
-    initiated_by: Optional[str] = Field(default="admin", description="Requested by")
-
-
-class RepoScanJobResponse(BaseModel):
-    id: PyObjectId = Field(..., alias="_id")
-    repo_id: PyObjectId
-    mode: Literal["latest", "full"]
-    status: Literal["pending", "running", "completed", "failed"]
-    progress: int = Field(..., ge=0, le=100)
-    initiated_by: str
-    created_at: datetime
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    notes: Optional[str] = None
-    last_error: Optional[str] = None
-
-    model_config = ConfigDict(populate_by_name=True)

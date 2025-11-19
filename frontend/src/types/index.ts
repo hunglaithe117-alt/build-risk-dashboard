@@ -186,6 +186,13 @@ export interface UserAccount {
   name?: string | null;
   role: "admin" | "user";
   created_at: string;
+  github?: {
+    connected: boolean;
+    login?: string;
+    name?: string;
+    avatar_url?: string;
+    token_status?: string;
+  };
 }
 
 export interface GithubInstallation {
@@ -202,4 +209,27 @@ export interface GithubInstallation {
 
 export interface GithubInstallationListResponse {
   installations: GithubInstallation[];
+}
+
+export interface AuthVerifyResponse {
+  authenticated: boolean;
+  github_connected?: boolean;
+  reason?: string;
+  user?: {
+    id: string;
+    email: string;
+    name?: string;
+  };
+  github?: {
+    login?: string;
+    name?: string;
+    avatar_url?: string;
+    scopes?: string;
+  };
+}
+
+export interface RefreshTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
 }

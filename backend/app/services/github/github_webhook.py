@@ -148,6 +148,12 @@ def _handle_workflow_run_event(
     if not full_name or not workflow_run:
         return {"status": "ignored", "reason": "missing_data"}
 
+    # Filter out bot-triggered workflow runs (e.g., Dependabot, github-actions[bot])
+    triggering_actor = workflow_run.get("triggering_actor", {})
+    actor_type = triggering_actor.get("type")
+    if actor_type == "Bot":
+        return {"status": "ignored", "reason": "bot_triggered"}
+
     # Check if we are tracking this repo
     repo = db.repositories.find_one({"full_name": full_name})
     if not repo:

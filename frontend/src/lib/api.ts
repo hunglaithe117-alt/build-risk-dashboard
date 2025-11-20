@@ -1,4 +1,5 @@
 import type {
+  Build,
   BuildDetail,
   BuildListResponse,
   DashboardSummaryResponse,
@@ -106,30 +107,24 @@ api.interceptors.response.use(
   }
 );
 
-// Build API
 export const buildApi = {
-  getAll: async (params?: {
-    skip?: number;
-    limit?: number;
-    repository?: string;
-    status?: string;
-  }) => {
-    const response = await api.get<BuildListResponse>("/builds/", { params });
+  getByRepo: async (
+    repoId: string,
+    params?: {
+      skip?: number;
+      limit?: number;
+    }
+  ) => {
+    const response = await api.get<BuildListResponse>(`/repos/${repoId}/builds`, {
+      params,
+    });
     return response.data;
   },
 
-  getById: async (id: string) => {
-    const response = await api.get<BuildDetail>(`/builds/${id}`);
-    return response.data;
-  },
-
-  create: async (data: any) => {
-    const response = await api.post("/builds/", data);
-    return response.data;
-  },
-
-  delete: async (id: string) => {
-    const response = await api.delete(`/builds/${id}`);
+  getById: async (repoId: string, buildId: string) => {
+    const response = await api.get<BuildDetail>(
+      `/repos/${repoId}/builds/${buildId}`
+    );
     return response.data;
   },
 };
@@ -171,6 +166,12 @@ export const dashboardApi = {
     const response = await api.get<DashboardSummaryResponse>(
       "/dashboard/summary"
     );
+    return response.data;
+  },
+  getRecentBuilds: async (limit: number = 10) => {
+    const response = await api.get<Build[]>("/dashboard/recent-builds", {
+      params: { limit },
+    });
     return response.data;
   },
 };

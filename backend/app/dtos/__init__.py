@@ -11,6 +11,11 @@ from .dashboard import (
     DashboardTrendPoint,
     RepoDistributionEntry,
 )
+from .build import (
+    BuildDetail,
+    BuildListResponse,
+    BuildSummary,
+)
 from .github import (
     GithubAuthorizeResponse,
     GithubInstallationListResponse,
@@ -59,4 +64,8 @@ __all__ = [
     # User
     "OAuthIdentityResponse",
     "UserResponse",
+    # Build
+    "BuildSummary",
+    "BuildDetail",
+    "BuildListResponse",
 ]

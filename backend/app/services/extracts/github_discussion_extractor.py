@@ -36,10 +36,28 @@ class GitHubDiscussionExtractor:
                 # This is tricky. GitHub API lists PRs associated with a commit.
                 # GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls
 
+                # GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls
+
                 # Since our client doesn't have list_pulls_for_commit, we might need to add it or use raw request
-                prs = gh._rest_request(
-                    "GET", f"/repos/{repo.full_name}/commits/{commit_sha}/pulls"
-                )
+                try:
+                    prs = gh._rest_request(
+                        "GET", f"/repos/{repo.full_name}/commits/{commit_sha}/pulls"
+                    )
+                except Exception as e:
+                    # Check if it's a 403 Forbidden error
+                    error_str = str(e)
+                    if "403" in error_str or (
+                        hasattr(e, "response") and e.response.status_code == 403
+                    ):
+                        logger.warning(
+                            f"Missing permissions to list PRs for {repo.full_name}. "
+                            "Please ensure the GitHub App has 'Pull requests: Read-only' permission."
+                        )
+                    else:
+                        logger.warning(
+                            f"Failed to list PRs for commit {commit_sha}: {e}"
+                        )
+                    prs = []
 
                 num_pr_comments = 0
                 num_issue_comments = 0

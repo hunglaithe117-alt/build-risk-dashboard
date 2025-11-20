@@ -14,6 +14,7 @@ from app.services.extracts.diff_analyzer import (
     _matches_test_definition,
 )
 from app.services.github.github_app import get_installation_token
+from app.utils.locking import repo_lock
 from pymongo.database import Database
 
 logger = logging.getLogger(__name__)
@@ -35,16 +36,19 @@ class RepoSnapshotExtractor:
         repo_path = REPOS_DIR / str(repo.id)
         if not repo_path.exists():
             # Should have been cloned by diff extractor, but ensure it exists
-            self._ensure_repo(repo, repo_path)
+            with repo_lock(str(repo.id)):
+                self._ensure_repo(repo, repo_path)
 
         try:
             # 1. History metrics (Age, Num Commits)
             age, num_commits = self._get_history_metrics(repo_path, commit_sha)
 
             # 2. Snapshot metrics (SLOC, Tests) using worktree
-            snapshot_metrics = self._analyze_snapshot(
-                repo_path, commit_sha, repo.main_lang
-            )
+            # Lock during worktree operations as they modify .git/worktrees
+            with repo_lock(str(repo.id)):
+                snapshot_metrics = self._analyze_snapshot(
+                    repo_path, commit_sha, repo.main_lang
+                )
 
             return {
                 "gh_repo_age": age,

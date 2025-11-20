@@ -139,6 +139,16 @@ def import_repo(
                 full_name, params={"per_page": 100, "status": "completed"}
             ):
                 run_id = run.get("id")
+
+                # Filter out bot-triggered workflow runs (e.g., Dependabot, github-actions[bot])
+                triggering_actor = run.get("triggering_actor", {})
+                actor_type = triggering_actor.get("type")
+                if actor_type == "Bot":
+                    logger.info(
+                        f"Skipping bot-triggered run {run_id} in {full_name} (triggered by {triggering_actor.get('login', 'unknown bot')})"
+                    )
+                    continue
+
                 if not gh.logs_available(full_name, run_id):
                     logger.info(
                         f"Logs expired for run {run_id} in {full_name}. Stopping backfill."

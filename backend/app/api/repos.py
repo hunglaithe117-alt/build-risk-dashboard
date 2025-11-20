@@ -15,8 +15,11 @@ from app.dtos import (
     RepoResponse,
     RepoSuggestionListResponse,
     RepoUpdateRequest,
+    BuildListResponse,
+    BuildDetail,
 )
 from app.middleware.auth import get_current_user
+from app.services.build_service import BuildService
 from app.services.repository_service import RepositoryService
 
 router = APIRouter(prefix="/repos", tags=["Repositories"])
@@ -53,9 +56,7 @@ def bulk_import_repositories(
     return service.bulk_import_repositories(user_id, payloads)
 
 
-@router.get(
-    "/", response_model=RepoListResponse, response_model_by_alias=False
-)
+@router.get("/", response_model=RepoListResponse, response_model_by_alias=False)
 def list_repositories(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
@@ -107,3 +108,41 @@ def update_repository_settings(
 ):
     service = RepositoryService(db)
     return service.update_repository_settings(repo_id, payload, current_user)
+
+
+@router.get(
+    "/{repo_id}/builds",
+    response_model=BuildListResponse,
+    response_model_by_alias=False,
+)
+def get_repo_builds(
+    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """List builds for a repository."""
+    service = BuildService(db)
+    return service.get_builds_by_repo(repo_id, skip, limit)
+
+
+@router.get(
+    "/{repo_id}/builds/{build_id}",
+    response_model=BuildDetail,
+    response_model_by_alias=False,
+)
+def get_build_detail(
+    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
+    build_id: str = Path(..., description="Build id (Mongo ObjectId)"),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Get build details."""
+    service = BuildService(db)
+    build = service.get_build_detail(build_id)
+    if not build:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Build not found")
+    return build

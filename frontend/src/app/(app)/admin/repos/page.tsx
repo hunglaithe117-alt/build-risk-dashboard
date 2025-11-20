@@ -16,6 +16,7 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -63,6 +64,7 @@ function formatTimestamp(value?: string) {
 const PAGE_SIZE = 20;
 
 export default function AdminReposPage() {
+  const router = useRouter();
   const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [tableLoading, setTableLoading] = useState(false);
@@ -435,7 +437,7 @@ export default function AdminReposPage() {
                     <tr
                       key={repo.id}
                       className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-900/40"
-                      onClick={() => openPanel(repo.id)}
+                      onClick={() => router.push(`/admin/repos/${repo.id}/builds`)}
                     >
                       <td className="px-6 py-4 font-medium text-foreground">
                         {repo.full_name}
@@ -468,7 +470,7 @@ export default function AdminReposPage() {
                               openPanel(repo.id);
                             }}
                           >
-                            Configure
+                            Settings
                           </Button>
                         </div>
                       </td>

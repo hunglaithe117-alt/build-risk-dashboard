@@ -1,33 +1,35 @@
 export interface Build {
   id: string;
-  repository: string;
-  branch: string;
+  build_number: number;
+  status: string; // GitHub workflow status: "success", "failure", etc.
+  extraction_status: string; // Feature extraction process status: "pending", "completed", "failed"
   commit_sha: string;
-  build_number: string;
-  workflow_name?: string;
-  status: string;
-  conclusion?: string;
-  started_at?: string;
-  completed_at?: string;
-  duration_seconds?: number;
-  author_name?: string;
-  author_email?: string;
-  url?: string;
-  logs_url?: string;
-  created_at: string;
-  updated_at?: string;
-  features?: Record<string, any>;
+  created_at?: string;
+  duration?: number;
+  num_jobs?: number;
+  num_tests?: number;
+  workflow_run_id: number;
 }
 
 export interface BuildDetail extends Build {
-  // extends base with related analytics
+  git_diff_src_churn?: number;
+  git_diff_test_churn?: number;
+  gh_diff_files_added?: number;
+  gh_diff_files_deleted?: number;
+  gh_diff_files_modified?: number;
+  gh_diff_tests_added?: number;
+  gh_diff_tests_deleted?: number;
+  gh_repo_age?: number;
+  gh_repo_num_commits?: number;
+  gh_sloc?: number;
+  error_message?: string;
 }
 
 export interface BuildListResponse {
+  items: Build[];
   total: number;
-  skip: number;
-  limit: number;
-  builds: BuildDetail[];
+  page: number;
+  size: number;
 }
 
 export interface DashboardMetrics {

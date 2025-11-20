@@ -13,6 +13,7 @@ from app.services.extracts.diff_analyzer import (
     _is_test_file,
 )
 from app.services.github.github_app import get_installation_token
+from app.utils.locking import repo_lock
 from pymongo.database import Database
 
 logger = logging.getLogger(__name__)
@@ -36,10 +37,11 @@ class CommitDiffExtractor:
         repo_path = REPOS_DIR / str(repo.id)
 
         try:
-            self._ensure_repo(repo, repo_path)
+            with repo_lock(str(repo.id)):
+                self._ensure_repo(repo, repo_path)
 
-            # Fetch to ensure we have the commit
-            self._run_git(repo_path, ["fetch", "origin"])
+                # Fetch to ensure we have the commit
+                self._run_git(repo_path, ["fetch", "origin"])
 
             # Check if commit exists
             if not self._commit_exists(repo_path, commit_sha):

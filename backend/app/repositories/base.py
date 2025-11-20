@@ -50,6 +50,18 @@ class BaseRepository(ABC, Generic[T]):
             cursor = cursor.limit(limit)
         return [self._to_model(doc) for doc in cursor if doc]
 
+    def paginate(
+        self,
+        query: Dict[str, Any],
+        sort: Optional[List[tuple]] = None,
+        skip: int = 0,
+        limit: int = 0,
+    ) -> tuple[List[T], int]:
+        """Return paginated results plus total count for the query."""
+        items = self.find_many(query, sort=sort, skip=skip, limit=limit)
+        total = self.count(query)
+        return items, total
+
     def insert_one(self, document: Union[T, Dict[str, Any]]) -> T:
         """Insert a single document"""
         if isinstance(document, BaseModel):

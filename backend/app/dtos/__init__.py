@@ -21,6 +21,7 @@ from .github import (
 from .repository import (
     RepoDetailResponse,
     RepoImportRequest,
+    RepoListResponse,
     RepoResponse,
     RepoSuggestion,
     RepoSuggestionListResponse,
@@ -50,6 +51,7 @@ __all__ = [
     # Repository
     "RepoDetailResponse",
     "RepoImportRequest",
+    "RepoListResponse",
     "RepoResponse",
     "RepoSuggestion",
     "RepoSuggestionListResponse",

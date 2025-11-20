@@ -22,12 +22,16 @@ class ImportedRepositoryRepository(BaseRepository[ImportedRepository]):
         """Find a repository by provider and full name"""
         return self.find_one({"provider": provider, "full_name": full_name})
 
-    def list_by_user(self, user_id: Optional[str] = None) -> List[ImportedRepository]:
-        """List repositories for a user or all if no user specified"""
+    def list_by_user(
+        self, user_id: Optional[str] = None, skip: int = 0, limit: int = 0
+    ) -> tuple[List[ImportedRepository], int]:
+        """List repositories for a user or all if no user specified, with pagination metadata."""
         query: Dict[str, Any] = {}
         if user_id is not None:
             query["user_id"] = self._to_object_id(user_id)
-        return self.find_many(query, sort=[("created_at", -1)])
+        return self.paginate(
+            query, sort=[("created_at", -1)], skip=skip, limit=limit
+        )
 
     def update_repository(
         self, repo_id: str, updates: Dict[str, Any]

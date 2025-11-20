@@ -11,6 +11,7 @@ from app.database.mongo import get_db
 from app.dtos import (
     RepoDetailResponse,
     RepoImportRequest,
+    RepoListResponse,
     RepoResponse,
     RepoSuggestionListResponse,
     RepoUpdateRequest,
@@ -52,14 +53,19 @@ def bulk_import_repositories(
     return service.bulk_import_repositories(user_id, payloads)
 
 
-@router.get("/", response_model=List[RepoResponse], response_model_by_alias=False)
+@router.get(
+    "/", response_model=RepoListResponse, response_model_by_alias=False
+)
 def list_repositories(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """List tracked repositories."""
+    """List tracked repositories with pagination."""
+    user_id = str(current_user["_id"])
     service = RepositoryService(db)
-    return service.list_repositories(current_user["_id"])
+    return service.list_repositories(user_id, skip, limit)
 
 
 @router.get("/available", response_model=RepoSuggestionListResponse)

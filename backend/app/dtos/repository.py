@@ -52,6 +52,13 @@ class RepoDetailResponse(RepoResponse):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class RepoListResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[RepoResponse]
+
+
 class RepoUpdateRequest(BaseModel):
     ci_provider: Optional[str] = None
     test_frameworks: Optional[List[str]] = None

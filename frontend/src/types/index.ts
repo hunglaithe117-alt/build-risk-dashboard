@@ -73,6 +73,13 @@ export interface RepoDetail extends RepositoryRecord {
   metadata?: Record<string, any>;
 }
 
+export interface RepoListResponse {
+  total: number;
+  skip: number;
+  limit: number;
+  items: RepositoryRecord[];
+}
+
 export interface RepoSuggestion {
   full_name: string;
   description?: string;

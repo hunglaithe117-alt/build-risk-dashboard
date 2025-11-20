@@ -7,6 +7,7 @@ import type {
   GithubInstallationListResponse,
   RepoDetail,
   RepoImportPayload,
+  RepoListResponse,
   RepoSuggestionResponse,
   RepoUpdatePayload,
   RepositoryRecord,
@@ -134,8 +135,8 @@ export const buildApi = {
 };
 
 export const reposApi = {
-  list: async () => {
-    const response = await api.get<RepositoryRecord[]>("/repos/");
+  list: async (params?: { skip?: number; limit?: number }) => {
+    const response = await api.get<RepoListResponse>("/repos/", { params });
     return response.data;
   },
   get: async (repoId: string) => {

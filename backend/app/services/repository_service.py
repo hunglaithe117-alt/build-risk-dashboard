@@ -10,6 +10,7 @@ from pymongo.database import Database
 from app.dtos import (
     RepoDetailResponse,
     RepoImportRequest,
+    RepoListResponse,
     RepoResponse,
     RepoSuggestionListResponse,
     RepoUpdateRequest,
@@ -126,10 +127,17 @@ class RepositoryService:
         )
         return RepoSuggestionListResponse(items=items)
 
-    def list_repositories(self, user_id: str) -> List[RepoResponse]:
-        """List tracked repositories."""
-        repos = self.repo_repo.list_by_user(user_id)
-        return [_serialize_repo(repo) for repo in repos]
+    def list_repositories(
+        self, user_id: str, skip: int, limit: int
+    ) -> RepoListResponse:
+        """List tracked repositories with pagination."""
+        repos, total = self.repo_repo.list_by_user(user_id, skip=skip, limit=limit)
+        return RepoListResponse(
+            total=total,
+            skip=skip,
+            limit=limit,
+            items=[_serialize_repo(repo) for repo in repos],
+        )
 
     def discover_repositories(
         self, user_id: str, q: str | None, limit: int
@@ -150,7 +158,7 @@ class RepositoryService:
             )
 
         # Verify user owns this repository
-        repo_user_id = str(repo_doc.get("user_id", ""))
+        repo_user_id = str(repo_doc.user_id)
         current_user_id = str(current_user["_id"])
         if repo_user_id != current_user_id:
             raise HTTPException(
@@ -170,7 +178,7 @@ class RepositoryService:
             )
 
         # Verify user owns this repository
-        repo_user_id = str(repo_doc.get("user_id", ""))
+        repo_user_id = str(repo_doc.user_id)
         current_user_id = str(current_user["_id"])
         if repo_user_id != current_user_id:
             raise HTTPException(

@@ -1,20 +1,20 @@
 """Ingestion tasks for repository backfill"""
 
-from app.repositories.imported_repository import ImportedRepositoryRepository
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any
+from bson import ObjectId
+import os
+from pathlib import Path
 
 from app.celery_app import celery_app
 from app.services.github.github_client import get_app_github_client
-from app.repositories.scan_job import ScanJobRepository
 from app.tasks.base import PipelineTask
 from app.services.github.exceptions import GithubRateLimitError
+from app.repositories.imported_repository import ImportedRepositoryRepository
+
 
 logger = logging.getLogger(__name__)
-
-import os
-from pathlib import Path
 
 LOG_DIR = Path("job_logs")
 LOG_DIR.mkdir(exist_ok=True)
@@ -36,13 +36,6 @@ def import_repo(
     source_languages: list[str] | None = None,
     ci_provider: str = "github_actions",
 ) -> Dict[str, Any]:
-    """
-    Import and scan a repository.
-    1. Fetch metadata from GitHub
-    2. Upsert repository record
-    3. Mark as imported in available_repos
-    4. Trigger initial scan (list workflows)
-    """
     imported_repo_repo = ImportedRepositoryRepository(self.db)
     # 1. Fetch metadata
     try:
@@ -67,32 +60,15 @@ def import_repo(
             )
             repo_id = str(repo_doc["_id"])
 
-            # 3. Mark as imported
-            from bson import ObjectId
-
             self.db.available_repositories.update_one(
                 {"user_id": ObjectId(user_id), "full_name": full_name},
                 {"$set": {"imported": True}},
             )
 
-            # 4. Initial Scan Logic
-            scan_repo = ScanJobRepository(self.db)
-            job = scan_repo.get_active_job(repo_id)
-            if not job:
-                job = scan_repo.create_job(repo_id)
-
-            job_id = str(job["_id"])
-            scan_repo.update_progress(
-                job_id, status="running", phase="discovering_builds"
-            )
-
             runs = gh.list_workflow_runs(full_name, params={"per_page": 100})
-            scan_repo.update_progress(job_id, total_runs=len(runs))
 
             for run in runs:
                 process_workflow_run.delay(repo_id, run)
-
-            scan_repo.update_progress(job_id, status="completed", phase="finalizing")
 
     except GithubRateLimitError as e:
         wait = e.retry_after if e.retry_after else 60
@@ -100,9 +76,6 @@ def import_repo(
         raise self.retry(exc=e, countdown=wait)
     except Exception as e:
         logger.error(f"Failed to import repo {full_name}: {e}")
-        # If we have a job_id, mark it failed
-        if "job_id" in locals():
-            scan_repo.update_progress(job_id, status="failed", error=str(e))
         raise e
 
     return {
@@ -121,12 +94,6 @@ def import_repo(
 def process_workflow_run(
     self: PipelineTask, repo_id: str, run: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """
-    Process a single workflow run:
-    1. Fetch workflow jobs
-    2. Download logs for each job
-    3. (Future) Parse logs and create BuildSnapshot
-    """
     repo_repo = ImportedRepositoryRepository(self.db)
     repo = repo_repo.find_by_id(repo_id)
     if not repo:

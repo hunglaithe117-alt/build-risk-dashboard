@@ -68,3 +68,4 @@ logs/
 Thumbs.db
 
 backend/job_logs
+backend/repos

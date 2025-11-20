@@ -24,14 +24,6 @@ class GitHubTokenStatus:
 
 
 async def verify_github_token(access_token: str) -> bool:
-    """Verify if a GitHub access token is still valid by calling GitHub API.
-
-    Args:
-        access_token: GitHub access token to verify
-
-    Returns:
-        True if token is valid, False otherwise
-    """
     if not access_token:
         return False
 
@@ -52,16 +44,6 @@ async def verify_github_token(access_token: str) -> bool:
 async def check_github_token_status(
     db: Database, user_id: ObjectId, verify_with_api: bool = False
 ) -> Tuple[str, Optional[dict]]:
-    """Check the status of a user's GitHub token.
-
-    Args:
-        db: MongoDB database instance
-        user_id: User's ObjectId
-        verify_with_api: Whether to verify token with GitHub API (slower but accurate)
-
-    Returns:
-        Tuple of (status, identity_doc) where status is one of GitHubTokenStatus values
-    """
     identity = db.oauth_identities.find_one({"user_id": user_id, "provider": "github"})
 
     if not identity:
@@ -89,19 +71,6 @@ async def check_github_token_status(
 async def get_valid_github_token(
     db: Database, user_id: ObjectId, verify_with_api: bool = False
 ) -> str:
-    """Get a valid GitHub token for the user or raise an exception.
-
-    Args:
-        db: MongoDB database instance
-        user_id: User's ObjectId
-        verify_with_api: Whether to verify token with GitHub API
-
-    Returns:
-        Valid GitHub access token
-
-    Raises:
-        HTTPException: If token is invalid, expired, or missing
-    """
     status_code, identity = await check_github_token_status(
         db, user_id, verify_with_api
     )
@@ -137,13 +106,6 @@ async def get_valid_github_token(
 async def mark_github_token_invalid(
     db: Database, identity_id: ObjectId, reason: str = "invalid"
 ) -> None:
-    """Mark a GitHub token as invalid in the database.
-
-    Args:
-        db: MongoDB database instance
-        identity_id: OAuth identity document ID
-        reason: Reason for invalidation (expired, revoked, etc.)
-    """
     db.oauth_identities.update_one(
         {"_id": identity_id},
         {
@@ -160,18 +122,6 @@ async def mark_github_token_invalid(
 async def refresh_github_token_if_needed(
     db: Database, user_id: ObjectId
 ) -> Optional[str]:
-    """Attempt to refresh GitHub token if it's expired and refresh token is available.
-
-    Note: GitHub OAuth Apps don't provide refresh tokens by default.
-    Only GitHub Apps have refresh token support.
-
-    Args:
-        db: MongoDB database instance
-        user_id: User's ObjectId
-
-    Returns:
-        New access token if refresh succeeded, None otherwise
-    """
     identity = db.oauth_identities.find_one({"user_id": user_id, "provider": "github"})
 
     if not identity:
@@ -241,15 +191,6 @@ async def refresh_github_token_if_needed(
 
 
 def requires_github_token(verify_with_api: bool = False):
-    """Dependency to ensure user has a valid GitHub token.
-
-    Args:
-        verify_with_api: Whether to verify token with GitHub API
-
-    Returns:
-        FastAPI dependency function
-    """
-
     async def dependency(user_id: str, db: Database) -> str:
         """Get valid GitHub token or raise exception."""
         return await get_valid_github_token(

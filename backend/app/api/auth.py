@@ -1,4 +1,13 @@
-from fastapi import APIRouter, Body, Depends, Query, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    Query,
+    status,
+    Cookie,
+    HTTPException,
+    Response,
+)
 from fastapi.responses import RedirectResponse
 from pymongo.database import Database
 
@@ -38,7 +47,9 @@ async def github_oauth_callback(
 ):
     """Handle GitHub OAuth callback, exchange code for token, and redirect to frontend."""
     service = AuthService(db)
-    jwt_token, redirect_path = await service.handle_github_callback(code, state)
+    jwt_token, refresh_token, redirect_path = await service.handle_github_callback(
+        code, state
+    )
 
     redirect_target = settings.FRONTEND_BASE_URL.rstrip("/")
     if redirect_path:
@@ -57,6 +68,17 @@ async def github_oauth_callback(
         secure=not settings.DEBUG,  # Use secure cookies in production
         samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+
+    # Set refresh token cookie
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         path="/",
     )
 
@@ -79,10 +101,29 @@ def revoke_github_token(
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_access_token(
-    user: dict = Depends(get_current_user), db: Database = Depends(get_db)
+    response: Response,
+    refresh_token: str | None = Cookie(default=None),
+    db: Database = Depends(get_db),
 ):
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token missing"
+        )
     service = AuthService(db)
-    return service.refresh_access_token(user["_id"])
+    token_data = service.refresh_access_token(refresh_token)
+
+    # Set access token cookie
+    response.set_cookie(
+        key="access_token",
+        value=token_data.access_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+
+    return token_data
 
 
 @router.get("/me", response_model=UserDetailResponse)

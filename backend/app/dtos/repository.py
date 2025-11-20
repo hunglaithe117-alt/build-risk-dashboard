@@ -45,8 +45,6 @@ class RepoResponse(BaseModel):
     last_scanned_at: Optional[datetime] = None
     installation_id: Optional[str] = None
     ci_provider: Literal["github_actions", "travis_ci"] = "github_actions"
-    sync_status: Literal["healthy", "error", "disabled"] = "healthy"
-    ci_token_status: Literal["valid", "missing"] = "valid"
     test_frameworks: List[str] = Field(default_factory=list)
     source_languages: List[str] = Field(default_factory=list)
     total_builds_imported: int = 0
@@ -62,10 +60,8 @@ class RepoDetailResponse(RepoResponse):
 
 class RepoUpdateRequest(BaseModel):
     ci_provider: Optional[str] = None
-    sync_status: Optional[Literal["healthy", "error", "disabled"]] = None
     test_frameworks: Optional[List[str]] = None
     source_languages: Optional[List[str]] = None
-    ci_token_status: Optional[Literal["valid", "missing"]] = None
     default_branch: Optional[str] = None
     notes: Optional[str] = None
 

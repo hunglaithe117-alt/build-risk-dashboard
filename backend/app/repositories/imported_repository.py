@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from pymongo import ReturnDocument
 from pymongo.database import Database
 
 from app.models.entities.imported_repository import ImportedRepository
@@ -34,3 +35,22 @@ class ImportedRepositoryRepository(BaseRepository[ImportedRepository]):
         payload = updates.copy()
         payload["updated_at"] = datetime.now(timezone.utc)
         return self.update_one(repo_id, payload)
+
+    def upsert_repository(
+        self, query: Dict[str, Any], data: Dict[str, Any]
+    ) -> ImportedRepository:
+        now = datetime.now(timezone.utc)
+
+        update_op = {
+            "$set": {**data, "updated_at": now},
+            "$setOnInsert": {"created_at": now},
+        }
+
+        if "created_at" in update_op["$set"]:
+            del update_op["$set"]["created_at"]
+
+        doc = self.collection.find_one_and_update(
+            query, update_op, upsert=True, return_document=ReturnDocument.AFTER
+        )
+
+        return self._to_model(doc)

@@ -27,20 +27,15 @@ import {
 } from "@/components/ui/card";
 import { reposApi } from "@/lib/api";
 import type {
-  GithubImportJob,
   RepoDetail,
   RepoSuggestion,
   RepoSuggestionResponse,
   RepoUpdatePayload,
-  RepoSyncStatus,
   RepositoryRecord,
 } from "@/types";
+import { Badge } from "@/components/ui/badge";
+import { useWebSocket } from "@/contexts/websocket-context";
 
-const STATUS_COLORS: Record<RepoSyncStatus, string> = {
-  healthy: "bg-emerald-50 text-emerald-700",
-  error: "bg-red-50 text-red-600",
-  disabled: "bg-slate-100 text-slate-600",
-};
 
 function formatTimestamp(value?: string) {
   if (!value) return "—";
@@ -61,7 +56,6 @@ export default function AdminReposPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalStep, setModalStep] = useState<1 | 2>(1);
   const [suggestions, setSuggestions] = useState<RepoSuggestion[]>([]);
-  const [initialSuggestions, setInitialSuggestions] = useState<RepoSuggestion[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [selectedRepos, setSelectedRepos] = useState<
     Record<string, RepoSuggestion>
@@ -77,18 +71,17 @@ export default function AdminReposPage() {
   const [addingRepos, setAddingRepos] = useState(false);
   const [panelRepo, setPanelRepo] = useState<RepoDetail | null>(null);
   const [panelLoading, setPanelLoading] = useState(false);
-  const [panelTab, setPanelTab] = useState<"settings" | "history">("settings");
   const [panelForm, setPanelForm] = useState<RepoUpdatePayload>({});
   const [panelNotes, setPanelNotes] = useState("");
   const [panelSaving, setPanelSaving] = useState(false);
-  const [jobs, setJobs] = useState<GithubImportJob[]>([]);
-  const [jobsLoading, setJobsLoading] = useState(false);
   const [tableActionId, setTableActionId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
+  const { subscribe } = useWebSocket();
+
   const loadRepositories = useCallback(async () => {
-    setLoading(true);
+    // Don't set loading=true here to avoid UI flash on background refresh
     try {
       const data = await reposApi.list();
       setRepositories(data);
@@ -100,6 +93,31 @@ export default function AdminReposPage() {
       setLoading(false);
     }
   }, []);
+
+  // WebSocket connection
+  useEffect(() => {
+    const unsubscribe = subscribe("REPO_UPDATE", (data: any) => {
+      setRepositories((prev) => {
+        return prev.map((repo) => {
+          if (repo.id === data.repo_id) {
+            // Update status
+            const updated = { ...repo, import_status: data.status };
+            return updated;
+          }
+          return repo;
+        });
+      });
+
+      if (data.status === "imported" || data.status === "failed") {
+        // Reload to get fresh data (stats, etc)
+        loadRepositories();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [subscribe, loadRepositories]);
 
   useEffect(() => {
     loadRepositories();
@@ -114,9 +132,6 @@ export default function AdminReposPage() {
         20
       );
       setSuggestions(data.items);
-      if (!normalized) {
-        setInitialSuggestions(data.items);
-      }
     } catch (err) {
       console.error(err);
       setFeedback("Unable to load repository choices from GitHub.");
@@ -130,7 +145,6 @@ export default function AdminReposPage() {
     try {
       const data = await reposApi.sync();
       setSuggestions(data.items);
-      setInitialSuggestions(data.items);
       setFeedback("Repository list updated from GitHub.");
     } catch (err) {
       console.error(err);
@@ -153,42 +167,20 @@ export default function AdminReposPage() {
     loadSuggestions();
   }, [modalOpen, loadSuggestions]);
 
-
-
-
-
   useEffect(() => {
-
     if (!panelRepo) return;
-
     setPanelForm({
-
       default_branch: panelRepo.default_branch,
-
-      sync_status: panelRepo.sync_status,
-
-      ci_token_status: panelRepo.ci_token_status,
-
       notes: panelRepo.notes,
-
       test_frameworks: panelRepo.test_frameworks,
-
       source_languages: panelRepo.source_languages,
-
     });
-
     setPanelNotes(panelRepo.notes ?? "");
-
   }, [panelRepo]);
 
-
-
   const selectedList = useMemo(
-
     () => Object.values(selectedRepos),
-
     [selectedRepos]
-
   );
 
   const toggleSelection = (item: RepoSuggestion) => {
@@ -232,25 +224,31 @@ export default function AdminReposPage() {
     setAddingRepos(true);
     setFeedback(null);
     try {
-      for (const repo of selectedList) {
+      const payloads = selectedList.map(repo => {
         const config = repoConfigs[repo.full_name] || {
           test_frameworks: [],
           source_languages: [],
           ci_provider: "github_actions",
         };
-        await reposApi.import({
+        return {
           full_name: repo.full_name,
           provider: "github",
           installation_id: repo.installation_id,
           test_frameworks: config.test_frameworks,
           source_languages: config.source_languages,
           ci_provider: config.ci_provider,
-        });
-      }
+        }
+      });
+
+      // Use bulk import
+      await reposApi.importBulk(payloads);
+
+      // Refresh list immediately to show queued repos
       await loadRepositories();
+
       setModalOpen(false);
       setFeedback(
-        "Repositories queued for sync. Webhooks will activate after installation."
+        "Repositories queued for import. You can track progress in the list."
       );
     } catch (err) {
       console.error(err);
@@ -265,11 +263,9 @@ export default function AdminReposPage() {
   const openPanel = async (repoId: string) => {
     setPanelLoading(true);
     setPanelRepo(null);
-    setPanelTab("settings");
     try {
       const detail = await reposApi.get(repoId);
       setPanelRepo(detail);
-      await loadJobs(repoId);
     } catch (err) {
       console.error(err);
       setFeedback("Unable to load repository details.");
@@ -280,21 +276,9 @@ export default function AdminReposPage() {
 
   const closePanel = () => {
     setPanelRepo(null);
-    setJobs([]);
   };
 
-  const loadJobs = async (repoId: string) => {
-    setJobsLoading(true);
-    try {
-      const data = await reposApi.listJobs(repoId);
-      setJobs(data);
-    } catch (err) {
-      console.error(err);
-      setFeedback("Unable to load sync history for repository.");
-    } finally {
-      setJobsLoading(false);
-    }
-  };
+
 
   const handlePanelSave = async () => {
     if (!panelRepo) return;
@@ -313,35 +297,6 @@ export default function AdminReposPage() {
       setFeedback("Unable to save repository settings.");
     } finally {
       setPanelSaving(false);
-    }
-  };
-
-  const handleSyncNow = async (repo: RepositoryRecord) => {
-    setTableActionId(repo.id);
-    try {
-      await reposApi.scan(repo.id);
-      setFeedback(`Queued sync for ${repo.full_name}.`);
-    } catch (err) {
-      console.error(err);
-      setFeedback("Unable to queue sync job.");
-    } finally {
-      setTableActionId(null);
-    }
-  };
-
-  const handleDisableMonitoring = async (repo: RepositoryRecord) => {
-    try {
-      setTableActionId(repo.id);
-      await reposApi.update(repo.id, {
-        sync_status: "disabled",
-      });
-      await loadRepositories();
-      setFeedback(`${repo.full_name} monitoring disabled.`);
-    } catch (err) {
-      console.error(err);
-      setFeedback("Unable to update monitoring flag.");
-    } finally {
-      setTableActionId(null);
     }
   };
 
@@ -415,10 +370,7 @@ export default function AdminReposPage() {
                     Repo name
                   </th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-500">
-                    CI provider
-                  </th>
-                  <th className="px-6 py-3 text-left font-semibold text-slate-500">
-                    Sync status
+                    Import Status
                   </th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-500">
                     Last sync time
@@ -449,20 +401,16 @@ export default function AdminReposPage() {
                       <td className="px-6 py-4 font-medium text-foreground">
                         {repo.full_name}
                       </td>
-                      <td className="px-6 py-4 text-muted-foreground capitalize">
-                        {repo.ci_provider.replace("_", " ")}
-                      </td>
                       <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${STATUS_COLORS[repo.sync_status]
-                            }`}
-                        >
-                          {repo.sync_status === "healthy"
-                            ? "Healthy"
-                            : repo.sync_status === "error"
-                              ? "Error"
-                              : "Disabled"}
-                        </span>
+                        {repo.import_status === "queued" ? (
+                          <Badge variant="secondary">Queued</Badge>
+                        ) : repo.import_status === "importing" ? (
+                          <Badge variant="default" className="bg-blue-500 hover:bg-blue-600"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Importing</Badge>
+                        ) : repo.import_status === "failed" ? (
+                          <Badge variant="destructive">Failed</Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-green-500 text-green-600">Imported</Badge>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">
                         {formatTimestamp(repo.last_scanned_at)}
@@ -472,23 +420,7 @@ export default function AdminReposPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="gap-1"
-                            disabled={tableActionId === repo.id}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleSyncNow(repo);
-                            }}
-                          >
-                            {tableActionId === repo.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <RefreshCw className="h-4 w-4" />
-                            )}
-                            Sync now
-                          </Button>
+
                           <Button
                             size="sm"
                             variant="outline"
@@ -498,18 +430,6 @@ export default function AdminReposPage() {
                             }}
                           >
                             Configure
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-red-600 hover:text-red-700"
-                            disabled={tableActionId === repo.id}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void handleDisableMonitoring(repo);
-                            }}
-                          >
-                            Disable
                           </Button>
                         </div>
                       </td>
@@ -585,21 +505,7 @@ export default function AdminReposPage() {
                       </div>
                       <div className="space-y-1">
                         <p className="font-medium">No repositories found</p>
-                        <p className="text-sm text-muted-foreground">
-                          You must install the GitHub App to import repositories.
-                        </p>
                       </div>
-                      <Button
-                        variant="default"
-                        onClick={() =>
-                          window.open(
-                            "https://github.com/apps/builddefection",
-                            "_blank"
-                          )
-                        }
-                      >
-                        Install GitHub App
-                      </Button>
                     </div>
                   ) : (
                     suggestions.map((repo) => {
@@ -795,221 +701,94 @@ export default function AdminReposPage() {
               </div>
             ) : (
               <div className="flex h-full flex-col">
-                <div className="flex gap-4 border-b px-6 py-3 text-sm">
-                  <button
-                    type="button"
-                    className={`pb-2 font-medium ${panelTab === "settings"
-                      ? "text-blue-600"
-                      : "text-muted-foreground"
-                      }`}
-                    onClick={() => setPanelTab("settings")}
-                  >
-                    Sync Settings
-                  </button>
-                  <button
-                    type="button"
-                    className={`pb-2 font-medium ${panelTab === "history"
-                      ? "text-blue-600"
-                      : "text-muted-foreground"
-                      }`}
-                    onClick={() => {
-                      setPanelTab("history");
-                      void loadJobs(panelRepo.id);
-                    }}
-                  >
-                    Sync Job History
-                  </button>
-                </div>
-
-                {panelTab === "settings" ? (
-                  <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-                    <div className="rounded-xl border p-4">
-                      <p className="text-sm font-semibold">Connection health</p>
-                      <div className="mt-3 grid gap-3 text-sm">
-                        <StatusItem
-                          label="CI API token"
-                          value={
-                            panelRepo.ci_token_status === "valid"
-                              ? "Valid"
-                              : "Missing"
-                          }
-                          healthy={panelRepo.ci_token_status === "valid"}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border p-4">
-                      <p className="text-sm font-semibold">Repository Configuration</p>
-                      <div className="mt-3 space-y-3 text-sm">
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Test Frameworks</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            {["PYTEST", "UNITTEST", "RSPEC", "MINITEST"].map((framework) => (
-                              <label
-                                key={framework}
-                                className="flex items-center gap-2 text-sm"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={panelForm.test_frameworks?.includes(framework) ?? false}
-                                  onChange={(e) => {
-                                    const current = panelForm.test_frameworks || [];
-                                    setPanelForm((prev) => ({
-                                      ...prev,
-                                      test_frameworks: e.target.checked
-                                        ? [...current, framework]
-                                        : current.filter((f) => f !== framework),
-                                    }));
-                                  }}
-                                />
-                                {framework}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Source Languages</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            {["PYTHON", "RUBY"].map((language) => (
-                              <label
-                                key={language}
-                                className="flex items-center gap-2 text-sm"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={panelForm.source_languages?.includes(language) ?? false}
-                                  onChange={(e) => {
-                                    const current = panelForm.source_languages || [];
-                                    setPanelForm((prev) => ({
-                                      ...prev,
-                                      source_languages: e.target.checked
-                                        ? [...current, language]
-                                        : current.filter((l) => l !== language),
-                                    }));
-                                  }}
-                                />
-                                {language}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">CI Provider</p>
-                          <select
-                            className="w-full rounded-lg border px-3 py-2 text-sm"
-                            value={panelForm.ci_provider || "github_actions"}
-                            onChange={(e) =>
-                              setPanelForm((prev) => ({
-                                ...prev,
-                                ci_provider: e.target.value,
-                              }))
-                            }
-                          >
-                            <option value="github_actions">GitHub Actions</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border p-4">
-                      <label className="text-sm font-semibold" htmlFor="notes">
-                        Notes
+                <div className="flex-1 overflow-y-auto p-6">
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Default Branch
                       </label>
+                      <input
+                        type="text"
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        value={panelForm.default_branch || ""}
+                        readOnly
+                        disabled
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Synced from GitHub.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Test Frameworks
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {panelForm.test_frameworks?.map((fw) => (
+                          <Badge key={fw} variant="secondary">
+                            {fw}
+                          </Badge>
+                        ))}
+                        {(!panelForm.test_frameworks ||
+                          panelForm.test_frameworks.length === 0) && (
+                            <span className="text-sm text-muted-foreground">
+                              None detected
+                            </span>
+                          )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Source Languages
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {panelForm.source_languages?.map((l) => (
+                          <Badge key={l} variant="secondary">
+                            {l}
+                          </Badge>
+                        ))}
+                        {(!panelForm.source_languages ||
+                          panelForm.source_languages.length === 0) && (
+                            <span className="text-sm text-muted-foreground">
+                              None detected
+                            </span>
+                          )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Notes</label>
                       <textarea
-                        id="notes"
-                        className="mt-2 w-full rounded-lg border px-3 py-2 text-sm"
-                        rows={4}
+                        className="h-24 w-full rounded-lg border px-3 py-2 text-sm"
+                        placeholder="Add internal notes about this repository..."
                         value={panelNotes}
-                        onChange={(event) => setPanelNotes(event.target.value)}
-                        placeholder="Optional notes for your team"
+                        onChange={(e) => setPanelNotes(e.target.value)}
                       />
                     </div>
 
-                    <Button onClick={handlePanelSave} disabled={panelSaving}>
-                      {panelSaving ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "Save changes"
-                      )}
-                    </Button>
+                    <div className="pt-4">
+                      <Button
+                        onClick={handlePanelSave}
+                        disabled={panelSaving}
+                        className="w-full"
+                      >
+                        {panelSaving ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                        )}
+                        Save Changes
+                      </Button>
+                    </div>
                   </div>
-                ) : (
-                  <div className="flex-1 overflow-y-auto px-6 py-4">
-                    {jobsLoading ? (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading job history...
-                      </div>
-                    ) : jobs.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No sync jobs recorded for this repository yet.
-                      </p>
-                    ) : (
-                      <div className="space-y-3">
-                        {jobs.map((job) => (
-                          <div
-                            key={job.id}
-                            className="rounded-xl border p-4 text-sm"
-                          >
-                            <div className="flex items-center justify-between">
-                              <p className="font-semibold">
-                                {job.status.toUpperCase()} •{" "}
-                                {formatTimestamp(job.created_at)}
-                              </p>
-                              <a
-                                href={`/admin?job=${job.id}`}
-                                className="text-xs text-blue-600 hover:underline"
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                View logs
-                              </a>
-                            </div>
-                            <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-3">
-                              <p>Builds fetched: {job.builds_imported}</p>
-                              <p>Commits: {job.commits_analyzed}</p>
-                              <p>
-                                Errors:{" "}
-                                {job.last_error ? job.last_error : "None"}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+
+                </div>
               </div>
             )}
           </div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function StatusItem({
-  label,
-  value,
-  healthy,
-}: {
-  label: string;
-  value: string;
-  healthy: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-      <div>
-        <p className="text-sm font-semibold">{label}</p>
-        <p className="text-xs text-muted-foreground">{value}</p>
-      </div>
-      {healthy ? (
-        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-      ) : (
-        <AlertCircle className="h-4 w-4 text-amber-500" />
-      )}
     </div>
   );
 }

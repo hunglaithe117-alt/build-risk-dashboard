@@ -66,7 +66,7 @@ class AvailableRepositoryRepository(BaseRepository[AvailableRepository]):
         self, user_id: str | ObjectId, q: Optional[str] = None, limit: int = 50
     ) -> List[Dict[str, Any]]:
         """Discover available repositories that are not yet imported."""
-        filters = {"user_id": self._to_object_id(user_id), "imported": False}
+        filters = {"user_id": self._to_object_id(user_id), "imported": {"$ne": True}}
         if q:
             filters["full_name"] = {"$regex": q, "$options": "i"}
 

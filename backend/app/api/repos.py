@@ -36,20 +36,6 @@ def sync_repositories(
 
 
 @router.post(
-    "/import", response_model=RepoResponse, status_code=status.HTTP_201_CREATED
-)
-def import_repository(
-    payload: RepoImportRequest,
-    db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    """Register a repository for ingestion."""
-    user_id = str(current_user["_id"])
-    service = RepositoryService(db)
-    return service.import_repository(user_id, payload)
-
-
-@router.post(
     "/import/bulk",
     response_model=List[RepoResponse],
     status_code=status.HTTP_201_CREATED,
@@ -69,13 +55,10 @@ def bulk_import_repositories(
 def list_repositories(
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
-    user_id: str | None = Query(default=None, description="Filter by owner id"),
 ):
     """List tracked repositories."""
-    # If user_id not specified, default to current user's repositories
-    filter_user_id = user_id or str(current_user["_id"])
     service = RepositoryService(db)
-    return service.list_repositories(filter_user_id)
+    return service.list_repositories(current_user["_id"])
 
 
 @router.get("/available", response_model=RepoSuggestionListResponse)

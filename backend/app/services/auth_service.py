@@ -4,6 +4,7 @@ from typing import Any, Tuple, Optional
 
 from fastapi import HTTPException, status
 from pymongo.database import Database
+from bson import ObjectId
 from jose import jwt, JWTError
 
 from app.config import settings
@@ -39,10 +40,12 @@ class AuthService:
             authorize_url=authorize_url, state=oauth_state["_id"]
         )
 
-    async def handle_github_callback(self, code: str, state: str) -> Tuple[str, str]:
+    async def handle_github_callback(
+        self, code: str, state: str
+    ) -> Tuple[str, str, str]:
         """
         Handle GitHub OAuth callback, exchange code for token.
-        Returns (jwt_token, redirect_path).
+        Returns (access_token, refresh_token, redirect_path).
         """
         identity_doc, redirect_path = await exchange_code_for_token(
             self.db, code=code, state=state
@@ -50,9 +53,10 @@ class AuthService:
         user_id = identity_doc.user_id
 
         # Create JWT access token with expiration matching configuration
-        jwt_token = create_access_token(subject=user_id)
+        access_token = create_access_token(subject=user_id)
+        refresh_token = create_refresh_token(subject=user_id)
 
-        return jwt_token, redirect_path
+        return access_token, refresh_token, redirect_path
 
     def revoke_github_token(self, user_id: str) -> None:
         """Remove stored GitHub access tokens for the current user."""
@@ -77,15 +81,37 @@ class AuthService:
                 detail="No GitHub identities found to revoke.",
             )
 
-    def refresh_access_token(self, user_id: str) -> TokenResponse:
-        """Refresh the JWT access token for the current user."""
-        new_token = create_access_token(subject=user_id)
+    def refresh_access_token(self, refresh_token: str) -> TokenResponse:
+        """Refresh the JWT access token using a valid refresh token."""
+        try:
+            payload = decode_refresh_token(refresh_token)
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid refresh token",
+                )
 
-        return TokenResponse(
-            access_token=new_token,
-            token_type="bearer",
-            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        )
+            # Check if user exists
+            user = self.db.users.find_one({"_id": ObjectId(user_id)})
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User not found",
+                )
+
+            new_access_token = create_access_token(subject=user_id)
+
+            return TokenResponse(
+                access_token=new_access_token,
+                token_type="bearer",
+                expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Could not refresh token: {str(e)}",
+            )
 
     async def get_current_user_info(self, user: dict) -> UserDetailResponse:
         """Get current authenticated user information."""
@@ -212,6 +238,23 @@ def create_access_token(
     return token
 
 
+def create_refresh_token(
+    subject: str | int, expires_delta: Optional[timedelta] = None
+) -> str:
+    if expires_delta is None:
+        expires_delta = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+
+    expire = datetime.utcnow() + expires_delta
+    payload: dict[str, Any] = {
+        "sub": str(subject),
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": "refresh",
+    }
+    token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return token
+
+
 def decode_access_token(token: str) -> dict[str, Any]:
     try:
         payload = jwt.decode(
@@ -237,4 +280,33 @@ def decode_access_token(token: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Could not validate credentials: {str(e)}",
+        )
+
+
+def decode_refresh_token(token: str) -> dict[str, Any]:
+    try:
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+
+        # Validate token type
+        if payload.get("type") != "refresh":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type"
+            )
+
+        # Check if token has expired
+        exp = payload.get("exp")
+        if exp and datetime.utcnow() > datetime.fromtimestamp(exp):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has expired",
+            )
+
+        return payload
+
+    except JWTError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Could not validate refresh token: {str(e)}",
         )

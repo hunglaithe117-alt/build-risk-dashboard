@@ -12,7 +12,6 @@ from .user import UserRepository
 
 
 class OAuthIdentityRepository(BaseRepository[OAuthIdentity]):
-    """Repository for OAuth identity entities"""
 
     def __init__(self, db: Database):
         super().__init__(db, "oauth_identities", OAuthIdentity)
@@ -21,7 +20,6 @@ class OAuthIdentityRepository(BaseRepository[OAuthIdentity]):
     def find_by_provider_and_external_id(
         self, provider: str, external_user_id: str
     ) -> Optional[OAuthIdentity]:
-        """Find an identity by provider and external user ID"""
         return self.find_one(
             {"provider": provider, "external_user_id": external_user_id}
         )
@@ -29,11 +27,9 @@ class OAuthIdentityRepository(BaseRepository[OAuthIdentity]):
     def find_by_user_id_and_provider(
         self, user_id, provider: str
     ) -> Optional[OAuthIdentity]:
-        """Find an identity by user ID and provider"""
         return self.find_one({"user_id": user_id, "provider": provider})
 
     def mark_token_invalid(self, identity_id, reason: str = "invalid") -> None:
-        """Mark a token as invalid"""
         self.update_one(
             identity_id,
             {
@@ -115,8 +111,6 @@ class OAuthIdentityRepository(BaseRepository[OAuthIdentity]):
 
             if user_updates:
                 self.user_repo.update_one(user_doc.id, user_updates)
-                # We need to refresh user_doc after update or manually update it
-                # Since update_one returns the updated doc, let's use that
                 user_doc = self.user_repo.find_by_id(user_doc.id)
 
             identity_doc = self.find_by_id(existing_identity.id)

@@ -1,3 +1,4 @@
+from app.models.entities.imported_repository import ImportStatus
 from typing import List, Optional
 
 from bson import ObjectId
@@ -19,28 +20,20 @@ from app.services.github.exceptions import GithubConfigurationError
 from app.tasks.ingestion import import_repo
 
 
-def _prepare_repo_payload(doc: dict) -> dict:
-    payload = doc.copy()
-
-    # Set defaults for optional fields
-    payload.setdefault("ci_provider", "github_actions")
-    payload.setdefault("sync_status", "healthy")
-    payload.setdefault("ci_token_status", "valid")
-    payload.setdefault("test_frameworks", [])
-    payload.setdefault("source_languages", [])
-
-    payload["total_builds_imported"] = payload.get("total_builds_imported", 0)
-    return payload
+def _serialize_repo(repo_doc) -> RepoResponse:
+    if hasattr(repo_doc, "model_dump"):
+        repo_dict = repo_doc.model_dump(by_alias=True, exclude_none=False, mode="json")
+    else:
+        repo_dict = repo_doc
+    return RepoResponse.model_validate(repo_dict)
 
 
-def _serialize_repo(doc: dict) -> RepoResponse:
-    return RepoResponse.model_validate(_prepare_repo_payload(doc))
-
-
-def _serialize_repo_detail(doc: dict) -> RepoDetailResponse:
-    payload = _prepare_repo_payload(doc)
-    payload["metadata"] = doc.get("metadata")
-    return RepoDetailResponse.model_validate(payload)
+def _serialize_repo_detail(repo_doc) -> RepoDetailResponse:
+    if hasattr(repo_doc, "model_dump"):
+        repo_dict = repo_doc.model_dump(by_alias=True, exclude_none=False, mode="json")
+    else:
+        repo_dict = repo_doc
+    return RepoDetailResponse.model_validate(repo_dict)
 
 
 class RepositoryService:
@@ -48,53 +41,6 @@ class RepositoryService:
         self.db = db
         self.repo_repo = ImportedRepositoryRepository(db)
         self.available_repo_repo = AvailableRepositoryRepository(db)
-
-    def import_repository(
-        self, user_id: str, payload: RepoImportRequest
-    ) -> RepoResponse:
-        available_repo = self.db.available_repositories.find_one(
-            {"user_id": ObjectId(user_id), "full_name": payload.full_name}
-        )
-
-        installation_id = payload.installation_id
-        if available_repo and available_repo.get("installation_id"):
-            installation_id = available_repo.get("installation_id")
-
-        if not installation_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="This repository must be installed via the GitHub App to be imported. Please install the App for this repository first.",
-            )
-
-        # Create stub repository
-        repo_doc = self.repo_repo.upsert_repository(
-            user_id=user_id,
-            provider=payload.provider,
-            full_name=payload.full_name,
-            default_branch="main",
-            is_private=False,
-            main_lang=None,
-            github_repo_id=None,
-            metadata={},
-            installation_id=installation_id,
-            last_scanned_at=None,
-            test_frameworks=payload.test_frameworks or [],
-            source_languages=payload.source_languages or [],
-            ci_provider=payload.ci_provider or "github_actions",
-        )
-
-        # Trigger async import
-        import_repo.delay(
-            user_id=user_id,
-            full_name=payload.full_name,
-            installation_id=installation_id,
-            provider=payload.provider,
-            test_frameworks=payload.test_frameworks,
-            source_languages=payload.source_languages,
-            ci_provider=payload.ci_provider,
-        )
-
-        return RepoResponse.model_validate(repo_doc)
 
     def bulk_import_repositories(
         self, user_id: str, payloads: List[RepoImportRequest]
@@ -105,7 +51,11 @@ class RepositoryService:
         full_names = [p.full_name for p in payloads]
         available_repos = list(
             self.db.available_repositories.find(
-                {"user_id": ObjectId(user_id), "full_name": {"$in": full_names}}
+                {
+                    "user_id": ObjectId(user_id),
+                    "full_name": {"$in": full_names},
+                    "imported": {"$ne": True},
+                }
             )
         )
         available_map = {r["full_name"]: r for r in available_repos}
@@ -119,26 +69,30 @@ class RepositoryService:
             if available_repo and available_repo.get("installation_id"):
                 installation_id = available_repo.get("installation_id")
 
-            if not installation_id:
+            if not installation_id and self.repo_repo.find_one(
+                {
+                    "user_id": ObjectId(target_user_id),
+                    "provider": payload.provider,
+                    "full_name": payload.full_name,
+                }
+            ):
                 # Skip or log
                 continue
 
             try:
-                # Create stub repository
                 repo_doc = self.repo_repo.upsert_repository(
-                    user_id=target_user_id,
-                    provider=payload.provider,
-                    full_name=payload.full_name,
-                    default_branch="main",
-                    is_private=False,
-                    main_lang=None,
-                    github_repo_id=None,
-                    metadata={},
-                    installation_id=installation_id,
-                    last_scanned_at=None,
-                    test_frameworks=payload.test_frameworks or [],
-                    source_languages=payload.source_languages or [],
-                    ci_provider=payload.ci_provider or "github_actions",
+                    query={
+                        "user_id": ObjectId(target_user_id),
+                        "provider": payload.provider,
+                        "full_name": payload.full_name,
+                    },
+                    data={
+                        "installation_id": installation_id,
+                        "test_frameworks": payload.test_frameworks,
+                        "source_languages": payload.source_languages,
+                        "ci_provider": payload.ci_provider,
+                        "import_status": ImportStatus.QUEUED.value,
+                    },
                 )
 
                 # Trigger async import
@@ -159,7 +113,7 @@ class RepositoryService:
                 print(f"Failed to import {payload.full_name}: {e}")
                 continue
 
-        return [RepoResponse.model_validate(doc) for doc in results]
+        return [_serialize_repo(doc) for doc in results]
 
     def sync_repositories(self, user_id: str, limit: int) -> RepoSuggestionListResponse:
         """Sync available repositories from GitHub App Installations."""
@@ -171,9 +125,10 @@ class RepositoryService:
                 detail=f"Failed to sync repositories: {str(e)}",
             )
 
-        return self.available_repo_repo.discover_available_repositories(
+        items = self.available_repo_repo.discover_available_repositories(
             user_id=user_id, q=None, limit=limit
         )
+        return RepoSuggestionListResponse(items=items)
 
     def list_repositories(self, user_id: str) -> List[RepoResponse]:
         """List tracked repositories."""
@@ -184,7 +139,7 @@ class RepositoryService:
         self, user_id: str, q: str | None, limit: int
     ) -> RepoSuggestionListResponse:
         """List available repositories."""
-        items = self.repo_repo.discover_available_repositories(
+        items = self.available_repo_repo.discover_available_repositories(
             user_id=user_id, q=q, limit=limit
         )
         return RepoSuggestionListResponse(items=items)

@@ -1,25 +1,17 @@
 """Available repository entity - caches repos available to user"""
 
-from datetime import datetime
-from typing import Optional
-
 from bson import ObjectId
-from pydantic import BaseModel, Field
+
+from .base import BaseEntity, PyObjectId
 
 
-class AvailableRepository(BaseModel):
-    id: Optional[ObjectId] = Field(None, alias="_id")
-    user_id: ObjectId  # The user who can see this repo
+class AvailableRepository(BaseEntity):
+    user_id: PyObjectId  # The user who can see this repo
     full_name: str
     github_id: int
     private: bool
     html_url: str
-    description: Optional[str] = None
+    description: str | None = None
     default_branch: str
-    installation_id: Optional[str] = None  # If accessible via App
+    installation_id: str | None = None  # If accessible via App
     imported: bool = False
-    updated_at: datetime
-
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True

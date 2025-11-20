@@ -3,10 +3,8 @@ import type {
   BuildListResponse,
   DashboardSummaryResponse,
   GithubAuthorizeResponse,
-  GithubImportJob,
   GithubInstallation,
   GithubInstallationListResponse,
-  PipelineStatus,
   RepoDetail,
   RepoImportPayload,
   RepoSuggestionResponse,
@@ -148,19 +146,8 @@ export const reposApi = {
     const response = await api.patch<RepoDetail>(`/repos/${repoId}`, payload);
     return response.data;
   },
-  scan: async (repoId: string, payload?: { initiated_by?: string }) => {
-    const response = await api.post<GithubImportJob>(
-      `/repos/${repoId}/scan`,
-      payload ?? {}
-    );
-    return response.data;
-  },
-  listJobs: async (repoId: string) => {
-    const response = await api.get<GithubImportJob[]>(`/repos/${repoId}/jobs`);
-    return response.data;
-  },
-  import: async (payload: RepoImportPayload) => {
-    const response = await api.post<RepositoryRecord>("/repos/import", payload);
+  importBulk: async (payloads: RepoImportPayload[]) => {
+    const response = await api.post<RepositoryRecord[]>("/repos/import/bulk", payloads);
     return response.data;
   },
   discover: async (query?: string, limit: number = 50) => {
@@ -212,24 +199,7 @@ export const integrationApi = {
     const response = await api.get<UserAccount>("/auth/me");
     return response.data;
   },
-  getGithubImports: async () => {
-    const response = await api.get<GithubImportJob[]>(
-      "/integrations/github/imports"
-    );
-    return response.data;
-  },
-  startGithubImport: async (payload: {
-    repository: string;
-    branch: string;
-    initiated_by?: string;
-    user_id?: string;
-  }) => {
-    const response = await api.post<GithubImportJob>(
-      "/integrations/github/imports",
-      payload
-    );
-    return response.data;
-  },
+
   listGithubInstallations: async () => {
     const response = await api.get<GithubInstallationListResponse>(
       "/integrations/github/installations"
@@ -240,13 +210,6 @@ export const integrationApi = {
     const response = await api.get<GithubInstallation>(
       `/integrations/github/installations/${installationId}`
     );
-    return response.data;
-  },
-};
-
-export const pipelineApi = {
-  getStatus: async () => {
-    const response = await api.get<PipelineStatus>("/pipeline/status");
     return response.data;
   },
 };

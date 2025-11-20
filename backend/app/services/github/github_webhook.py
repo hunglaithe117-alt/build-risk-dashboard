@@ -10,7 +10,6 @@ from pymongo.database import Database
 
 from app.config import settings
 from app.services.github.github_sync import sync_user_available_repos
-from app.tasks.ingestion import process_workflow_run
 
 
 def verify_signature(signature: str | None, body: bytes) -> None:
@@ -153,6 +152,8 @@ def _handle_workflow_run_event(
     repo_id = str(repo["_id"])
 
     # Trigger processing
+    from app.tasks.ingestion import process_workflow_run
+
     process_workflow_run.delay(repo_id, workflow_run)
 
     return {

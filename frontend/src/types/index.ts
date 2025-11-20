@@ -47,7 +47,6 @@ export interface RepoDistributionEntry {
   builds: number;
 }
 
-export type RepoSyncStatus = "healthy" | "error" | "disabled";
 
 export interface RepositoryRecord {
   id: string;
@@ -62,13 +61,12 @@ export interface RepositoryRecord {
   last_scanned_at?: string;
   installation_id?: string;
   ci_provider: string;
-  sync_status: RepoSyncStatus;
-  ci_token_status: "valid" | "missing";
   test_frameworks: string[];
   source_languages: string[];
   total_builds_imported: number;
   last_sync_error?: string;
   notes?: string;
+  import_status?: "queued" | "importing" | "imported" | "failed";
 }
 
 export interface RepoDetail extends RepositoryRecord {
@@ -101,10 +99,8 @@ export interface RepoImportPayload {
 
 export interface RepoUpdatePayload {
   ci_provider?: string;
-  sync_status?: RepoSyncStatus;
   test_frameworks?: string[];
   source_languages?: string[];
-  ci_token_status?: "valid" | "missing";
   default_branch?: string;
   notes?: string;
 }
@@ -115,69 +111,9 @@ export interface DashboardSummaryResponse {
   repo_distribution: RepoDistributionEntry[];
 }
 
-export interface GithubIntegrationRepository {
-  name: string;
-  lastSync: string | null;
-  buildCount: number;
-  status: "healthy" | "degraded" | "attention";
-}
-
-export interface GithubIntegrationStatus {
-  connected: boolean;
-  organization?: string | null;
-  connectedAt?: string | null;
-  scopes: string[];
-  repositories: GithubIntegrationRepository[];
-  lastSyncStatus: "success" | "warning" | "error";
-  lastSyncMessage?: string | null;
-  accountLogin?: string;
-  accountName?: string;
-  accountAvatarUrl?: string;
-}
-
 export interface GithubAuthorizeResponse {
   authorize_url: string;
   state: string;
-}
-
-export interface PipelineStage {
-  key: string;
-  label: string;
-  status: "pending" | "running" | "completed" | "blocked";
-  percent_complete: number;
-  duration_seconds?: number;
-  items_processed?: number;
-  started_at?: string;
-  completed_at?: string;
-  notes?: string;
-  issues: string[];
-}
-
-export interface PipelineStatus {
-  last_run: string;
-  next_run: string;
-  normalized_features: number;
-  pending_repositories: number;
-  anomalies_detected: number;
-  stages: PipelineStage[];
-}
-
-export interface GithubImportJob {
-  id: string;
-  repository: string;
-  branch: string;
-  user_id?: string;
-  status: "pending" | "running" | "completed" | "failed";
-  progress: number;
-  builds_imported: number;
-  commits_analyzed: number;
-  tests_collected: number;
-  initiated_by: string;
-  created_at: string;
-  started_at?: string;
-  completed_at?: string;
-  last_error?: string;
-  notes?: string;
 }
 
 export interface UserAccount {

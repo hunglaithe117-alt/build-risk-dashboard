@@ -1,7 +1,4 @@
-"""Authentication DTOs"""
-
 from typing import Dict, Optional
-
 from pydantic import BaseModel
 
 from .user import OAuthIdentityResponse, UserResponse

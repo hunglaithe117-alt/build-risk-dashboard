@@ -1,19 +1,11 @@
 """User entity - represents a user account in the database"""
 
-from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
-from bson import ObjectId
-from pydantic import BaseModel, Field
+from .base import BaseEntity
 
 
-class User(BaseModel):
-    id: Optional[ObjectId] = Field(None, alias="_id")
+class User(BaseEntity):
     email: str
-    name: Optional[str] = None
+    name: str | None = None
     role: Literal["admin", "user"] = "user"
-    created_at: datetime
-
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True

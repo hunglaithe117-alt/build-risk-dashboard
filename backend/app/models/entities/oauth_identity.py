@@ -1,30 +1,18 @@
-"""OAuth identity entity - represents OAuth provider linkage"""
-
 from datetime import datetime
-from typing import Optional
-
 from bson import ObjectId
-from pydantic import BaseModel, Field
+
+from .base import BaseEntity, PyObjectId
 
 
-class OAuthIdentity(BaseModel):
-    """OAuth identity entity stored in MongoDB"""
-
-    id: Optional[ObjectId] = Field(None, alias="_id")
-    user_id: ObjectId
+class OAuthIdentity(BaseEntity):
+    user_id: PyObjectId
     provider: str
     external_user_id: str
     access_token: str
-    refresh_token: Optional[str] = None
-    token_expires_at: Optional[datetime] = None
-    scopes: Optional[str] = None
-    account_login: Optional[str] = None
-    account_name: Optional[str] = None
-    account_avatar_url: Optional[str] = None
-    connected_at: Optional[datetime] = None
-    created_at: datetime
-    updated_at: Optional[datetime] = None
-
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
+    refresh_token: str | None = None
+    token_expires_at: datetime | None = None
+    scopes: str | None = None
+    account_login: str | None = None
+    account_name: str | None = None
+    account_avatar_url: str | None = None
+    connected_at: datetime | None = None

@@ -198,13 +198,31 @@ class GitHubClient:
         items = response.get("items", []) if isinstance(response, dict) else []
         return items
 
-    def list_workflow_runs(
+    def paginate_workflow_runs(
         self, full_name: str, params: Optional[Dict[str, Any]] = None
-    ) -> List[Dict[str, Any]]:
-        repo_runs = self._rest_request(
-            "GET", f"/repos/{full_name}/actions/runs", params=params
-        )
-        return repo_runs.get("workflow_runs", [])
+    ) -> Iterator[Dict[str, Any]]:
+        url = f"/repos/{full_name}/actions/runs"
+        query = params or {}
+
+        while url:
+            response = self._rest.get(url, headers=self._headers(), params=query)
+            self._handle_response(response)
+            data = response.json()
+
+            runs = data.get("workflow_runs", [])
+            for run in runs:
+                yield run
+
+            # Pagination
+            url = None
+            query = None  # Clear query params as next link has them
+            link_header = response.headers.get("Link")
+            if link_header:
+                for part in link_header.split(","):
+                    segment = part.strip()
+                    if segment.endswith('rel="next"'):
+                        url = segment[segment.find("<") + 1 : segment.find(">")]
+                        break
 
     def get_workflow_run(self, full_name: str, run_id: int) -> Dict[str, Any]:
         return self._rest_request("GET", f"/repos/{full_name}/actions/runs/{run_id}")

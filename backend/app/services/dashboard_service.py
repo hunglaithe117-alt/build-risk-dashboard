@@ -16,16 +16,11 @@ class DashboardService:
         # 1. Calculate total builds (last 14 days)
         two_weeks_ago = datetime.now(timezone.utc) - timedelta(days=14)
 
-        # We need to join with workflow_runs to get created_at for builds
-        # For now, we'll use a simpler approximation or just count all builds if date is not available in build_sample
-        # Ideally, we should have created_at in BuildSample or join.
-        # Let's count all builds for now as per previous implementation, or try to filter if possible.
-
         total_builds = self.build_collection.count_documents({})
 
         # 2. Success rate
         successful_builds = self.build_collection.count_documents(
-            {"status": {"$in": ["completed", "success"]}}
+            {"tr_status": "passed"}
         )
         success_rate = (
             (successful_builds / total_builds * 100) if total_builds > 0 else 0.0

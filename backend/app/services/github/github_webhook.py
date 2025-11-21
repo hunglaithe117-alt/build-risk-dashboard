@@ -14,6 +14,7 @@ from app.repositories.workflow_run import WorkflowRunRepository
 from app.models.entities.workflow_run import WorkflowRunRaw
 from app.celery_app import celery_app
 from bson import ObjectId
+from app.services.github.github_app import clear_installation_token
 
 
 def verify_signature(signature: str | None, body: bytes) -> None:
@@ -93,7 +94,6 @@ def _handle_installation_event(
             {"$set": {"revoked_at": now, "uninstalled_at": now}},
         )
         # Clear cached token
-        from app.services.github_app import clear_installation_token
 
         clear_installation_token(installation_id)
         return {
@@ -106,7 +106,6 @@ def _handle_installation_event(
         db.github_installations.update_one(
             {"_id": installation_id}, {"$set": {"suspended_at": now}}
         )
-        from app.services.github_app import clear_installation_token
 
         clear_installation_token(installation_id)
         return {
@@ -124,8 +123,6 @@ def _handle_installation_event(
             "action": "installation_unsuspended",
             "installation_id": installation_id,
         }
-
-    return {"status": "ignored", "reason": f"unsupported_installation_action: {action}"}
 
     return {"status": "ignored", "reason": f"unsupported_installation_action: {action}"}
 
@@ -198,6 +195,11 @@ def _handle_workflow_run_event(
             log_fetched=False,
         )
         workflow_run_repo.insert_one(new_run)
+
+        db.repositories.update_one(
+            {"_id": ObjectId(repo_id)}, {"$inc": {"total_builds_imported": 1}}
+        )
+
         log_fetched = False
 
     if not log_fetched:

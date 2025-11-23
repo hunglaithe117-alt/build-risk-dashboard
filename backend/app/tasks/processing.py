@@ -17,7 +17,7 @@ from app.services.extracts.build_log_extractor import BuildLogExtractor
 from app.services.extracts.github_discussion_extractor import GitHubDiscussionExtractor
 from app.services.extracts.repo_snapshot_extractor import RepoSnapshotExtractor
 from app.tasks.base import PipelineTask
-from celery import chord
+from celery import chord, chain
 from app.config import settings
 import redis
 import json
@@ -85,9 +85,11 @@ def process_workflow_run(
     # Fan-out tasks
     header = [
         extract_build_log_features.s(build_id),
-        extract_git_features.s(build_id),
         extract_repo_snapshot_features.s(build_id),
-        extract_github_discussion_features.s(build_id),
+        chain(
+            extract_git_features.si(build_id),
+            extract_github_discussion_features.si(build_id),
+        ),
     ]
 
     callback = finalize_build_sample.s(build_id)
@@ -154,7 +156,13 @@ def extract_git_features(self: PipelineTask, build_id: str) -> Dict[str, Any]:
     from app.services.extracts.git_feature_extractor import GitFeatureExtractor
 
     extractor = GitFeatureExtractor(self.db)
-    return extractor.extract(build_sample, repo)
+    features = extractor.extract(build_sample, repo)
+
+    # Save features immediately so they are available for subsequent tasks in the chain
+    if features:
+        build_sample_repo.update_one(build_id, features)
+
+    return features
 
 
 @celery_app.task(

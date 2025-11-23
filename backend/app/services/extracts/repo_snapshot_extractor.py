@@ -99,8 +99,20 @@ class RepoSnapshotExtractor:
         if repo_path.exists():
             return
 
-        token = get_installation_token(repo.installation_id, self.db)
-        auth_url = f"https://x-access-token:{token}@github.com/{repo.full_name}.git"
+        auth_url = f"https://github.com/{repo.full_name}.git"
+
+        if repo.installation_id:
+            token = get_installation_token(repo.installation_id, self.db)
+            auth_url = f"https://x-access-token:{token}@github.com/{repo.full_name}.git"
+        else:
+            from app.config import settings
+
+            tokens = settings.GITHUB_TOKENS
+            if tokens and tokens[0]:
+                token = tokens[0]
+                auth_url = f"https://{token}@github.com/{repo.full_name}.git"
+
+        logger.info(f"Cloning {repo.full_name} to {repo_path}")
         subprocess.run(
             ["git", "clone", auth_url, str(repo_path)],
             check=True,

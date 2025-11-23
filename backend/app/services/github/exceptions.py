@@ -21,3 +21,11 @@ class GithubRateLimitError(GithubError):
 
 class GithubRetryableError(GithubError):
     """Raised for transient issues where retrying later may succeed."""
+
+
+class GithubAllRateLimitError(GithubError):
+    """Raised when all GitHub tokens hit rate limits."""
+
+    def __init__(self, message: str, retry_after: int | float | None = None):
+        super().__init__(message)
+        self.retry_after = retry_after

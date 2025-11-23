@@ -1,4 +1,5 @@
 """Utilities for translating GitHub compare payloads into feature metrics."""
+
 from __future__ import annotations
 
 import re
@@ -59,7 +60,9 @@ def _matches_test_definition(line: str, language: str) -> bool:
     )
 
 
-def analyze_diff(files: List[Dict[str, object]], language: str | None) -> Dict[str, int | float]:
+def analyze_diff(
+    files: List[Dict[str, object]], language: str | None
+) -> Dict[str, int | float]:
     stats = {
         "git_diff_src_churn": 0,
         "git_diff_test_churn": 0,

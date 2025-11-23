@@ -1,4 +1,5 @@
 """Filesystem helper for persisting downloaded workflow logs."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,8 +9,6 @@ from app.config import settings
 
 
 class ArtifactStore:
-    """Stores job logs on disk so they can be parsed asynchronously."""
-
     def __init__(self, root: str | None = None) -> None:
         self.root = Path(root or settings.ARTIFACTS_ROOT)
         self.root.mkdir(parents=True, exist_ok=True)

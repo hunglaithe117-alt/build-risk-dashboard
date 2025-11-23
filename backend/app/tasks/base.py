@@ -1,20 +1,10 @@
-"""Common Celery task utilities."""
-
-from __future__ import annotations
-
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from celery import Task
 from pymongo.database import Database
 
 from app.database.mongo import get_database
-
-from app.services.github.github_client import (
-    GitHubClient,
-    get_app_github_client,
-    get_public_github_client,
-)
 from app.services.github.exceptions import (
     GithubRateLimitError,
     GithubRetryableError,
@@ -25,8 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 class PipelineTask(Task):
-    """Base Celery task with Mongo + GitHub helpers."""
-
     abstract = True
     autoretry_for = (GithubRateLimitError, GithubRetryableError)
     retry_backoff = True

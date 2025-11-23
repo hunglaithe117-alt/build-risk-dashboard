@@ -1,6 +1,7 @@
 import logging
 import shutil
 import subprocess
+import jellyfish
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -13,6 +14,7 @@ from app.models.entities.imported_repository import ImportedRepository
 from app.models.entities.workflow_run import WorkflowRunRaw
 from app.repositories.build_sample import BuildSampleRepository
 from app.repositories.workflow_run import WorkflowRunRepository
+from app.repositories.pull_request import PullRequestRepository
 from app.services.github.github_app import get_installation_token
 from app.utils.locking import repo_lock
 from app.services.extracts.diff_analyzer import (
@@ -33,6 +35,7 @@ class GitFeatureExtractor:
         self.db = db
         self.build_sample_repo = BuildSampleRepository(db)
         self.workflow_run_repo = WorkflowRunRepository(db)
+        self.pr_repo = PullRequestRepository(db)
 
     def extract(
         self, build_sample: BuildSample, repo: ImportedRepository
@@ -47,27 +50,25 @@ class GitFeatureExtractor:
         try:
             with repo_lock(str(repo.id)):
                 self._ensure_repo(repo, repo_path)
-                # Fetch to ensure we have the commit
                 self._run_git(repo_path, ["fetch", "origin"])
 
-            # Check if commit exists
             if not self._commit_exists(repo_path, commit_sha):
                 logger.warning(f"Commit {commit_sha} not found in {repo.full_name}")
                 return self._empty_result()
 
             git_repo = Repo(str(repo_path))
 
-            # Calculate build stats (history traversal)
             build_stats = self._calculate_build_stats(
                 build_sample, git_repo, repo.full_name
             )
-
             # Calculate team stats
             team_stats = self._calculate_team_stats(
-                build_sample, git_repo, build_stats.get("git_all_built_commits", [])
+                build_sample,
+                git_repo,
+                repo,
+                build_stats.get("git_all_built_commits", []),
             )
 
-            # Calculate diff stats
             diff_stats = {}
             parent_sha = self._get_parent_commit(repo_path, commit_sha)
             if parent_sha:
@@ -151,8 +152,6 @@ class GitFeatureExtractor:
             elif _is_test_file(path):
                 stats["git_diff_test_churn"] += added + deleted
 
-        # Get patch for test cases
-        # This might be heavy for large diffs
         patch_out = self._run_git(cwd, ["diff", parent, current])
         added_tests, deleted_tests = _count_test_cases(patch_out, language)
         stats["gh_diff_tests_added"] = added_tests
@@ -173,7 +172,6 @@ class GitFeatureExtractor:
             token = get_installation_token(repo.installation_id, self.db)
             auth_url = f"https://x-access-token:{token}@github.com/{repo.full_name}.git"
         else:
-            # Try public tokens from settings
             from app.config import settings
 
             tokens = settings.GITHUB_TOKENS
@@ -224,7 +222,6 @@ class GitFeatureExtractor:
         last_commit = None
         prev_build_id = None
 
-        # Walk backwards to find previous build
         # Limit to avoid infinite loops in weird histories
         walker = repo.iter_commits(commit_sha, max_count=1000)
         first = True
@@ -240,7 +237,6 @@ class GitFeatureExtractor:
             last_commit = commit
 
             # Check if this commit triggered a build
-            # Use WorkflowRunRaw to find previous builds (metadata pass ensures they exist)
             existing_build = self.workflow_run_repo.find_one(
                 {
                     "repo_id": build_sample.repo_id,
@@ -271,58 +267,177 @@ class GitFeatureExtractor:
             "git_num_all_built_commits": len(commits_hex),
         }
 
+    def _resolve_team_size_and_membership(
+        self,
+        current_build_people: Set[Tuple[str, str, str]],
+        historical_people: Set[Tuple[str, str, str]],
+    ) -> Tuple[int, bool]:
+        unique_identities: List[Set[Tuple[str, str, str]]] = []
+
+        # Sort to process stably
+        sorted_people = sorted(list(historical_people), key=lambda x: x[1] or "")
+
+        for name, email, login in sorted_people:
+            found_match = False
+            # Normalize strings for comparison
+            name_norm = name.strip().lower() if name else ""
+            email_norm = email.strip().lower() if email else ""
+            login_norm = login.strip().lower() if login else ""
+
+            for person_aliases in unique_identities:
+                for existing_name, existing_email, existing_login in person_aliases:
+                    e_name = existing_name.strip().lower() if existing_name else ""
+                    e_email = existing_email.strip().lower() if existing_email else ""
+                    e_login = existing_login.strip().lower() if existing_login else ""
+
+                    # Rule 1: Match by Email
+                    if email_norm and e_email and email_norm == e_email:
+                        found_match = True
+                        break
+
+                    # Rule 2: Match by Login (GitHub Username)
+                    if login_norm and e_login and login_norm == e_login:
+                        found_match = True
+                        break
+
+                    # Rule 3: Match by Name (Jaro-Winkler > 0.9)
+                    # Only compare if both have name and reasonable length
+                    if name_norm and e_name and len(name_norm) > 3 and len(e_name) > 3:
+                        sim = jellyfish.jaro_winkler_similarity(name_norm, e_name)
+                        if sim > 0.90:
+                            found_match = True
+                            break
+
+                if found_match:
+                    person_aliases.add((name, email, login))
+                    break
+
+            if not found_match:
+                # If not matched, create a new identity
+                unique_identities.append({(name, email, login)})
+
+        team_size = len(unique_identities)
+
+        # Check if current build people are part of the team
+        is_member = False
+        for c_name, c_email, c_login in current_build_people:
+            c_name_n = c_name.strip().lower() if c_name else ""
+            c_email_n = c_email.strip().lower() if c_email else ""
+
+            for group in unique_identities:
+                for g_name, g_email, g_login in group:
+                    # Check Email
+                    if c_email_n and g_email and c_email_n == g_email.strip().lower():
+                        is_member = True
+                        break
+                    # Check Jaro-Winkler Name
+                    if c_name_n and g_name:
+                        if (
+                            jellyfish.jaro_winkler_similarity(
+                                c_name_n, g_name.strip().lower()
+                            )
+                            > 0.90
+                        ):
+                            is_member = True
+                            break
+                if is_member:
+                    break
+            if is_member:
+                break
+
+        return team_size, is_member
+
     def _calculate_team_stats(
         self,
         build_sample: BuildSample,
-        repo: Repo,
+        git_repo: Repo,
+        db_repo: ImportedRepository,
         built_commits: List[str],
         chunk_size=50,
     ) -> Dict[str, Any]:
         if not built_commits:
             return {}
 
-        # Get trigger commit (first in list)
-        trigger_commit_sha = built_commits[0]
+        ref_date = build_sample.gh_build_started_at
+        if not ref_date:
+            try:
+                trigger_commit = git_repo.commit(built_commits[0])
+                ref_date = datetime.fromtimestamp(trigger_commit.committed_date)
+            except Exception:
+                return {}
+
+        start_date = ref_date - timedelta(days=90)
+
+        # Format set: (Name, Email, Login=None)
+        current_build_people: Set[Tuple[str, str, str]] = set()
         try:
-            trigger_commit = repo.commit(trigger_commit_sha)
-            trigger_date = datetime.fromtimestamp(trigger_commit.committed_date)
-        except Exception:
-            return {}
+            for sha in built_commits:
+                c = git_repo.commit(sha)
+                # Author and Committer
+                current_build_people.add((c.author.name, c.author.email, None))
+                current_build_people.add((c.committer.name, c.committer.email, None))
+        except Exception as e:
+            logger.warning(f"Failed to get current build authors: {e}")
 
-        start_date = trigger_date - timedelta(days=90)  # 3 months back
-
-        # Find team members (committers) in the last 3 months
-        # We use git log since date to find all commits
-        team_members: Set[str] = set()
+        all_historical_people: Set[Tuple[str, str, str]] = set()
 
         try:
-            # Use git log to get authors efficiently
-            # Format: %ae (author email) or %an (author name)
-            # We'll use email as identifier if possible, or name
-            log_args = [
+            # 1. Direct Committers
+            log_args_direct = [
                 "--since",
                 start_date.isoformat(),
                 "--until",
-                trigger_date.isoformat(),
-                "--format=%ae",
+                ref_date.isoformat(),
+                "--no-merges",
+                "--format=%an|%ae|%cn|%ce",
             ]
-            # Note: repo.git.log can return large string
-            authors_log = repo.git.log(*log_args).splitlines()
-            team_members = set(a.strip() for a in authors_log if a.strip())
+            raw_log_direct = (
+                git_repo.git.log(*log_args_direct).replace('"', "").splitlines()
+            )
+            for line in raw_log_direct:
+                parts = line.split("|")
+                if len(parts) >= 4:
+                    if parts[1]:
+                        all_historical_people.add((parts[0], parts[1], None))
+                    if parts[3]:
+                        all_historical_people.add((parts[2], parts[3], None))
+
+            # 2. Local Mergers
+            log_args_merges = [
+                "--since",
+                start_date.isoformat(),
+                "--until",
+                ref_date.isoformat(),
+                "--merges",
+                "--format=%cn|%ce",  # Only Committer
+            ]
+            raw_log_merges = (
+                git_repo.git.log(*log_args_merges).replace('"', "").splitlines()
+            )
+            for line in raw_log_merges:
+                parts = line.split("|")
+                if len(parts) >= 2:
+                    c_name, c_email = parts[0], parts[1]
+                    if c_email:
+                        all_historical_people.add((c_name, c_email, None))
+
         except Exception as e:
-            logger.warning(f"Failed to calculate team size: {e}")
-            return {}
+            logger.warning(f"Failed to fetch historical git committers: {e}")
 
-        # Check if current build is by core team member
-        current_author = trigger_commit.author.email
-        is_core_member = current_author in team_members
+        # 3. PR Mergers
+        merger_logins: Set[str] = self._fetch_mergers(db_repo, start_date, ref_date)
+        for login in merger_logins:
+            all_historical_people.add((login, None, login))
 
-        # Commits on files touched
-        # 1. Identify files touched in built_commits
+        gh_team_size, is_core_member = self._resolve_team_size_and_membership(
+            current_build_people, all_historical_people
+        )
+
+        # 4. Files Touched
         files_touched: Set[str] = set()
         for sha in built_commits:
             try:
-                commit = repo.commit(sha)
+                commit = git_repo.commit(sha)
                 if commit.parents:
                     diffs = commit.diff(commit.parents[0])
                     for d in diffs:
@@ -330,23 +445,20 @@ class GitFeatureExtractor:
                             files_touched.add(d.b_path)
                         if d.a_path:
                             files_touched.add(d.a_path)
-                else:
-                    # Initial commit, add all files? Or just skip diff
-                    pass
             except Exception:
                 pass
 
-        # 2. Count unique commits on these files in the last 3 months
         num_commits_on_files = 0
-        all_shas = set()
         if files_touched:
             try:
+                all_shas = set()
                 paths = list(files_touched)
+                trigger_sha = built_commits[0]
+
                 for i in range(0, len(paths), chunk_size):
                     chunk = paths[i : i + chunk_size]
-                    # Use trigger_commit_sha as starting point to walk backwards
-                    commits_on_files = repo.git.log(
-                        trigger_commit_sha,
+                    commits_on_files = git_repo.git.log(
+                        trigger_sha,
                         "--since",
                         start_date.isoformat(),
                         "--format=%H",
@@ -355,8 +467,6 @@ class GitFeatureExtractor:
                     ).splitlines()
                     all_shas.update(set(commits_on_files))
 
-                # Exclude the build commits themselves, matching Ruby's logic:
-                # "not commits_in_pr.include? c.oid"
                 for sha in built_commits:
                     if sha in all_shas:
                         all_shas.remove(sha)
@@ -366,10 +476,16 @@ class GitFeatureExtractor:
                 logger.warning(f"Failed to count commits on files: {e}")
 
         return {
-            "gh_team_size": len(team_members),
+            "gh_team_size": gh_team_size,
             "gh_by_core_team_member": is_core_member,
             "gh_num_commits_on_files_touched": num_commits_on_files,
         }
+
+    def _fetch_mergers(
+        self, repo: ImportedRepository, start_date: datetime, end_date: datetime
+    ) -> Set[str]:
+        """Fetch users who merged PRs in the given time window from local DB."""
+        return self.pr_repo.get_mergers_in_range(repo.id, start_date, end_date)
 
     def _empty_result(self) -> Dict[str, Any]:
         return {

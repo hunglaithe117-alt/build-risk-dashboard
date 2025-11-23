@@ -18,7 +18,7 @@ from app.dtos import (
     RepoUpdateRequest,
     LazySyncPreviewResponse,
 )
-from app.dtos.build import BuildListResponse, BuildDetailResponse
+from app.dtos.build import BuildListResponse, BuildDetail
 from app.middleware.auth import get_current_user
 from app.services.build_service import BuildService
 from app.services.repository_service import RepositoryService

@@ -17,7 +17,6 @@ from app.repositories.imported_repository import ImportedRepositoryRepository
 from app.repositories.workflow_run import WorkflowRunRepository
 from app.repositories.workflow_run import WorkflowRunRepository
 from app.models.entities.workflow_run import WorkflowRunRaw
-from app.repositories.pull_request import PullRequestRepository
 
 
 logger = logging.getLogger(__name__)
@@ -49,7 +48,6 @@ def import_repo(
     imported_repo_repo = ImportedRepositoryRepository(self.db)
     imported_repo_repo = ImportedRepositoryRepository(self.db)
     workflow_run_repo = WorkflowRunRepository(self.db)
-    pr_repo = PullRequestRepository(self.db)
     redis_client = redis.from_url(settings.REDIS_URL)
 
     def publish_status(repo_id: str, status: str, message: str = ""):
@@ -204,74 +202,6 @@ def import_repo(
 
                 runs_to_process.append((run_created_at, run_id))
                 total_runs += 1
-
-            if runs_to_process:
-                publish_status(repo_id, "importing", "Fetching pull requests...")
-                try:
-                    oldest_run_created_at = min(r[0] for r in runs_to_process)
-                    from datetime import timedelta
-
-                    cutoff_date = oldest_run_created_at - timedelta(days=90)
-                    logger.info(
-                        f"Oldest ingested run at {oldest_run_created_at}. PR fetch cutoff: {cutoff_date}"
-                    )
-
-                    pr_count = 0
-                    for pr_data in gh.paginate_pull_requests(
-                        full_name,
-                        params={
-                            "state": "closed",
-                            "sort": "updated",
-                            "direction": "desc",
-                            "per_page": 100,
-                        },
-                    ):
-                        # Check cutoff
-                        pr_updated_at = datetime.fromisoformat(
-                            pr_data.get("updated_at").replace("Z", "+00:00")
-                        )
-
-                        if cutoff_date and pr_updated_at < cutoff_date:
-                            logger.info(
-                                f"Reached PR updated at {pr_updated_at} < cutoff {cutoff_date}. Stopping PR fetch."
-                            )
-                            break
-
-                        pr_repo.upsert_pull_request(
-                            {
-                                "repo_id": ObjectId(repo_id),
-                                "number": pr_data.get("number"),
-                                "title": pr_data.get("title"),
-                                "user_login": pr_data.get("user", {}).get("login"),
-                                "state": pr_data.get("state"),
-                                "merged": bool(pr_data.get("merged_at")),
-                                "merged_at": (
-                                    datetime.fromisoformat(
-                                        pr_data.get("merged_at").replace("Z", "+00:00")
-                                    )
-                                    if pr_data.get("merged_at")
-                                    else None
-                                ),
-                                "merged_by_login": (
-                                    pr_data.get("merged_by", {}).get("login")
-                                    if pr_data.get("merged_by")
-                                    else None
-                                ),
-                                "created_at": datetime.fromisoformat(
-                                    pr_data.get("created_at").replace("Z", "+00:00")
-                                ),
-                                "updated_at": pr_updated_at,
-                                "head_sha": pr_data.get("head", {}).get("sha"),
-                                "base_sha": pr_data.get("base", {}).get("sha"),
-                            }
-                        )
-                        pr_count += 1
-                        if pr_count % 100 == 0:
-                            logger.info(f"Fetched {pr_count} PRs for {full_name}")
-
-                    logger.info(f"Finished fetching {pr_count} PRs for {full_name}")
-                except Exception as e:
-                    logger.error(f"Failed to fetch PRs for {full_name}: {e}")
 
             # Processing (Oldest -> Newest)
             runs_to_process.sort(key=lambda x: x[0])

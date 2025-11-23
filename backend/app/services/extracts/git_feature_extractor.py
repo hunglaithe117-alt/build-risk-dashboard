@@ -11,10 +11,8 @@ from pymongo.database import Database
 
 from app.models.entities.build_sample import BuildSample
 from app.models.entities.imported_repository import ImportedRepository
-from app.models.entities.workflow_run import WorkflowRunRaw
 from app.repositories.build_sample import BuildSampleRepository
 from app.repositories.workflow_run import WorkflowRunRepository
-from app.repositories.pull_request import PullRequestRepository
 from app.services.github.github_app import get_installation_token
 from app.utils.locking import repo_lock
 from app.services.extracts.diff_analyzer import (
@@ -35,7 +33,6 @@ class GitFeatureExtractor:
         self.db = db
         self.build_sample_repo = BuildSampleRepository(db)
         self.workflow_run_repo = WorkflowRunRepository(db)
-        self.pr_repo = PullRequestRepository(db)
 
     def extract(
         self, build_sample: BuildSample, repo: ImportedRepository
@@ -267,86 +264,6 @@ class GitFeatureExtractor:
             "git_num_all_built_commits": len(commits_hex),
         }
 
-    def _resolve_team_size_and_membership(
-        self,
-        current_build_people: Set[Tuple[str, str, str]],
-        historical_people: Set[Tuple[str, str, str]],
-    ) -> Tuple[int, bool]:
-        unique_identities: List[Set[Tuple[str, str, str]]] = []
-
-        # Sort to process stably
-        sorted_people = sorted(list(historical_people), key=lambda x: x[1] or "")
-
-        for name, email, login in sorted_people:
-            found_match = False
-            # Normalize strings for comparison
-            name_norm = name.strip().lower() if name else ""
-            email_norm = email.strip().lower() if email else ""
-            login_norm = login.strip().lower() if login else ""
-
-            for person_aliases in unique_identities:
-                for existing_name, existing_email, existing_login in person_aliases:
-                    e_name = existing_name.strip().lower() if existing_name else ""
-                    e_email = existing_email.strip().lower() if existing_email else ""
-                    e_login = existing_login.strip().lower() if existing_login else ""
-
-                    # Rule 1: Match by Email
-                    if email_norm and e_email and email_norm == e_email:
-                        found_match = True
-                        break
-
-                    # Rule 2: Match by Login (GitHub Username)
-                    if login_norm and e_login and login_norm == e_login:
-                        found_match = True
-                        break
-
-                    # Rule 3: Match by Name (Jaro-Winkler > 0.9)
-                    # Only compare if both have name and reasonable length
-                    if name_norm and e_name and len(name_norm) > 3 and len(e_name) > 3:
-                        sim = jellyfish.jaro_winkler_similarity(name_norm, e_name)
-                        if sim > 0.90:
-                            found_match = True
-                            break
-
-                if found_match:
-                    person_aliases.add((name, email, login))
-                    break
-
-            if not found_match:
-                # If not matched, create a new identity
-                unique_identities.append({(name, email, login)})
-
-        team_size = len(unique_identities)
-
-        # Check if current build people are part of the team
-        is_member = False
-        for c_name, c_email, c_login in current_build_people:
-            c_name_n = c_name.strip().lower() if c_name else ""
-            c_email_n = c_email.strip().lower() if c_email else ""
-
-            for group in unique_identities:
-                for g_name, g_email, g_login in group:
-                    # Check Email
-                    if c_email_n and g_email and c_email_n == g_email.strip().lower():
-                        is_member = True
-                        break
-                    # Check Jaro-Winkler Name
-                    if c_name_n and g_name:
-                        if (
-                            jellyfish.jaro_winkler_similarity(
-                                c_name_n, g_name.strip().lower()
-                            )
-                            > 0.90
-                        ):
-                            is_member = True
-                            break
-                if is_member:
-                    break
-            if is_member:
-                break
-
-        return team_size, is_member
-
     def _calculate_team_stats(
         self,
         build_sample: BuildSample,
@@ -368,72 +285,31 @@ class GitFeatureExtractor:
 
         start_date = ref_date - timedelta(days=90)
 
-        # Format set: (Name, Email, Login=None)
-        current_build_people: Set[Tuple[str, str, str]] = set()
-        try:
-            for sha in built_commits:
-                c = git_repo.commit(sha)
-                # Author and Committer
-                current_build_people.add((c.author.name, c.author.email, None))
-                current_build_people.add((c.committer.name, c.committer.email, None))
-        except Exception as e:
-            logger.warning(f"Failed to get current build authors: {e}")
-
-        all_historical_people: Set[Tuple[str, str, str]] = set()
-
-        try:
-            # 1. Direct Committers
-            log_args_direct = [
-                "--since",
-                start_date.isoformat(),
-                "--until",
-                ref_date.isoformat(),
-                "--no-merges",
-                "--format=%an|%ae|%cn|%ce",
-            ]
-            raw_log_direct = (
-                git_repo.git.log(*log_args_direct).replace('"', "").splitlines()
-            )
-            for line in raw_log_direct:
-                parts = line.split("|")
-                if len(parts) >= 4:
-                    if parts[1]:
-                        all_historical_people.add((parts[0], parts[1], None))
-                    if parts[3]:
-                        all_historical_people.add((parts[2], parts[3], None))
-
-            # 2. Local Mergers
-            log_args_merges = [
-                "--since",
-                start_date.isoformat(),
-                "--until",
-                ref_date.isoformat(),
-                "--merges",
-                "--format=%cn|%ce",  # Only Committer
-            ]
-            raw_log_merges = (
-                git_repo.git.log(*log_args_merges).replace('"', "").splitlines()
-            )
-            for line in raw_log_merges:
-                parts = line.split("|")
-                if len(parts) >= 2:
-                    c_name, c_email = parts[0], parts[1]
-                    if c_email:
-                        all_historical_people.add((c_name, c_email, None))
-
-        except Exception as e:
-            logger.warning(f"Failed to fetch historical git committers: {e}")
-
-        # 3. PR Mergers
-        merger_logins: Set[str] = self._fetch_mergers(db_repo, start_date, ref_date)
-        for login in merger_logins:
-            all_historical_people.add((login, None, login))
-
-        gh_team_size, is_core_member = self._resolve_team_size_and_membership(
-            current_build_people, all_historical_people
+        # Committer Team: Direct pushers (excluding PR merges, squash, rebase)
+        committer_names = self._get_direct_committers(
+            git_repo.working_dir, start_date, ref_date
         )
 
-        # 4. Files Touched
+        # Merger Team: People who merged PRs OR triggered workflow runs (PR/Push)
+        merger_logins = self._get_pr_mergers(db_repo.id, start_date, ref_date)
+
+        core_team = committer_names | merger_logins
+        gh_team_size = len(core_team)
+
+        # Check if the build trigger author is in the core team
+        is_core_member = False
+        try:
+            trigger_commit = git_repo.commit(build_sample.tr_original_commit)
+            author_name = trigger_commit.author.name
+            committer_name = trigger_commit.committer.name
+
+            if author_name in core_team or committer_name in core_team:
+                is_core_member = True
+
+        except Exception:
+            pass
+
+        # Files Touched
         files_touched: Set[str] = set()
         for sha in built_commits:
             try:
@@ -481,11 +357,86 @@ class GitFeatureExtractor:
             "gh_num_commits_on_files_touched": num_commits_on_files,
         }
 
-    def _fetch_mergers(
-        self, repo: ImportedRepository, start_date: datetime, end_date: datetime
+    def _get_direct_committers(
+        self, repo_path: str, start_date: datetime, end_date: datetime
     ) -> Set[str]:
-        """Fetch users who merged PRs in the given time window from local DB."""
-        return self.pr_repo.get_mergers_in_range(repo.id, start_date, end_date)
+        """
+        Get NAMES of users who pushed directly to the main branch (not via PR).
+        Filters out PR merges, Squash merges, and Rebase merges using regex.
+        """
+        import re
+
+        # Regex to detect Squash/Rebase PRs (e.g., "Subject (#123)")
+        pr_pattern = re.compile(r"\s\(#\d+\)")
+
+        try:
+            # git log --first-parent --no-merges --since=... --format="%H|%an|%s"
+            # %an = author name
+            output = self._run_git(
+                Path(repo_path),
+                [
+                    "log",
+                    "--first-parent",
+                    "--no-merges",
+                    f"--since={start_date.isoformat()}",
+                    f"--until={end_date.isoformat()}",
+                    "--format=%H|%an|%s",
+                ],
+            )
+        except subprocess.CalledProcessError as e:
+            logger.warning(f"Failed to get direct committers: {e}")
+            return set()
+
+        direct_committers = set()
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+
+            parts = line.split("|", 2)
+            if len(parts) < 3:
+                continue
+
+            name = parts[1]
+            message = parts[2]
+
+            # Filter out Squash/Rebase PRs
+            if pr_pattern.search(message):
+                continue
+
+            # Filter out standard GitHub merge messages
+            if "Merge pull request" in message:
+                continue
+
+            direct_committers.add(name)
+
+        return direct_committers
+
+    def _get_pr_mergers(
+        self, repo_id: str, start_date: datetime, end_date: datetime
+    ) -> Set[str]:
+        """
+        Get logins of users who triggered PR workflow runs in the given time window.
+        """
+        mergers = set()
+
+        try:
+            runs = self.workflow_run_repo.find_in_date_range(
+                repo_id, start_date, end_date
+            )
+            for run in runs:
+                payload = run.raw_payload
+                pull_requests = payload.get("pull_requests", [])
+                is_pr = len(pull_requests) > 0 or payload.get("event") == "pull_request"
+
+                if is_pr:
+                    actor = payload.get("triggering_actor", {})
+                    login = actor.get("login")
+                    if login:
+                        mergers.add(login)
+        except Exception as e:
+            logger.warning(f"Failed to get workflow run actors: {e}")
+
+        return mergers
 
     def _empty_result(self) -> Dict[str, Any]:
         return {

@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 from pymongo.database import Database
 
@@ -26,3 +27,13 @@ class WorkflowRunRepository(BaseRepository[WorkflowRunRaw]):
             skip=skip,
             limit=limit,
         )
+
+    def find_in_date_range(
+        self, repo_id: str, start_date: datetime, end_date: datetime
+    ) -> List[WorkflowRunRaw]:
+        """Find workflow runs within a specific time window."""
+        query = {
+            "repo_id": self._to_object_id(repo_id),
+            "created_at": {"$gte": start_date, "$lte": end_date},
+        }
+        return self.find_many(query)

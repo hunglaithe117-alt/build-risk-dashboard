@@ -20,6 +20,7 @@ import type {
     RepoSuggestion,
     RepoImportPayload,
 } from "@/types";
+import { useAuth } from "@/contexts/auth-context";
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
     const [mounted, setMounted] = useState(false);
@@ -174,6 +175,9 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
         }
     };
 
+    const { status } = useAuth();
+    const appInstalled = status?.app_installed;
+
     if (!isOpen) return null;
 
     return (
@@ -195,6 +199,30 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                             <X className="h-5 w-5" />
                         </button>
                     </div>
+
+                    {!appInstalled && (
+                        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/50 dark:bg-amber-900/20">
+                            <div className="flex items-start gap-3">
+                                <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                                <div className="flex-1">
+                                    <h3 className="text-sm font-medium text-amber-900 dark:text-amber-200">
+                                        GitHub App Required
+                                    </h3>
+                                    <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                                        To import private repositories and enable automatic build tracking, you must install the BuildGuard GitHub App.
+                                    </p>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="mt-3 border-amber-200 bg-white text-amber-900 hover:bg-amber-50 hover:text-amber-900 dark:border-amber-800 dark:bg-slate-950 dark:text-amber-200 dark:hover:bg-amber-900/20"
+                                        onClick={() => window.open("https://github.com/apps/builddefection", "_blank")}
+                                    >
+                                        Install GitHub App
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {step === 1 ? (
                         <div className="space-y-6">

@@ -439,20 +439,60 @@ function RepoConfigItem({
                     <label className="text-xs font-semibold text-muted-foreground uppercase mb-2 block">
                         Test Frameworks
                     </label>
-                    <div className="grid grid-cols-2 gap-2">
-                        {["PYTEST", "UNITTEST", "RSPEC", "MINITEST", "TESTUNIT", "CUCUMBER"].map(
-                            (fw) => (
-                                <label key={fw} className="flex items-center gap-2 text-sm cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        className="rounded border-gray-300"
-                                        checked={config.test_frameworks.includes(fw)}
-                                        onChange={() => toggleFramework(fw)}
-                                    />
-                                    {fw}
-                                </label>
-                            )
-                        )}
+                    <div className="space-y-3">
+                        {/* Python Frameworks */}
+                        <div>
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Python</span>
+                            <div className="grid grid-cols-2 gap-2">
+                                {["PYTEST", "UNITTEST"].map((fw) => (
+                                    <label key={fw} className="flex items-center gap-2 text-sm cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="rounded border-gray-300"
+                                            checked={config.test_frameworks.includes(fw)}
+                                            onChange={() => toggleFramework(fw)}
+                                        />
+                                        {fw}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Ruby Frameworks */}
+                        <div>
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Ruby</span>
+                            <div className="grid grid-cols-2 gap-2">
+                                {["RSPEC", "MINITEST", "TESTUNIT", "CUCUMBER"].map((fw) => (
+                                    <label key={fw} className="flex items-center gap-2 text-sm cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="rounded border-gray-300"
+                                            checked={config.test_frameworks.includes(fw)}
+                                            onChange={() => toggleFramework(fw)}
+                                        />
+                                        {fw}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Java Frameworks */}
+                        <div>
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase mb-1 block">Java</span>
+                            <div className="grid grid-cols-2 gap-2">
+                                {["JUNIT", "TESTNG"].map((fw) => (
+                                    <label key={fw} className="flex items-center gap-2 text-sm cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="rounded border-gray-300"
+                                            checked={config.test_frameworks.includes(fw)}
+                                            onChange={() => toggleFramework(fw)}
+                                        />
+                                        {fw}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -461,7 +501,7 @@ function RepoConfigItem({
                         Source Languages
                     </label>
                     <div className="grid grid-cols-2 gap-2">
-                        {["PYTHON", "RUBY"].map((lang) => (
+                        {["PYTHON", "RUBY", "JAVA"].map((lang) => (
                             <label key={lang} className="flex items-center gap-2 text-sm cursor-pointer">
                                 <input
                                     type="checkbox"

@@ -22,12 +22,15 @@ class TestFramework(str, Enum):
     MINITEST = "MINITEST"
     TESTUNIT = "TESTUNIT"
     CUCUMBER = "CUCUMBER"
+    JUNIT = "JUNIT"
+    TESTNG = "TESTNG"
 
 
 class SourceLanguage(str, Enum):
 
     PYTHON = "PYTHON"
     RUBY = "RUBY"
+    JAVA = "JAVA"
 
 
 class CIProvider(str, Enum):

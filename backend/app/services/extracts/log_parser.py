@@ -170,9 +170,6 @@ class TestLogParser:
                 seconds = float(duration_match.group("seconds"))
                 duration = minutes * 60 + seconds
 
-            # Undefined steps often count as skipped or failed depending on strictness,
-            # but usually they fail the build. Let's treat them as skipped for now unless specified.
-            # Actually, undefined scenarios usually mean not implemented.
             skipped = undefined
 
             return ParsedLog(framework, "ruby", total, failed, skipped, duration)

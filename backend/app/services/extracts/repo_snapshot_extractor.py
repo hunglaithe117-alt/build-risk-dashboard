@@ -13,6 +13,8 @@ from app.services.extracts.diff_analyzer import (
     _is_source_file,
     _is_test_file,
     _matches_test_definition,
+    _matches_assertion,
+    _strip_comments,
 )
 from app.services.github.github_app import get_installation_token
 from app.utils.locking import repo_lock
@@ -64,9 +66,10 @@ class RepoSnapshotExtractor:
             # 2. Snapshot metrics (SLOC, Tests) using worktree
             # Lock during worktree operations as they modify .git/worktrees
             with repo_lock(str(repo.id)):
-                snapshot_metrics = self._analyze_snapshot(
-                    repo_path, commit_sha, repo.main_lang
-                )
+                for source_lang in repo.source_languages:
+                    snapshot_metrics = self._analyze_snapshot(
+                        repo_path, commit_sha, source_lang.value.lower()
+                    )
 
             return {
                 "gh_repo_age": age,
@@ -265,18 +268,19 @@ class RepoSnapshotExtractor:
         count = 0
         lang = (language or "").lower()
         for line in content.splitlines():
-            if _matches_test_definition(line, lang):
+            clean_line = _strip_comments(line, lang)
+            if _matches_test_definition(clean_line, lang):
                 count += 1
         return count
 
     def _count_asserts(self, content: str, language: str | None) -> int:
-        # Simple heuristic
+        count = 0
         lang = (language or "").lower()
-        lower_content = content.lower()
-        if lang == "ruby":
-            return lower_content.count("assert") + lower_content.count("expect(")
-        # Python / Default
-        return lower_content.count("assert")
+        for line in content.splitlines():
+            clean_line = _strip_comments(line, lang)
+            if _matches_assertion(clean_line, lang):
+                count += 1
+        return count
 
     def _empty_result(self) -> Dict[str, Any]:
         return {

@@ -67,11 +67,18 @@ class GitFeatureExtractor:
             )
 
             diff_stats = {}
-            parent_sha = self._get_parent_commit(repo_path, commit_sha)
-            if parent_sha:
-                diff_stats = self._analyze_diff(
-                    repo_path, parent_sha, commit_sha, repo.main_lang
-                )
+            built_commits = build_stats.get("git_all_built_commits", [])
+            prev_built_commit = build_stats.get("git_prev_built_commit")
+
+            if built_commits:
+                for source_lang in repo.source_languages:
+                    diff_stats = self._calculate_diff_features(
+                        repo_path,
+                        built_commits,
+                        prev_built_commit,
+                        commit_sha,
+                        source_lang.value.lower(),
+                    )
 
             return {**build_stats, **team_stats, **diff_stats}
 
@@ -88,8 +95,13 @@ class GitFeatureExtractor:
         except subprocess.CalledProcessError:
             return None
 
-    def _analyze_diff(
-        self, cwd: Path, parent: str, current: str, language: str | None
+    def _calculate_diff_features(
+        self,
+        cwd: Path,
+        built_commits: List[str],
+        prev_built_commit: str | None,
+        current_commit: str,
+        language: str | None,
     ) -> Dict[str, Any]:
         stats = {
             "git_diff_src_churn": 0,
@@ -104,55 +116,76 @@ class GitFeatureExtractor:
             "gh_diff_other_files": 0,
         }
 
-        # Get name-status to count files
-        # git diff --name-status parent current
-        name_status_out = self._run_git(cwd, ["diff", "--name-status", parent, current])
-
-        for line in name_status_out.splitlines():
-            parts = line.split("\t")
-            if len(parts) < 2:
+        # 1. Cumulative Churn & File Counts (Iterate over all built commits)
+        # For each commit, compare with its PARENT
+        for sha in built_commits:
+            parent = self._get_parent_commit(cwd, sha)
+            if not parent:
                 continue
-            status_code = parts[0][0]
-            path = parts[-1]  # Handle renames if needed, but usually last is dest
 
-            if status_code == "A":
-                stats["gh_diff_files_added"] += 1
-            elif status_code == "D":
-                stats["gh_diff_files_deleted"] += 1
-            elif status_code == "M":
-                stats["gh_diff_files_modified"] += 1
-
-            if _is_doc_file(path):
-                stats["gh_diff_doc_files"] += 1
-            elif _is_source_file(path):
-                stats["gh_diff_src_files"] += 1
-            elif not _is_test_file(path):
-                stats["gh_diff_other_files"] += 1
-
-        # Get numstat for churn
-        # git diff --numstat parent current
-        numstat_out = self._run_git(cwd, ["diff", "--numstat", parent, current])
-
-        for line in numstat_out.splitlines():
-            parts = line.split("\t")
-            if len(parts) < 3:
-                continue
+            # git diff --name-status parent sha
             try:
-                added = int(parts[0]) if parts[0] != "-" else 0
-                deleted = int(parts[1]) if parts[1] != "-" else 0
-            except ValueError:
+                name_status_out = self._run_git(
+                    cwd, ["diff", "--name-status", parent, sha]
+                )
+            except Exception:
                 continue
-            path = parts[2]
 
-            if _is_source_file(path):
-                stats["git_diff_src_churn"] += added + deleted
-            elif _is_test_file(path):
-                stats["git_diff_test_churn"] += added + deleted
+            for line in name_status_out.splitlines():
+                parts = line.split("\t")
+                if len(parts) < 2:
+                    continue
+                status_code = parts[0][0]
+                path = parts[-1]
 
-        patch_out = self._run_git(cwd, ["diff", parent, current])
-        added_tests, deleted_tests = _count_test_cases(patch_out, language)
-        stats["gh_diff_tests_added"] = added_tests
-        stats["gh_diff_tests_deleted"] = deleted_tests
+                if status_code == "A":
+                    stats["gh_diff_files_added"] += 1
+                elif status_code == "D":
+                    stats["gh_diff_files_deleted"] += 1
+                elif status_code == "M":
+                    stats["gh_diff_files_modified"] += 1
+
+                if _is_doc_file(path):
+                    stats["gh_diff_doc_files"] += 1
+                elif _is_source_file(path) or _is_test_file(path):
+                    # TravisTorrent maps both src and test to :programming (src_files)
+                    stats["gh_diff_src_files"] += 1
+                else:
+                    stats["gh_diff_other_files"] += 1
+
+            # git diff --numstat parent sha
+            try:
+                numstat_out = self._run_git(cwd, ["diff", "--numstat", parent, sha])
+            except Exception:
+                continue
+
+            for line in numstat_out.splitlines():
+                parts = line.split("\t")
+                if len(parts) < 3:
+                    continue
+                try:
+                    added = int(parts[0]) if parts[0] != "-" else 0
+                    deleted = int(parts[1]) if parts[1] != "-" else 0
+                except ValueError:
+                    continue
+                path = parts[2]
+
+                if _is_source_file(path):
+                    stats["git_diff_src_churn"] += added + deleted
+                elif _is_test_file(path):
+                    stats["git_diff_test_churn"] += added + deleted
+
+        # 2. Net Test Case Diff (Compare prev_built_commit vs current_commit)
+        if prev_built_commit:
+            try:
+                patch_out = self._run_git(
+                    cwd, ["diff", prev_built_commit, current_commit]
+                )
+                added_tests, deleted_tests = _count_test_cases(patch_out, language)
+                stats["gh_diff_tests_added"] = added_tests
+                stats["gh_diff_tests_deleted"] = deleted_tests
+            except Exception:
+                pass
 
         return stats
 

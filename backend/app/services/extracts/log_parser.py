@@ -64,6 +64,20 @@ class TestLogParser:
         r"(?P<minutes>\d+)m(?P<seconds>[\d\.]+)s", re.IGNORECASE
     )
 
+    # Java Maven/Gradle patterns
+    MAVEN_JUNIT_PATTERN = re.compile(
+        r"Tests run: (?P<tests>\d+), Failures: (?P<failures>\d+), Errors: (?P<errors>\d+)(?:, Skipped: (?P<skipped>\d+))?",
+        re.IGNORECASE,
+    )
+    MAVEN_TESTNG_PATTERN = re.compile(
+        r"Total tests run:\s*(?P<tests>\d+), Failures: (?P<failures>\d+), Skips: (?P<skipped>\d+)",
+        re.IGNORECASE,
+    )
+    MAVEN_TIME_PATTERN = re.compile(
+        r"Tests run: .*? Time elapsed: (?P<duration>[\d\.]+) sec",
+        re.IGNORECASE,
+    )
+
     def parse(self, text: str, language_hint: Optional[str] = None) -> ParsedLog:
         language_hint = (language_hint or "").lower()
         framework = None
@@ -162,6 +176,37 @@ class TestLogParser:
             skipped = undefined
 
             return ParsedLog(framework, "ruby", total, failed, skipped, duration)
+
+        # Java Maven/Gradle (JUnit)
+        maven_junit = self.MAVEN_JUNIT_PATTERN.search(text)
+        if maven_junit:
+            framework = "junit"
+            tests = int(maven_junit.group("tests"))
+            failures = int(maven_junit.group("failures"))
+            errors = int(maven_junit.group("errors"))
+            skipped = int(maven_junit.group("skipped") or 0)
+            failed_total = failures + errors
+
+            # Try to extract duration
+            duration = None
+            duration_match = self.MAVEN_TIME_PATTERN.search(text)
+            if duration_match:
+                duration = float(duration_match.group("duration"))
+
+            return ParsedLog(framework, "java", tests, failed_total, skipped, duration)
+
+        # Java Maven (TestNG)
+        maven_testng = self.MAVEN_TESTNG_PATTERN.search(text)
+        if maven_testng:
+            framework = "testng"
+            tests = int(maven_testng.group("tests"))
+            failures = int(maven_testng.group("failures"))
+            skipped = int(maven_testng.group("skipped"))
+
+            # TestNG doesn't always provide duration in the same format
+            duration = None
+
+            return ParsedLog(framework, "java", tests, failures, skipped, duration)
 
         # Fallback: no tests detected
         detected_language = language_hint or (

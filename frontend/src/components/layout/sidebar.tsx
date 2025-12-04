@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { BadgeCheck, BarChart, Home } from "lucide-react";
+import { BadgeCheck, BarChart, Database, Home } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 const navigation = [
@@ -14,6 +14,11 @@ const navigation = [
     label: "Repositories",
     href: "/admin/repos",
     icon: BadgeCheck,
+  },
+  {
+    label: "Dataset Builder",
+    href: "/datasets",
+    icon: Database,
   },
 ];
 

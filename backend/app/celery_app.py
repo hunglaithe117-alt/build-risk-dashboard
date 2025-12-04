@@ -12,7 +12,7 @@ celery_app = Celery(
     "buildguard",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.ingestion", "app.tasks.processing"],
+    include=["app.tasks.ingestion", "app.tasks.processing", "app.tasks.dataset"],
 )
 
 celery_app.conf.update(

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     dashboard,
+    dataset,
     health,
     integrations,
     auth,
@@ -16,6 +17,7 @@ from app.api import (
     websockets,
     logs,
     sonar,
+    features,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
 
@@ -50,6 +52,8 @@ app.include_router(webhook.router, prefix="/api", tags=["Webhooks"])
 app.include_router(websockets.router, prefix="/api", tags=["WebSockets"])
 app.include_router(logs.router, prefix="/api", tags=["Logs"])
 app.include_router(sonar.router, prefix="/api/sonar", tags=["SonarQube"])
+app.include_router(features.router, prefix="/api", tags=["Feature Definitions"])
+app.include_router(dataset.router, prefix="/api", tags=["Custom Dataset Builder"])
 
 
 @app.get("/")

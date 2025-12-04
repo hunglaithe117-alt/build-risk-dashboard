@@ -13,6 +13,16 @@ from .imported_repository import (
     ImportStatus,
 )
 from .user import User
+from .feature_definition import (
+    FeatureDefinition,
+    FeatureSource,
+    FeatureDataType,
+    FeatureCategory,
+)
+from .dataset_job import (
+    DatasetJob,
+    DatasetJobStatus,
+)
 
 __all__ = [
     "BaseEntity",
@@ -21,10 +31,17 @@ __all__ = [
     "OAuthIdentity",
     "ImportedRepository",
     "User",
+    "BuildSample",
+    "FeatureDefinition",
+    "DatasetJob",
     # Enums
     "Provider",
     "TestFramework",
     "SourceLanguage",
     "CIProvider",
     "ImportStatus",
+    "FeatureSource",
+    "FeatureDataType",
+    "FeatureCategory",
+    "DatasetJobStatus",
 ]

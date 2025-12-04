@@ -173,6 +173,42 @@ def get_build_detail(
     return build
 
 
+@router.post(
+    "/{repo_id}/builds/{build_id}/reprocess",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def reprocess_build(
+    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
+    build_id: str = Path(..., description="Build id (Mongo ObjectId)"),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Reprocess a build using the new DAG-based feature pipeline.
+    
+    Useful for:
+    - Retrying failed builds
+    - Re-extracting features after pipeline updates
+    - Testing new feature extractors on existing data
+    """
+    from fastapi import HTTPException
+    from app.tasks.processing import reprocess_build as reprocess_build_task
+    
+    service = BuildService(db)
+    build = service.get_build_detail(build_id)
+    if not build:
+        raise HTTPException(status_code=404, detail="Build not found")
+    
+    # Trigger async reprocessing
+    reprocess_build_task.delay(build_id)
+    
+    return {
+        "status": "queued",
+        "build_id": build_id,
+        "message": "Build reprocessing has been queued",
+    }
+
+
 # --- SonarQube Integration Endpoints ---
 
 

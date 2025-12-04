@@ -310,3 +310,81 @@ export const usersApi = {
     return response.data;
   },
 };
+
+// Dataset Builder API
+import type {
+  AvailableFeaturesResponse,
+  DatasetJob,
+  DatasetJobCreateRequest,
+  DatasetJobCreatedResponse,
+  DatasetJobListResponse,
+  DatasetStats,
+  ResolvedDependenciesResponse,
+} from "@/types/dataset";
+
+export const datasetApi = {
+  // Get available features grouped by category
+  getFeatures: async (mlOnly: boolean = false) => {
+    const response = await api.get<AvailableFeaturesResponse>("/datasets/features", {
+      params: { ml_only: mlOnly },
+    });
+    return response.data;
+  },
+
+  // Resolve feature dependencies
+  resolveFeatures: async (featureIds: string[]) => {
+    const response = await api.post<ResolvedDependenciesResponse>(
+      "/datasets/features/resolve",
+      null,
+      { 
+        params: { feature_ids: featureIds },
+        paramsSerializer: {
+          indexes: null, // This removes the [] brackets from array params
+        }
+      }
+    );
+    return response.data;
+  },
+
+  // Create a new dataset job
+  createJob: async (request: DatasetJobCreateRequest) => {
+    const response = await api.post<DatasetJobCreatedResponse>("/datasets/jobs", request);
+    return response.data;
+  },
+
+  // List user's dataset jobs
+  listJobs: async (page: number = 1, pageSize: number = 20, status?: string) => {
+    const response = await api.get<DatasetJobListResponse>("/datasets/jobs", {
+      params: { page, page_size: pageSize, status },
+    });
+    return response.data;
+  },
+
+  // Get job details
+  getJob: async (jobId: string) => {
+    const response = await api.get<DatasetJob>(`/datasets/jobs/${jobId}`);
+    return response.data;
+  },
+
+  // Cancel a job
+  cancelJob: async (jobId: string) => {
+    const response = await api.post<DatasetJob>(`/datasets/jobs/${jobId}/cancel`);
+    return response.data;
+  },
+
+  // Delete a job
+  deleteJob: async (jobId: string) => {
+    await api.delete(`/datasets/jobs/${jobId}`);
+  },
+
+  // Get download URL
+  getDownloadUrl: (jobId: string) => {
+    return `${API_URL}/datasets/jobs/${jobId}/download`;
+  },
+
+  // Get stats
+  getStats: async () => {
+    const response = await api.get<DatasetStats>("/datasets/stats");
+    return response.data;
+  },
+};

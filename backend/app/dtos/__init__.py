@@ -37,6 +37,17 @@ from .user import (
     OAuthIdentityResponse,
     UserResponse,
 )
+from .dataset import (
+    AvailableFeaturesResponse,
+    DatasetJobCreateRequest,
+    DatasetJobCreatedResponse,
+    DatasetJobListResponse,
+    DatasetJobResponse,
+    DownloadUrlResponse,
+    FeatureCategoryResponse,
+    FeatureDefinitionResponse,
+    ResolvedDependenciesResponse,
+)
 
 __all__ = [
     # Auth
@@ -70,4 +81,14 @@ __all__ = [
     "BuildSummary",
     "BuildDetail",
     "BuildListResponse",
+    # Dataset
+    "AvailableFeaturesResponse",
+    "DatasetJobCreateRequest",
+    "DatasetJobCreatedResponse",
+    "DatasetJobListResponse",
+    "DatasetJobResponse",
+    "DownloadUrlResponse",
+    "FeatureCategoryResponse",
+    "FeatureDefinitionResponse",
+    "ResolvedDependenciesResponse",
 ]

@@ -382,6 +382,38 @@ export const datasetApi = {
     return `${API_URL}/datasets/jobs/${jobId}/download`;
   },
 
+  // Preview dataset CSV
+  previewJob: async (jobId: string, rows: number = 10) => {
+    const response = await api.get<{
+      columns: string[];
+      rows: Record<string, any>[];
+      total_rows: number;
+      preview_rows: number;
+    }>(`/datasets/jobs/${jobId}/preview`, {
+      params: { rows },
+    });
+    return response.data;
+  },
+
+  // Get job samples
+  getSamples: async (
+    jobId: string,
+    page: number = 1,
+    pageSize: number = 20,
+    status?: string
+  ) => {
+    const response = await api.get<{
+      items: any[];
+      total: number;
+      page: number;
+      page_size: number;
+      total_pages: number;
+    }>(`/datasets/jobs/${jobId}/samples`, {
+      params: { page, page_size: pageSize, status },
+    });
+    return response.data;
+  },
+
   // Get stats
   getStats: async () => {
     const response = await api.get<DatasetStats>("/datasets/stats");

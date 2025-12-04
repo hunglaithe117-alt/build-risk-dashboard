@@ -41,6 +41,11 @@ celery_app.conf.update(
             Exchange("buildguard"),
             routing_key="pipeline.collect_workflow_logs",
         ),
+        Queue(
+            "data_processing",
+            Exchange("buildguard"),
+            routing_key="pipeline.data_processing",
+        ),
     ],
     broker_connection_retry_on_startup=True,
 )

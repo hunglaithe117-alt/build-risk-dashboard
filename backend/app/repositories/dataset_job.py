@@ -25,6 +25,25 @@ class DatasetJobRepository(BaseRepository[DatasetJob]):
         self.collection.create_index("created_at")
         self.collection.create_index([("user_id", 1), ("created_at", -1)])
     
+    def _doc_to_model(self, doc: dict) -> Optional[DatasetJob]:
+        """Convert document to model, extracting created_at from _id if missing."""
+        if not doc:
+            return None
+        if "created_at" not in doc and "_id" in doc:
+            # Extract timestamp from ObjectId
+            doc["created_at"] = doc["_id"].generation_time
+        return DatasetJob(**doc)
+    
+    def find_by_id(self, entity_id: str | ObjectId) -> Optional[DatasetJob]:
+        """Find a job by its ID, with created_at fallback."""
+        from bson.errors import InvalidId
+        try:
+            identifier = ObjectId(entity_id) if isinstance(entity_id, str) else entity_id
+        except InvalidId:
+            return None
+        doc = self.collection.find_one({"_id": identifier})
+        return self._doc_to_model(doc)
+    
     def find_by_user(
         self, 
         user_id: str, 
@@ -39,7 +58,7 @@ class DatasetJobRepository(BaseRepository[DatasetJob]):
         
         total = self.collection.count_documents(query)
         cursor = self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
-        items = [DatasetJob(**doc) for doc in cursor]
+        items = [self._doc_to_model(doc) for doc in cursor]
         
         return items, total
     
@@ -48,7 +67,7 @@ class DatasetJobRepository(BaseRepository[DatasetJob]):
         cursor = self.collection.find(
             {"status": DatasetJobStatus.PENDING.value}
         ).sort("created_at", 1).limit(limit)
-        return [DatasetJob(**doc) for doc in cursor]
+        return [self._doc_to_model(doc) for doc in cursor]
     
     def update_status(
         self, 

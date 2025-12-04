@@ -34,10 +34,6 @@ class DatasetJobCreateRequest(BaseModel):
         description="List of feature IDs to extract",
         examples=[["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"]]
     )
-    include_metadata: bool = Field(
-        default=True,
-        description="Include build metadata columns (commit_sha, build_number, build_status)"
-    )
     source_languages: List[str] = Field(
         default_factory=list,
         description="Source languages for the repository (required for some features)",
@@ -53,8 +49,7 @@ class DatasetJobCreateRequest(BaseModel):
                     "507f1f77bcf86cd799439011",
                     "507f1f77bcf86cd799439012",
                 ],
-                "source_languages": ["java"],
-                "include_metadata": True
+                "source_languages": ["java"]
             }
         }
 

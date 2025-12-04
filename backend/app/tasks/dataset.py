@@ -16,14 +16,12 @@ from bson import ObjectId
 
 from app.celery_app import celery_app
 from app.config import settings
-from app.models.entities.build_sample import BuildSample
 from app.models.entities.dataset_job import DatasetJobStatus
 from app.models.entities.workflow_run import WorkflowRunRaw
-from app.pipeline.runner import FeaturePipeline
 from app.repositories.dataset_job import DatasetJobRepository
 from app.repositories.dataset_sample import DatasetSampleRepository
 from app.repositories.imported_repository import ImportedRepositoryRepository
-from app.repositories.workflow_run import WorkflowRunRepository
+from app.services.dataset import DatasetFeatureExtractor
 from app.tasks.base import PipelineTask
 
 logger = logging.getLogger(__name__)
@@ -64,12 +62,12 @@ def publish_job_update(job_id: str, status: str, progress: int = 0, phase: str =
     name="app.tasks.dataset.process_dataset_job",
     queue="data_processing",
     soft_time_limit=3600,  # 1 hour soft limit
-    time_limit=3900,       # 1.1 hour hard limit
+    time_limit=3900,  # 1.1 hour hard limit
 )
 def process_dataset_job(self: PipelineTask, job_id: str) -> Dict[str, Any]:
     """
     Process a dataset extraction job.
-    
+
     This task:
     1. Validates the job and repository
     2. Clones repository (if needed)
@@ -78,91 +76,93 @@ def process_dataset_job(self: PipelineTask, job_id: str) -> Dict[str, Any]:
     5. Exports results to CSV
     """
     job_repo = DatasetJobRepository(self.db)
-    
+
     # Load job
     job = job_repo.find_by_id(ObjectId(job_id))
     if not job:
         logger.error(f"Dataset job not found: {job_id}")
         return {"status": "error", "message": "Job not found"}
-    
+
     try:
         # Update status to processing
         job_repo.update_status(job_id, DatasetJobStatus.PROCESSING)
         publish_job_update(job_id, "processing", 0, "initializing")
-        
+
         # Extract repo info from URL
         repo_info = parse_github_url(job.repo_url)
         if not repo_info:
             raise ValueError(f"Invalid GitHub URL: {job.repo_url}")
-        
+
         full_name = repo_info["full_name"]
-        
+
         # Phase 1: Find or import repository
         job_repo.update_progress(job_id, 0, 0, "finding_repository")
         publish_job_update(job_id, "processing", 5, "finding_repository")
-        
+
         imported_repo_repo = ImportedRepositoryRepository(self.db)
         repo = imported_repo_repo.find_by_full_name("github", full_name)
-        
+
         if not repo:
             # Need to collect workflow data first
-            logger.info(f"Repository not imported, will collect from GitHub: {full_name}")
+            logger.info(
+                f"Repository not imported, will collect from GitHub: {full_name}"
+            )
             repo = import_repository_for_dataset(
-                self.db, 
-                full_name, 
+                self.db,
+                full_name,
                 str(job.user_id),
                 job.max_builds,
+                job.source_languages,
             )
             if not repo:
                 raise ValueError(f"Failed to import repository: {full_name}")
-        
+
         repo_id = str(repo.id)
-        
-        # Phase 2: Get workflow runs
+
+        # Phase 2: Get workflow runs from GitHub API
         job_repo.update_progress(job_id, 0, 0, "collecting_builds")
         publish_job_update(job_id, "processing", 10, "collecting_builds")
-        
-        workflow_run_repo = WorkflowRunRepository(self.db)
+
         workflow_runs = get_workflow_runs_for_job(
-            workflow_run_repo, 
-            repo_id, 
+            self.db,
+            full_name,
+            repo_id,
             job.max_builds,
         )
-        
+
         total_builds = len(workflow_runs)
         if total_builds == 0:
             raise ValueError("No workflow runs found for repository")
-        
+
         job_repo.update_one(job_id, {"total_builds": total_builds})
         logger.info(f"Found {total_builds} workflow runs to process")
-        
+
         # Phase 3: Extract features
         job_repo.update_progress(job_id, 0, 0, "extracting_features")
         publish_job_update(job_id, "processing", 15, "extracting_features")
-        
-        # Create optimized pipeline with only required nodes
-        pipeline = FeaturePipeline(
+
+        # Create standalone feature extractor
+        extractor = DatasetFeatureExtractor(
             db=self.db,
-            max_workers=2,  # Conservative for batch processing
-            use_definitions=True,
-            filter_active_only=True,
+            source_languages=job.source_languages or [],
         )
-        
-        # Prepare feature filter
-        features_filter = set(job.resolved_features)
-        
+
+        # Prepare feature set to extract
+        features_to_extract = set(job.resolved_features)
+
         # Process each build and collect results using DatasetSample
         dataset_sample_repo = DatasetSampleRepository(self.db)
         processed = 0
         failed = 0
-        
+
         for i, workflow_run in enumerate(workflow_runs):
+            dataset_sample = None
             try:
                 # Create or find dataset sample for this job
                 dataset_sample = dataset_sample_repo.find_by_job_and_run_id(
                     job_id, workflow_run.workflow_run_id
                 )
-                
+
                 if not dataset_sample:
                     # Create new dataset sample
                     sample_data = {
@@ -176,33 +176,26 @@ def process_dataset_job(self: PipelineTask, job_id: str) -> Dict[str, Any]:
                         "status": "pending",
                     }
                     dataset_sample = dataset_sample_repo.insert_one(sample_data)
-                
-                # Create in-memory BuildSample for pipeline (not saved to DB)
-                # This is a lightweight object just to pass to the pipeline
-                build_sample = BuildSample(
-                    _id=ObjectId(),  # Temporary ID (using alias)
-                    repo_id=ObjectId(repo_id),
-                    workflow_run_id=workflow_run.workflow_run_id,
-                    status="pending",
-                    tr_build_number=workflow_run.run_number,
-                    tr_original_commit=workflow_run.head_sha,
-                )
-                
-                # Run pipeline
-                result = pipeline.run(
-                    build_sample=build_sample,
+
+                # Run standalone feature extraction
+                result = extractor.extract(
                     repo=repo,
                     workflow_run=workflow_run,
-                    parallel=True,
-                    features_filter=features_filter,
+                    features_to_extract=features_to_extract,
                 )
                 
-                if result["status"] in ["completed", "partial"]:
+                # Log warnings for debugging
+                if result.get("warnings"):
+                    logger.warning(
+                        f"Build {workflow_run.workflow_run_id} warnings: {result.get('warnings')}"
+                    )
+
+                if result["status"] in ["success", "partial"]:
                     # Save extracted features to dataset sample
                     features_to_save = {}
                     for feature in job.resolved_features:
                         features_to_save[feature] = result["features"].get(feature)
-                    
+
                     dataset_sample_repo.save_features(
                         str(dataset_sample.id),
                         features_to_save,
@@ -218,10 +211,12 @@ def process_dataset_job(self: PipelineTask, job_id: str) -> Dict[str, Any]:
                     logger.warning(
                         f"Build {workflow_run.workflow_run_id} extraction failed: {result.get('errors')}"
                     )
-                
+
             except Exception as e:
                 failed += 1
-                logger.error(f"Error processing build {workflow_run.workflow_run_id}: {e}")
+                logger.error(
+                    f"Error processing build {workflow_run.workflow_run_id}: {e}"
+                )
                 # Update sample status if it exists
                 if dataset_sample:
                     dataset_sample_repo.update_status(
@@ -229,58 +224,51 @@ def process_dataset_job(self: PipelineTask, job_id: str) -> Dict[str, Any]:
                         "failed",
                         error_message=str(e),
                     )
-            
+
             # Update progress
             progress_pct = 15 + int((i + 1) / total_builds * 75)  # 15-90%
             job_repo.update_progress(job_id, processed, failed, "extracting_features")
-            
+
             if (i + 1) % 10 == 0:  # Publish every 10 builds
-                publish_job_update(job_id, "processing", progress_pct, "extracting_features")
-        
+                publish_job_update(
+                    job_id, "processing", progress_pct, "extracting_features"
+                )
+
         # Phase 4: Export to CSV from DatasetSamples
         job_repo.update_progress(job_id, processed, failed, "exporting_csv")
         publish_job_update(job_id, "processing", 92, "exporting_csv")
-        
+
         # Get all completed samples for this job
         completed_samples = dataset_sample_repo.get_completed_samples(job_id)
-        
+
         if not completed_samples:
             raise ValueError("No successful extractions to export")
-        
+
         # Generate output file
         output_path = DATASET_OUTPUT_DIR / f"{job_id}.csv"
-        
-        # Build column headers
-        columns = []
-        if job.include_metadata:
-            columns.extend(["commit_sha", "build_number", "build_status", "created_at"])
-        columns.extend(sorted(job.resolved_features))
-        
+
+        # Build column headers - only features
+        columns = sorted(job.resolved_features)
+
         # Build rows from dataset samples
         rows = []
         for sample in completed_samples:
             row = {}
-            
-            if job.include_metadata:
-                row["commit_sha"] = sample.commit_sha
-                row["build_number"] = sample.build_number
-                row["build_status"] = sample.build_status
-                row["created_at"] = sample.build_created_at.isoformat() if sample.build_created_at else ""
-            
+
             # Add features in consistent order
             for feature in sorted(job.resolved_features):
                 row[feature] = sample.features.get(feature)
-            
+
             rows.append(row)
-        
+
         with open(output_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=columns)
             writer.writeheader()
             writer.writerows(rows)
-        
+
         file_size = output_path.stat().st_size
         row_count = len(rows)
-        
+
         # Phase 5: Complete
         job_repo.update_status(
             job_id,
@@ -288,14 +276,14 @@ def process_dataset_job(self: PipelineTask, job_id: str) -> Dict[str, Any]:
         )
         job_repo.set_output(job_id, str(output_path), file_size, row_count)
         job_repo.update_progress(job_id, processed, failed, "completed")
-        
+
         publish_job_update(job_id, "completed", 100, "completed")
-        
+
         logger.info(
             f"Dataset job {job_id} completed: {row_count} rows, "
             f"{file_size} bytes, {processed} succeeded, {failed} failed"
         )
-        
+
         return {
             "status": "completed",
             "job_id": job_id,
@@ -303,17 +291,17 @@ def process_dataset_job(self: PipelineTask, job_id: str) -> Dict[str, Any]:
             "file_size": file_size,
             "file_path": str(output_path),
         }
-        
+
     except Exception as e:
         logger.error(f"Dataset job {job_id} failed: {e}", exc_info=True)
-        
+
         job_repo.update_status(
             job_id,
             DatasetJobStatus.FAILED,
             error_message=str(e),
         )
         publish_job_update(job_id, "failed", 0, "failed")
-        
+
         return {
             "status": "failed",
             "job_id": job_id,
@@ -325,22 +313,28 @@ def parse_github_url(url: str) -> Optional[Dict[str, str]]:
     """Parse GitHub URL to extract owner and repo."""
     import re
     
-    patterns = [
-        r"github\.com[:/]([^/]+)/([^/\.]+)",  # git@ or https://
-        r"^([^/]+)/([^/]+)$",  # owner/repo format
-    ]
+    # Clean up the URL first
+    url = url.strip()
     
-    for pattern in patterns:
+    # Pattern for github.com URLs (https or git@)
+    # Match: github.com/owner/repo or github.com:owner/repo
+    github_pattern = r"github\.com[:/]([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)"
+    
+    # Pattern for owner/repo format
+    owner_repo_pattern = r"^([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)$"
+    
+    for pattern in [github_pattern, owner_repo_pattern]:
         match = re.search(pattern, url)
         if match:
             owner, repo = match.groups()
-            repo = repo.rstrip(".git")
+            # Remove .git suffix and trailing slashes
+            repo = repo.rstrip("/").removesuffix(".git")
             return {
                 "owner": owner,
                 "repo": repo,
                 "full_name": f"{owner}/{repo}",
             }
-    
+
     return None
 
 
@@ -349,25 +343,25 @@ def import_repository_for_dataset(
     full_name: str,
     user_id: str,
     max_builds: Optional[int],
+    source_languages: Optional[List[str]] = None,
 ) -> Optional[Any]:
     """
     Import a repository for dataset extraction.
-    
-    Simplified import that just collects workflow runs.
+
+    This only creates the repository record. Workflow runs are fetched
+    separately by get_workflow_runs_for_job() which calls GitHub API directly.
     """
     from app.services.github.github_client import get_public_github_client
     from app.models.entities.imported_repository import ImportStatus
     from app.repositories.imported_repository import ImportedRepositoryRepository
-    from app.repositories.workflow_run import WorkflowRunRepository
-    
+
     repo_repo = ImportedRepositoryRepository(db)
-    workflow_run_repo = WorkflowRunRepository(db)
-    
+
     try:
         with get_public_github_client() as gh:
             # Get repo metadata
             repo_data = gh.get_repository(full_name)
-            
+
             # Create imported repo record using dict
             repo_doc = {
                 "user_id": ObjectId(user_id),
@@ -376,71 +370,107 @@ def import_repository_for_dataset(
                 "default_branch": repo_data.get("default_branch", "main"),
                 "is_private": bool(repo_data.get("private")),
                 "main_lang": repo_data.get("language"),
-                "import_status": ImportStatus.IMPORTING.value,
+                "source_languages": source_languages or [],
+                "import_status": ImportStatus.IMPORTED.value,
+                "imported_for": "dataset",  # Mark as dataset-only import
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }
             repo = repo_repo.insert_one(repo_doc)
-            repo_id = str(repo.id)
-            
-            # Collect workflow runs using the repos/{owner}/{repo}/actions/runs endpoint
-            per_page = min(max_builds or 100, 100)
-            
-            # Use the GitHub client's internal method to get workflow runs
-            workflow_runs_data = gh._rest_request(
-                "GET",
-                f"/repos/{full_name}/actions/runs",
-                params={"per_page": per_page}
-            )
-            runs = workflow_runs_data.get("workflow_runs", [])
-            
-            # Save workflow runs
-            count = 0
-            for run in runs:
-                if max_builds and count >= max_builds:
-                    break
-                
-                workflow_run_doc = {
-                    "repo_id": ObjectId(repo_id),
-                    "workflow_run_id": run.get("id"),
-                    "run_number": run.get("run_number"),
-                    "head_sha": run.get("head_sha"),
-                    "status": run.get("status"),
-                    "conclusion": run.get("conclusion"),
-                    "created_at": datetime.fromisoformat(run["created_at"].replace("Z", "+00:00")) if run.get("created_at") else datetime.now(timezone.utc),
-                    "updated_at": datetime.fromisoformat(run["updated_at"].replace("Z", "+00:00")) if run.get("updated_at") else datetime.now(timezone.utc),
-                    "raw_payload": run,
-                    "log_fetched": False,
-                }
-                workflow_run_repo.insert_one(workflow_run_doc)
-                count += 1
-            
-            # Update repo status
-            repo_repo.update_one(repo_id, {
-                "import_status": ImportStatus.IMPORTED.value,
-                "total_builds_imported": count,
-                "updated_at": datetime.now(timezone.utc),
-            })
-            
-            return repo_repo.find_by_id(repo_id)
-            
+
+            return repo
+
     except Exception as e:
         logger.error(f"Failed to import repository {full_name}: {e}")
         return None
 
 
 def get_workflow_runs_for_job(
-    workflow_run_repo: WorkflowRunRepository,
+    db,
+    full_name: str,
     repo_id: str,
     max_builds: Optional[int],
 ) -> List[WorkflowRunRaw]:
-    """Get workflow runs for a dataset job."""
-    # Get most recent workflow runs
-    query = {"repo_id": ObjectId(repo_id), "conclusion": {"$ne": None}}
-    
-    cursor = workflow_run_repo.collection.find(query).sort("created_at", -1)
-    
-    if max_builds:
-        cursor = cursor.limit(max_builds)
-    
-    return [WorkflowRunRaw(**doc) for doc in cursor]
+    """
+    Get workflow runs for a dataset job by fetching from GitHub API.
+
+    This function:
+    1. Calls GitHub API to get workflow runs (up to max_builds)
+    2. Saves/updates them in DB
+    3. Returns workflow runs sorted OLDEST to NEWEST for chronological processing
+
+    Unlike the main ingestion flow, this does NOT filter by log availability,
+    since dataset extraction may not need logs for all features.
+    """
+    from app.services.github.github_client import get_public_github_client
+    from app.repositories.workflow_run import WorkflowRunRepository
+
+    workflow_run_repo = WorkflowRunRepository(db)
+
+    with get_public_github_client() as gh:
+        collected_runs = []
+        count = 0
+        target_count = max_builds or 100
+
+        # Paginate through workflow runs from GitHub API
+        for run in gh.paginate_workflow_runs(
+            full_name,
+            params={"per_page": min(100, target_count), "status": "completed"},
+        ):
+            if count >= target_count:
+                break
+
+            run_id = run.get("id")
+            if not run_id:
+                continue
+
+            # Skip bot-triggered runs (same as ingestion.py)
+            triggering_actor = run.get("triggering_actor", {})
+            actor_type = triggering_actor.get("type")
+            if actor_type == "Bot":
+                logger.info(f"Skipping bot-triggered run {run_id} in {full_name}")
+                continue
+
+            # Skip runs without conclusion (still running)
+            if not run.get("conclusion"):
+                continue
+
+            # Check if already exists in DB
+            existing = workflow_run_repo.find_by_repo_and_run_id(repo_id, run_id)
+
+            if existing:
+                collected_runs.append(existing)
+            else:
+                # Save new workflow run to DB
+                created_at_str = run.get("created_at")
+                updated_at_str = run.get("updated_at")
+
+                workflow_run_doc = {
+                    "repo_id": ObjectId(repo_id),
+                    "workflow_run_id": run_id,
+                    "run_number": run.get("run_number"),
+                    "head_sha": run.get("head_sha"),
+                    "status": run.get("status"),
+                    "conclusion": run.get("conclusion"),
+                    "created_at": (
+                        datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                        if created_at_str
+                        else datetime.now(timezone.utc)
+                    ),
+                    "updated_at": (
+                        datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+                        if updated_at_str
+                        else datetime.now(timezone.utc)
+                    ),
+                    "raw_payload": run,
+                    "log_fetched": False,
+                }
+                new_run = workflow_run_repo.insert_one(workflow_run_doc)
+                collected_runs.append(new_run)
+
+            count += 1
+
+        # Sort by created_at ascending (oldest first) for chronological processing
+        collected_runs.sort(key=lambda r: r.created_at)
+
+        return collected_runs

@@ -67,7 +67,6 @@ class DatasetJob(BaseEntity):
     # Resource requirements (for optimization)
     requires_clone: bool = Field(default=False, description="Whether git clone is needed")
     requires_log: bool = Field(default=False, description="Whether log collection is needed")
-    include_metadata: bool = Field(default=True, description="Include build metadata columns")
     source_languages: List[str] = Field(
         default_factory=list,
         description="Source languages for the repository (for language-dependent features)"

@@ -105,7 +105,7 @@ Sign up at [sonarcloud.io](https://sonarcloud.io) and obtain your organization t
 5. Run Celery worker (in a separate terminal):
    ```bash
    cd backend
-   uv run celery -A app.celery_app worker -Q import_repo,collect_workflow_logs,data_processing,pipeline.default --loglevel=info
+   uv run celery -A app.celery_app worker --loglevel=info
    ```
 
    **Queues explained:**

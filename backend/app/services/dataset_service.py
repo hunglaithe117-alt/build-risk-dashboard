@@ -6,6 +6,7 @@ Handles feature resolution, dependency calculation, and job management.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
 
 from bson import ObjectId
@@ -272,13 +273,13 @@ class DatasetService:
             "required_nodes": resolved.required_nodes,
             "requires_clone": resolved.requires_clone,
             "requires_log": resolved.requires_log_collection,
-            "include_metadata": request.include_metadata,
             "source_languages": request.source_languages,
             "status": DatasetJobStatus.PENDING.value,
             "current_phase": "queued",
             "total_builds": 0,
             "processed_builds": 0,
             "failed_builds": 0,
+            "created_at": datetime.now(timezone.utc),
         }
         
         created = self.job_repo.insert_one(job_data)

@@ -43,7 +43,6 @@ export interface DatasetJobCreateRequest {
   repo_url: string;
   max_builds?: number | null;
   feature_ids: string[];  // Use feature IDs instead of names
-  include_metadata?: boolean;
   source_languages?: string[] | null;  // Required when selecting features that need language info
 }
 

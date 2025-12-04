@@ -37,6 +37,7 @@ router = APIRouter(prefix="/datasets", tags=["Custom Dataset Builder"])
 # Feature Discovery
 # ====================
 
+
 @router.get(
     "/features",
     response_model=AvailableFeaturesResponse,
@@ -44,10 +45,7 @@ router = APIRouter(prefix="/datasets", tags=["Custom Dataset Builder"])
     description="Get all available features grouped by category for selection.",
 )
 def list_available_features(
-    ml_only: bool = Query(
-        default=False, 
-        description="Only show ML features"
-    ),
+    ml_only: bool = Query(default=False, description="Only show ML features"),
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -73,12 +71,11 @@ def resolve_feature_dependencies(
 ):
     """
     Resolve dependencies for selected features.
-    
+
     Returns:
     - All features that will be extracted (including dependencies)
     - Required extractor nodes
     - Resource requirements (clone, log collection)
-    - Estimated extraction time per build
     """
     service = DatasetService(db)
     try:
@@ -90,6 +87,7 @@ def resolve_feature_dependencies(
 # ====================
 # Job Management
 # ====================
+
 
 @router.post(
     "/jobs",
@@ -105,18 +103,18 @@ def create_dataset_job(
 ):
     """
     Create a new dataset extraction job.
-    
+
     The job will:
     1. Clone/access the repository
     2. Collect workflow runs (up to max_builds)
     3. Extract selected features (with dependencies)
     4. Export to CSV file
-    
+
     Returns job ID for tracking progress.
     """
     user_id = str(current_user["_id"])
     service = DatasetService(db)
-    
+
     try:
         return service.create_job(user_id, request)
     except ValueError as e:
@@ -143,7 +141,7 @@ def list_dataset_jobs(
     """List user's dataset jobs with pagination."""
     user_id = str(current_user["_id"])
     service = DatasetService(db)
-    
+
     status_enum = None
     if status_filter:
         try:
@@ -151,9 +149,9 @@ def list_dataset_jobs(
         except ValueError:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid status: {status_filter}. Valid values: {[s.value for s in DatasetJobStatus]}"
+                detail=f"Invalid status: {status_filter}. Valid values: {[s.value for s in DatasetJobStatus]}",
             )
-    
+
     return service.list_jobs(user_id, page, page_size, status_enum)
 
 
@@ -171,7 +169,7 @@ def get_dataset_job(
     """Get job details including progress."""
     user_id = str(current_user["_id"])
     service = DatasetService(db)
-    
+
     try:
         return service.get_job(job_id, user_id)
     except ValueError as e:
@@ -194,7 +192,7 @@ def cancel_dataset_job(
     """Cancel a running job."""
     user_id = str(current_user["_id"])
     service = DatasetService(db)
-    
+
     try:
         return service.cancel_job(job_id, user_id)
     except ValueError as e:
@@ -217,7 +215,7 @@ def delete_dataset_job(
     """Delete a job and clean up its resources."""
     user_id = str(current_user["_id"])
     service = DatasetService(db)
-    
+
     try:
         service.delete_job(job_id, user_id)
     except ValueError as e:
@@ -245,17 +243,17 @@ def get_job_samples(
 ):
     """
     Get samples (rows) for a dataset job.
-    
+
     Useful for:
     - Previewing data before download
     - Debugging extraction issues
     - Viewing partial results while job is processing
     """
     from app.repositories.dataset_sample import DatasetSampleRepository
-    
+
     user_id = str(current_user["_id"])
     service = DatasetService(db)
-    
+
     # Verify job exists and user has access
     try:
         job = service.get_job(job_id, user_id)
@@ -263,7 +261,7 @@ def get_job_samples(
         raise HTTPException(status_code=404, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-    
+
     # Get samples
     sample_repo = DatasetSampleRepository(db)
     skip = (page - 1) * page_size
@@ -273,7 +271,7 @@ def get_job_samples(
         skip=skip,
         limit=page_size,
     )
-    
+
     # Convert to response format
     items = []
     for sample in samples:
@@ -286,10 +284,12 @@ def get_job_samples(
             "status": sample.status,
             "error_message": sample.error_message,
             "features": sample.features,
-            "extracted_at": sample.extracted_at.isoformat() if sample.extracted_at else None,
+            "extracted_at": (
+                sample.extracted_at.isoformat() if sample.extracted_at else None
+            ),
         }
         items.append(item)
-    
+
     return {
         "items": items,
         "total": total,
@@ -306,32 +306,37 @@ def get_job_samples(
 )
 def preview_dataset(
     job_id: str = Path(..., description="Dataset job ID"),
-    rows: int = Query(default=10, ge=1, le=100, description="Number of rows to preview"),
+    rows: int = Query(
+        default=10, ge=1, le=100, description="Number of rows to preview"
+    ),
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """
     Preview the dataset CSV content.
-    
+
     Returns the first N rows of the completed dataset for quick inspection.
     """
+    from bson import ObjectId
+    from app.repositories.dataset_job import DatasetJobRepository
     from app.repositories.dataset_sample import DatasetSampleRepository
-    
+
     user_id = str(current_user["_id"])
-    service = DatasetService(db)
-    
-    # Verify job exists and user has access
-    try:
-        job = service.get_job(job_id, user_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    
+    job_repo = DatasetJobRepository(db)
+
+    # Get job entity directly
+    job = job_repo.find_by_id(ObjectId(job_id))
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Check ownership
+    if str(job.user_id) != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     # Get completed samples
     sample_repo = DatasetSampleRepository(db)
     samples = sample_repo.get_completed_samples(job_id, limit=rows)
-    
+
     if not samples:
         return {
             "columns": [],
@@ -339,31 +344,23 @@ def preview_dataset(
             "total_rows": 0,
             "preview_rows": 0,
         }
-    
-    # Build columns
-    columns = []
-    if job.include_metadata:
-        columns.extend(["commit_sha", "build_number", "build_status", "created_at"])
-    columns.extend(sorted(job.resolved_features))
-    
-    # Build rows
+
+    # Build columns - only features
+    columns = sorted(job.resolved_features)
+
+    # Build rows - only features
     preview_rows = []
     for sample in samples:
         row = {}
-        if job.include_metadata:
-            row["commit_sha"] = sample.commit_sha
-            row["build_number"] = sample.build_number
-            row["build_status"] = sample.build_status
-            row["created_at"] = sample.build_created_at.isoformat() if sample.build_created_at else ""
-        
+
         for feature in sorted(job.resolved_features):
             row[feature] = sample.features.get(feature)
-        
+
         preview_rows.append(row)
-    
+
     # Get total count
     stats = sample_repo.get_job_stats(job_id)
-    
+
     return {
         "columns": columns,
         "rows": preview_rows,
@@ -375,6 +372,7 @@ def preview_dataset(
 # ====================
 # Download
 # ====================
+
 
 @router.get(
     "/jobs/{job_id}/download",
@@ -390,47 +388,45 @@ def download_dataset(
     user_id = str(current_user["_id"])
     service = DatasetService(db)
     job_repo = service.job_repo
-    
+
     try:
         job = service.get_job(job_id, user_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
-    
+
     if job.status != DatasetJobStatus.COMPLETED.value:
         raise HTTPException(
             status_code=400,
-            detail=f"Job is not completed. Current status: {job.status}"
+            detail=f"Job is not completed. Current status: {job.status}",
         )
-    
+
     if not job.output_file_path or not os.path.exists(job.output_file_path):
         raise HTTPException(
-            status_code=404,
-            detail="Output file not found. It may have been deleted."
+            status_code=404, detail="Output file not found. It may have been deleted."
         )
-    
+
     # Increment download count
     job_repo.increment_download_count(job_id)
-    
+
     # Generate filename
     # Extract repo name from URL
     repo_name = job.repo_url.rstrip("/").split("/")[-1]
     filename = f"{repo_name}_dataset_{job_id[:8]}.csv"
-    
+
     return FileResponse(
         path=job.output_file_path,
         media_type="text/csv",
         filename=filename,
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"'
-        }
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
 # ====================
 # Statistics
 # ====================
+
 
 @router.get(
     "/stats",
@@ -443,20 +439,23 @@ def get_dataset_stats(
 ):
     """Get user's dataset statistics."""
     from bson import ObjectId
+
     user_id = str(current_user["_id"])
-    
+
     pipeline = [
         {"$match": {"user_id": ObjectId(user_id)}},
-        {"$group": {
-            "_id": "$status",
-            "count": {"$sum": 1},
-            "total_rows": {"$sum": "$output_row_count"},
-            "total_downloads": {"$sum": "$download_count"},
-        }},
+        {
+            "$group": {
+                "_id": "$status",
+                "count": {"$sum": 1},
+                "total_rows": {"$sum": "$output_row_count"},
+                "total_downloads": {"$sum": "$download_count"},
+            }
+        },
     ]
-    
+
     results = list(db.dataset_jobs.aggregate(pipeline))
-    
+
     stats = {
         "total_jobs": 0,
         "completed_jobs": 0,
@@ -466,11 +465,11 @@ def get_dataset_stats(
         "total_rows_generated": 0,
         "total_downloads": 0,
     }
-    
+
     for r in results:
         count = r["count"]
         stats["total_jobs"] += count
-        
+
         status_val = r["_id"]
         if status_val == DatasetJobStatus.COMPLETED.value:
             stats["completed_jobs"] = count
@@ -482,5 +481,5 @@ def get_dataset_stats(
             stats["pending_jobs"] = count
         elif status_val == DatasetJobStatus.PROCESSING.value:
             stats["processing_jobs"] = count
-    
+
     return stats

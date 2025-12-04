@@ -1,3 +1,11 @@
 export { DatasetBuilder } from "./dataset-builder";
 export { FeatureSelector } from "./feature-selector";
-export { JobList, JobCard } from "./job-list";
+export { JobList } from "./job-list";
+export { 
+  ColumnDistribution, 
+  ColumnHeaderStats, 
+  getColumnType, 
+  calculateStats,
+  useColumnStats,
+  type ColumnStats,
+} from "./column-distribution";

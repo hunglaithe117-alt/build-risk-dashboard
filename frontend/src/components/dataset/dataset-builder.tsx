@@ -43,7 +43,6 @@ export function DatasetBuilder() {
   // State for configuration
   const [repoUrl, setRepoUrl] = useState("");
   const [maxBuilds, setMaxBuilds] = useState<number | "">("");
-  const [includeMetadata, setIncludeMetadata] = useState(true);
   const [mlOnly, setMlOnly] = useState(false);
 
   // State for features
@@ -179,7 +178,6 @@ export function DatasetBuilder() {
         repo_url: repoUrl.trim(),
         max_builds: maxBuilds || null,
         feature_ids: selectedFeatures,
-        include_metadata: includeMetadata,
         source_languages: selectedLanguages.length > 0 ? selectedLanguages : null,
       });
 
@@ -323,25 +321,11 @@ export function DatasetBuilder() {
                     placeholder="Leave empty for all builds"
                     min={1}
                     max={10000}
-                    className="w-48"
+                    className="w-full"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     Limit the number of builds to process (newest first)
                   </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="include-metadata"
-                    checked={includeMetadata}
-                    onCheckedChange={(checked) =>
-                      setIncludeMetadata(checked as boolean)
-                    }
-                  />
-                  <label htmlFor="include-metadata" className="text-sm">
-                    Include build metadata (commit_sha, build_number,
-                    build_status, created_at)
-                  </label>
                 </div>
               </div>
 

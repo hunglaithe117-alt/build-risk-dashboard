@@ -48,6 +48,12 @@ class ImportStatus(str, Enum):
     FAILED = "failed"
 
 
+class ImportSource(str, Enum):
+    """Source of repository import."""
+    MAIN = "main"          # Imported via main flow (/repos) - only once
+    DATASET = "dataset"    # Imported via dataset builder - can be reused
+
+
 class ImportedRepository(BaseEntity):
     user_id: PyObjectId | None = None
     provider: Provider = Provider.GITHUB

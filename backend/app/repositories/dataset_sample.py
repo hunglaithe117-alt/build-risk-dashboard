@@ -67,12 +67,18 @@ class DatasetSampleRepository(BaseRepository[DatasetSample]):
         job_id: str,
         limit: Optional[int] = None,
     ) -> List[DatasetSample]:
-        """Get all completed samples for a job, sorted by build number."""
+        """
+        Get all completed samples for a job.
+        
+        Sorted by build_number ASC (oldest -> newest) to maintain
+        chronological order in the exported dataset.
+        """
         query = {
             "job_id": self._to_object_id(job_id),
             "status": "completed",
         }
-        cursor = self.collection.find(query).sort("build_number", -1)
+        # Sort ascending by build_number (oldest first)
+        cursor = self.collection.find(query).sort("build_number", 1)
         
         if limit:
             cursor = cursor.limit(limit)

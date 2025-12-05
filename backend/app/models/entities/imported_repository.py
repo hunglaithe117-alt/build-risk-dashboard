@@ -85,5 +85,8 @@ class ImportedRepository(BaseEntity):
     last_remote_check_at: datetime | None = None
     latest_synced_run_created_at: datetime | None = None
 
+    # Import Source - distinguishes main flow vs dataset builder imports
+    import_source: ImportSource = ImportSource.MAIN
+
     # Metadata
     metadata: Dict[str, Any] = {}

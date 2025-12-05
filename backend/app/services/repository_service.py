@@ -1,5 +1,5 @@
 import logging
-from app.models.entities.imported_repository import ImportStatus
+from app.models.entities.imported_repository import ImportStatus, ImportSource
 from typing import List, Optional
 
 from bson import ObjectId
@@ -106,6 +106,7 @@ class RepositoryService:
 
             # We allow re-importing to retry failed imports or update settings.
             # The upsert_repository below will handle updates.
+            # Main flow repos are marked with import_source = "main"
 
             try:
                 repo_doc = self.repo_repo.upsert_repository(
@@ -113,6 +114,7 @@ class RepositoryService:
                         "user_id": ObjectId(target_user_id),
                         "provider": payload.provider,
                         "full_name": payload.full_name,
+                        "import_source": ImportSource.MAIN.value,  # Main flow only
                     },
                     data={
                         "installation_id": installation_id,
@@ -120,6 +122,7 @@ class RepositoryService:
                         "source_languages": payload.source_languages,
                         "ci_provider": payload.ci_provider,
                         "import_status": ImportStatus.QUEUED.value,
+                        "import_source": ImportSource.MAIN.value,
                     },
                 )
 

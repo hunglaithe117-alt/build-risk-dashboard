@@ -96,16 +96,19 @@ def process_dataset_job(self: PipelineTask, job_id: str) -> Dict[str, Any]:
         full_name = repo_info["full_name"]
 
         # Phase 1: Find or import repository
+        # Priority: 1) Reuse main flow repo, 2) Create new dataset-specific repo
         job_repo.update_progress(job_id, 0, 0, "finding_repository")
         publish_job_update(job_id, "processing", 5, "finding_repository")
 
         imported_repo_repo = ImportedRepositoryRepository(self.db)
-        repo = imported_repo_repo.find_by_full_name("github", full_name)
+        
+        # First, try to find a main flow repo (imported via /repos)
+        repo = imported_repo_repo.find_any_repo("github", full_name)
 
         if not repo:
-            # Need to collect workflow data first
+            # No existing repo, create a new dataset-specific one
             logger.info(
-                f"Repository not imported, will collect from GitHub: {full_name}"
+                f"Repository not found, creating dataset-specific import: {full_name}"
             )
             repo = import_repository_for_dataset(
                 self.db,
@@ -116,6 +119,10 @@ def process_dataset_job(self: PipelineTask, job_id: str) -> Dict[str, Any]:
             )
             if not repo:
                 raise ValueError(f"Failed to import repository: {full_name}")
+        else:
+            logger.info(
+                f"Reusing existing repository (source={repo.import_source}): {full_name}"
+            )
 
         repo_id = str(repo.id)
 
@@ -348,11 +355,10 @@ def import_repository_for_dataset(
     """
     Import a repository for dataset extraction.
 
-    This only creates the repository record. Workflow runs are fetched
-    separately by get_workflow_runs_for_job() which calls GitHub API directly.
+    This creates a NEW repository record with import_source = "dataset".
     """
     from app.services.github.github_client import get_public_github_client
-    from app.models.entities.imported_repository import ImportStatus
+    from app.models.entities.imported_repository import ImportStatus, ImportSource
     from app.repositories.imported_repository import ImportedRepositoryRepository
 
     repo_repo = ImportedRepositoryRepository(db)
@@ -362,7 +368,8 @@ def import_repository_for_dataset(
             # Get repo metadata
             repo_data = gh.get_repository(full_name)
 
-            # Create imported repo record using dict
+            # Create new dataset-specific repo record
+            # This is separate from main flow repos
             repo_doc = {
                 "user_id": ObjectId(user_id),
                 "full_name": full_name,
@@ -372,7 +379,7 @@ def import_repository_for_dataset(
                 "main_lang": repo_data.get("language"),
                 "source_languages": source_languages or [],
                 "import_status": ImportStatus.IMPORTED.value,
-                "imported_for": "dataset",  # Mark as dataset-only import
+                "import_source": ImportSource.DATASET.value,  # Mark as dataset import
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }

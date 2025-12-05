@@ -11,6 +11,7 @@ from .imported_repository import (
     SourceLanguage,
     CIProvider,
     ImportStatus,
+    ImportSource,
 )
 from .user import User
 from .feature_definition import (
@@ -40,6 +41,7 @@ __all__ = [
     "SourceLanguage",
     "CIProvider",
     "ImportStatus",
+    "ImportSource",
     "FeatureSource",
     "FeatureDataType",
     "FeatureCategory",

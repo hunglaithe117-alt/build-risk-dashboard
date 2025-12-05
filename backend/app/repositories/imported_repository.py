@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pymongo import ReturnDocument
 from pymongo.database import Database
 
-from app.models.entities.imported_repository import ImportedRepository
+from app.models.entities.imported_repository import ImportedRepository, ImportSource
 from .base import BaseRepository
 
 
@@ -21,6 +21,33 @@ class ImportedRepositoryRepository(BaseRepository[ImportedRepository]):
     ) -> Optional[ImportedRepository]:
         """Find a repository by provider and full name"""
         return self.find_one({"provider": provider, "full_name": full_name})
+
+    def find_by_full_name_and_source(
+        self, provider: str, full_name: str, import_source: ImportSource
+    ) -> Optional[ImportedRepository]:
+        """Find a repository by provider, full name, and import source."""
+        return self.find_one({
+            "provider": provider, 
+            "full_name": full_name,
+            "import_source": import_source.value,
+        })
+
+    def find_main_repo(self, provider: str, full_name: str) -> Optional[ImportedRepository]:
+        """Find a main flow repository (imported via /repos)."""
+        return self.find_by_full_name_and_source(provider, full_name, ImportSource.MAIN)
+
+    def find_any_repo(self, provider: str, full_name: str) -> Optional[ImportedRepository]:
+        """
+        Find any repository by full name, preferring main flow repos.
+        Used by dataset builder to reuse existing repos.
+        """
+        # First try to find main flow repo
+        main_repo = self.find_main_repo(provider, full_name)
+        if main_repo:
+            return main_repo
+        
+        # Otherwise find any repo (including dataset-imported ones)
+        return self.find_by_full_name(provider, full_name)
 
     def list_by_user(
         self,

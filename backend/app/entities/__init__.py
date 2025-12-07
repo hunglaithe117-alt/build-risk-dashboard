@@ -15,6 +15,8 @@ from .user import User
 from .dataset_template import DatasetTemplate
 from .dataset import DatasetProject, DatasetMapping, DatasetStats
 from .github_token import GithubToken
+from .pipeline_run import PipelineRun, NodeExecutionResult
+from .enrichment_job import EnrichmentJob
 
 __all__ = [
     "BaseEntity",
@@ -29,9 +31,13 @@ __all__ = [
     "DatasetStats",
     "GithubToken",
     "DatasetTemplate",
+    "PipelineRun",
+    "NodeExecutionResult",
+    "EnrichmentJob",
     # Enums
     "Provider",
     "TestFramework",
     "CIProvider",
     "ImportStatus",
 ]
+

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from app.config import settings
 from kombu import Exchange, Queue
@@ -12,7 +13,12 @@ celery_app = Celery(
     "buildguard",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.ingestion", "app.tasks.processing"],
+    include=[
+        "app.tasks.ingestion",
+        "app.tasks.processing",
+        "app.tasks.maintenance",
+        "app.tasks.enrichment",
+    ],
 )
 
 celery_app.conf.update(
@@ -48,7 +54,26 @@ celery_app.conf.update(
         ),
     ],
     broker_connection_retry_on_startup=True,
+    # Celery Beat Schedule for periodic tasks
+    beat_schedule={
+        "cleanup-pipeline-runs-daily": {
+            "task": "app.tasks.maintenance.cleanup_pipeline_runs",
+            "schedule": crontab(hour=3, minute=0),  # Daily at 3 AM
+            "args": (30,),  # Keep 30 days of pipeline runs
+        },
+        "cleanup-failed-scans-weekly": {
+            "task": "app.tasks.maintenance.cleanup_failed_scans",
+            "schedule": crontab(hour=4, minute=0, day_of_week=0),  # Sunday 4 AM
+            "args": (90,),  # Keep 90 days of resolved failed scans
+        },
+        "refresh-token-pool-hourly": {
+            "task": "app.tasks.maintenance.refresh_token_pool",
+            "schedule": crontab(minute=0),  # Every hour at :00
+        },
+    },
+    timezone="UTC",
 )
 
 
 __all__ = ["celery_app"]
+

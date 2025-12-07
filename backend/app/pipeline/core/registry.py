@@ -5,7 +5,7 @@ This module provides a decorator-based registration system for feature nodes.
 Each feature node declares its dependencies and what features it provides.
 """
 
-from typing import Callable, Dict, List, Optional, Set, Type
+from typing import Any, Callable, Dict, List, Optional, Set, Type
 from dataclasses import dataclass, field
 import logging
 from app.pipeline.features import FeatureNode
@@ -131,6 +131,54 @@ class FeatureRegistry:
         """Clear all registrations (useful for testing)."""
         self._nodes.clear()
         self._feature_providers.clear()
+
+    def get_dag_version(self) -> str:
+        """
+        Generate a hash representing the current DAG structure.
+
+        This version hash changes when:
+        - Nodes are added/removed
+        - Node dependencies change
+        - Node provides change
+
+        Useful for tracking which DAG version was used for a pipeline run.
+        """
+        import hashlib
+
+        nodes = self.get_all(enabled_only=True)
+        structure = []
+
+        for name in sorted(nodes.keys()):
+            meta = nodes[name]
+            node_str = (
+                f"{name}:"
+                f"provides={sorted(meta.provides)}:"
+                f"requires_features={sorted(meta.requires_features)}:"
+                f"requires_resources={sorted(meta.requires_resources)}:"
+                f"priority={meta.priority}"
+            )
+            structure.append(node_str)
+
+        full_structure = "\n".join(structure)
+        return hashlib.md5(full_structure.encode()).hexdigest()[:8]
+
+    def get_dag_info(self) -> Dict[str, Any]:
+        """
+        Get comprehensive DAG information for API/monitoring.
+
+        Returns dict with version, node count, feature count, etc.
+        """
+        nodes = self.get_all(enabled_only=True)
+        features = self.get_all_features()
+
+        return {
+            "version": self.get_dag_version(),
+            "node_count": len(nodes),
+            "feature_count": len(features),
+            "nodes": list(nodes.keys()),
+            "groups": list(set(m.group for m in nodes.values() if m.group)),
+        }
+
 
     # =========================================================================
     # Metadata Generation (for UI display)

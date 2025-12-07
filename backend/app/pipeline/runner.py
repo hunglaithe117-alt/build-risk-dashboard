@@ -5,15 +5,19 @@ This module provides:
 1. A high-level function to run the entire feature pipeline
 2. Integration with existing Celery task structure
 3. Backwards compatibility with current BuildSample saving
+4. Pipeline execution history tracking
+5. Slack/webhook notifications on failures
 """
 
+import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set
 
 from bson import ObjectId
 from pymongo.database import Database
 
-from app.pipeline.core.context import ExecutionContext
+from app.pipeline.core.context import ExecutionContext, FeatureStatus
 from app.pipeline.core.executor import PipelineExecutor
 from app.pipeline.core.registry import feature_registry
 from app.pipeline.resources import ResourceManager, ResourceNames
@@ -25,11 +29,15 @@ from app.pipeline.constants import DEFAULT_FEATURES
 from app.entities.build_sample import BuildSample
 from app.entities.imported_repository import ImportedRepository
 from app.entities.workflow_run import WorkflowRunRaw
+from app.entities.pipeline_run import PipelineRun, NodeExecutionResult
 from app.repositories.build_sample import BuildSampleRepository
 from app.repositories.imported_repository import ImportedRepositoryRepository
 from app.repositories.workflow_run import WorkflowRunRepository
+from app.repositories.pipeline_run import PipelineRunRepository
+from app.services.notifications import NotificationService, get_notification_service
 
 logger = logging.getLogger(__name__)
+
 
 
 class FeaturePipeline:
@@ -48,6 +56,9 @@ class FeaturePipeline:
         self,
         db: Database,
         max_workers: int = 4,
+        track_history: bool = True,
+        notify_on_failure: bool = True,
+        notification_service: Optional[NotificationService] = None,
     ):
         """
         Initialize the feature pipeline.
@@ -55,9 +66,15 @@ class FeaturePipeline:
         Args:
             db: MongoDB database instance
             max_workers: Maximum parallel workers for execution
+            track_history: Whether to save pipeline run history to DB
+            notify_on_failure: Whether to send notifications when pipeline fails
+            notification_service: Custom notification service (uses global if None)
         """
         self.db = db
         self.max_workers = max_workers
+        self.track_history = track_history
+        self.notify_on_failure = notify_on_failure
+        self.notification_service = notification_service or get_notification_service()
 
         self.executor = PipelineExecutor(
             registry=feature_registry,
@@ -71,6 +88,9 @@ class FeaturePipeline:
         self.resource_manager.register(GitRepoProvider())
         self.resource_manager.register(GitHubClientProvider())
         self.resource_manager.register(LogStorageProvider())
+
+        # Repository for history tracking
+        self.pipeline_run_repo = PipelineRunRepository(db) if track_history else None
 
     def get_active_features(self) -> Set[str]:
         """Get set of all active feature names from code registry."""
@@ -110,6 +130,118 @@ class FeaturePipeline:
         Returns list of validation errors (empty if valid).
         """
         return feature_registry.validate()
+
+    def _create_pipeline_run(
+        self,
+        build_sample: BuildSample,
+        repo: ImportedRepository,
+        workflow_run: Optional[WorkflowRunRaw],
+        nodes_requested: int,
+    ) -> Optional[PipelineRun]:
+        """Create a new pipeline run record if history tracking is enabled."""
+        if not self.track_history or not self.pipeline_run_repo:
+            return None
+
+        pipeline_run = PipelineRun(
+            build_sample_id=build_sample.id,
+            repo_id=repo.id,
+            workflow_run_id=workflow_run.workflow_run_id if workflow_run else 0,
+            dag_version=feature_registry.get_dag_version(),
+            nodes_requested=nodes_requested,
+        )
+        pipeline_run.mark_started()
+
+        try:
+            inserted = self.pipeline_run_repo.insert_one(pipeline_run)
+            return inserted
+        except Exception as e:
+            logger.warning(f"Failed to create pipeline run record: {e}")
+            return None
+
+    def _update_pipeline_run(
+        self,
+        pipeline_run: Optional[PipelineRun],
+        context: "ExecutionContext",
+        features: List[str],
+        status: str,
+        error: Optional[str] = None,
+    ) -> None:
+        """Update a pipeline run record with execution results."""
+        if not pipeline_run or not self.pipeline_run_repo:
+            return
+
+        try:
+            # Convert context results to NodeExecutionResult
+            for result in context.results:
+                node_result = NodeExecutionResult(
+                    node_name=result.node_name,
+                    status=result.status.value,
+                    duration_ms=result.duration_ms,
+                    features_extracted=list(result.features.keys()) if result.features else [],
+                    error=result.error,
+                    warning=result.warning,
+                )
+                pipeline_run.add_node_result(node_result)
+
+            # Update status
+            if status == "completed":
+                pipeline_run.mark_completed(features)
+            elif status == "failed":
+                pipeline_run.mark_failed(error or "Unknown error")
+            else:
+                pipeline_run.status = status
+                pipeline_run._update_node_counts()
+
+            # Get retry stats from executor
+            retry_stats = self.executor.get_retry_stats()
+            pipeline_run.total_retries = sum(retry_stats.values())
+
+            # Add context warnings/errors
+            pipeline_run.warnings.extend(context.warnings)
+            pipeline_run.errors.extend(context.errors)
+
+            self.pipeline_run_repo.update_one(str(pipeline_run.id), pipeline_run.model_dump(exclude={"id"}))
+
+        except Exception as e:
+            logger.warning(f"Failed to update pipeline run record: {e}")
+
+    def _send_failure_notification(
+        self,
+        repo: ImportedRepository,
+        build_sample: BuildSample,
+        error: str,
+        pipeline_run_id: Optional[str],
+        context: "ExecutionContext",
+    ) -> None:
+        """Send notification when pipeline fails (if enabled)."""
+        if not self.notify_on_failure or not self.notification_service.is_configured:
+            return
+
+        try:
+            # Collect failed node names
+            failed_nodes = [
+                r.node_name for r in context.results 
+                if r.status == FeatureStatus.FAILED
+            ]
+            
+            # Get retry stats
+            retry_stats = self.executor.get_retry_stats()
+            total_retries = sum(retry_stats.values())
+            
+            # Run async notification in sync context
+            asyncio.run(
+                self.notification_service.notify_pipeline_failure(
+                    repo_name=repo.full_name,
+                    build_id=str(build_sample.id),
+                    error=error,
+                    pipeline_run_id=pipeline_run_id or "unknown",
+                    node_failures=failed_nodes,
+                    retry_count=total_retries,
+                )
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send failure notification: {e}")
+
 
     def run(
         self,
@@ -222,6 +354,11 @@ class FeaturePipeline:
                 ", ".join(sorted(missing_resources)),
             )
 
+        # Create pipeline run record for history tracking
+        pipeline_run = self._create_pipeline_run(
+            build_sample, repo, workflow_run, len(nodes_to_run)
+        )
+
         try:
             self.resource_manager.initialize(context, resources_to_init)
 
@@ -240,8 +377,29 @@ class FeaturePipeline:
                 }
             # Note: All features from code registry are active by default
 
+            final_status = context.get_final_status()
+
+            # Update pipeline run history
+            self._update_pipeline_run(
+                pipeline_run,
+                context,
+                list(extracted_features.keys()),
+                final_status,
+            )
+
+            # Send notification if there were failures
+            if final_status == "failed" or context.errors:
+                error_msg = context.errors[0] if context.errors else "One or more nodes failed"
+                self._send_failure_notification(
+                    repo=repo,
+                    build_sample=build_sample,
+                    error=error_msg,
+                    pipeline_run_id=str(pipeline_run.id) if pipeline_run else None,
+                    context=context,
+                )
+
             return {
-                "status": context.get_final_status(),
+                "status": final_status,
                 "features": extracted_features,
                 "all_features": context.get_merged_features(),  # Unfiltered
                 "errors": context.errors,
@@ -256,10 +414,30 @@ class FeaturePipeline:
                     for r in context.results
                 ],
                 "feature_count": len(extracted_features),
+                "pipeline_run_id": str(pipeline_run.id) if pipeline_run else None,
             }
 
         except Exception as e:
             logger.error(f"Pipeline execution failed: {e}", exc_info=True)
+
+            # Update pipeline run history with failure
+            self._update_pipeline_run(
+                pipeline_run,
+                context,
+                [],
+                "failed",
+                str(e),
+            )
+
+            # Send failure notification
+            self._send_failure_notification(
+                repo=repo,
+                build_sample=build_sample,
+                error=str(e),
+                pipeline_run_id=str(pipeline_run.id) if pipeline_run else None,
+                context=context,
+            )
+
             return {
                 "status": "failed",
                 "features": context.get_merged_features(),
@@ -268,11 +446,15 @@ class FeaturePipeline:
                 "warnings": context.warnings,
                 "results": [],
                 "feature_count": 0,
+                "pipeline_run_id": str(pipeline_run.id) if pipeline_run else None,
             }
 
         finally:
             # Cleanup resources
             self.resource_manager.cleanup_all(context)
+            # Reset executor metrics for next run
+            self.executor.reset_metrics()
+
 
     def _determine_target_features(
         self, features_filter: Optional[Set[str]]
@@ -386,14 +568,14 @@ def run_feature_pipeline(
     # Run pipeline with requested feature IDs from repo
     pipeline = FeaturePipeline(db)
 
-    # Get feature IDs from repo configuration
-    feature_ids = getattr(repo, "requested_feature_ids", None) or []
+    # Get feature names from repo configuration
+    feature_names = getattr(repo, "requested_feature_names", None) or []
 
     result = pipeline.run(
         build_sample,
         repo,
         workflow_run,
-        feature_ids=feature_ids if feature_ids else None,
+        features_filter=set(feature_names) if feature_names else None,
     )
 
     # Save features to BuildSample

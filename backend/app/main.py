@@ -19,6 +19,8 @@ from app.api import (
     features,
     datasets,
     tokens,
+    pipeline,
+    websocket as enrichment_ws,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
 
@@ -56,6 +58,8 @@ app.include_router(sonar.router, prefix="/api/sonar", tags=["SonarQube"])
 app.include_router(features.router, prefix="/api", tags=["Feature Definitions"])
 app.include_router(datasets.router, prefix="/api", tags=["Datasets"])
 app.include_router(tokens.router, prefix="/api", tags=["GitHub Tokens"])
+app.include_router(pipeline.router, prefix="/api", tags=["Pipeline"])
+app.include_router(enrichment_ws.router, prefix="/api", tags=["Enrichment WebSocket"])
 
 
 @app.get("/")

@@ -1,5 +1,5 @@
 import unittest
-from app.services.extracts.diff_analyzer import (
+from app.pipeline.analyzers import (
     _strip_comments,
     _strip_shell_comments,
     _strip_c_comments,

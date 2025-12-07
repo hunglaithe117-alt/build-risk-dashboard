@@ -8,6 +8,8 @@ from .oauth_identity import OAuthIdentityRepository
 from .user import UserRepository
 from .workflow_run import WorkflowRunRepository
 from .dataset_template_repository import DatasetTemplateRepository
+from .pipeline_run import PipelineRunRepository
+from .enrichment_job import EnrichmentJobRepository
 
 __all__ = [
     "BaseRepository",
@@ -18,4 +20,7 @@ __all__ = [
     "BuildSampleRepository",
     "WorkflowRunRepository",
     "DatasetTemplateRepository",
+    "PipelineRunRepository",
+    "EnrichmentJobRepository",
 ]
+

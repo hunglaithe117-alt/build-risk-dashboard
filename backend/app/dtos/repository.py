@@ -19,9 +19,13 @@ class RepoImportRequest(BaseModel):
     test_frameworks: Optional[List[str]] = Field(default=None)
     source_languages: Optional[List[str]] = Field(default=None)
     ci_provider: Optional[str] = Field(default=None)
-    feature_ids: Optional[List[str]] = Field(
+    template_id: Optional[str] = Field(
         default=None,
-        description="List of features to extract for this repo",
+        description="Feature template ID to apply (overrides feature_ids)",
+    )
+    feature_names: Optional[List[str]] = Field(
+        default=None,
+        description="List of features to extract (ignored if template_id is set)",
     )
     max_builds: Optional[int] = Field(
         default=None,
@@ -56,7 +60,7 @@ class RepoResponse(BaseModel):
     total_builds_imported: int = 0
     last_sync_error: Optional[str] = None
     notes: Optional[str] = None
-    requested_feature_ids: List[PyObjectIdStr] = Field(default_factory=list)
+    requested_feature_names: List[str] = Field(default_factory=list)  # Feature names
     max_builds_to_ingest: Optional[int] = None
     # Always detect languages; no toggle exposed
 
@@ -84,7 +88,7 @@ class RepoUpdateRequest(BaseModel):
     source_languages: Optional[List[str]] = None
     default_branch: Optional[str] = None
     notes: Optional[str] = None
-    feature_ids: Optional[List[str]] = None
+    feature_names: Optional[List[str]] = None
     max_builds: Optional[int] = Field(default=None, ge=1, le=1000)
     ingest_start_date: Optional[datetime] = None
     ingest_end_date: Optional[datetime] = None

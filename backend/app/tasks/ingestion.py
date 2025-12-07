@@ -36,7 +36,7 @@ def import_repo(
     test_frameworks: list[str] | None = None,
     source_languages: list[str] | None = None,
     ci_provider: str = "github_actions",
-    feature_ids: list[str] | None = None,
+    feature_names: list[str] | None = None,
     max_builds: int | None = None,
     ingest_start_date: str | None = None,
     ingest_end_date: str | None = None,
@@ -110,9 +110,7 @@ def import_repo(
                     "source_languages": source_languages or [],
                     "ci_provider": ci_provider or "github_actions",
                     "import_status": ImportStatus.IMPORTING.value,
-                    "requested_feature_ids": [
-                        ObjectId(fid) for fid in (feature_ids or [])
-                    ],
+                    "requested_feature_names": feature_names or [],
                     "max_builds_to_ingest": max_builds,
                     "ingest_start_date": start_dt,
                     "ingest_end_date": end_dt,
@@ -173,9 +171,7 @@ def import_repo(
                     "ci_provider": ci_provider or "github_actions",
                     "import_status": ImportStatus.IMPORTING.value,
                     "ingest_end_date": end_dt,
-                    "requested_feature_ids": [
-                        ObjectId(fid) for fid in (feature_ids or [])
-                    ],
+                    "requested_feature_names": feature_names or [],
                 },
             )
             publish_status(repo_id, "importing", "Fetching workflow runs...")

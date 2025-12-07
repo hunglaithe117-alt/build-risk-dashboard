@@ -17,6 +17,7 @@ from app.dtos import (
 )
 from datetime import datetime, timezone
 from app.repositories.imported_repository import ImportedRepositoryRepository
+from app.repositories.dataset_template_repository import DatasetTemplateRepository
 from app.services.github.github_client import (
     get_public_github_client,
     get_user_github_client,
@@ -39,6 +40,15 @@ class RepositoryService:
     def __init__(self, db: Database):
         self.db = db
         self.repo_repo = ImportedRepositoryRepository(db)
+        self.template_repo = DatasetTemplateRepository(db)
+
+    def _resolve_feature_names(self, payload: RepoImportRequest) -> Optional[List[str]]:
+        """Resolve feature names from template_id or use feature_names directly."""
+        if payload.template_id:
+            template = self.template_repo.find_by_id(ObjectId(payload.template_id))
+            if template:
+                return template.feature_names
+        return payload.feature_names  # May be None
 
     def bulk_import_repositories(
         self, user_id: str, payloads: List[RepoImportRequest]
@@ -53,10 +63,11 @@ class RepositoryService:
             # The upsert_repository below will handle updates.
 
             try:
-                # Convert feature_ids to ObjectIds if provided
-                feature_object_ids = None
-                if payload.feature_ids:
-                    feature_object_ids = [ObjectId(fid) for fid in payload.feature_ids]
+                # Resolve feature names from template or use feature_ids directly
+                resolved_features = self._resolve_feature_names(payload)
+
+                # Note: We store feature names directly now, not ObjectIds
+                # This aligns with code-defined registry approach
 
                 repo_doc = self.repo_repo.upsert_repository(
                     query={
@@ -70,7 +81,7 @@ class RepositoryService:
                         "source_languages": payload.source_languages,
                         "ci_provider": payload.ci_provider,
                         "import_status": ImportStatus.QUEUED.value,
-                        "requested_feature_ids": feature_object_ids,
+                        "requested_feature_names": resolved_features,  # Now stores feature names
                         "max_builds_to_ingest": payload.max_builds,
                         "ingest_start_date": payload.ingest_start_date,
                         "ingest_end_date": payload.ingest_end_date,
@@ -86,7 +97,7 @@ class RepositoryService:
                     test_frameworks=payload.test_frameworks,
                     source_languages=payload.source_languages,
                     ci_provider=payload.ci_provider,
-                    feature_ids=payload.feature_ids,
+                    feature_names=payload.feature_names,
                     max_builds=payload.max_builds,
                     ingest_start_date=(
                         payload.ingest_start_date.isoformat()
@@ -240,9 +251,9 @@ class RepositoryService:
         updates = payload.model_dump(exclude_unset=True)
         # Map user-facing keys to stored fields
         if "feature_ids" in updates:
-            updates["requested_feature_ids"] = [
-                ObjectId(fid) for fid in updates.pop("feature_ids")
-            ]
+            updates["requested_feature_ids"] = updates.pop(
+                "feature_ids"
+            )  # Now stores strings
         if "max_builds" in updates:
             updates["max_builds_to_ingest"] = updates.pop("max_builds")
         if "ingest_start_date" in updates:

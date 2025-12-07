@@ -1,14 +1,28 @@
-"""Utilities for translating GitHub compare payloads into feature metrics."""
+"""Utilities for analyzing diffs and detecting test files/changes."""
 
 from __future__ import annotations
 
 import re
 from typing import Dict, List, Tuple
-from app.services.extracts.languages.registry import LanguageRegistry
+from app.pipeline.languages import LanguageRegistry
 
 
 DOC_PREFIXES = ("docs/", "doc/", "documentation/")
 DOC_EXTENSIONS = (".md", ".rst", ".adoc", ".txt")
+
+
+def _strip_shell_comments(line: str) -> str:
+    """Strip shell-style comments (# ...)."""
+    if "#" in line:
+        return line.split("#", 1)[0]
+    return line
+
+
+def _strip_c_comments(line: str) -> str:
+    """Strip C-style comments (// ...)."""
+    if "//" in line:
+        return line.split("//", 1)[0]
+    return line
 
 
 def _strip_comments(line: str, language: str) -> str:

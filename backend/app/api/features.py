@@ -262,6 +262,30 @@ def list_features(
     )
 
 
+@router.get("/languages")
+def get_supported_languages():
+    """
+    Get list of languages supported by the feature extraction pipeline.
+    """
+    from app.pipeline.log_parsers import LogParserRegistry
+    from app.pipeline.languages import LanguageRegistry
+    
+    log_parser_registry = LogParserRegistry()
+    
+    # Get unique languages from both registries
+    log_parser_langs = set(log_parser_registry.get_languages())
+    language_strategy_langs = set(LanguageRegistry.get_supported_languages())
+    
+    # Union of all supported languages
+    all_supported = log_parser_langs | language_strategy_langs
+    
+    return {
+        "languages": sorted(all_supported),
+        "log_parser_languages": sorted(log_parser_langs),
+        "language_strategy_languages": sorted(language_strategy_langs),
+    }
+
+
 @router.get("/{feature_name}", response_model=FeatureDefinitionResponse)
 def get_feature(feature_name: str):
     """Get a specific feature by name."""
@@ -334,3 +358,4 @@ def validate_features():
         errors=errors,
         warnings=[],
     )
+

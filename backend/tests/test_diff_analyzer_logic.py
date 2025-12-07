@@ -1,6 +1,5 @@
 import unittest
-import unittest
-from app.services.extracts.diff_analyzer import (
+from app.pipeline.analyzers import (
     _is_test_file,
     _matches_test_definition,
     _matches_assertion,

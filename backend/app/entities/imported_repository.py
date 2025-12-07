@@ -70,7 +70,7 @@ class ImportedRepository(BaseEntity):
     last_remote_check_at: datetime | None = None
     latest_synced_run_created_at: datetime | None = None
 
-    requested_feature_ids: List[PyObjectId] = []
+    requested_feature_names: List[str] = []  # Feature names from registry
     max_builds_to_ingest: Optional[int] = None
     ingest_start_date: Optional[datetime] = None
     ingest_end_date: Optional[datetime] = None

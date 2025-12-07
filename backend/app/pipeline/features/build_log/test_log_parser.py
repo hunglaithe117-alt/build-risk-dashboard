@@ -15,7 +15,7 @@ from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.log_storage import LogStorageHandle
-from app.services.extracts.log_parser import TestLogParser
+from app.pipeline.log_parsers import TestLogParser
 
 
 @register_feature(

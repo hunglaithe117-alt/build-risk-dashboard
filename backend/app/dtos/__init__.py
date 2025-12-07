@@ -65,6 +65,17 @@ from .feature import (
     ExecutionLevelResponse,
     DAGResponse,
 )
+from .enrichment import (
+    EnrichmentValidateRequest,
+    EnrichmentStartRequest,
+    EnrichmentValidateResponse,
+    EnrichmentJobResponse,
+    EnrichmentStartResponse,
+    EnrichmentStatusResponse,
+    EnrichmentJobListResponse,
+    EnrichmentProgressEvent,
+    EnrichmentCompleteEvent,
+)
 
 __all__ = [
     # Auth
@@ -122,4 +133,15 @@ __all__ = [
     "DAGEdgeResponse",
     "ExecutionLevelResponse",
     "DAGResponse",
+    # Enrichment
+    "EnrichmentValidateRequest",
+    "EnrichmentStartRequest",
+    "EnrichmentValidateResponse",
+    "EnrichmentJobResponse",
+    "EnrichmentStartResponse",
+    "EnrichmentStatusResponse",
+    "EnrichmentJobListResponse",
+    "EnrichmentProgressEvent",
+    "EnrichmentCompleteEvent",
 ]
+

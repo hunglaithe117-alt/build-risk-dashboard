@@ -17,7 +17,7 @@ from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.git_repo import GitRepoHandle
-from app.services.extracts.diff_analyzer import (
+from app.pipeline.analyzers import (
     _count_test_cases,
     _is_doc_file,
     _is_source_file,

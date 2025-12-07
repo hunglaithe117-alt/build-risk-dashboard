@@ -14,20 +14,18 @@ class BuildSample(BaseEntity):
     # Dynamic Features
     features: dict = {}
 
-    # Log features
     tr_build_id: int | None = None
     tr_build_number: int | None = None
     tr_original_commit: str | None = None
     git_trigger_commit: str | None = None
     git_branch: str | None = None
     tr_jobs: List[int] = []
-
-    # Metadata used for UI/filtering (kept as top-level for indexing ease, or mapped from features)
-    # The user asked to not show all features. I will keep core identifiers.
-    # tr_status and tr_duration are often used for sorting/filtering.
     tr_status: str | None = None
     tr_duration: float | None = None
-    tr_log_num_jobs: int | None = None
+    tr_log_num_jobs: int | None = None    
+    ci_provider: str | None = None
+    gh_build_started_at: datetime | None = None
+    gh_lang: str | None = None
     tr_log_tests_run_sum: int | None = None
 
     # Operational Status

@@ -1,5 +1,5 @@
 import unittest
-from app.services.extracts.log_parser import TestLogParser
+from app.pipeline.log_parsers import TestLogParser
 
 
 class TestJavaMavenLogParser(unittest.TestCase):

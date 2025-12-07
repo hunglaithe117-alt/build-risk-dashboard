@@ -20,8 +20,7 @@ from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.git_repo import GitRepoHandle
-from app.pipeline.resources.git_repo import GitRepoHandle
-from app.services.extracts.languages.registry import LanguageRegistry
+from app.pipeline.languages import LanguageRegistry
 from app.utils.locking import repo_lock
 
 logger = logging.getLogger(__name__)

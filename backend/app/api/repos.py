@@ -22,23 +22,9 @@ from app.services.github.github_client import (
     get_app_github_client,
     get_user_github_client,
 )
-from app.services.extracts.log_parser import TestLogParser
+from app.pipeline.log_parsers import TestLogParser
 
 router = APIRouter(prefix="/repos", tags=["Repositories"])
-
-
-@router.post(
-    "/sync", response_model=RepoSuggestionListResponse, status_code=status.HTTP_200_OK
-)
-def sync_repositories(
-    db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-    limit: int = Query(default=30, ge=1, le=100),
-):
-    """Sync available repositories from GitHub App Installations."""
-    user_id = str(current_user["_id"])
-    service = RepositoryService(db)
-    return service.sync_repositories(user_id, limit)
 
 
 @router.post(
@@ -109,9 +95,22 @@ def list_test_frameworks(
     """
     List supported test frameworks for log parsing.
 
+    Returns:
+        - frameworks: List of all supported framework names
+        - by_language: Frameworks grouped by language
+        - languages: List of languages with test framework support
+
     Use this to drive UI selection when importing repositories.
     """
-    return {"by_language": TestLogParser.FRAMEWORKS_BY_LANG}
+    from app.pipeline.log_parsers import LogParserRegistry
+    
+    registry = LogParserRegistry()
+    
+    return {
+        "frameworks": registry.get_supported_frameworks(),
+        "by_language": registry.get_frameworks_by_language(),
+        "languages": registry.get_languages(),
+    }
 
 
 @router.get("/", response_model=RepoListResponse, response_model_by_alias=False)

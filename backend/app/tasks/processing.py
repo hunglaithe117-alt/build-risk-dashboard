@@ -106,14 +106,14 @@ def process_workflow_run(
         )
 
         # Apply feature selection from repository settings
-        feature_ids = getattr(repo, "requested_feature_ids", [])
+        feature_names = getattr(repo, "requested_feature_names", [])
 
         result = pipeline.run(
             build_sample=build_sample,
             repo=repo,
             workflow_run=workflow_run,
             parallel=True,
-            feature_ids=feature_ids,
+            features_filter=set(feature_names),
         )
 
         # Prepare updates for BuildSample

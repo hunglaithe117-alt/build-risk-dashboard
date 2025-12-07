@@ -3,62 +3,128 @@ Seed script for TravisTorrent dataset template.
 
 Creates a template with all available features from the code registry.
 Run with: python -m app.scripts.seed_travistorrent_template
+
+Feature names are explicitly listed here for clarity and maintainability.
+When adding new features, add them to the appropriate FEATURES_* set below.
 """
 
 import logging
 from app.database.mongo import get_database
-from app.pipeline.core.registry import feature_registry
-from app.pipeline.constants import DEFAULT_FEATURES
-
-# Ensure all feature nodes are registered
-import app.pipeline  # noqa: F401
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# FEATURE DEFINITIONS BY GROUP
+# These are explicitly listed for clarity. Update when adding new features.
+# =============================================================================
+
+# Build Log Features (from build_log/job_metadata.py, build_log/workflow_metadata.py)
+FEATURES_BUILD_LOG = {
+    # job_metadata node
+    "tr_jobs",
+    "tr_log_num_jobs",
+    # workflow_metadata node
+    "tr_build_id",
+    "tr_build_number",
+    "tr_original_commit",
+    "tr_status",
+    "tr_duration",
+    "tr_log_lan_all",
+}
+
+# Git Features (from git/*.py)
+FEATURES_GIT = {
+    # commit_info node
+    "git_all_built_commits",
+    "git_num_all_built_commits",
+    "git_prev_built_commit",
+    "git_prev_commit_resolution_status",
+    "tr_prev_build",
+    # diff_features node
+    "git_diff_src_churn",
+    "git_diff_test_churn",
+    "gh_diff_files_added",
+    "gh_diff_files_deleted",
+    "gh_diff_files_modified",
+    "gh_diff_tests_added",
+    "gh_diff_tests_deleted",
+    "gh_diff_src_files",
+    "gh_diff_doc_files",
+    "gh_diff_other_files",
+    # file_touch_history node
+    "gh_num_commits_on_files_touched",
+    # team_membership node
+    "gh_team_size",
+    "gh_by_core_team_member",
+}
+
+# GitHub Features (from github/discussion.py)
+FEATURES_GITHUB = {
+    "gh_num_issue_comments",
+    "gh_num_commit_comments",
+    "gh_num_pr_comments",
+    "gh_description_complexity",
+}
+
+# Repo Snapshot Features (from repo/snapshot.py)
+FEATURES_REPO = {
+    "gh_repo_age",
+    "gh_repo_num_commits",
+    "gh_sloc",
+    "gh_test_lines_per_kloc",
+    "gh_test_cases_per_kloc",
+    "gh_asserts_case_per_kloc",
+    # Metadata
+    "gh_project_name",
+    "gh_is_pr",
+    "gh_pr_created_at",
+    "gh_pull_req_num",
+    "gh_lang",
+    "git_branch",
+    "git_trigger_commit",
+    "ci_provider",
+    "gh_build_started_at",
+}
+
+# All features combined
+ALL_FEATURES = FEATURES_BUILD_LOG | FEATURES_GIT | FEATURES_GITHUB | FEATURES_REPO
+
+# Default features that are always included (IDs, status, basic metadata)
+DEFAULT_FEATURES = {
+    "tr_build_id",
+    "tr_build_number",
+    "tr_original_commit",
+    "git_trigger_commit",
+    "git_branch",
+    "tr_jobs",
+    "tr_status",
+    "tr_duration",
+    "tr_log_num_jobs",
+    "ci_provider",
+    "gh_build_started_at",
+    "gh_lang",
+}
 
 
 def seed_travistorrent_template():
     """Create or update the TravisTorrent dataset template with all features."""
     db = get_database()
 
-    # Get all features from the code registry (excluding default features)
-    all_nodes = feature_registry.get_all(enabled_only=True)
+    # Exclude default features from the selectable list (they're always included)
+    selected_features = sorted(ALL_FEATURES - DEFAULT_FEATURES)
 
-    all_features = set()
-    for meta in all_nodes.values():
-        all_features.update(meta.provides)
+    logger.info(f"Total features available: {len(ALL_FEATURES)}")
+    logger.info(f"Selectable features (excluding defaults): {len(selected_features)}")
 
-    # Exclude default features (they're always included automatically)
-    selected_features = sorted(all_features - DEFAULT_FEATURES)
-
-    logger.info(f"Found {len(selected_features)} features from code registry")
-
-    # Template document
+    # Template document (simplified schema)
     template = {
         "name": "TravisTorrent Full",
-        "description": "Complete TravisTorrent dataset template with all available features for CI/CD build prediction research.",
-        "file_name": "travistorrent_full.csv",
-        "source": "seed",
-        "rows": 0,
-        "size_mb": 0.0,
-        "columns": [],
-        "mapped_fields": {
-            "build_id_field": "tr_build_id",
-            "commit_sha_field": "git_trigger_commit",
-            "branch_field": "git_branch",
-            "status_field": "tr_status",
-            "duration_field": "tr_duration",
-            "timestamp_field": "gh_build_started_at",
-        },
-        "stats": {
-            "pass_count": 0,
-            "fail_count": 0,
-            "pass_rate": 0.0,
-        },
+        "description": "Complete feature set for CI/CD build prediction research.",
+        "feature_names": selected_features,
         "tags": ["travistorrent", "ci-cd", "build-prediction", "full"],
-        "selected_template": None,
-        "selected_features": selected_features,
-        "preview": [],
+        "source": "seed",
     }
 
     # Upsert by name
@@ -76,14 +142,11 @@ def seed_travistorrent_template():
     logger.info(f"   Features included: {len(selected_features)}")
 
     # Print feature categories for verification
-    by_prefix = {}
-    for feat in selected_features:
-        prefix = feat.split("_")[0]
-        by_prefix[prefix] = by_prefix.get(prefix, 0) + 1
-
-    logger.info("   Feature breakdown by prefix:")
-    for prefix, count in sorted(by_prefix.items()):
-        logger.info(f"      {prefix}: {count}")
+    logger.info("   Feature breakdown by group:")
+    logger.info(f"      build_log: {len(FEATURES_BUILD_LOG)} features")
+    logger.info(f"      git: {len(FEATURES_GIT)} features")
+    logger.info(f"      github: {len(FEATURES_GITHUB)} features")
+    logger.info(f"      repo: {len(FEATURES_REPO)} features")
 
 
 if __name__ == "__main__":

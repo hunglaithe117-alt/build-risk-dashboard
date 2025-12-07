@@ -1,6 +1,6 @@
 """GitHub integration DTOs"""
 
-from app.models.entities.base import PyObjectIdStr
+from app.entities.base import PyObjectIdStr
 from datetime import datetime
 from typing import List, Optional
 

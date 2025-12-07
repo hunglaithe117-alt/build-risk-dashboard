@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from pymongo.database import Database
 
-from app.models.entities.dataset import DatasetProject
+from app.entities.dataset import DatasetProject
 from .base import BaseRepository
 
 

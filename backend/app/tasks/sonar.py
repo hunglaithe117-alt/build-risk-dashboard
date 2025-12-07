@@ -10,8 +10,8 @@ from app.repositories.scan_job import ScanJobRepository
 from app.repositories.scan_result import ScanResultRepository
 from app.repositories.failed_scan import FailedScanRepository
 from app.repositories.imported_repository import ImportedRepositoryRepository
-from app.models.entities.scan_job import ScanJobStatus
-from app.models.entities.failed_scan import FailedScan, ScanErrorType, ScanStatus
+from app.entities.scan_job import ScanJobStatus
+from app.entities.failed_scan import FailedScan, ScanErrorType, ScanStatus
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -90,8 +90,8 @@ def run_sonar_scan(self, job_id: str):
             {"_id": job.build_id},
             {
                 "$set": {
-                    "sonar_metrics": metrics,
-                    "sonar_project_key": component_key,
+                    "features.sonar_metrics": metrics,
+                    "features.sonar_project_key": component_key,
                     "sonar_scan_status": "completed",
                 }
             },
@@ -211,8 +211,8 @@ def export_metrics_from_webhook(self, component_key: str, job_id: str):
             {"_id": job.build_id},
             {
                 "$set": {
-                    "sonar_metrics": metrics,
-                    "sonar_project_key": component_key,
+                    "features.sonar_metrics": metrics,
+                    "features.sonar_project_key": component_key,
                     "sonar_scan_status": "completed",
                 }
             },

@@ -2,7 +2,7 @@
 
 from pymongo.database import Database
 
-from app.models.entities.dataset_template import DatasetTemplate
+from app.entities.dataset_template import DatasetTemplate
 from .base import BaseRepository
 
 

@@ -10,12 +10,13 @@ from typing import Any, Dict
 from bson import ObjectId
 
 from app.celery_app import celery_app
-from app.models.entities.build_sample import BuildSample
+from app.entities.build_sample import BuildSample
 from app.repositories.build_sample import BuildSampleRepository
 from app.repositories.imported_repository import ImportedRepositoryRepository
 from app.repositories.workflow_run import WorkflowRunRepository
 from app.tasks.base import PipelineTask
 from app.pipeline.runner import FeaturePipeline, run_feature_pipeline
+from app.pipeline.constants import DEFAULT_FEATURES
 from app.config import settings
 import redis
 import json
@@ -105,20 +106,19 @@ def process_workflow_run(
         )
 
         # Apply feature selection from repository settings
-        features_filter = None
-        if repo.requested_features:
-            features_filter = set(repo.requested_features)
+        feature_ids = getattr(repo, "requested_feature_ids", [])
 
         result = pipeline.run(
             build_sample=build_sample,
             repo=repo,
             workflow_run=workflow_run,
             parallel=True,
-            features_filter=features_filter,
+            feature_ids=feature_ids,
         )
 
         # Prepare updates for BuildSample
-        updates = result.get("features", {}).copy()
+        updates = {}
+        updates["features"] = result.get("features", {})
 
         # Set status
         if result["status"] == "completed":
@@ -139,6 +139,11 @@ def process_workflow_run(
                 for w in result["warnings"]
             ):
                 updates["is_missing_commit"] = True
+
+        # Map default features to top-level fields
+        for field in DEFAULT_FEATURES:
+            if field in result["features"]:
+                updates[field] = result["features"][field]
 
         # Save to database
         build_sample_repo.update_one(build_id, updates)
@@ -197,9 +202,6 @@ def reprocess_build(self: PipelineTask, build_id: str) -> Dict[str, Any]:
     - Testing pipeline changes on existing data
     """
     build_sample_repo = BuildSampleRepository(self.db)
-    repo_repo = ImportedRepositoryRepository(self.db)
-    workflow_run_repo = WorkflowRunRepository(self.db)
-
     build_sample = build_sample_repo.find_by_id(ObjectId(build_id))
     if not build_sample:
         logger.error(f"BuildSample {build_id} not found")
@@ -212,106 +214,58 @@ def reprocess_build(self: PipelineTask, build_id: str) -> Dict[str, Any]:
     return process_workflow_run.apply(args=[repo_id, workflow_run_id]).get()
 
 
-# =============================================================================
-# Legacy Compatibility - These are kept for backwards compatibility but now
-# delegate to the unified pipeline. They can be removed once all callers
-# are updated.
-# =============================================================================
-
-
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.processing.extract_build_log_features",
+    name="app.tasks.processing.reprocess_repo_builds",
     queue="data_processing",
 )
-def extract_build_log_features(self: PipelineTask, build_id: str) -> Dict[str, Any]:
+def reprocess_repo_builds(self: PipelineTask, repo_id: str) -> Dict[str, Any]:
     """
-    Legacy task - now uses unified pipeline.
-    Kept for backwards compatibility.
+    Reprocess ALL builds for a repository to re-extract features.
+
+    This is useful when:
+    - Feature extractors have been updated/fixed
+    - New features have been added
+    - Existing builds need their features recalculated
+
+    Unlike import_repo (which fetches new workflow runs from GitHub),
+    this task only reprocesses existing builds in the database.
     """
-    logger.warning(
-        f"extract_build_log_features is deprecated. "
-        f"Use process_workflow_run instead for build {build_id}"
+    build_sample_repo = BuildSampleRepository(self.db)
+    repo_repo = ImportedRepositoryRepository(self.db)
+
+    # Validate repository exists
+    repo = repo_repo.find_by_id(repo_id)
+    if not repo:
+        logger.error(f"Repository {repo_id} not found")
+        return {"status": "error", "message": "Repository not found"}
+
+    # Find all builds for this repository
+    builds = list(build_sample_repo.find_by_repo_id(repo_id))
+    if not builds:
+        logger.info(f"No builds found for repository {repo_id}")
+        return {
+            "status": "completed",
+            "builds_queued": 0,
+            "message": "No builds to reprocess",
+        }
+
+    # Queue each build for reprocessing
+    queued_count = 0
+    for build in builds:
+        try:
+            process_workflow_run.delay(repo_id, build.workflow_run_id)
+            queued_count += 1
+        except Exception as e:
+            logger.warning(f"Failed to queue build {build.id} for reprocessing: {e}")
+
+    logger.info(
+        f"Queued {queued_count} builds for reprocessing in repository {repo_id}"
     )
-    result = run_feature_pipeline(self.db, build_id)
-    return result.get("features", {})
 
-
-@celery_app.task(
-    bind=True,
-    base=PipelineTask,
-    name="app.tasks.processing.extract_git_features",
-    queue="data_processing",
-)
-def extract_git_features(self: PipelineTask, build_id: str) -> Dict[str, Any]:
-    """
-    Legacy task - now uses unified pipeline.
-    Kept for backwards compatibility.
-    """
-    logger.warning(
-        f"extract_git_features is deprecated. "
-        f"Use process_workflow_run instead for build {build_id}"
-    )
-    result = run_feature_pipeline(self.db, build_id)
-    return result.get("features", {})
-
-
-@celery_app.task(
-    bind=True,
-    base=PipelineTask,
-    name="app.tasks.processing.extract_repo_snapshot_features",
-    queue="data_processing",
-)
-def extract_repo_snapshot_features(self: PipelineTask, build_id: str) -> Dict[str, Any]:
-    """
-    Legacy task - now uses unified pipeline.
-    Kept for backwards compatibility.
-    """
-    logger.warning(
-        f"extract_repo_snapshot_features is deprecated. "
-        f"Use process_workflow_run instead for build {build_id}"
-    )
-    result = run_feature_pipeline(self.db, build_id)
-    return result.get("features", {})
-
-
-@celery_app.task(
-    bind=True,
-    base=PipelineTask,
-    name="app.tasks.processing.extract_github_discussion_features",
-    queue="data_processing",
-)
-def extract_github_discussion_features(
-    self: PipelineTask, build_id: str
-) -> Dict[str, Any]:
-    """
-    Legacy task - now uses unified pipeline.
-    Kept for backwards compatibility.
-    """
-    logger.warning(
-        f"extract_github_discussion_features is deprecated. "
-        f"Use process_workflow_run instead for build {build_id}"
-    )
-    result = run_feature_pipeline(self.db, build_id)
-    return result.get("features", {})
-
-
-@celery_app.task(
-    bind=True,
-    base=PipelineTask,
-    name="app.tasks.processing.finalize_build_sample",
-    queue="data_processing",
-)
-def finalize_build_sample(
-    self: PipelineTask, results: list, build_id: str
-) -> Dict[str, Any]:
-    """
-    Legacy task - no longer needed with unified pipeline.
-    Kept for backwards compatibility but does nothing.
-    """
-    logger.warning(
-        f"finalize_build_sample is deprecated and no longer needed. "
-        f"The unified pipeline handles finalization for build {build_id}"
-    )
-    return {"status": "noop", "build_id": build_id}
+    return {
+        "status": "queued",
+        "builds_queued": queued_count,
+        "total_builds": len(builds),
+    }

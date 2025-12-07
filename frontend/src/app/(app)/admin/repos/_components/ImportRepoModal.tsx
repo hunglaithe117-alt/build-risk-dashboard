@@ -11,22 +11,27 @@ import {
     X,
     Globe,
     Lock,
+
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { integrationApi, reposApi, featuresApi } from "@/lib/api";
+import { integrationApi, reposApi, featuresApi, datasetsApi } from "@/lib/api";
 import {
     RepoSuggestion,
     RepoImportPayload,
     TestFramework,
     CIProvider,
     FeatureDefinitionSummary,
+    DatasetTemplateRecord,
 } from "@/types";
 import { useAuth } from "@/contexts/auth-context";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Input } from "@/components/ui/input";
+import { FeatureDAGVisualization, type FeatureDAGData } from "./FeatureDAGVisualization";
+import { SelectedFeaturesPanel } from "./SelectedFeaturesPanel";
+import { ExtractionPlanTimeline } from "./ExtractionPlanTimeline";
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
     const [mounted, setMounted] = useState(false);
@@ -45,54 +50,14 @@ type FeatureCategoryGroup = {
     features: FeatureDefinitionSummary[];
 };
 
-type FeatureTemplate = {
-    id: string;
-    name: string;
-    description: string;
-    badges: string[];
-    recommended: string[];
-};
-
-const FEATURE_TEMPLATES: FeatureTemplate[] = [
-    {
-        id: "reliability",
-        name: "Build reliability",
-        description: "Focus on flakiness, duration, and failure signals.",
-        badges: ["stability", "tests"],
-        recommended: [
-            "build_duration_minutes",
-            "failed_test_count",
-            "test_flakiness_index",
-            "change_failure_rate",
-        ],
-    },
-    {
-        id: "delivery",
-        name: "Delivery velocity",
-        description: "Lead time, deployment frequency, and change risk.",
-        badges: ["velocity", "risk"],
-        recommended: [
-            "lead_time",
-            "deployment_frequency",
-            "commit_churn",
-            "change_failure_rate",
-        ],
-    },
-    {
-        id: "custom",
-        name: "Custom mix",
-        description: "Start empty and select only what you need.",
-        badges: ["custom"],
-        recommended: [],
-    },
-];
-
 // Map languages to suggested test frameworks
 const FRAMEWORKS_BY_LANG: Record<string, string[]> = {
     python: [TestFramework.PYTEST, TestFramework.UNITTEST],
     ruby: [TestFramework.RSPEC, TestFramework.MINITEST, TestFramework.TESTUNIT, TestFramework.CUCUMBER],
     java: [TestFramework.JUNIT, TestFramework.TESTNG],
 };
+
+
 
 interface ImportRepoModalProps {
     isOpen: boolean;
@@ -119,7 +84,7 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
             test_frameworks: string[];
             source_languages: string[];
             ci_provider: string;
-            features: string[];
+            feature_ids: string[];  // FeatureDefinition ObjectIds
             max_builds?: number | null;
         }>
     >({});
@@ -139,6 +104,14 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
     const [importing, setImporting] = useState(false);
     const [importError, setImportError] = useState<string | null>(null);
     const [activeRepo, setActiveRepo] = useState<string | null>(null);
+
+    // Templates state
+    const [templates, setTemplates] = useState<DatasetTemplateRecord[]>([]);
+    const [templatesLoading, setTemplatesLoading] = useState(false);
+
+    // DAG state
+    const [dagData, setDagData] = useState<FeatureDAGData | null>(null);
+    const [dagLoading, setDagLoading] = useState(false);
 
     const performSearch = useCallback(async (query: string, force = false) => {
         if (!force && query === lastSearchedTerm.current) return;
@@ -206,20 +179,45 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
         }
     }, [frameworksLoading, frameworksLoaded]);
 
-    // Debounce search
+    const loadDAG = useCallback(async () => {
+        if (dagLoading || dagData) return;
+        setDagLoading(true);
+        try {
+            const data = await featuresApi.getDAG();
+            setDagData(data);
+        } catch (err) {
+            console.error("Failed to load DAG:", err);
+        } finally {
+            setDagLoading(false);
+        }
+    }, [dagData, dagLoading]);
+
+    const loadTemplates = useCallback(async () => {
+        if (templatesLoading || templates.length > 0) return;
+        setTemplatesLoading(true);
+        try {
+            const data = await datasetsApi.listTemplates();
+            setTemplates(data.items);
+        } catch (err) {
+            console.error("Failed to load templates:", err);
+        } finally {
+            setTemplatesLoading(false);
+        }
+    }, [templatesLoading, templates.length]);
+
     useEffect(() => {
         if (isOpen && debouncedSearchTerm === searchTerm) {
             performSearch(debouncedSearchTerm);
         }
     }, [debouncedSearchTerm, isOpen, searchTerm, performSearch]);
 
-    // Reset state on open
     useEffect(() => {
         if (isOpen) {
             setStep(1);
             setSearchTerm("");
             setSelectedRepos({});
             setRepoConfigs({});
+            setFeatureSearch({});
             setAvailableLanguages({});
             setLanguageLoading({});
             setLanguageError({});
@@ -228,8 +226,8 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
             setSearchError(null);
             setImportError(null);
             setFeaturesData(null);
-            void loadFrameworks();
-            // Initial load (empty search)
+            setDagData(null);
+            loadFrameworks();
             performSearch("", true);
             setActiveRepo(null);
         }
@@ -239,7 +237,6 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
         setIsSearching(true);
         try {
             await reposApi.sync();
-            // Re-run search to update list
             await performSearch(searchTerm, true);
         } catch (err) {
             console.error(err);
@@ -248,25 +245,41 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
         }
     };
 
+    const [supportedLanguages, setSupportedLanguages] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (isOpen) {
+            featuresApi.getSupportedLanguages().then((data) => {
+                setSupportedLanguages(data.languages);
+            }).catch(console.error);
+        }
+    }, [isOpen]);
+
     const fetchLanguages = useCallback(
         async (repo: RepoSuggestion) => {
             setLanguageLoading((prev) => ({ ...prev, [repo.full_name]: true }));
             setLanguageError((prev) => ({ ...prev, [repo.full_name]: null }));
             try {
                 const res = await reposApi.detectLanguages(repo.full_name);
-                const langs = res.languages && res.languages.length > 0
-                    ? res.languages
-                    : [];
-                setAvailableLanguages((prev) => ({ ...prev, [repo.full_name]: langs }));
+                const detected = res.languages || [];
+
+                // Filter by supported languages if loaded
+                const validLangs = supportedLanguages.length > 0
+                    ? detected.filter(l => supportedLanguages.some(sl => sl.toLowerCase() === l.toLowerCase()))
+                    : detected;
+
+                setAvailableLanguages((prev) => ({ ...prev, [repo.full_name]: validLangs }));
+
                 setRepoConfigs((current) => {
                     const existing = current[repo.full_name];
+                    const hasExistingLangs = existing?.source_languages?.length > 0;
                     return {
                         ...current,
                         [repo.full_name]: {
                             test_frameworks: existing?.test_frameworks || [],
-                            source_languages: existing?.source_languages || [],
+                            source_languages: hasExistingLangs ? existing.source_languages : validLangs,
                             ci_provider: existing?.ci_provider || CIProvider.GITHUB_ACTIONS,
-                            features: existing?.features || [],
+                            feature_ids: existing?.feature_ids || [],
                             max_builds: existing?.max_builds ?? null,
                         },
                     };
@@ -281,7 +294,7 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                 setLanguageLoading((prev) => ({ ...prev, [repo.full_name]: false }));
             }
         },
-        []
+        [supportedLanguages]
     );
 
     const toggleSelection = (repo: RepoSuggestion) => {
@@ -304,7 +317,7 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                         test_frameworks: [],
                         source_languages: [],
                         ci_provider: CIProvider.GITHUB_ACTIONS,
-                        features: [],
+                        feature_ids: [],
                         max_builds: null,
                         ingest_start_date: null,
                         ingest_end_date: null,
@@ -368,7 +381,13 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                 void fetchLanguages(repo);
             }
         });
-    }, [step, loadFeatures, loadFrameworks, selectedList, availableLanguages, fetchLanguages]);
+        if (step === 2) {
+            loadFeatures();
+            loadFrameworks();
+            loadDAG();
+            loadTemplates();
+        }
+    }, [step, loadFeatures, loadFrameworks, loadDAG, loadTemplates, selectedList, availableLanguages, fetchLanguages]);
 
     const handleImport = async () => {
         if (!selectedList.length) return;
@@ -385,7 +404,7 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                     test_frameworks: config.test_frameworks,
                     source_languages: config.source_languages,
                     ci_provider: config.ci_provider,
-                    features: config.features,
+                    feature_ids: config.feature_ids,
                     max_builds: config.max_builds ?? null,
                     ingest_start_date: (config as any).ingest_start_date || null,
                     ingest_end_date: (config as any).ingest_end_date || null,
@@ -544,227 +563,226 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                     )}
 
                     <div className="flex-1 overflow-y-auto">
-                    {step === 1 ? (
-                        <div className="space-y-6">
-                            <div className="flex gap-2">
-                                <div className="relative flex-1">
-                                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <input
-                                        type="text"
-                                        className="w-full rounded-lg border border-slate-200 bg-transparent pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-0 focus:border-primary"
-                                        placeholder="Search repositories (e.g. owner/repo)..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                    />
-                                </div>
-                                <Button
-                                    variant="outline"
-                                    onClick={handleSync}
-                                    title="Sync private repositories from GitHub App"
-                                    disabled={isSearching}
-                                >
-                                    <RefreshCw className={`h-4 w-4 ${isSearching ? "animate-spin" : ""}`} />
-                                </Button>
-                            </div>
-                            {selectedList.length > 0 && (
-                                <div className="rounded-lg border bg-slate-50 dark:bg-slate-900/30 px-3 py-2">
-                                    <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">
-                                        Selected ({selectedList.length})
+                        {step === 1 ? (
+                            <div className="space-y-6">
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                        <input
+                                            type="text"
+                                            className="w-full rounded-lg border border-slate-200 bg-transparent pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-0 focus:border-primary"
+                                            placeholder="Search repositories (e.g. owner/repo)..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                        />
                                     </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {selectedList.map((repo) => (
-                                            <Badge
-                                                key={repo.full_name}
-                                                variant="secondary"
-                                                className="flex items-center gap-2"
-                                            >
-                                                <span className="truncate max-w-[200px]">{repo.full_name}</span>
-                                                <button
-                                                    type="button"
-                                                    className="text-xs"
-                                                    onClick={() => toggleSelection(repo)}
+                                    <Button
+                                        variant="outline"
+                                        onClick={handleSync}
+                                        title="Sync private repositories from GitHub App"
+                                        disabled={isSearching}
+                                    >
+                                        <RefreshCw className={`h-4 w-4 ${isSearching ? "animate-spin" : ""}`} />
+                                    </Button>
+                                </div>
+                                {selectedList.length > 0 && (
+                                    <div className="rounded-lg border bg-slate-50 dark:bg-slate-900/30 px-3 py-2">
+                                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">
+                                            Selected ({selectedList.length})
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {selectedList.map((repo) => (
+                                                <Badge
+                                                    key={repo.full_name}
+                                                    variant="secondary"
+                                                    className="flex items-center gap-2"
                                                 >
-                                                    ×
-                                                </button>
-                                            </Badge>
+                                                    <span className="truncate max-w-[200px]">{repo.full_name}</span>
+                                                    <button
+                                                        type="button"
+                                                        className="text-xs"
+                                                        onClick={() => toggleSelection(repo)}
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="h-[400px] overflow-y-auto pr-2 space-y-6">
+                                    {searchError && (
+                                        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                                            {searchError}
+                                        </div>
+                                    )}
+
+                                    {/* Private Repos Section */}
+                                    <div>
+                                        <h3 className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                            <Lock className="h-3 w-3" /> Your Repositories (App Installed)
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {privateMatches.length === 0 && !isSearching ? (
+                                                <div className="text-sm text-muted-foreground italic px-2">
+                                                    No matching private repositories found.
+                                                </div>
+                                            ) : (
+                                                privateMatches.map((repo) => (
+                                                    <RepoItem
+                                                        key={repo.full_name}
+                                                        repo={repo}
+                                                        isSelected={!!selectedRepos[repo.full_name]}
+                                                        onToggle={() => toggleSelection(repo)}
+                                                    />
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Public Repos Section */}
+                                    <div>
+                                        <h3 className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">
+                                            <Globe className="h-3 w-3" /> Public GitHub Repositories
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {publicMatches.length === 0 && !isSearching ? (
+                                                <div className="text-sm text-muted-foreground italic px-2">
+                                                    {searchTerm.length >= 3
+                                                        ? "No matching public repositories found."
+                                                        : "Type at least 3 characters to search public repositories."}
+                                                </div>
+                                            ) : (
+                                                publicMatches.map((repo) => (
+                                                    <RepoItem
+                                                        key={repo.full_name}
+                                                        repo={repo}
+                                                        isSelected={!!selectedRepos[repo.full_name]}
+                                                        onToggle={() => toggleSelection(repo)}
+                                                    />
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {isSearching && (
+                                        <div className="flex justify-center py-4">
+                                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex h-full gap-4">
+                                <div className="w-60 flex-shrink-0 rounded-xl border bg-slate-50 dark:bg-slate-900/40 overflow-hidden">
+                                    <div className="px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+                                        Selected Repos
+                                    </div>
+                                    <div className="divide-y divide-slate-200 dark:divide-slate-800 max-h-[480px] overflow-y-auto">
+                                        {selectedList.map((repo) => (
+                                            <button
+                                                key={repo.full_name}
+                                                className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${activeRepo === repo.full_name
+                                                    ? "bg-white dark:bg-slate-800 font-semibold border-l-2 border-primary"
+                                                    : "hover:bg-white/70 dark:hover:bg-slate-800/70"
+                                                    }`}
+                                                onClick={() => setActiveRepo(repo.full_name)}
+                                            >
+                                                <span className="truncate">{repo.full_name}</span>
+                                                <Badge variant="secondary" className="text-[10px] h-5">
+                                                    {repo.private ? "Private" : "Public"}
+                                                </Badge>
+                                            </button>
                                         ))}
                                     </div>
                                 </div>
-                            )}
-
-                            <div className="h-[400px] overflow-y-auto pr-2 space-y-6">
-                                {searchError && (
-                                    <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-                                        {searchError}
-                                    </div>
-                                )}
-
-                                {/* Private Repos Section */}
-                                <div>
-                                    <h3 className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">
-                                        <Lock className="h-3 w-3" /> Your Repositories (App Installed)
-                                    </h3>
-                                    <div className="space-y-2">
-                                        {privateMatches.length === 0 && !isSearching ? (
-                                            <div className="text-sm text-muted-foreground italic px-2">
-                                                No matching private repositories found.
+                                <div className="flex-1 overflow-y-auto pr-0">
+                                    {step === 2 ? (
+                                        step2Loading || !activeRepo ? (
+                                            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                                Loading languages & frameworks...
                                             </div>
                                         ) : (
-                                            privateMatches.map((repo) => (
-                                                <RepoItem
-                                                    key={repo.full_name}
-                                                    repo={repo}
-                                                    isSelected={!!selectedRepos[repo.full_name]}
-                                                    onToggle={() => toggleSelection(repo)}
-                                                />
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Public Repos Section */}
-                                <div>
-                                    <h3 className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">
-                                        <Globe className="h-3 w-3" /> Public GitHub Repositories
-                                    </h3>
-                                    <div className="space-y-2">
-                                        {publicMatches.length === 0 && !isSearching ? (
-                                            <div className="text-sm text-muted-foreground italic px-2">
-                                                {searchTerm.length >= 3
-                                                    ? "No matching public repositories found."
-                                                    : "Type at least 3 characters to search public repositories."}
-                                            </div>
-                                        ) : (
-                                            publicMatches.map((repo) => (
-                                                <RepoItem
-                                                    key={repo.full_name}
-                                                    repo={repo}
-                                                    isSelected={!!selectedRepos[repo.full_name]}
-                                                    onToggle={() => toggleSelection(repo)}
-                                                />
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
-
-                                {isSearching && (
-                                    <div className="flex justify-center py-4">
-                                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex h-full gap-4">
-                            <div className="w-60 flex-shrink-0 rounded-xl border bg-slate-50 dark:bg-slate-900/40 overflow-hidden">
-                                <div className="px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
-                                    Selected Repos
-                                </div>
-                                <div className="divide-y divide-slate-200 dark:divide-slate-800 max-h-[480px] overflow-y-auto">
-                                    {selectedList.map((repo) => (
-                                        <button
-                                            key={repo.full_name}
-                                            className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${
-                                                activeRepo === repo.full_name
-                                                    ? "bg-white dark:bg-slate-800 font-semibold border-l-2 border-primary"
-                                                    : "hover:bg-white/70 dark:hover:bg-slate-800/70"
-                                            }`}
-                                            onClick={() => setActiveRepo(repo.full_name)}
-                                        >
-                                            <span className="truncate">{repo.full_name}</span>
-                                            <Badge variant="secondary" className="text-[10px] h-5">
-                                                {repo.private ? "Private" : "Public"}
-                                            </Badge>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="flex-1 overflow-y-auto pr-0">
-                                {step === 2 ? (
-                                    step2Loading || !activeRepo ? (
-                                        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Loading languages & frameworks...
-                                        </div>
+                                            <RepoConfigItem
+                                                key={activeRepo}
+                                                repo={
+                                                    selectedList.find((r) => r.full_name === activeRepo) ||
+                                                    selectedList[0]
+                                                }
+                                                config={
+                                                    repoConfigs[activeRepo] || {
+                                                        test_frameworks: [],
+                                                        source_languages: [],
+                                                        ci_provider: CIProvider.GITHUB_ACTIONS,
+                                                        feature_ids: [],
+                                                        max_builds: null,
+                                                    }
+                                                }
+                                                languageLoading={languageLoading[activeRepo]}
+                                                languageError={languageError[activeRepo]}
+                                                availableLanguages={availableLanguages[activeRepo] || []}
+                                                availableFrameworks={getFrameworkSuggestions(
+                                                    repoConfigs[activeRepo] || {
+                                                        source_languages: [],
+                                                    }
+                                                )}
+                                                frameworksError={frameworksError}
+                                                frameworksLoading={frameworksLoading}
+                                                frameworks={frameworks}
+                                                onChange={(newConfig) =>
+                                                    setRepoConfigs((prev) => ({
+                                                        ...prev,
+                                                        [activeRepo]: newConfig,
+                                                    }))
+                                                }
+                                            />
+                                        )
                                     ) : (
-                                        <RepoConfigItem
-                                            key={activeRepo}
-                                            repo={
-                                                selectedList.find((r) => r.full_name === activeRepo) ||
-                                                selectedList[0]
+                                        <FeaturesStep
+                                            selectedList={
+                                                activeRepo
+                                                    ? selectedList.filter((r) => r.full_name === activeRepo)
+                                                    : []
                                             }
-                                            config={
-                                                repoConfigs[activeRepo] || {
-                                                    test_frameworks: [],
-                                                    source_languages: [],
-                                                    ci_provider: CIProvider.GITHUB_ACTIONS,
-                                                    features: [],
-                                                    max_builds: null,
-                                                }
+                                            repoConfigs={repoConfigs}
+                                            availableFeatures={featuresData}
+                                            featuresLoading={featuresLoading}
+                                            featuresError={featuresError}
+                                            templates={templates}
+                                            searchTerms={featureSearch}
+                                            onSearchChange={(repoName, val) =>
+                                                setFeatureSearch((prev) => ({ ...prev, [repoName]: val }))
                                             }
-                                            languageLoading={languageLoading[activeRepo]}
-                                            languageError={languageError[activeRepo]}
-                                            availableLanguages={availableLanguages[activeRepo] || []}
-                                            availableFrameworks={getFrameworkSuggestions(
-                                                repoConfigs[activeRepo] || {
-                                                    source_languages: [],
-                                                }
-                                            )}
-                                            frameworksError={frameworksError}
-                                            frameworksLoading={frameworksLoading}
-                                            frameworks={frameworks}
-                                            onChange={(newConfig) =>
+                                            onUpdateFeatures={(fullName, featureIds) =>
                                                 setRepoConfigs((prev) => ({
                                                     ...prev,
-                                                    [activeRepo]: newConfig,
+                                                    [fullName]: {
+                                                        ...prev[fullName],
+                                                        feature_ids: featureIds,
+                                                    },
                                                 }))
                                             }
+                                            onApplyTemplate={(fullName, featureIds) =>
+                                                setRepoConfigs((prev) => ({
+                                                    ...prev,
+                                                    [fullName]: {
+                                                        ...prev[fullName],
+                                                        feature_ids: Array.from(
+                                                            new Set([...(prev[fullName]?.feature_ids || []), ...featureIds])
+                                                        ),
+                                                    },
+                                                }))
+                                            }
+                                            dagData={dagData}
+                                            dagLoading={dagLoading}
+                                            onLoadDAG={loadDAG}
                                         />
-                                    )
-                                ) : (
-                                    <FeaturesStep
-                                        selectedList={
-                                            activeRepo
-                                                ? selectedList.filter((r) => r.full_name === activeRepo)
-                                                : []
-                                        }
-                                        repoConfigs={repoConfigs}
-                                        availableFeatures={featuresData}
-                                        featuresLoading={featuresLoading}
-                                        featuresError={featuresError}
-                                        templates={FEATURE_TEMPLATES}
-                                        searchTerms={featureSearch}
-                                        onSearchChange={(fullName, value) =>
-                                            setFeatureSearch((prev) => ({
-                                                ...prev,
-                                                [fullName]: value,
-                                            }))
-                                        }
-                                        onUpdateFeatures={(fullName, features) =>
-                                            setRepoConfigs((prev) => ({
-                                                ...prev,
-                                                [fullName]: {
-                                                    ...prev[fullName],
-                                                    features,
-                                                },
-                                            }))
-                                        }
-                                        onApplyTemplate={(fullName, featureIds) =>
-                                            setRepoConfigs((prev) => ({
-                                                ...prev,
-                                                [fullName]: {
-                                                    ...prev[fullName],
-                                                    features: Array.from(
-                                                        new Set([...(prev[fullName]?.features || []), ...featureIds])
-                                                    ),
-                                                },
-                                            }))
-                                        }
-                                    />
-                                )}
+                                    )}
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
                     </div>
 
                     <div className="mt-6 flex items-center justify-between border-t pt-4">
@@ -1013,62 +1031,60 @@ function RepoConfigItem({
                 </div>
             </div>
 
-                        <div className="space-y-2 max-w-full">
-                            <label className="text-xs font-semibold text-muted-foreground uppercase block">
-                        Max Builds to Ingest
-                    </label>
-                    <Input
-                        type="number"
-                        min={1}
-                        placeholder="e.g. 50"
-                        value={config.max_builds ?? ""}
+            <div className="space-y-2 max-w-full">
+                <label className="text-xs font-semibold text-muted-foreground uppercase block">
+                    Max Builds to Ingest
+                </label>
+                <Input
+                    type="number"
+                    min={1}
+                    placeholder="e.g. 50"
+                    value={config.max_builds ?? ""}
                     onChange={(e) =>
                         onChange({
                             ...config,
                             max_builds: e.target.value ? Number(e.target.value) : null,
                         })
-                        }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                        Leave blank to ingest all available workflow runs.
-                    </p>
-                    <div className="grid grid-cols-2 gap-4 mt-3">
-                        <div className="space-y-1">
-                            <label className="text-xs font-semibold text-muted-foreground uppercase block">
-                                Start Date
-                            </label>
-                            <Input
-                                type="date"
-                                value={config.ingest_start_date || ""}
-                                onChange={(e) =>
-                                    onChange({
-                                        ...config,
-                                        ingest_start_date: e.target.value || null,
-                                    })
-                                }
-                                className="w-full appearance-none [appearance:none] pr-3"
-                                style={{ appearance: "none" }}
-                            />
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-semibold text-muted-foreground uppercase block">
-                                End Date
-                            </label>
-                            <Input
-                                type="date"
-                                value={config.ingest_end_date || ""}
-                                onChange={(e) =>
-                                    onChange({
-                                        ...config,
-                                        ingest_end_date: e.target.value || null,
-                                    })
-                                }
-                                className="w-full appearance-none [appearance:none] pr-3"
-                                style={{ appearance: "none" }}
-                            />
-                        </div>
+                    }
+                />
+                <p className="text-xs text-muted-foreground">
+                    Leave blank to ingest all available workflow runs.
+                </p>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                    <div className="space-y-1">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase block">
+                            Start Date
+                        </label>
+                        <Input
+                            type="date"
+                            value={config.ingest_start_date || ""}
+                            onChange={(e) =>
+                                onChange({
+                                    ...config,
+                                    ingest_start_date: e.target.value || null,
+                                })
+                            }
+                            className="[&::-webkit-calendar-picker-indicator]:ml-auto"
+                        />
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-xs font-semibold text-muted-foreground uppercase block">
+                            End Date
+                        </label>
+                        <Input
+                            type="date"
+                            value={config.ingest_end_date || ""}
+                            onChange={(e) =>
+                                onChange({
+                                    ...config,
+                                    ingest_end_date: e.target.value || null,
+                                })
+                            }
+                            className="[&::-webkit-calendar-picker-indicator]:ml-auto"
+                        />
                     </div>
                 </div>
+            </div>
 
             <div>
                 <label className="text-xs font-semibold text-muted-foreground uppercase mb-2 block">
@@ -1097,20 +1113,34 @@ function FeaturesStep({
     onSearchChange,
     onUpdateFeatures,
     onApplyTemplate,
+    dagData,
+    dagLoading,
+    onLoadDAG,
 }: {
     selectedList: RepoSuggestion[];
-    repoConfigs: Record<string, { features?: string[] }>;
+    repoConfigs: Record<string, { feature_ids?: string[] }>;
     availableFeatures: FeatureCategoryGroup[] | null;
     featuresLoading: boolean;
     featuresError: string | null;
-    templates: FeatureTemplate[];
+    templates: DatasetTemplateRecord[];
     searchTerms: Record<string, string>;
     onSearchChange: (fullName: string, value: string) => void;
-    onUpdateFeatures: (fullName: string, features: string[]) => void;
-    onApplyTemplate: (fullName: string, features: string[]) => void;
+    onUpdateFeatures: (fullName: string, featureIds: string[]) => void;
+    onApplyTemplate: (fullName: string, featureIds: string[]) => void;
+    dagData: FeatureDAGData | null;
+    dagLoading: boolean;
+    onLoadDAG: () => void;
 }) {
     const groupedFeatures = availableFeatures || [];
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+    const [viewMode, setViewMode] = useState<"list" | "dag">("dag");
+
+    // Load DAG when switching to DAG view
+    useEffect(() => {
+        if (viewMode === "dag" && !dagData && !dagLoading) {
+            onLoadDAG();
+        }
+    }, [viewMode, dagData, dagLoading, onLoadDAG]);
 
     const toggleCategory = (cat: string) => {
         setCollapsed((prev) => {
@@ -1134,8 +1164,88 @@ function FeaturesStep({
         );
     };
 
+    // Mappings for ID <-> Name resolution
+    const { nameToId, idToName, idLabels } = useMemo(() => {
+        const n2i: Record<string, string> = {};
+        const i2n: Record<string, string> = {};
+        const labels: Record<string, string> = {};
+
+        groupedFeatures.forEach((cat) => {
+            cat.features.forEach((feat) => {
+                n2i[feat.name] = feat.id;
+                i2n[feat.id] = feat.name;
+                labels[feat.id] = feat.display_name || feat.name;
+            });
+        });
+        return { nameToId: n2i, idToName: i2n, idLabels: labels };
+    }, [groupedFeatures]);
+
+    // Get node labels from DAG data
+    const nodeLabels = useMemo(() => {
+        const labels: Record<string, string> = {};
+        dagData?.nodes.forEach((node) => {
+            labels[node.id] = node.label;
+        });
+        return labels;
+    }, [dagData]);
+
+    // Get active (selected) nodes based on selected features
+    const getActiveNodes = useCallback((selectedIds: string[]): Set<string> => {
+        if (!dagData) return new Set();
+        // Convert IDs to names for DAG comparison
+        const selectedNames = new Set(
+            selectedIds.map(id => idToName[id]).filter((n): n is string => !!n)
+        );
+        const active = new Set<string>();
+        dagData.nodes.forEach((node) => {
+            if (node.features.some((f) => selectedNames.has(f))) {
+                active.add(node.id);
+            }
+        });
+        return active;
+    }, [dagData, idToName]);
+
     return (
         <div className="space-y-4">
+            {/* View Mode Toggle */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setViewMode("dag")}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${viewMode === "dag"
+                            ? "bg-blue-500 text-white"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                            }`}
+                    >
+                        <span className="flex items-center gap-1.5">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            Graph View
+                        </span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setViewMode("list")}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${viewMode === "list"
+                            ? "bg-blue-500 text-white"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                            }`}
+                    >
+                        <span className="flex items-center gap-1.5">
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                            </svg>
+                            List View
+                        </span>
+                    </button>
+                </div>
+                <Badge variant="outline" className="text-xs">
+                    {dagData?.total_features || 0} features available
+                </Badge>
+            </div>
+
             {featuresLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" /> Loading features...
@@ -1144,136 +1254,249 @@ function FeaturesStep({
             {featuresError ? (
                 <div className="text-sm text-red-600 dark:text-red-400">{featuresError}</div>
             ) : null}
-            {!featuresLoading && groupedFeatures.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No features available.</div>
-            ) : null}
 
             {selectedList.map((repo) => {
-                const current = repoConfigs[repo.full_name]?.features || [];
+                const current = repoConfigs[repo.full_name]?.feature_ids || [];
                 const searchTerm = searchTerms[repo.full_name] || "";
+                const activeNodes = getActiveNodes(current);
+
+                const tplSearchKey = `${repo.full_name}::_template`;
+                const tplShowKey = `${repo.full_name}::_showTemplates`;
+                const tplSelIdKey = `${repo.full_name}::_selectedTemplateId`;
+
                 return (
                     <div key={repo.full_name} className="rounded-xl border p-4 space-y-4">
                         <div className="flex items-center justify-between">
                             <div>
                                 <h3 className="font-semibold">{repo.full_name}</h3>
                                 <p className="text-xs text-muted-foreground">
-                                    Select features or apply a template for this repository.
+                                    {viewMode === "dag"
+                                        ? "Click on nodes to select/deselect features"
+                                        : "Select features or apply a template for this repository."
+                                    }
                                 </p>
                             </div>
-                            <Badge variant="outline">{repo.private ? "Private" : "Public"}</Badge>
+                            <div className="flex items-center gap-2">
+                                <Badge variant="secondary">
+                                    {current.length} selected
+                                </Badge>
+                                <Badge variant="outline">{repo.private ? "Private" : "Public"}</Badge>
+                            </div>
                         </div>
 
-                        <div className="grid gap-3 md:grid-cols-3">
-                            {templates.map((tpl) => (
-                                <div
-                                    key={tpl.id}
-                                    className="rounded-lg border p-3 space-y-2"
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <div>
-                                            <p className="text-sm font-semibold">{tpl.name}</p>
-                                            <p className="text-xs text-muted-foreground">{tpl.description}</p>
+                        {/* Templates */}
+                        {/* Template Selection - Searchable Dropdown */}
+                        <div className="space-y-4 rounded-lg border p-4 bg-slate-50/50 dark:bg-slate-900/20">
+                            <h4 className="text-sm font-semibold mb-2">Apply Feature Template</h4>
+                            <div className="flex flex-col gap-4">
+                                <div className="relative">
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                                            <Input
+                                                placeholder="Search templates..."
+                                                className="pl-9"
+                                                value={searchTerms[tplSearchKey] || ""}
+                                                onChange={(e) => onSearchChange(tplSearchKey, e.target.value)}
+                                                onFocus={() => onSearchChange(tplShowKey, "true")}
+                                                // We delay hiding to allow clicking items
+                                                onBlur={() => setTimeout(() => onSearchChange(tplShowKey, "false"), 200)}
+                                            />
+
+                                            {/* Dropdown List */}
+                                            {searchTerms[tplShowKey] === "true" && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 max-h-[300px] overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md z-50 p-1 bg-white dark:bg-slate-950">
+                                                    {templates
+                                                        .filter(t => !searchTerms[tplSearchKey] || t.name.toLowerCase().includes(searchTerms[tplSearchKey].toLowerCase()))
+                                                        .map(tpl => (
+                                                            <div
+                                                                key={tpl.id}
+                                                                className="flex flex-col gap-1 rounded-sm px-2 py-2 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                                                                onClick={() => {
+                                                                    onSearchChange(tplSearchKey, tpl.name);
+                                                                    onSearchChange(tplSelIdKey, tpl.id);
+                                                                }}
+                                                            >
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="font-medium text-sm">{tpl.name}</span>
+                                                                    <Badge variant="secondary" className="text-[10px]">{tpl.selected_features.length} feats</Badge>
+                                                                </div>
+                                                                <span className="text-xs text-muted-foreground line-clamp-1">{tpl.description}</span>
+                                                            </div>
+                                                        ))
+                                                    }
+                                                    {templates.length === 0 && <div className="p-2 text-sm text-muted-foreground text-center">No templates found</div>}
+                                                </div>
+                                            )}
                                         </div>
-                                        <Badge variant="secondary">{tpl.recommended.length} feats</Badge>
+                                        <Button
+                                            disabled={!searchTerms[tplSelIdKey]}
+                                            onClick={() => {
+                                                const tplId = searchTerms[tplSelIdKey];
+                                                const tpl = templates.find(t => t.id === tplId);
+                                                if (tpl) {
+                                                    const ids = tpl.selected_features
+                                                        .map(name => nameToId[name])
+                                                        .filter((id): id is string => !!id);
+                                                    onApplyTemplate(repo.full_name, ids);
+                                                }
+                                            }}
+                                        >
+                                            Apply
+                                        </Button>
                                     </div>
-                                    <div className="flex flex-wrap gap-1">
-                                        {tpl.badges.map((b) => (
-                                            <Badge key={b} variant="outline" className="text-[11px]">
-                                                {b}
-                                            </Badge>
-                                        ))}
-                                    </div>
+                                </div>
+
+                                {/* Active Template Details */}
+                                {searchTerms[tplSelIdKey] && (() => {
+                                    const tpl = templates.find(t => t.id === searchTerms[tplSelIdKey]);
+                                    if (!tpl) return null;
+                                    return (
+                                        <div className="flex items-start gap-3 p-3 text-sm border rounded-md bg-background">
+                                            <div className="flex-1 space-y-2">
+                                                <div className="font-medium">Selected: {tpl.name}</div>
+                                                <p className="text-muted-foreground text-xs">{tpl.description}</p>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {tpl.tags.map((b) => (
+                                                        <Badge key={b} variant="outline" className="text-[10px]">
+                                                            {b}
+                                                        </Badge>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+
+                        {viewMode === "dag" ? (
+                            <div className="space-y-4">
+                                {/* DAG Visualization */}
+                                <FeatureDAGVisualization
+                                    className="w-full h-[500px]"
+                                    dagData={dagData}
+                                    selectedFeatures={current.map(id => idToName[id]).filter((n): n is string => !!n)}
+                                    onFeaturesChange={(names) => {
+                                        const ids = names.map(n => nameToId[n]).filter((id): id is string => !!id);
+                                        onUpdateFeatures(repo.full_name, ids);
+                                    }}
+                                    isLoading={dagLoading}
+                                />
+
+                                {/* Selected Features Panel */}
+                                <SelectedFeaturesPanel
+                                    selectedFeatures={current}
+                                    featureLabels={idLabels}
+                                    onRemove={(featureId) =>
+                                        onUpdateFeatures(
+                                            repo.full_name,
+                                            current.filter((id) => id !== featureId)
+                                        )
+                                    }
+                                    onClear={() => onUpdateFeatures(repo.full_name, [])}
+                                />
+
+                                {/* Extraction Plan Timeline */}
+                                {dagData && (
+                                    <ExtractionPlanTimeline
+                                        executionLevels={dagData.execution_levels}
+                                        nodeLabels={nodeLabels}
+                                        activeNodes={activeNodes}
+                                    />
+                                )}
+                            </div>
+                        ) : (
+                            <>
+                                {/* Search input for list view */}
+                                <div className="flex items-center gap-2">
+                                    <Input
+                                        placeholder="Search features in this repo..."
+                                        value={searchTerm}
+                                        onChange={(e) => onSearchChange(repo.full_name, e.target.value)}
+                                        className="flex-1"
+                                    />
                                     <Button
                                         type="button"
+                                        variant="ghost"
                                         size="sm"
-                                        className="w-full"
-                                        variant="outline"
-                                        onClick={() => onApplyTemplate(repo.full_name, tpl.recommended)}
+                                        onClick={() => onUpdateFeatures(repo.full_name, [])}
+                                        className="text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                        disabled={current.length === 0}
                                     >
-                                        Apply template
+                                        <X className="h-4 w-4 mr-1" />
+                                        Clear All
                                     </Button>
                                 </div>
-                            ))}
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Input
-                                placeholder="Search features in this repo..."
-                                value={searchTerm}
-                                onChange={(e) => onSearchChange(repo.full_name, e.target.value)}
-                                className="flex-1"
-                            />
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => onSearchChange(repo.full_name, "")}
-                            >
-                                Clear
-                            </Button>
-                        </div>
 
-                        <div className="space-y-3 max-w-full">
-                            {groupedFeatures.map((cat) => {
-                                const visibleFeatures = cat.features.filter((feat) =>
-                                    filterMatch(feat, searchTerm)
-                                );
-                                if (!visibleFeatures.length) return null;
+                                {/* List View */}
+                                <div className="space-y-3 max-w-full">
+                                    {!featuresLoading && groupedFeatures.length === 0 ? (
+                                        <div className="text-sm text-muted-foreground">No features available.</div>
+                                    ) : null}
+                                    {groupedFeatures.map((cat) => {
+                                        const visibleFeatures = cat.features.filter((feat) =>
+                                            filterMatch(feat, searchTerm)
+                                        );
+                                        if (!visibleFeatures.length) return null;
 
-                                const isCollapsed = collapsed.has(cat.category);
-                                return (
-                                    <div key={cat.category} className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <div className="text-[11px] uppercase text-muted-foreground font-semibold">
-                                                {cat.display_name || cat.category}
+                                        const isCollapsed = collapsed.has(cat.category);
+                                        return (
+                                            <div key={cat.category} className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="text-[11px] uppercase text-muted-foreground font-semibold">
+                                                        {cat.display_name || cat.category}
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Badge variant="secondary">{visibleFeatures.length} features</Badge>
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            onClick={() => toggleCategory(cat.category)}
+                                                            className="h-7 px-2 text-xs"
+                                                        >
+                                                            {isCollapsed ? "Expand" : "Collapse"}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                                {!isCollapsed && (
+                                                    <div className="grid gap-2 sm:grid-cols-2">
+                                                        {visibleFeatures.map((feat) => (
+                                                            <label
+                                                                key={feat.name}
+                                                                className="flex items-start gap-2 rounded-lg border border-transparent p-2 hover:border-slate-200 dark:hover:border-slate-800"
+                                                            >
+                                                                <Checkbox
+                                                                    checked={current.includes(feat.id)}
+                                                                    onChange={() => {
+                                                                        const next = current.includes(feat.id)
+                                                                            ? current.filter((id) => id !== feat.id)
+                                                                            : [...current, feat.id];
+                                                                        onUpdateFeatures(repo.full_name, next);
+                                                                    }}
+                                                                />
+                                                                <div className="space-y-1">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-sm font-semibold">{feat.display_name || feat.name}</span>
+                                                                        <Badge variant="outline" className="text-[11px]">
+                                                                            {feat.data_type}
+                                                                        </Badge>
+                                                                    </div>
+                                                                    <p className="text-xs text-muted-foreground line-clamp-2">
+                                                                        {feat.description}
+                                                                    </p>
+                                                                </div>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <Badge variant="secondary">{visibleFeatures.length} features</Badge>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    onClick={() => toggleCategory(cat.category)}
-                                                    className="h-7 px-2 text-xs"
-                                                >
-                                                    {isCollapsed ? "Expand" : "Collapse"}
-                                                </Button>
-                                            </div>
-                                        </div>
-                                        {!isCollapsed && (
-                                            <div className="grid gap-2 sm:grid-cols-2">
-                                                {visibleFeatures.map((feat) => (
-                                                    <label
-                                                        key={feat.name}
-                                                        className="flex items-start gap-2 rounded-lg border border-transparent p-2 hover:border-slate-200 dark:hover:border-slate-800"
-                                                    >
-                                                        <Checkbox
-                                                            checked={current.includes(feat.name)}
-                                                            onChange={() => {
-                                                                const next = current.includes(feat.name)
-                                                                    ? current.filter((f) => f !== feat.name)
-                                                                    : [...current, feat.name];
-                                                                onUpdateFeatures(repo.full_name, next);
-                                                            }}
-                                                        />
-                                                        <div className="space-y-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-sm font-semibold">{feat.display_name || feat.name}</span>
-                                                                <Badge variant="outline" className="text-[11px]">
-                                                                    {feat.data_type}
-                                                                </Badge>
-                                                            </div>
-                                                            <p className="text-xs text-muted-foreground line-clamp-2">
-                                                                {feat.description}
-                                                            </p>
-                                                        </div>
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        )}
                     </div>
                 );
             })}

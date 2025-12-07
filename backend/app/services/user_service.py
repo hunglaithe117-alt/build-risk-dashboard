@@ -9,8 +9,8 @@ from fastapi import HTTPException, status
 from pymongo.database import Database
 
 from app.dtos import UserResponse
-from app.models.entities.oauth_identity import OAuthIdentity
-from app.models.entities.user import User
+from app.entities.oauth_identity import OAuthIdentity
+from app.entities.user import User
 from app.repositories.oauth_identity import OAuthIdentityRepository
 from app.repositories.user import UserRepository
 

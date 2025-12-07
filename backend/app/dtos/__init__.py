@@ -43,6 +43,10 @@ from .dataset import (
     DatasetCreateRequest,
     DatasetUpdateRequest,
 )
+from .dataset_template import (
+    DatasetTemplateResponse,
+    DatasetTemplateListResponse,
+)
 from .token import (
     TokenCreateRequest,
     TokenUpdateRequest,
@@ -50,6 +54,16 @@ from .token import (
     TokenPoolStatusResponse,
     TokenVerifyResponse,
     TokenListResponse,
+)
+from .feature import (
+    FeatureDefinitionResponse,
+    FeatureListResponse,
+    FeatureSummaryResponse,
+    ValidationResponse,
+    DAGNodeResponse,
+    DAGEdgeResponse,
+    ExecutionLevelResponse,
+    DAGResponse,
 )
 
 __all__ = [
@@ -89,6 +103,9 @@ __all__ = [
     "DatasetListResponse",
     "DatasetCreateRequest",
     "DatasetUpdateRequest",
+    # Dataset templates
+    "DatasetTemplateResponse",
+    "DatasetTemplateListResponse",
     # Token
     "TokenCreateRequest",
     "TokenUpdateRequest",
@@ -96,4 +113,13 @@ __all__ = [
     "TokenPoolStatusResponse",
     "TokenVerifyResponse",
     "TokenListResponse",
+    # Feature
+    "FeatureDefinitionResponse",
+    "FeatureListResponse",
+    "FeatureSummaryResponse",
+    "ValidationResponse",
+    "DAGNodeResponse",
+    "DAGEdgeResponse",
+    "ExecutionLevelResponse",
+    "DAGResponse",
 ]

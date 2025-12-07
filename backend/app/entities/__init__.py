@@ -12,12 +12,6 @@ from .imported_repository import (
     ImportStatus,
 )
 from .user import User
-from .feature_definition import (
-    FeatureDefinition,
-    FeatureSource,
-    FeatureDataType,
-    FeatureCategory,
-)
 from .dataset_template import DatasetTemplate
 from .dataset import DatasetProject, DatasetMapping, DatasetStats
 from .github_token import GithubToken
@@ -33,7 +27,6 @@ __all__ = [
     "DatasetProject",
     "DatasetMapping",
     "DatasetStats",
-    "FeatureDefinition",
     "GithubToken",
     "DatasetTemplate",
     # Enums
@@ -41,7 +34,4 @@ __all__ = [
     "TestFramework",
     "CIProvider",
     "ImportStatus",
-    "FeatureSource",
-    "FeatureDataType",
-    "FeatureCategory",
 ]

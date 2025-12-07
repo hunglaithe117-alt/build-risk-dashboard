@@ -5,7 +5,7 @@ from typing import Optional
 
 from pydantic import Field
 
-from app.models.entities.base import BaseEntity
+from app.entities.base import BaseEntity
 
 
 class GithubToken(BaseEntity):

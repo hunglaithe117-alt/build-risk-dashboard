@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pymongo import ReturnDocument
 from pymongo.database import Database
 
-from app.models.entities.imported_repository import ImportedRepository
+from app.entities.imported_repository import ImportedRepository
 from .base import BaseRepository
 
 

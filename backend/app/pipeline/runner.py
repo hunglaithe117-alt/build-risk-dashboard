@@ -5,7 +5,6 @@ This module provides:
 1. A high-level function to run the entire feature pipeline
 2. Integration with existing Celery task structure
 3. Backwards compatibility with current BuildSample saving
-4. Integration with FeatureDefinition documents from MongoDB
 """
 
 import logging
@@ -17,33 +16,18 @@ from pymongo.database import Database
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.core.executor import PipelineExecutor
 from app.pipeline.core.registry import feature_registry
-from app.pipeline.core.definition_registry import (
-    FeatureDefinitionRegistry,
-    get_definition_registry,
-)
 from app.pipeline.resources import ResourceManager, ResourceNames
 from app.pipeline.resources.git_repo import GitRepoProvider
 from app.pipeline.resources.github_client import GitHubClientProvider
 from app.pipeline.resources.log_storage import LogStorageProvider
+from app.pipeline.constants import DEFAULT_FEATURES
 
-from app.models.entities.build_sample import BuildSample
-from app.models.entities.imported_repository import ImportedRepository
-from app.models.entities.workflow_run import WorkflowRunRaw
-from app.models.entities.feature_definition import FeatureDefinition
+from app.entities.build_sample import BuildSample
+from app.entities.imported_repository import ImportedRepository
+from app.entities.workflow_run import WorkflowRunRaw
 from app.repositories.build_sample import BuildSampleRepository
 from app.repositories.imported_repository import ImportedRepositoryRepository
 from app.repositories.workflow_run import WorkflowRunRepository
-from app.repositories.feature_definition import FeatureDefinitionRepository
-
-# Import feature nodes to trigger registration
-from app.pipeline.features.build_log import BuildLogFeaturesNode
-from app.pipeline.features.git import (
-    GitCommitInfoNode,
-    GitDiffFeaturesNode,
-    TeamStatsNode,
-)
-from app.pipeline.features.github import GitHubDiscussionNode
-from app.pipeline.features.repo import RepoSnapshotNode
 
 logger = logging.getLogger(__name__)
 
@@ -88,38 +72,44 @@ class FeaturePipeline:
         self.resource_manager.register(GitHubClientProvider())
         self.resource_manager.register(LogStorageProvider())
 
-        self._definition_registry: Optional[FeatureDefinitionRegistry] = None
-        try:
-            self._definition_registry = get_definition_registry(db)
-        except Exception as e:
-            logger.warning(f"Failed to load feature definitions from DB: {e}")
-
-    @property
-    def definition_registry(self) -> Optional[FeatureDefinitionRegistry]:
-        """Get the feature definition registry."""
-        return self._definition_registry
-
     def get_active_features(self) -> Set[str]:
-        """Get set of active feature names from definitions."""
-        if self._definition_registry:
-            return self._definition_registry.get_active_features()
-        return set()
+        """Get set of all active feature names from code registry."""
+        return feature_registry.get_all_features()
 
     def get_feature_info(self, feature_name: str) -> Optional[Dict[str, Any]]:
-        """Get detailed info about a feature from definitions."""
-        if self._definition_registry:
-            return self._definition_registry.get_dependency_info(feature_name)
-        return None
+        """Get detailed info about a feature from code registry."""
+        return feature_registry.get_feature_metadata(feature_name)
+
+    def resolve_feature_ids(self, feature_ids: List) -> Set[str]:
+        """
+        Resolve feature ObjectIds to feature names.
+
+        Note: With Option C (code-only registry), this method now looks up
+        feature names from dataset templates instead of feature_definitions.
+
+        Args:
+            feature_ids: List of ObjectId or string ObjectIds
+
+        Returns:
+            Set of feature names
+        """
+        if not feature_ids:
+            return set()
+        # Since we no longer use DB definitions, return empty set
+        # The caller should pass feature names directly
+        logger.warning(
+            "resolve_feature_ids called but DB definitions are no longer used. "
+            "Pass feature names directly instead of IDs."
+        )
+        return set()
 
     def validate_pipeline(self) -> List[str]:
         """
-        Validate that code nodes match DB definitions.
+        Validate that code nodes are properly configured.
 
         Returns list of validation errors (empty if valid).
         """
-        if not self._definition_registry:
-            return ["Feature definitions not loaded"]
-        return self._definition_registry.validate_all_nodes()
+        return feature_registry.validate()
 
     def run(
         self,
@@ -128,6 +118,7 @@ class FeaturePipeline:
         workflow_run: Optional[WorkflowRunRaw] = None,
         parallel: bool = True,
         features_filter: Optional[Set[str]] = None,
+        feature_ids: Optional[List] = None,
     ) -> Dict[str, Any]:
         """
         Run the complete feature pipeline.
@@ -153,8 +144,27 @@ class FeaturePipeline:
         )
 
         # Set workflow_run as a resource for nodes that need it
-        if workflow_run:
-            context.set_resource(ResourceNames.WORKFLOW_RUN, workflow_run)
+        # Core features that should always be extracted if possible
+        # These match the top-level fields in BuildSample
+        # Imported DEFAULT_FEATURES from constants
+
+        # Resolve feature_ids to names if provided
+        if feature_ids:
+            resolved_names = self.resolve_feature_ids(feature_ids)
+            if features_filter:
+                features_filter = features_filter | resolved_names
+            else:
+                features_filter = resolved_names
+
+        # Always include default features in the filter
+        # This ensures they are calculated even if not explicitly requested by the user
+        if features_filter is not None:
+            features_filter = features_filter | DEFAULT_FEATURES
+        else:
+            # If no filter (run all), we don't strictly need to add them,
+            # but if we change logic to "implicit none means none", we would.
+            # Current logic: None means ALL. So we are good.
+            pass
 
         # Decide which features and nodes to run
         target_features = self._determine_target_features(features_filter)
@@ -222,26 +232,13 @@ class FeaturePipeline:
                 parallel=parallel,
             )
 
-            # Filter features based on caller request/definitions
+            # Filter features based on caller request
             extracted_features = context.get_merged_features()
             if features_filter:
                 extracted_features = {
                     k: v for k, v in extracted_features.items() if k in features_filter
                 }
-            elif self._definition_registry:
-                active_features = self._definition_registry.get_active_features()
-                # Only filter if we have active features defined in DB
-                if active_features:
-                    extracted_features = {
-                        k: v
-                        for k, v in extracted_features.items()
-                        if k in active_features
-                    }
-                else:
-                    logger.warning(
-                        "No active feature definitions found in DB. "
-                        "Keeping all extracted features. Run feature seed to populate definitions."
-                    )
+            # Note: All features from code registry are active by default
 
             return {
                 "status": context.get_final_status(),
@@ -285,17 +282,12 @@ class FeaturePipeline:
 
         Priority:
         1) Explicit features_filter from caller
-        2) Active features from definitions (if available)
-        3) None -> run all
+        2) None -> run all nodes
         """
         if features_filter is not None:
             return set(features_filter)
 
-        if self._definition_registry:
-            active_features = self._definition_registry.get_active_features()
-            if active_features:
-                return set(active_features)
-
+        # With code-only registry, run all nodes by default
         return None
 
     def _resolve_nodes_for_features(
@@ -391,19 +383,47 @@ def run_feature_pipeline(
     if not workflow_run:
         return {"status": "error", "message": "WorkflowRun not found"}
 
-    # Run pipeline
+    # Run pipeline with requested feature IDs from repo
     pipeline = FeaturePipeline(db)
-    result = pipeline.run(build_sample, repo, workflow_run)
+
+    # Get feature IDs from repo configuration
+    feature_ids = getattr(repo, "requested_feature_ids", None) or []
+
+    result = pipeline.run(
+        build_sample,
+        repo,
+        workflow_run,
+        feature_ids=feature_ids if feature_ids else None,
+    )
 
     # Save features to BuildSample
     if result["features"]:
-        updates = result["features"].copy()
+        updates = {}
+        updates["features"] = result["features"]
         updates["status"] = result["status"]
 
         if result["errors"]:
             updates["error_message"] = "; ".join(result["errors"])
-        elif result["warnings"]:
+        elif result.get("warnings"):
             updates["error_message"] = "Warning: " + "; ".join(result["warnings"])
+
+        # Map default features to top-level fields
+        DEFAULT_FIELDS = [
+            "tr_build_id",
+            "tr_build_number",
+            "tr_original_commit",
+            "git_trigger_commit",
+            "git_branch",
+            "tr_jobs",
+            "tr_status",
+            "tr_duration",
+            "tr_log_num_jobs",
+            "tr_log_tests_run_sum",
+        ]
+
+        for field in DEFAULT_FIELDS:
+            if field in result["features"]:
+                updates[field] = result["features"][field]
 
         build_sample_repo.update_one(build_id, updates)
 

@@ -2,9 +2,9 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-from app.models.entities.build_sample import BuildSample
-from app.models.entities.imported_repository import ImportedRepository
-from app.models.entities.workflow_run import WorkflowRunRaw
+from app.entities.build_sample import BuildSample
+from app.entities.imported_repository import ImportedRepository
+from app.entities.workflow_run import WorkflowRunRaw
 from app.services.extracts.log_parser import TestLogParser
 
 logger = logging.getLogger(__name__)

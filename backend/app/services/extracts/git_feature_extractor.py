@@ -8,8 +8,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from git import Repo, Commit
 from pymongo.database import Database
 
-from app.models.entities.build_sample import BuildSample
-from app.models.entities.imported_repository import ImportedRepository
+from app.entities.build_sample import BuildSample
+from app.entities.imported_repository import ImportedRepository
 from app.repositories.build_sample import BuildSampleRepository
 from app.repositories.workflow_run import WorkflowRunRepository
 from app.services.github.github_app import get_installation_token

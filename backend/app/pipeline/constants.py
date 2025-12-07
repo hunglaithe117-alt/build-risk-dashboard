@@ -1,0 +1,12 @@
+DEFAULT_FEATURES = {
+    "tr_build_id",
+    "tr_build_number",
+    "tr_original_commit",
+    "git_trigger_commit",
+    "git_branch",
+    "tr_jobs",
+    "tr_status",
+    "tr_duration",
+    "tr_log_num_jobs",
+    "tr_log_tests_run_sum",
+}

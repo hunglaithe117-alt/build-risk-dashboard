@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import MagicMock
 from datetime import datetime, timedelta
 from app.services.extracts.git_feature_extractor import GitFeatureExtractor
-from app.models.entities.imported_repository import ImportedRepository
+from app.entities.imported_repository import ImportedRepository
 from bson import ObjectId
 
 

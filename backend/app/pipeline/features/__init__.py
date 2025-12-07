@@ -5,21 +5,20 @@ All feature extractors inherit from this class and implement the extract method.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict
 
-if TYPE_CHECKING:
-    from app.pipeline.core.context import ExecutionContext
+from app.pipeline.core.context import ExecutionContext
 
 
 class FeatureNode(ABC):
     """
     Base class for feature extraction nodes.
-    
+
     Each node:
     - Declares its dependencies (requires_features, requires_resources)
     - Declares what features it provides
     - Implements extract() to compute features
-    
+
     Example:
         @register_feature(
             name="git_commit_info",
@@ -37,37 +36,37 @@ class FeatureNode(ABC):
                     "git_prev_commit_resolution_status": "found",
                 }
     """
-    
+
     @abstractmethod
-    def extract(self, context: "ExecutionContext") -> Dict[str, Any]:
+    def extract(self, context: ExecutionContext) -> Dict[str, Any]:
         """
         Extract features and return them as a dictionary.
-        
+
         Args:
             context: Execution context with resources and previously extracted features
-            
+
         Returns:
             Dictionary of feature_name -> value
-            
+
         Raises:
             Exception: If extraction fails (will be caught and recorded)
         """
         pass
-    
+
     def validate_output(self, features: Dict[str, Any]) -> None:
         """
         Optional validation of extracted features.
-        
+
         Override to add custom validation logic.
         Raises ValueError if validation fails.
         """
         pass
-    
+
     @classmethod
     def get_empty_features(cls) -> Dict[str, Any]:
         """
         Return empty/default values for all features this node provides.
-        
+
         Useful for partial failures or when source data is missing.
         """
         return {}

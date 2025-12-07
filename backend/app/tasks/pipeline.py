@@ -13,10 +13,11 @@ from bson import ObjectId
 from app.celery_app import celery_app
 from app.tasks.base import PipelineTask
 from app.pipeline.runner import FeaturePipeline, run_feature_pipeline
+from app.pipeline.constants import DEFAULT_FEATURES
 from app.repositories.build_sample import BuildSampleRepository
 from app.repositories.imported_repository import ImportedRepositoryRepository
 from app.repositories.workflow_run import WorkflowRunRepository
-from app.models.entities.build_sample import BuildSample
+from app.entities.build_sample import BuildSample
 
 import redis
 import json
@@ -31,14 +32,16 @@ def publish_build_update(repo_id: str, build_id: str, status: str):
         redis_client = redis.from_url(settings.REDIS_URL)
         redis_client.publish(
             "events",
-            json.dumps({
-                "type": "BUILD_UPDATE",
-                "payload": {
-                    "repo_id": repo_id,
-                    "build_id": build_id,
-                    "status": status,
-                },
-            }),
+            json.dumps(
+                {
+                    "type": "BUILD_UPDATE",
+                    "payload": {
+                        "repo_id": repo_id,
+                        "build_id": build_id,
+                        "status": status,
+                    },
+                }
+            ),
         )
     except Exception as e:
         logger.error(f"Failed to publish build update: {e}")
@@ -55,7 +58,7 @@ def process_build_pipeline(
 ) -> Dict[str, Any]:
     """
     Process a workflow run using the new DAG-based pipeline.
-    
+
     This is a single task that replaces the chord/chain pattern.
     The pipeline handles all dependencies internally.
     """
@@ -88,7 +91,7 @@ def process_build_pipeline(
         build_sample = build_sample_repo.insert_one(build_sample)
 
     build_id = str(build_sample.id)
-    
+
     # Publish processing started
     publish_build_update(repo_id, build_id, "in_progress")
 
@@ -98,9 +101,10 @@ def process_build_pipeline(
 
     # Save results
     if result["features"]:
-        updates = result["features"].copy()
+        updates = {}
+        updates["features"] = result["features"]
         updates["status"] = result["status"]
-        
+
         if result["errors"]:
             updates["error_message"] = "; ".join(result["errors"])
         elif result["warnings"]:
@@ -108,7 +112,12 @@ def process_build_pipeline(
             # Check for missing commit warning
             if any("Commit not found" in w for w in result["warnings"]):
                 updates["is_missing_commit"] = True
-        
+
+        # Map default features to top-level fields
+        for field in DEFAULT_FEATURES:
+            if field in result["features"]:
+                updates[field] = result["features"][field]
+
         build_sample_repo.update_one(build_id, updates)
 
     # Publish completion
@@ -137,17 +146,17 @@ def process_build_pipeline(
 def reprocess_build(self: PipelineTask, build_id: str) -> Dict[str, Any]:
     """
     Reprocess an existing build sample.
-    
+
     Useful for:
     - Re-extracting features after code changes
     - Recovering from partial failures
     - Updating with new feature nodes
     """
     result = run_feature_pipeline(self.db, build_id)
-    
+
     if result["status"] == "completed":
         logger.info(f"Reprocessed build {build_id} successfully")
     else:
         logger.warning(f"Reprocessed build {build_id} with status: {result['status']}")
-    
+
     return result

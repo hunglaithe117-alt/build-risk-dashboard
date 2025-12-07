@@ -6,7 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-from app.models.entities.base import PyObjectIdStr
+from app.entities.base import PyObjectIdStr
 
 
 class UserResponse(BaseModel):

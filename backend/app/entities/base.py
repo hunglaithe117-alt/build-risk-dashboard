@@ -48,6 +48,7 @@ class BaseEntity(BaseModel):
     class Config:
         populate_by_name = True
         arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
 
     def to_mongo(self):
         """Convert to MongoDB document"""

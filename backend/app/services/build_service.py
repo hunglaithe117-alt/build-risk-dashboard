@@ -4,8 +4,8 @@ from bson import ObjectId
 from pymongo.database import Database
 
 from app.dtos.build import BuildDetail, BuildListResponse, BuildSummary
-from app.models.entities.build_sample import BuildSample
-from app.models.entities.workflow_run import WorkflowRunRaw
+from app.entities.build_sample import BuildSample
+from app.entities.workflow_run import WorkflowRunRaw
 
 
 class BuildService:
@@ -104,26 +104,8 @@ class BuildService:
             num_jobs=sample.tr_log_num_jobs,
             num_tests=sample.tr_log_tests_run_sum,
             workflow_run_id=sample.workflow_run_id,
-            # Details
-            git_diff_src_churn=sample.git_diff_src_churn,
-            git_diff_test_churn=sample.git_diff_test_churn,
-            gh_diff_files_added=sample.gh_diff_files_added,
-            gh_diff_files_deleted=sample.gh_diff_files_deleted,
-            gh_diff_files_modified=sample.gh_diff_files_modified,
-            gh_diff_tests_added=sample.gh_diff_tests_added,
-            gh_diff_tests_deleted=sample.gh_diff_tests_deleted,
-            gh_repo_age=sample.gh_repo_age,
-            gh_repo_num_commits=sample.gh_repo_num_commits,
-            gh_sloc=sample.gh_sloc,
+            features=sample.features,
             error_message=sample.error_message,
-            # New Git Features
-            git_prev_commit_resolution_status=sample.git_prev_commit_resolution_status,
-            git_prev_built_commit=sample.git_prev_built_commit,
-            tr_prev_build=sample.tr_prev_build,
-            gh_team_size=sample.gh_team_size,
-            git_num_all_built_commits=sample.git_num_all_built_commits,
-            gh_by_core_team_member=sample.gh_by_core_team_member,
-            gh_num_commits_on_files_touched=sample.gh_num_commits_on_files_touched,
         )
 
     def get_recent_builds(self, limit: int = 10) -> List[BuildSummary]:

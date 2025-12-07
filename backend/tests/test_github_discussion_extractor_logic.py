@@ -2,9 +2,9 @@ import unittest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta, timezone
 from app.services.extracts.github_discussion_extractor import GitHubDiscussionExtractor
-from app.models.entities.build_sample import BuildSample
-from app.models.entities.imported_repository import ImportedRepository
-from app.models.entities.workflow_run import WorkflowRunRaw
+from app.entities.build_sample import BuildSample
+from app.entities.imported_repository import ImportedRepository
+from app.entities.workflow_run import WorkflowRunRaw
 from bson import ObjectId
 
 

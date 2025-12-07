@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from pymongo.database import Database
 
-from app.models.entities.github_installation import GithubInstallation
+from app.entities.github_installation import GithubInstallation
 from .base import BaseRepository
 
 

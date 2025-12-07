@@ -100,3 +100,14 @@ async def startup_event():
                 logger.info(f"Redis pool has {status['total_tokens']} tokens ready")
     except Exception as e:
         logger.warning(f"Failed to seed GitHub tokens to Redis: {e}")
+
+    # Import pipeline to trigger @register_feature decorator execution
+    try:
+        import app.pipeline  # noqa: F401
+        from app.pipeline.core.registry import feature_registry
+
+        logger.info(
+            f"Loaded {len(feature_registry.get_all_features())} feature definitions from code"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to load feature definitions: {e}")

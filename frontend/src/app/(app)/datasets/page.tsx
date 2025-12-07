@@ -35,51 +35,52 @@ import {
 import { datasetsApi, featuresApi } from "@/lib/api";
 import type {
   DatasetRecord,
+  DatasetTemplateRecord,
   DatasetUpdatePayload,
   FeatureDefinitionSummary,
 } from "@/types";
 
 type MappingKey = "build_id" | "commit_sha" | "repo_name" | "timestamp";
 
-interface EnrichmentTemplate {
-  id: string;
-  name: string;
-  description: string;
-  badges: string[];
-  recommendedFeatures: string[];
-}
+type TemplateCard = Pick<
+  DatasetTemplateRecord,
+  "id" | "name" | "description" | "tags" | "selected_features"
+> & { source: "api" | "fallback" };
 
-const ENRICHMENT_TEMPLATES: EnrichmentTemplate[] = [
+const TEMPLATE_FALLBACKS: TemplateCard[] = [
   {
     id: "reliability",
     name: "Build reliability",
     description: "Focus on flakiness, duration, and pass rate insights.",
-    badges: ["stability", "tests"],
-    recommendedFeatures: [
+    tags: ["stability", "tests"],
+    selected_features: [
       "build_duration_minutes",
       "failed_test_count",
       "test_flakiness_index",
       "change_failure_rate",
     ],
+    source: "fallback",
   },
   {
     id: "delivery",
     name: "Delivery risk",
     description: "Surface lead time, deploy frequency, and change risk.",
-    badges: ["velocity", "risk"],
-    recommendedFeatures: [
+    tags: ["velocity", "risk"],
+    selected_features: [
       "lead_time",
       "deployment_frequency",
       "commit_churn",
       "change_failure_rate",
     ],
+    source: "fallback",
   },
   {
     id: "custom",
     name: "Custom enrichment",
     description: "Pick any feature mix and run ad-hoc experiments.",
-    badges: ["custom"],
-    recommendedFeatures: [],
+    tags: ["custom"],
+    selected_features: [],
+    source: "fallback",
   },
 ];
 
@@ -385,6 +386,9 @@ export default function DatasetsPage() {
   const [availableFeatures, setAvailableFeatures] = useState<
     FeatureDefinitionSummary[]
   >(FALLBACK_FEATURES);
+  const [templates, setTemplates] = useState<TemplateCard[]>(TEMPLATE_FALLBACKS);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
   const [featureLoading, setFeatureLoading] = useState(false);
   const [featureError, setFeatureError] = useState<string | null>(null);
   const [datasetError, setDatasetError] = useState<string | null>(null);
@@ -469,6 +473,51 @@ export default function DatasetsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+
+    const loadTemplates = async () => {
+      setTemplatesLoading(true);
+      setTemplateError(null);
+      try {
+        const result = await datasetsApi.listTemplates();
+        if (!active) return;
+        if (result.items && result.items.length > 0) {
+          setTemplates(
+            result.items.map((item) => ({
+              id: item.id,
+              name: item.name,
+              description: item.description,
+              tags: item.tags || [],
+              selected_features: item.selected_features || [],
+              source: "api",
+            }))
+          );
+        } else {
+          setTemplateError("No dataset templates returned. Using built-in presets.");
+          setTemplates(TEMPLATE_FALLBACKS);
+        }
+      } catch (err) {
+        console.error("Failed to load dataset templates", err);
+        if (active) {
+          setTemplateError(
+            "Unable to load dataset templates from API. Using built-in presets."
+          );
+          setTemplates(TEMPLATE_FALLBACKS);
+        }
+      } finally {
+        if (active) {
+          setTemplatesLoading(false);
+        }
+      }
+    };
+
+    void loadTemplates();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const selectedDataset = useMemo(
     () => datasets.find((item) => item.id === selectedDatasetId),
     [datasets, selectedDatasetId]
@@ -492,10 +541,10 @@ export default function DatasetsPage() {
       count === 0
         ? 0
         : Math.round(
-            (datasets.reduce((sum, item) => sum + item.stats.coverage, 0) /
-              count) *
-              100
-          );
+          (datasets.reduce((sum, item) => sum + item.stats.coverage, 0) /
+            count) *
+          100
+        );
     const selectedFeatures = datasets.reduce(
       (sum, item) => sum + item.selected_features.length,
       0
@@ -506,8 +555,8 @@ export default function DatasetsPage() {
 
   const mappingReady = selectedDataset
     ? (["build_id", "commit_sha", "repo_name"] as MappingKey[]).every(
-        (key) => selectedDataset.mapped_fields[key]
-      )
+      (key) => selectedDataset.mapped_fields[key]
+    )
     : false;
 
   const featuresByCategory = useMemo(() => {
@@ -551,12 +600,12 @@ export default function DatasetsPage() {
       current.map((dataset) =>
         dataset.id === selectedDataset?.id
           ? {
-              ...dataset,
-              mapped_fields: {
-                ...dataset.mapped_fields,
-                [field]: column,
-              },
-            }
+            ...dataset,
+            mapped_fields: {
+              ...dataset.mapped_fields,
+              [field]: column,
+            },
+          }
           : dataset
       )
     );
@@ -595,36 +644,57 @@ export default function DatasetsPage() {
     }
   };
 
-  const handleApplyTemplate = (templateId: string) => {
-    const template = ENRICHMENT_TEMPLATES.find((item) => item.id === templateId);
-    if (!template || !selectedDataset) return;
+  const handleApplyTemplate = async (templateId: string) => {
+    const template = templates.find((item) => item.id === templateId);
+    if (!template || !selectedDataset?.id) return;
 
-    let nextFeatures: string[] | null = null;
-    setDatasets((current) =>
-      current.map((dataset) => {
-        if (dataset.id !== selectedDataset.id) return dataset;
-        const combined = new Set(dataset.selected_features);
-        template.recommendedFeatures.forEach((featureId) => {
-          combined.add(featureId);
-        });
-        nextFeatures = Array.from(combined);
-        return {
-          ...dataset,
-          selected_template: templateId,
-          selected_features: nextFeatures,
-        };
-      })
+    const combined = Array.from(
+      new Set([
+        ...(selectedDataset.selected_features || []),
+        ...(template.selected_features || []),
+      ])
     );
 
-    if (selectedDataset?.id) {
-      void persistDatasetUpdate(
-        selectedDataset.id,
-        {
+    setDatasets((current) =>
+      current.map((dataset) =>
+        dataset.id === selectedDataset.id
+          ? {
+            ...dataset,
+            selected_template: templateId,
+            selected_features: combined,
+          }
+          : dataset
+      )
+    );
+
+    setSaving(true);
+    setStatusMessage(null);
+    setDatasetError(null);
+
+    try {
+      if (template.source === "api") {
+        const updated = await datasetsApi.applyTemplate(
+          selectedDataset.id,
+          templateId
+        );
+        setDatasets((current) =>
+          current.map((item) => (item.id === selectedDataset.id ? updated : item))
+        );
+      } else {
+        const updated = await datasetsApi.update(selectedDataset.id, {
           selected_template: templateId,
-          selected_features: nextFeatures ?? selectedDataset.selected_features,
-        },
-        "Template applied"
-      );
+          selected_features: combined,
+        });
+        setDatasets((current) =>
+          current.map((item) => (item.id === selectedDataset.id ? updated : item))
+        );
+      }
+      setStatusMessage(`Applied template "${template.name}".`);
+    } catch (err) {
+      console.error("Failed to apply template", err);
+      setDatasetError("Unable to apply template. Changes are kept locally.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -718,7 +788,16 @@ export default function DatasetsPage() {
               <Upload className="h-4 w-4" />
               {uploading ? "Uploading..." : "Upload CSV"}
             </Button>
-            <Button variant="outline" className="gap-2 text-white">
+            <Button
+              variant="outline"
+              className="gap-2 text-white"
+              onClick={() =>
+                templates[0] && selectedDatasetId
+                  ? void handleApplyTemplate(templates[0].id)
+                  : undefined
+              }
+              disabled={!selectedDatasetId || saving}
+            >
               <Sparkles className="h-4 w-4" /> Quick start template
             </Button>
           </div>
@@ -868,11 +947,10 @@ export default function DatasetsPage() {
                       return (
                         <tr
                           key={dataset.id}
-                          className={`cursor-pointer transition ${
-                            isActive
+                          className={`cursor-pointer transition ${isActive
                               ? "bg-blue-50/70 dark:bg-blue-900/20"
                               : "hover:bg-slate-50 dark:hover:bg-slate-900/40"
-                          }`}
+                            }`}
                           onClick={() => setSelectedDatasetId(dataset.id)}
                         >
                           <td className="px-6 py-4">
@@ -1114,25 +1192,24 @@ export default function DatasetsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 md:grid-cols-3">
-            {ENRICHMENT_TEMPLATES.map((template) => {
+            {templates.map((template) => {
               const active = selectedDataset?.selected_template === template.id;
               return (
                 <div
                   key={template.id}
-                  className={`rounded-lg border p-3 transition ${
-                    active
+                  className={`rounded-lg border p-3 transition ${active
                       ? "border-blue-500 shadow-sm"
                       : "border-slate-200 dark:border-slate-800"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-start justify-between">
                     <div>
                       <p className="text-sm font-semibold">{template.name}</p>
                       <p className="text-xs text-muted-foreground">{template.description}</p>
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {template.badges.map((badge) => (
-                          <Badge key={badge} variant="outline" className="text-[11px]">
-                            {badge}
+                        {(template.tags || []).map((tag) => (
+                          <Badge key={tag} variant="outline" className="text-[11px]">
+                            {tag}
                           </Badge>
                         ))}
                       </div>
@@ -1143,7 +1220,7 @@ export default function DatasetsPage() {
                     size="sm"
                     className="mt-3 w-full"
                     variant={active ? "default" : "outline"}
-                    onClick={() => handleApplyTemplate(template.id)}
+                    onClick={() => void handleApplyTemplate(template.id)}
                     disabled={!selectedDataset || saving}
                   >
                     {active ? "Template active" : "Apply template"}
@@ -1152,6 +1229,19 @@ export default function DatasetsPage() {
               );
             })}
           </div>
+
+          {templateError ? (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
+              <AlertCircle className="h-4 w-4" />
+              <span>{templateError}</span>
+            </div>
+          ) : null}
+          {templatesLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              <span>Loading dataset templates...</span>
+            </div>
+          ) : null}
 
           {featureError ? (
             <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200">
@@ -1190,10 +1280,6 @@ export default function DatasetsPage() {
                             <Badge variant="outline" className="text-[11px]">
                               {feature.data_type}
                             </Badge>
-                              <Badge variant="secondary" className="text-[11px]">
-                                ML
-                              </Badge>
-                            ) : null}
                           </div>
                           <p className="text-xs text-muted-foreground line-clamp-2">
                             {feature.description}

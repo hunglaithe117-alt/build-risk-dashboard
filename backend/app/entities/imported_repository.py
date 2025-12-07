@@ -52,7 +52,6 @@ class ImportedRepository(BaseEntity):
     main_lang: str | None = None
 
     test_frameworks: List[TestFramework] = []
-    # Stored as lower-case strings to support arbitrary languages detected from GitHub
     source_languages: List[str] = []
 
     ci_provider: CIProvider = CIProvider.GITHUB_ACTIONS
@@ -64,17 +63,14 @@ class ImportedRepository(BaseEntity):
     last_sync_error: str | None = None
     notes: str | None = None
 
-    # Lazy Sync Fields
     last_synced_at: Optional[datetime] = None
 
-    # SonarQube Configuration
     sonar_config: Optional[str] = None  # Content of sonar-project.properties
     last_sync_status: str | None = None  # "success", "failed"
     last_remote_check_at: datetime | None = None
     latest_synced_run_created_at: datetime | None = None
 
-    # Pipeline customization
-    requested_features: List[str] = []
+    requested_feature_ids: List[PyObjectId] = []
     max_builds_to_ingest: Optional[int] = None
     ingest_start_date: Optional[datetime] = None
     ingest_end_date: Optional[datetime] = None

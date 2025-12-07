@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pymongo.database import Database
 
-from app.models.entities.workflow_run import WorkflowRunRaw
+from app.entities.workflow_run import WorkflowRunRaw
 from .base import BaseRepository
 
 

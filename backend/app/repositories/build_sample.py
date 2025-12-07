@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from pymongo.database import Database
 
-from app.models.entities.build_sample import BuildSample
+from app.entities.build_sample import BuildSample
 from .base import BaseRepository
 
 

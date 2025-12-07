@@ -5,8 +5,8 @@ from typing import Optional
 from bson import ObjectId
 from pymongo.database import Database
 
-from app.models.entities.scan_job import ScanJob, ScanJobStatus
-from app.models.entities.failed_scan import FailedScan, ScanStatus
+from app.entities.scan_job import ScanJob, ScanJobStatus
+from app.entities.failed_scan import FailedScan, ScanStatus
 from app.repositories.scan_job import ScanJobRepository
 from app.repositories.scan_result import ScanResultRepository
 from app.repositories.failed_scan import FailedScanRepository

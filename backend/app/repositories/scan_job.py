@@ -3,7 +3,7 @@ from typing import List, Optional
 from bson import ObjectId
 from pymongo.database import Database
 
-from app.models.entities.scan_job import ScanJob
+from app.entities.scan_job import ScanJob
 from app.repositories.base import BaseRepository
 
 

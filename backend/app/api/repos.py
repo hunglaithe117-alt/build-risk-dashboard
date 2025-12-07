@@ -20,7 +20,6 @@ from app.services.build_service import BuildService
 from app.services.repository_service import RepositoryService
 from app.services.github.github_client import (
     get_app_github_client,
-    get_public_github_client,
     get_user_github_client,
 )
 from app.services.extracts.log_parser import TestLogParser
@@ -195,6 +194,23 @@ def trigger_sync(
     user_id = str(current_user["_id"])
     service = RepositoryService(db)
     return service.trigger_sync(repo_id, user_id)
+
+
+@router.post("/{repo_id}/reprocess-features")
+def trigger_reprocess_features(
+    repo_id: str,
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Re-extract features for all existing builds.
+
+    Unlike sync-run (which fetches new workflow runs from GitHub),
+    this endpoint reprocesses existing builds to re-extract features.
+    Useful when feature extractors have been updated.
+    """
+    service = RepositoryService(db)
+    return service.trigger_reprocess(repo_id)
 
 
 @router.get(

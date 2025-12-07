@@ -3,9 +3,9 @@ from typing import Any, Dict
 
 from datetime import datetime, timezone
 
-from app.models.entities.build_sample import BuildSample
-from app.models.entities.imported_repository import ImportedRepository
-from app.models.entities.workflow_run import WorkflowRunRaw
+from app.entities.build_sample import BuildSample
+from app.entities.imported_repository import ImportedRepository
+from app.entities.workflow_run import WorkflowRunRaw
 from app.repositories.workflow_run import WorkflowRunRepository
 from app.services.github.github_client import (
     get_app_github_client,

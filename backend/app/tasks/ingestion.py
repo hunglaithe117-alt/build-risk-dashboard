@@ -1,4 +1,4 @@
-from app.models.entities.imported_repository import ImportStatus
+from app.entities.imported_repository import ImportStatus
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any
@@ -12,7 +12,7 @@ from app.tasks.base import PipelineTask
 from app.services.github.exceptions import GithubRateLimitError
 from app.repositories.imported_repository import ImportedRepositoryRepository
 from app.repositories.workflow_run import WorkflowRunRepository
-from app.models.entities.workflow_run import WorkflowRunRaw
+from app.entities.workflow_run import WorkflowRunRaw
 
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ def import_repo(
     test_frameworks: list[str] | None = None,
     source_languages: list[str] | None = None,
     ci_provider: str = "github_actions",
-    features: list[str] | None = None,
+    feature_ids: list[str] | None = None,
     max_builds: int | None = None,
     ingest_start_date: str | None = None,
     ingest_end_date: str | None = None,
@@ -110,7 +110,9 @@ def import_repo(
                     "source_languages": source_languages or [],
                     "ci_provider": ci_provider or "github_actions",
                     "import_status": ImportStatus.IMPORTING.value,
-                    "requested_features": features or [],
+                    "requested_feature_ids": [
+                        ObjectId(fid) for fid in (feature_ids or [])
+                    ],
                     "max_builds_to_ingest": max_builds,
                     "ingest_start_date": start_dt,
                     "ingest_end_date": end_dt,
@@ -157,19 +159,23 @@ def import_repo(
                 updates={
                     "default_branch": repo_data.get("default_branch", "main"),
                     "is_private": bool(repo_data.get("private")),
-                    "main_lang": (detected_languages[0] if detected_languages else repo_data.get("language")),
+                    "main_lang": (
+                        detected_languages[0]
+                        if detected_languages
+                        else repo_data.get("language")
+                    ),
                     "github_repo_id": repo_data.get("id"),
                     "metadata": repo_data,
                     "installation_id": installation_id,
                     "last_scanned_at": None,
                     "test_frameworks": test_frameworks or [],
-                    "source_languages": detected_languages,
+                    "source_languages": source_languages or detected_languages,
                     "ci_provider": ci_provider or "github_actions",
                     "import_status": ImportStatus.IMPORTING.value,
-                    "requested_features": features or [],
-                    "max_builds_to_ingest": max_builds,
-                    "ingest_start_date": start_dt,
                     "ingest_end_date": end_dt,
+                    "requested_feature_ids": [
+                        ObjectId(fid) for fid in (feature_ids or [])
+                    ],
                 },
             )
             publish_status(repo_id, "importing", "Fetching workflow runs...")
@@ -188,13 +194,13 @@ def import_repo(
                     last_synced_run_ts = last_synced_run_ts.replace(tzinfo=timezone.utc)
 
             # Metadata Collection (Newest -> Oldest)
-            for run in gh.paginate_workflow_runs(
-                full_name, params={"per_page": 100}
-            ):
+            for run in gh.paginate_workflow_runs(full_name, params={"per_page": 100}):
                 run_id = run.get("id")
                 created_at_str = run.get("created_at")
                 if created_at_str:
-                    run_created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                    run_created_at = datetime.fromisoformat(
+                        created_at_str.replace("Z", "+00:00")
+                    )
                     if start_dt and run_created_at < start_dt:
                         continue
                     if end_dt and run_created_at > end_dt:
@@ -265,7 +271,9 @@ def import_repo(
 
                 if max_builds and total_runs >= max_builds:
                     logger.info(
-                        "Reached requested max_builds (%s) for %s", max_builds, full_name
+                        "Reached requested max_builds (%s) for %s",
+                        max_builds,
+                        full_name,
                     )
                     break
 

@@ -11,7 +11,6 @@ import type {
   RepoListResponse,
   RepoSuggestionResponse,
   RepoSearchResponse,
-  LazySyncPreviewResponse,
   RepoUpdatePayload,
   RepositoryRecord,
   UserAccount,
@@ -21,10 +20,12 @@ import type {
   ScanResult,
   FailedScan,
   FeatureListResponse,
+  FeatureDAGResponse,
   DatasetListResponse,
   DatasetCreatePayload,
   DatasetRecord,
   DatasetUpdatePayload,
+  DatasetTemplateListResponse,
   GithubToken,
   TokenListResponse,
   TokenPoolStatus,
@@ -185,6 +186,12 @@ export const reposApi = {
     );
     return response.data;
   },
+  reprocessFeatures: async (repoId: string) => {
+    const response = await api.post<{ status: string; message?: string }>(
+      `/repos/${repoId}/reprocess-features`
+    );
+    return response.data;
+  },
   sync: async () => {
     const response = await api.post<RepoSuggestionResponse>("/repos/sync");
     return response.data;
@@ -214,6 +221,10 @@ export const datasetsApi = {
     const response = await api.get<DatasetListResponse>("/datasets", { params });
     return response.data;
   },
+  listTemplates: async () => {
+    const response = await api.get<DatasetTemplateListResponse>("/datasets/templates");
+    return response.data;
+  },
   get: async (datasetId: string) => {
     const response = await api.get<DatasetRecord>(`/datasets/${datasetId}`);
     return response.data;
@@ -224,6 +235,12 @@ export const datasetsApi = {
   },
   update: async (datasetId: string, payload: DatasetUpdatePayload) => {
     const response = await api.patch<DatasetRecord>(`/datasets/${datasetId}`, payload);
+    return response.data;
+  },
+  applyTemplate: async (datasetId: string, templateId: string) => {
+    const response = await api.post<DatasetRecord>(
+      `/datasets/${datasetId}/apply-template/${templateId}`
+    );
     return response.data;
   },
   upload: async (file: File, payload?: { name?: string; description?: string; tags?: string[] }) => {
@@ -250,6 +267,17 @@ export const featuresApi = {
     is_active?: boolean;
   }) => {
     const response = await api.get<FeatureListResponse>("/features", { params });
+    return response.data;
+  },
+  getDAG: async (selectedFeatures?: string[]) => {
+    const params = selectedFeatures?.length
+      ? { selected_features: selectedFeatures.join(",") }
+      : undefined;
+    const response = await api.get<FeatureDAGResponse>("/features/dag", { params });
+    return response.data;
+  },
+  getSupportedLanguages: async () => {
+    const response = await api.get<{ languages: string[] }>("/features/languages");
     return response.data;
   },
 };

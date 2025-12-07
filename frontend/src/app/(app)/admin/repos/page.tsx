@@ -148,6 +148,43 @@ export default function AdminReposPage() {
 
 
 
+  const [rescanLoading, setRescanLoading] = useState<Record<string, boolean>>({});
+  const [reprocessLoading, setReprocessLoading] = useState<Record<string, boolean>>({});
+
+  const handleRescan = async (repo: RepositoryRecord, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (rescanLoading[repo.id]) return;
+
+    setRescanLoading((prev) => ({ ...prev, [repo.id]: true }));
+    try {
+      await reposApi.triggerLazySync(repo.id);
+      setFeedback("Repository queued for sync (fetching new builds).");
+      loadRepositories(page);
+    } catch (err: any) {
+      console.error(err);
+      setFeedback(err.response?.data?.detail || "Failed to trigger sync.");
+    } finally {
+      setRescanLoading((prev) => ({ ...prev, [repo.id]: false }));
+    }
+  };
+
+  const handleReprocess = async (repo: RepositoryRecord, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (reprocessLoading[repo.id]) return;
+
+    setReprocessLoading((prev) => ({ ...prev, [repo.id]: true }));
+    try {
+      await reposApi.reprocessFeatures(repo.id);
+      setFeedback("Builds queued for feature re-extraction.");
+      loadRepositories(page);
+    } catch (err: any) {
+      console.error(err);
+      setFeedback(err.response?.data?.detail || "Failed to trigger re-extraction.");
+    } finally {
+      setReprocessLoading((prev) => ({ ...prev, [repo.id]: false }));
+    }
+  };
+
   const openPanel = async (repoId: string) => {
     setPanelLoading(true);
     setPanelRepo(null);
@@ -165,8 +202,6 @@ export default function AdminReposPage() {
   const closePanel = () => {
     setPanelRepo(null);
   };
-
-
 
   const handlePanelSave = async () => {
     if (!panelRepo) return;
@@ -331,6 +366,42 @@ export default function AdminReposPage() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => handleRescan(repo, e)}
+                            disabled={
+                              rescanLoading[repo.id] ||
+                              repo.import_status === "queued" ||
+                              repo.import_status === "importing"
+                            }
+                            title="Sync New Builds"
+                          >
+                            {rescanLoading[repo.id] ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => handleReprocess(repo, e)}
+                            disabled={
+                              reprocessLoading[repo.id] ||
+                              repo.import_status === "queued" ||
+                              repo.import_status === "importing" ||
+                              repo.total_builds_imported === 0
+                            }
+                            title="Re-extract Features"
+                          >
+                            {reprocessLoading[repo.id] ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Re-extract"
+                            )}
+                          </Button>
 
                           <Button
                             size="sm"

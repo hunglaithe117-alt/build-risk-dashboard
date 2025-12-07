@@ -4,9 +4,9 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.entities.imported_repository import TestFramework
-from app.models.entities.imported_repository import CIProvider
-from app.models.entities.base import PyObjectIdStr
+from app.entities.imported_repository import TestFramework
+from app.entities.imported_repository import CIProvider
+from app.entities.base import PyObjectIdStr
 
 
 class RepoImportRequest(BaseModel):
@@ -19,8 +19,9 @@ class RepoImportRequest(BaseModel):
     test_frameworks: Optional[List[str]] = Field(default=None)
     source_languages: Optional[List[str]] = Field(default=None)
     ci_provider: Optional[str] = Field(default=None)
-    features: Optional[List[str]] = Field(
-        default=None, description="Specific features to extract for this repo"
+    feature_ids: Optional[List[str]] = Field(
+        default=None,
+        description="List of features to extract for this repo",
     )
     max_builds: Optional[int] = Field(
         default=None,
@@ -32,7 +33,8 @@ class RepoImportRequest(BaseModel):
         default=None, description="Only ingest workflow runs created on/after this date"
     )
     ingest_end_date: Optional[datetime] = Field(
-        default=None, description="Only ingest workflow runs created on/before this date"
+        default=None,
+        description="Only ingest workflow runs created on/before this date",
     )
 
 
@@ -54,7 +56,7 @@ class RepoResponse(BaseModel):
     total_builds_imported: int = 0
     last_sync_error: Optional[str] = None
     notes: Optional[str] = None
-    requested_features: List[str] = Field(default_factory=list)
+    requested_feature_ids: List[PyObjectIdStr] = Field(default_factory=list)
     max_builds_to_ingest: Optional[int] = None
     # Always detect languages; no toggle exposed
 
@@ -82,7 +84,7 @@ class RepoUpdateRequest(BaseModel):
     source_languages: Optional[List[str]] = None
     default_branch: Optional[str] = None
     notes: Optional[str] = None
-    features: Optional[List[str]] = None
+    feature_ids: Optional[List[str]] = None
     max_builds: Optional[int] = Field(default=None, ge=1, le=1000)
     ingest_start_date: Optional[datetime] = None
     ingest_end_date: Optional[datetime] = None

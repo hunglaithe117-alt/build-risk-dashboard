@@ -1,5 +1,5 @@
 import logging
-from app.models.entities.imported_repository import ImportStatus
+from app.entities.imported_repository import ImportStatus
 from typing import List, Optional
 
 from bson import ObjectId
@@ -53,6 +53,11 @@ class RepositoryService:
             # The upsert_repository below will handle updates.
 
             try:
+                # Convert feature_ids to ObjectIds if provided
+                feature_object_ids = None
+                if payload.feature_ids:
+                    feature_object_ids = [ObjectId(fid) for fid in payload.feature_ids]
+
                 repo_doc = self.repo_repo.upsert_repository(
                     query={
                         "user_id": ObjectId(target_user_id),
@@ -63,14 +68,14 @@ class RepositoryService:
                         "installation_id": installation_id,
                         "test_frameworks": payload.test_frameworks,
                         "source_languages": payload.source_languages,
-                    "ci_provider": payload.ci_provider,
-                    "import_status": ImportStatus.QUEUED.value,
-                    "requested_features": payload.features,
-                    "max_builds_to_ingest": payload.max_builds,
-                    "ingest_start_date": payload.ingest_start_date,
-                    "ingest_end_date": payload.ingest_end_date,
-                },
-            )
+                        "ci_provider": payload.ci_provider,
+                        "import_status": ImportStatus.QUEUED.value,
+                        "requested_feature_ids": feature_object_ids,
+                        "max_builds_to_ingest": payload.max_builds,
+                        "ingest_start_date": payload.ingest_start_date,
+                        "ingest_end_date": payload.ingest_end_date,
+                    },
+                )
 
                 # Trigger async import
                 import_repo.delay(
@@ -81,10 +86,18 @@ class RepositoryService:
                     test_frameworks=payload.test_frameworks,
                     source_languages=payload.source_languages,
                     ci_provider=payload.ci_provider,
-                    features=payload.features,
+                    feature_ids=payload.feature_ids,
                     max_builds=payload.max_builds,
-                    ingest_start_date=payload.ingest_start_date.isoformat() if payload.ingest_start_date else None,
-                    ingest_end_date=payload.ingest_end_date.isoformat() if payload.ingest_end_date else None,
+                    ingest_start_date=(
+                        payload.ingest_start_date.isoformat()
+                        if payload.ingest_start_date
+                        else None
+                    ),
+                    ingest_end_date=(
+                        payload.ingest_end_date.isoformat()
+                        if payload.ingest_end_date
+                        else None
+                    ),
                 )
 
                 results.append(repo_doc)
@@ -105,7 +118,9 @@ class RepositoryService:
         try:
             with get_user_github_client(self.db, user_id) as gh:
                 repos = gh._rest_request(
-                    "GET", "/user/repos", params={"per_page": min(limit, 10), "sort": "full_name"}
+                    "GET",
+                    "/user/repos",
+                    params={"per_page": min(limit, 10), "sort": "full_name"},
                 )
                 for repo in repos:
                     full_name = repo.get("full_name")
@@ -224,8 +239,10 @@ class RepositoryService:
 
         updates = payload.model_dump(exclude_unset=True)
         # Map user-facing keys to stored fields
-        if "features" in updates:
-            updates["requested_features"] = updates.pop("features")
+        if "feature_ids" in updates:
+            updates["requested_feature_ids"] = [
+                ObjectId(fid) for fid in updates.pop("feature_ids")
+            ]
         if "max_builds" in updates:
             updates["max_builds_to_ingest"] = updates.pop("max_builds")
         if "ingest_start_date" in updates:
@@ -252,12 +269,6 @@ class RepositoryService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
             )
 
-        if repo_doc.installation_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Lazy sync is not available for App-installed repositories.",
-            )
-
         # Update status to queued/importing
         self.repo_repo.update_repository(
             repo_id, {"import_status": ImportStatus.QUEUED.value}
@@ -272,8 +283,31 @@ class RepositoryService:
             test_frameworks=repo_doc.test_frameworks,
             source_languages=repo_doc.source_languages,
             ci_provider=repo_doc.ci_provider,
-            features=getattr(repo_doc, "requested_features", None),
+            feature_ids=[
+                str(fid) for fid in getattr(repo_doc, "requested_feature_ids", [])
+            ],
             max_builds=getattr(repo_doc, "max_builds_to_ingest", None),
         )
 
         return {"status": "queued"}
+
+    def trigger_reprocess(self, repo_id: str):
+        """
+        Trigger re-extraction of features for all existing builds.
+
+        Unlike trigger_sync (which fetches new workflow runs from GitHub),
+        this method reprocesses existing builds to re-extract features.
+        Useful when feature extractors have been updated.
+        """
+        from app.tasks.processing import reprocess_repo_builds
+
+        repo_doc = self.repo_repo.find_by_id(ObjectId(repo_id))
+        if not repo_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
+            )
+
+        # Queue the reprocess task
+        reprocess_repo_builds.delay(repo_id)
+
+        return {"status": "queued", "message": "Re-extraction of features queued"}

@@ -5,8 +5,8 @@ from typing import Dict, Optional, Tuple
 
 from pymongo.database import Database
 
-from app.models.entities.oauth_identity import OAuthIdentity
-from app.models.entities.user import User
+from app.entities.oauth_identity import OAuthIdentity
+from app.entities.user import User
 from .base import BaseRepository
 from .user import UserRepository
 

@@ -7,7 +7,7 @@ from .imported_repository import ImportedRepositoryRepository
 from .oauth_identity import OAuthIdentityRepository
 from .user import UserRepository
 from .workflow_run import WorkflowRunRepository
-from .feature_definition import FeatureDefinitionRepository
+from .dataset_template_repository import DatasetTemplateRepository
 
 __all__ = [
     "BaseRepository",
@@ -17,5 +17,5 @@ __all__ = [
     "UserRepository",
     "BuildSampleRepository",
     "WorkflowRunRepository",
-    "FeatureDefinitionRepository",
+    "DatasetTemplateRepository",
 ]

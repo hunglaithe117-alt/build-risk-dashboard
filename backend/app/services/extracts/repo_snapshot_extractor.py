@@ -6,9 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from app.models.entities.build_sample import BuildSample
-from app.models.entities.imported_repository import ImportedRepository
-from app.models.entities.workflow_run import WorkflowRunRaw
+from app.entities.build_sample import BuildSample
+from app.entities.imported_repository import ImportedRepository
+from app.entities.workflow_run import WorkflowRunRaw
 from app.services.extracts.diff_analyzer import (
     _is_source_file,
     _is_test_file,

@@ -13,7 +13,6 @@ from fastapi import Depends
 from app.config import settings
 from app.database.mongo import get_db
 from app.repositories.scan_job import ScanJobRepository
-from app.models.entities.scan_job import ScanJobStatus
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

@@ -4,7 +4,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.entities.base import BaseEntity, PyObjectId
+from app.entities.base import BaseEntity, PyObjectId
 
 
 class ScanErrorType(str, Enum):

@@ -8,12 +8,27 @@ from app.dtos import (
     DatasetCreateRequest,
     DatasetListResponse,
     DatasetResponse,
+    DatasetTemplateListResponse,
     DatasetUpdateRequest,
 )
 from app.middleware.auth import get_current_user
 from app.services.dataset_service import DatasetService
+from app.services.dataset_template_service import DatasetTemplateService
 
 router = APIRouter(prefix="/datasets", tags=["Datasets"])
+
+
+@router.get(
+    "/templates",
+    response_model=DatasetTemplateListResponse,
+    response_model_by_alias=False,
+)
+def list_dataset_templates(
+    db: Database = Depends(get_db),
+    _current_user: dict = Depends(get_current_user),
+):
+    service = DatasetTemplateService(db)
+    return service.list_templates()
 
 
 @router.get("/", response_model=DatasetListResponse, response_model_by_alias=False)
@@ -108,3 +123,20 @@ def update_dataset(
     user_id = str(current_user["_id"])
     service = DatasetService(db)
     return service.update_dataset(dataset_id, user_id, payload)
+
+
+@router.post(
+    "/{dataset_id}/apply-template/{template_id}",
+    response_model=DatasetResponse,
+    response_model_by_alias=False,
+)
+def apply_template_to_dataset(
+    dataset_id: str = Path(..., description="Dataset id (Mongo ObjectId)"),
+    template_id: str = Path(..., description="Dataset template id (Mongo ObjectId)"),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Apply a dataset template to a dataset, updating selected features."""
+    user_id = str(current_user["_id"])
+    service = DatasetTemplateService(db)
+    return service.apply_template(dataset_id, template_id, user_id)

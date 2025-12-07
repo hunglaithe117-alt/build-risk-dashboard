@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 from pymongo.database import Database
 
 from app.config import settings
-from app.models.entities.github_token import GithubToken
+from app.entities.github_token import GithubToken
 
 GITHUB_USER_URL = "https://api.github.com/user"
 GITHUB_RATE_LIMIT_URL = "https://api.github.com/rate_limit"

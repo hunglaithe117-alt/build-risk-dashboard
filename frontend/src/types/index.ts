@@ -109,6 +109,30 @@ export interface DatasetListResponse {
   items: DatasetRecord[];
 }
 
+export interface DatasetTemplateRecord {
+  id: string;
+  name: string;
+  description?: string | null;
+  file_name: string;
+  source: string;
+  rows: number;
+  size_mb: number;
+  columns: string[];
+  mapped_fields: DatasetMapping;
+  stats: DatasetStats;
+  tags: string[];
+  selected_template?: string | null;
+  selected_features: string[];
+  preview: DatasetPreviewRow[];
+  created_at?: string;
+  updated_at?: string | null;
+}
+
+export interface DatasetTemplateListResponse {
+  total: number;
+  items: DatasetTemplateRecord[];
+}
+
 export interface DatasetCreatePayload {
   name: string;
   file_name: string;
@@ -288,7 +312,7 @@ export interface RepoImportPayload {
   test_frameworks?: string[];
   source_languages?: string[];
   ci_provider?: string;
-  features?: string[];
+  feature_ids?: string[];
   max_builds?: number | null;
   ingest_start_date?: string | null;
   ingest_end_date?: string | null;
@@ -300,7 +324,7 @@ export interface RepoUpdatePayload {
   source_languages?: string[];
   default_branch?: string;
   notes?: string;
-  features?: string[];
+  feature_ids?: string[];
   max_builds?: number | null;
 }
 
@@ -325,6 +349,38 @@ export interface FeatureDefinitionSummary {
 export interface FeatureListResponse {
   total: number;
   items: FeatureDefinitionSummary[];
+}
+
+// DAG Visualization Types
+export interface DAGNode {
+  id: string;
+  type: "extractor" | "resource";
+  label: string;
+  features: string[];
+  feature_count: number;
+  requires_resources: string[];
+  requires_features: string[];
+  level: number;
+}
+
+export interface DAGEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: "feature_dependency" | "resource_dependency";
+}
+
+export interface ExecutionLevel {
+  level: number;
+  nodes: string[];
+}
+
+export interface FeatureDAGResponse {
+  nodes: DAGNode[];
+  edges: DAGEdge[];
+  execution_levels: ExecutionLevel[];
+  total_features: number;
+  total_nodes: number;
 }
 
 export interface DashboardSummaryResponse {

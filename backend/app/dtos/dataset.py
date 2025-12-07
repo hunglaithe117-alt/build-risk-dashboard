@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.entities.base import PyObjectIdStr
+from app.entities.base import PyObjectIdStr
 
 
 class DatasetMappingDto(BaseModel):

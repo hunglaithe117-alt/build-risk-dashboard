@@ -14,6 +14,11 @@ from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.git_repo import GitRepoHandle
+from app.pipeline.utils.git_utils import (
+    get_commit_info,
+    get_commit_parents,
+    get_diff_files,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,25 +48,31 @@ class FileTouchHistoryNode(FeatureNode):
             return {"gh_num_commits_on_files_touched": 0}
 
         repo = git_handle.repo
+        repo_path = git_handle.path
         effective_sha = git_handle.effective_sha
         built_commits = context.get_feature("git_all_built_commits", [])
-        build_sample = context.build_sample
 
         if not built_commits:
             return {"gh_num_commits_on_files_touched": 0}
 
-        # Get reference date
-        ref_date = getattr(build_sample, "created_at", None) or getattr(
-            build_sample, "gh_build_started_at", None
-        )
+        workflow_run = context.workflow_run
+        ref_date = getattr(workflow_run, "created_at", None) if workflow_run else None
         if not ref_date:
+            # Try GitPython first
             try:
                 current_commit = repo.commit(effective_sha)
                 ref_date = datetime.fromtimestamp(
                     current_commit.committed_date, tz=timezone.utc
                 )
             except Exception:
-                return {"gh_num_commits_on_files_touched": 0}
+                # Fallback to subprocess
+                commit_info = get_commit_info(repo_path, effective_sha)
+                if commit_info["committed_date"]:
+                    ref_date = datetime.fromtimestamp(
+                        commit_info["committed_date"], tz=timezone.utc
+                    )
+                else:
+                    return {"gh_num_commits_on_files_touched": 0}
 
         if ref_date.tzinfo is None:
             ref_date = ref_date.replace(tzinfo=timezone.utc)
@@ -69,18 +80,25 @@ class FileTouchHistoryNode(FeatureNode):
         start_date = ref_date - timedelta(days=self.LOOKBACK_DAYS)
 
         num_commits = self._calculate_file_history(
-            repo, built_commits, effective_sha, start_date
+            repo, repo_path, built_commits, effective_sha, start_date
         )
 
         return {"gh_num_commits_on_files_touched": num_commits}
 
     def _calculate_file_history(
-        self, repo, built_commits: List[str], head_sha: str, start_date: datetime
+        self,
+        repo,
+        repo_path,
+        built_commits: List[str],
+        head_sha: str,
+        start_date: datetime,
     ) -> int:
         """Calculate number of commits touching files modified in this build."""
         # Collect files touched by this build
         files_touched: Set[str] = set()
+
         for sha in built_commits:
+            # Try GitPython first
             try:
                 commit = repo.commit(sha)
                 if commit.parents:
@@ -90,8 +108,17 @@ class FileTouchHistoryNode(FeatureNode):
                             files_touched.add(d.b_path)
                         if d.a_path:
                             files_touched.add(d.a_path)
-            except Exception:
-                pass
+            except Exception as e:
+                # Fallback to subprocess
+                logger.debug(f"GitPython diff failed for {sha}, using subprocess: {e}")
+                parents = get_commit_parents(repo_path, sha)
+                if parents:
+                    diff_files = get_diff_files(repo_path, parents[0], sha)
+                    for f in diff_files:
+                        if f.get("b_path"):
+                            files_touched.add(f["b_path"])
+                        if f.get("a_path"):
+                            files_touched.add(f["a_path"])
 
         if not files_touched:
             return 0

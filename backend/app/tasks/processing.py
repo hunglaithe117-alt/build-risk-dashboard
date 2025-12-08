@@ -15,8 +15,7 @@ from app.repositories.build_sample import BuildSampleRepository
 from app.repositories.imported_repository import ImportedRepositoryRepository
 from app.repositories.workflow_run import WorkflowRunRepository
 from app.tasks.base import PipelineTask
-from app.pipeline.runner import FeaturePipeline, run_feature_pipeline
-from app.pipeline.constants import DEFAULT_FEATURES
+from app.pipeline.runner import FeaturePipeline
 from app.config import settings
 import redis
 import json
@@ -87,9 +86,6 @@ def process_workflow_run(
             repo_id=ObjectId(repo_id),
             workflow_run_id=workflow_run_id,
             status="pending",
-            tr_build_number=workflow_run.run_number,
-            tr_original_commit=workflow_run.head_sha,
-            gh_build_started_at=workflow_run.created_at,
         )
         build_sample = build_sample_repo.insert_one(build_sample)
 
@@ -140,10 +136,6 @@ def process_workflow_run(
             ):
                 updates["is_missing_commit"] = True
 
-        # Map default features to top-level fields
-        for field in DEFAULT_FEATURES:
-            if field in result["features"]:
-                updates[field] = result["features"][field]
 
         # Save to database
         build_sample_repo.update_one(build_id, updates)
@@ -242,7 +234,7 @@ def reprocess_repo_builds(self: PipelineTask, repo_id: str) -> Dict[str, Any]:
         return {"status": "error", "message": "Repository not found"}
 
     # Find all builds for this repository
-    builds = list(build_sample_repo.find_by_repo_id(repo_id))
+    builds, _ = build_sample_repo.list_by_repo(repo_id, limit=0)  # limit=0 means all
     if not builds:
         logger.info(f"No builds found for repository {repo_id}")
         return {

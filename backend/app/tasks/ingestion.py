@@ -1,7 +1,7 @@
 from app.entities.imported_repository import ImportStatus
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Set, Optional
 from bson import ObjectId
 from pathlib import Path
 import time
@@ -13,6 +13,8 @@ from app.services.github.exceptions import GithubRateLimitError
 from app.repositories.imported_repository import ImportedRepositoryRepository
 from app.repositories.workflow_run import WorkflowRunRepository
 from app.entities.workflow_run import WorkflowRunRaw
+from app.pipeline.core.registry import feature_registry
+from app.pipeline.resources import ResourceNames
 
 
 logger = logging.getLogger(__name__)
@@ -190,7 +192,10 @@ def import_repo(
                     last_synced_run_ts = last_synced_run_ts.replace(tzinfo=timezone.utc)
 
             # Metadata Collection (Newest -> Oldest)
-            for run in gh.paginate_workflow_runs(full_name, params={"per_page": 100}):
+            # Only fetch completed workflow runs (not in_progress, queued, action_required, etc.)
+            for run in gh.paginate_workflow_runs(
+                full_name, params={"per_page": 100, "status": "completed"}
+            ):
                 run_id = run.get("id")
                 created_at_str = run.get("created_at")
                 if created_at_str:
@@ -282,8 +287,31 @@ def import_repo(
                 f"Scheduling {len(runs_to_process)} runs for processing...",
             )
 
+            # Check if any requested features require log downloads
+            # Uses registry to dynamically determine this from feature metadata
+            requested_feature_set: Optional[Set[str]] = (
+                set(feature_names) if feature_names else None
+            )
+            needs_logs = feature_registry.needs_resource_for_features(
+                ResourceNames.LOG_STORAGE,
+                requested_feature_set,
+            )
+
+            logger.info(
+                f"Scheduling {len(runs_to_process)} runs for processing "
+                f"(logs_required={needs_logs}, features={len(feature_names) if feature_names else 'all'})"
+            )
+
             for _, run_id in runs_to_process:
-                download_job_logs.delay(repo_id, run_id)
+                if needs_logs:
+                    # Queue log download, which will trigger processing after
+                    download_job_logs.delay(repo_id, run_id)
+                else:
+                    # Skip log download, go directly to processing
+                    celery_app.send_task(
+                        "app.tasks.processing.process_workflow_run",
+                        args=[repo_id, run_id],
+                    )
 
             imported_repo_repo.update_repository(
                 repo_id,

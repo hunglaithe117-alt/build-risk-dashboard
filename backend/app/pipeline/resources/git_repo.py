@@ -59,11 +59,11 @@ class GitRepoProvider(ResourceProvider):
     
     def initialize(self, context: "ExecutionContext") -> GitRepoHandle:
         repo = context.repo
-        build_sample = context.build_sample
+        workflow_run = context.workflow_run
         
-        commit_sha = build_sample.tr_original_commit
+        commit_sha = workflow_run.head_sha if workflow_run else None
         if not commit_sha:
-            raise ValueError("No commit SHA available in build sample")
+            raise ValueError("No commit SHA available in workflow run")
         
         repo_path = REPOS_DIR / str(repo.id)
         
@@ -106,9 +106,10 @@ class GitRepoProvider(ResourceProvider):
             check=True,
             capture_output=True,
             text=True,
+            timeout=300,  # 5 minutes timeout for clone
         )
     
-    def _run_git(self, cwd: Path, args: list) -> str:
+    def _run_git(self, cwd: Path, args: list, timeout: int = 120) -> str:
         """Run a git command and return output."""
         result = subprocess.run(
             ["git"] + args,
@@ -116,6 +117,7 @@ class GitRepoProvider(ResourceProvider):
             capture_output=True,
             text=True,
             check=True,
+            timeout=timeout,  # Default 2 minutes timeout
         )
         return result.stdout.strip()
     

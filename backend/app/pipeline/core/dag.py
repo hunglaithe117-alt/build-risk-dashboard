@@ -56,15 +56,13 @@ class FeatureDAG:
         )  # node -> features it provides
         self._built = False
 
-    def build(
-        self,
-        feature_names: Optional[Set[str]] = None,
-    ) -> FeatureDAG:
+    def build(self, node_names: Optional[Set[str]] = None) -> FeatureDAG:
         """
-        Build DAG from FeatureRegistry (code-defined nodes).
-
+        Build DAG from FeatureRegistry.
+        
         Args:
-            feature_names: Specific features to include. If None, includes all.
+            node_names: If provided, include only these nodes (+ their dependencies).
+                        If None, include all enabled nodes.
         """
         self._graph.clear()
         self._reverse_graph.clear()
@@ -80,35 +78,29 @@ class FeatureDAG:
                 feature_to_node[feature] = node_name
                 self._node_features[node_name].append(feature)
 
-        # If specific features requested, filter to only needed nodes
-        if feature_names:
-            # Include dependencies transitively
-            to_include_features = set()
-            to_include_nodes = set()
-            queue = deque(feature_names)
-
+        # Apply node filtering if specified
+        if node_names:
+            node_name_set = set(all_nodes.keys())
+            to_include_nodes = node_names & node_name_set
+            
+            # Include dependency nodes transitively
+            queue = deque(to_include_nodes)
+            visited = set(to_include_nodes)
             while queue:
-                feat_name = queue.popleft()
-                if feat_name in to_include_features or feat_name not in feature_to_node:
-                    continue
-                to_include_features.add(feat_name)
-                node_name = feature_to_node[feat_name]
-                to_include_nodes.add(node_name)
-
-                # Add required features from this node's meta
+                node_name = queue.popleft()
                 meta = all_nodes.get(node_name)
                 if meta:
                     for req_feat in meta.requires_features:
-                        if (
-                            req_feat not in to_include_features
-                            and req_feat in feature_to_node
-                        ):
-                            queue.append(req_feat)
-
+                        if req_feat in feature_to_node:
+                            dep_node = feature_to_node[req_feat]
+                            if dep_node not in visited:
+                                visited.add(dep_node)
+                                queue.append(dep_node)
+            
             # Filter to only needed nodes
-            all_nodes = {k: v for k, v in all_nodes.items() if k in to_include_nodes}
+            all_nodes = {k: v for k, v in all_nodes.items() if k in visited}
             self._node_features = {
-                k: v for k, v in self._node_features.items() if k in to_include_nodes
+                k: v for k, v in self._node_features.items() if k in visited
             }
 
         # Build node dependency graph from requires_features

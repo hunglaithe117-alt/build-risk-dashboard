@@ -25,6 +25,10 @@ from app.pipeline.resources.git_repo import GitRepoProvider
 from app.pipeline.resources.github_client import GitHubClientProvider
 from app.pipeline.resources.log_storage import LogStorageProvider
 from app.pipeline.constants import DEFAULT_FEATURES
+from app.pipeline.features.build_log import job_metadata, workflow_metadata, test_log_parser
+from app.pipeline.features.git import commit_info, diff_features, file_touch_history, team_membership
+from app.pipeline.features.github import discussion
+from app.pipeline.features.repo import snapshot
 
 from app.entities.build_sample import BuildSample
 from app.entities.imported_repository import ImportedRepository
@@ -360,7 +364,37 @@ class FeaturePipeline:
         )
 
         try:
-            self.resource_manager.initialize(context, resources_to_init)
+            # Initialize resources with graceful failure handling
+            failed_resources: Set[str] = set()
+            for resource_name in resources_to_init:
+                try:
+                    self.resource_manager.initialize(context, {resource_name})
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to initialize resource '{resource_name}': {e}. "
+                        f"Features requiring this resource will be skipped."
+                    )
+                    failed_resources.add(resource_name)
+                    context.add_warning(f"Resource '{resource_name}' unavailable: {e}")
+
+            # Filter out nodes that require failed resources
+            if failed_resources:
+                nodes_to_run = self._filter_nodes_by_available_resources(
+                    nodes_to_run, failed_resources
+                )
+                if not nodes_to_run:
+                    warning_msg = f"All nodes skipped due to failed resources: {sorted(failed_resources)}"
+                    logger.warning(warning_msg)
+                    return {
+                        "status": "partial",
+                        "features": {},
+                        "all_features": {},
+                        "errors": [],
+                        "warnings": [warning_msg],
+                        "results": [],
+                        "feature_count": 0,
+                    }
+                logger.info(f"Continuing with {len(nodes_to_run)} nodes after filtering")
 
             # Execute pipeline
             context = self.executor.execute(
@@ -527,6 +561,35 @@ class FeaturePipeline:
                 required.update(meta.requires_resources)
         return required
 
+    def _filter_nodes_by_available_resources(
+        self, node_names: Set[str], failed_resources: Set[str]
+    ) -> Set[str]:
+        """
+        Filter out nodes that require any of the failed resources.
+        """
+        runnable_nodes: Set[str] = set()
+        skipped_nodes: List[str] = []
+        
+        for node_name in node_names:
+            meta = self.executor.registry.get(node_name)
+            if not meta:
+                continue
+            
+            # Check if node requires any failed resource
+            required_failed = meta.requires_resources & failed_resources
+            if required_failed:
+                skipped_nodes.append(node_name)
+                logger.debug(
+                    f"Skipping node '{node_name}' due to unavailable resources: {required_failed}"
+                )
+            else:
+                runnable_nodes.add(node_name)
+        
+        if skipped_nodes:
+            logger.info(f"Skipped {len(skipped_nodes)} nodes: {skipped_nodes}")
+        
+        return runnable_nodes
+
     def visualize_dag(self) -> str:
         """Get ASCII visualization of the feature DAG."""
         from app.pipeline.core.dag import FeatureDAG
@@ -541,10 +604,7 @@ def run_feature_pipeline(
     build_id: str,
 ) -> Dict[str, Any]:
     """
-    Convenience function to run pipeline for a build ID.
-
-    Fetches all necessary entities and runs the pipeline.
-    This can replace the current chord/chain in processing.py.
+    Function to run pipeline for a build ID.
     """
     build_sample_repo = BuildSampleRepository(db)
     repo_repo = ImportedRepositoryRepository(db)
@@ -588,24 +648,6 @@ def run_feature_pipeline(
             updates["error_message"] = "; ".join(result["errors"])
         elif result.get("warnings"):
             updates["error_message"] = "Warning: " + "; ".join(result["warnings"])
-
-        # Map default features to top-level fields
-        DEFAULT_FIELDS = [
-            "tr_build_id",
-            "tr_build_number",
-            "tr_original_commit",
-            "git_trigger_commit",
-            "git_branch",
-            "tr_jobs",
-            "tr_status",
-            "tr_duration",
-            "tr_log_num_jobs",
-            "tr_log_tests_run_sum",
-        ]
-
-        for field in DEFAULT_FIELDS:
-            if field in result["features"]:
-                updates[field] = result["features"][field]
 
         build_sample_repo.update_one(build_id, updates)
 

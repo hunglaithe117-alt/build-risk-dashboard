@@ -16,15 +16,29 @@ class Provider(str, Enum):
 
 
 class TestFramework(str, Enum):
-
+    # Python
     PYTEST = "pytest"
     UNITTEST = "unittest"
+    # Ruby
     RSPEC = "rspec"
     MINITEST = "minitest"
     TESTUNIT = "testunit"
     CUCUMBER = "cucumber"
+    # Java
     JUNIT = "junit"
     TESTNG = "testng"
+    # JavaScript/TypeScript
+    JEST = "jest"
+    MOCHA = "mocha"
+    JASMINE = "jasmine"
+    VITEST = "vitest"
+    # Go
+    GOTEST = "gotest"
+    GOTESTSUM = "gotestsum"
+    # C/C++
+    GTEST = "gtest"
+    CATCH2 = "catch2"
+    CTEST = "ctest"
 
 
 class CIProvider(str, Enum):

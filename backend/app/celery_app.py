@@ -18,6 +18,7 @@ celery_app = Celery(
         "app.tasks.processing",
         "app.tasks.maintenance",
         "app.tasks.enrichment",
+        "app.tasks.export",
     ],
 )
 
@@ -52,6 +53,11 @@ celery_app.conf.update(
             Exchange("buildguard"),
             routing_key="pipeline.data_processing",
         ),
+        Queue(
+            "export",
+            Exchange("buildguard"),
+            routing_key="pipeline.export",
+        ),
     ],
     broker_connection_retry_on_startup=True,
     # Celery Beat Schedule for periodic tasks
@@ -70,10 +76,14 @@ celery_app.conf.update(
             "task": "app.tasks.maintenance.refresh_token_pool",
             "schedule": crontab(minute=0),  # Every hour at :00
         },
+        "cleanup-old-exports-weekly": {
+            "task": "app.tasks.export.cleanup_old_exports",
+            "schedule": crontab(hour=5, minute=0, day_of_week=0),  # Sunday 5 AM
+            "args": (7,),  # Keep 7 days of exports
+        },
     },
     timezone="UTC",
 )
 
 
 __all__ = ["celery_app"]
-

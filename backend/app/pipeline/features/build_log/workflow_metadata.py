@@ -17,7 +17,7 @@ from app.pipeline.resources import ResourceNames
 
 @register_feature(
     name="workflow_metadata",
-    requires_resources={ResourceNames.WORKFLOW_RUN},
+    requires_resources=set(),
     provides={
         "tr_build_id",
         "tr_build_number",

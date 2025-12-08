@@ -20,18 +20,16 @@ logger = logging.getLogger(__name__)
 # These are explicitly listed for clarity. Update when adding new features.
 # =============================================================================
 
-# Build Log Features (from build_log/job_metadata.py, build_log/workflow_metadata.py)
+# Build Log Features
 FEATURES_BUILD_LOG = {
-    # job_metadata node
-    "tr_jobs",
-    "tr_log_num_jobs",
-    # workflow_metadata node
-    "tr_build_id",
-    "tr_build_number",
-    "tr_original_commit",
-    "tr_status",
-    "tr_duration",
     "tr_log_lan_all",
+    "tr_log_tests_run_sum",
+    "tr_log_tests_failed_sum",
+    "tr_log_tests_skipped_sum",
+    "tr_log_tests_ok_sum",
+    "tr_log_tests_fail_rate",
+    "tr_log_testduration_sum",
+    "tr_log_frameworks_all",
 }
 
 # Git Features (from git/*.py)

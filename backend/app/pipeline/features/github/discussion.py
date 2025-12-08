@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 @register_feature(
     name="github_discussion_features",
-    requires_resources={ResourceNames.GITHUB_CLIENT, ResourceNames.WORKFLOW_RUN},
-    requires_features={"git_all_built_commits"},  # Needs commit list from git_commit_info
+    requires_resources={ResourceNames.GITHUB_CLIENT},
+    requires_features={"git_all_built_commits"},
     provides={
         "gh_num_issue_comments",
         "gh_num_commit_comments",
@@ -56,7 +56,9 @@ class GitHubDiscussionNode(FeatureNode):
         # Get commit list from git_commit_info node
         commits_to_check = context.get_feature("git_all_built_commits", [])
         if not commits_to_check:
-            commits_to_check = [build_sample.tr_original_commit] if build_sample.tr_original_commit else []
+            # Fallback to workflow_run.head_sha
+            head_sha = workflow_run.head_sha if workflow_run else None
+            commits_to_check = [head_sha] if head_sha else []
         
         # Extract PR info from workflow run
         payload = workflow_run.raw_payload if workflow_run else {}
@@ -92,7 +94,7 @@ class GitHubDiscussionNode(FeatureNode):
                     description_complexity = len(title.split()) + len(body.split())
                 
                 # Get PR review comments
-                pr_comments = client.list_pull_request_comments(full_name, pr_number)
+                pr_comments = client.list_review_comments(full_name, pr_number)
                 num_pr_comments = len(pr_comments)
             except Exception as e:
                 logger.warning(f"Failed to fetch PR data for #{pr_number}: {e}")

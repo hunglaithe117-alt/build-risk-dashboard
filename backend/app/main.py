@@ -21,6 +21,7 @@ from app.api import (
     tokens,
     pipeline,
     websocket as enrichment_ws,
+    export,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
 
@@ -60,6 +61,7 @@ app.include_router(datasets.router, prefix="/api", tags=["Datasets"])
 app.include_router(tokens.router, prefix="/api", tags=["GitHub Tokens"])
 app.include_router(pipeline.router, prefix="/api", tags=["Pipeline"])
 app.include_router(enrichment_ws.router, prefix="/api", tags=["Enrichment WebSocket"])
+app.include_router(export.router, prefix="/api", tags=["Export"])
 
 
 @app.get("/")

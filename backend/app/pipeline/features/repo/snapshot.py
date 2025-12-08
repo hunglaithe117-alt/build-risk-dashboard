@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 @register_feature(
     name="repo_snapshot_features",
-    requires_resources={ResourceNames.GIT_REPO, ResourceNames.WORKFLOW_RUN},
+    requires_resources={ResourceNames.GIT_REPO},
     provides={
         "gh_repo_age",
         "gh_repo_num_commits",

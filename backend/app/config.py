@@ -30,7 +30,6 @@ class Settings(BaseSettings):
         "read:org",
         "workflow",
     ]
-    PIPELINE_PRIMARY_LANGUAGES: List[str] = ["python", "ruby"]
     FRONTEND_BASE_URL: str = "http://localhost:3000"
 
     # ML Model

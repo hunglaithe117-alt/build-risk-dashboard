@@ -179,7 +179,6 @@ class FeatureRegistry:
             "groups": list(set(m.group for m in nodes.values() if m.group)),
         }
 
-
     # =========================================================================
     # Metadata Generation (for UI display)
     # =========================================================================
@@ -284,6 +283,106 @@ class FeatureRegistry:
                 result[node_name] = []
             result[node_name].append(feature_name)
         return result
+
+    # =========================================================================
+    # Resource Dependency Queries
+    # =========================================================================
+
+    def get_features_requiring_resource(self, resource_name: str) -> Set[str]:
+        """
+        Get all features that require a specific resource.
+
+        Args:
+            resource_name: Name of the resource (e.g., "log_storage", "git_repo")
+
+        Returns:
+            Set of feature names that require this resource
+        """
+        features = set()
+        for node_name, meta in self._nodes.items():
+            if resource_name in meta.requires_resources:
+                features.update(meta.provides)
+        return features
+
+    def get_nodes_requiring_resource(self, resource_name: str) -> Set[str]:
+        """
+        Get all node names that require a specific resource.
+
+        Args:
+            resource_name: Name of the resource
+
+        Returns:
+            Set of node names
+        """
+        return {
+            name
+            for name, meta in self._nodes.items()
+            if resource_name in meta.requires_resources
+        }
+
+    def needs_resource_for_features(
+        self, resource_name: str, requested_features: Optional[Set[str]] = None
+    ) -> bool:
+        """
+        Check if any of the requested features require a specific resource.
+
+        Args:
+            resource_name: Name of the resource to check
+            requested_features: Set of feature names to check.
+                               If None, assumes all features are requested.
+
+        Returns:
+            True if the resource is needed, False otherwise
+
+        Example:
+            # Check if logs are needed for the requested features
+            needs_logs = registry.needs_resource_for_features(
+                "log_storage",
+                {"tr_log_tests_run_sum", "gh_diff_files_added"}
+            )
+        """
+        if requested_features is None:
+            # No filter = all features = check if any node needs this resource
+            return any(
+                resource_name in meta.requires_resources
+                for meta in self._nodes.values()
+            )
+
+        # Get features that require this resource
+        features_needing_resource = self.get_features_requiring_resource(resource_name)
+
+        # Check if any requested feature needs this resource
+        return bool(requested_features & features_needing_resource)
+
+    def get_required_resources_for_features(
+        self, requested_features: Optional[Set[str]] = None
+    ) -> Set[str]:
+        """
+        Get all resources required to extract the requested features.
+
+        Args:
+            requested_features: Set of feature names. If None, returns all resources.
+
+        Returns:
+            Set of resource names needed
+        """
+        if requested_features is None:
+            # All resources
+            resources = set()
+            for meta in self._nodes.values():
+                resources.update(meta.requires_resources)
+            return resources
+
+        # Find which nodes provide these features
+        required_resources = set()
+        for feature_name in requested_features:
+            node_name = self._feature_providers.get(feature_name)
+            if node_name:
+                meta = self._nodes.get(node_name)
+                if meta:
+                    required_resources.update(meta.requires_resources)
+
+        return required_resources
 
 
 # Global registry instance

@@ -14,18 +14,21 @@ class BuildService:
         self.build_collection = db["build_samples"]
         self.workflow_collection = db["workflow_runs"]
 
+    def _get_feature(self, sample: BuildSample, key: str, default=None):
+        """Helper to get feature value from sample.features dict."""
+        return sample.features.get(key, default) if sample.features else default
+
     def get_builds_by_repo(
         self, repo_id: str, skip: int = 0, limit: int = 20, q: Optional[str] = None
     ) -> BuildListResponse:
         query = {"repo_id": ObjectId(repo_id)}
 
         if q:
-            # Try to match build number (int) or commit SHA/status (str)
             or_conditions = []
             if q.isdigit():
-                or_conditions.append({"tr_build_number": int(q)})
+                or_conditions.append({"features.tr_build_number": int(q)})
 
-            or_conditions.append({"tr_original_commit": {"$regex": q, "$options": "i"}})
+            or_conditions.append({"features.tr_original_commit": {"$regex": q, "$options": "i"}})
             or_conditions.append({"status": {"$regex": q, "$options": "i"}})
 
             query["$or"] = or_conditions
@@ -33,7 +36,7 @@ class BuildService:
         total = self.build_collection.count_documents(query)
         cursor = (
             self.build_collection.find(query)
-            .sort("tr_build_number", -1)
+            .sort("features.tr_build_number", -1)
             .skip(skip)
             .limit(limit)
         )
@@ -61,15 +64,15 @@ class BuildService:
             items.append(
                 BuildSummary(
                     _id=str(sample.id),
-                    build_number=sample.tr_build_number or 0,
-                    status=sample.tr_status or "unknown",
+                    build_number=self._get_feature(sample, "tr_build_number", 0),
+                    status=self._get_feature(sample, "tr_status", "unknown"),
                     extraction_status=sample.status,
-                    commit_sha=sample.tr_original_commit
+                    commit_sha=self._get_feature(sample, "tr_original_commit")
                     or (workflow.head_sha if workflow else ""),
                     created_at=workflow.created_at if workflow else None,
-                    duration=sample.tr_duration,
-                    num_jobs=sample.tr_log_num_jobs,
-                    num_tests=sample.tr_log_tests_run_sum,
+                    duration=self._get_feature(sample, "tr_duration"),
+                    num_jobs=self._get_feature(sample, "tr_log_num_jobs"),
+                    num_tests=self._get_feature(sample, "tr_log_tests_run_sum"),
                     workflow_run_id=sample.workflow_run_id,
                 )
             )
@@ -94,15 +97,15 @@ class BuildService:
 
         return BuildDetail(
             _id=str(sample.id),
-            build_number=sample.tr_build_number or 0,
-            status=sample.tr_status or "unknown",
+            build_number=self._get_feature(sample, "tr_build_number", 0),
+            status=self._get_feature(sample, "tr_status", "unknown"),
             extraction_status=sample.status,
-            commit_sha=sample.tr_original_commit
+            commit_sha=self._get_feature(sample, "tr_original_commit")
             or (workflow.head_sha if workflow else ""),
             created_at=workflow.created_at if workflow else None,
-            duration=sample.tr_duration,
-            num_jobs=sample.tr_log_num_jobs,
-            num_tests=sample.tr_log_tests_run_sum,
+            duration=self._get_feature(sample, "tr_duration"),
+            num_jobs=self._get_feature(sample, "tr_log_num_jobs"),
+            num_tests=self._get_feature(sample, "tr_log_tests_run_sum"),
             workflow_run_id=sample.workflow_run_id,
             features=sample.features,
             error_message=sample.error_message,
@@ -131,15 +134,15 @@ class BuildService:
             items.append(
                 BuildSummary(
                     _id=str(sample.id),
-                    build_number=sample.tr_build_number or 0,
-                    status=sample.tr_status or "unknown",
+                    build_number=self._get_feature(sample, "tr_build_number", 0),
+                    status=self._get_feature(sample, "tr_status", "unknown"),
                     extraction_status=sample.status,
-                    commit_sha=sample.tr_original_commit
+                    commit_sha=self._get_feature(sample, "tr_original_commit")
                     or (workflow.head_sha if workflow else ""),
                     created_at=workflow.created_at if workflow else None,
-                    duration=sample.tr_duration,
-                    num_jobs=sample.tr_log_num_jobs,
-                    num_tests=sample.tr_log_tests_run_sum,
+                    duration=self._get_feature(sample, "tr_duration"),
+                    num_jobs=self._get_feature(sample, "tr_log_num_jobs"),
+                    num_tests=self._get_feature(sample, "tr_log_tests_run_sum"),
                     workflow_run_id=sample.workflow_run_id,
                 )
             )
@@ -160,3 +163,4 @@ class BuildService:
             {"_id": ObjectId(build_id)}, {"$set": {"sonar_scan_status": "queued"}}
         )
         return True
+

@@ -8,7 +8,6 @@ DEFAULT_FEATURES = {
     "tr_status",
     "tr_duration",
     "tr_log_num_jobs",
-    "tr_log_tests_run_sum",
     "ci_provider",
     "gh_build_started_at",
     "gh_lang",

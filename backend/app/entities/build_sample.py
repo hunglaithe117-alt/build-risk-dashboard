@@ -1,34 +1,55 @@
 from datetime import datetime
+from enum import Enum
 from typing import List, Optional
 
 from .base import BaseEntity, PyObjectId
 
 
+class BuildStatus(str, Enum):
+    """
+    GitHub Actions workflow run conclusion.
+    Since we only import completed runs, this represents the final outcome.
+    See: https://docs.github.com/en/rest/actions/workflow-runs
+    """
+
+    # Success
+    SUCCESS = "success"
+
+    # Failure
+    FAILURE = "failure"
+
+    # Cancelled by user
+    CANCELLED = "cancelled"
+
+    # Skipped (e.g., path filters, conditional)
+    SKIPPED = "skipped"
+
+    # Timed out
+    TIMED_OUT = "timed_out"
+
+    # Neutral (neither success nor failure)
+    NEUTRAL = "neutral"
+
+
+class ExtractionStatus(str, Enum):
+    """Feature extraction pipeline status."""
+
+    PENDING = "pending"
+    COMPLETED = "completed"
+    PARTIAL = "partial"  # Some features extracted but not all (e.g., missing commit)
+    FAILED = "failed"
+
+
 class BuildSample(BaseEntity):
     repo_id: PyObjectId
     workflow_run_id: int
-    status: str = "pending"  # pending, completed, failed
+    status: str
+    extraction_status: str = ExtractionStatus.PENDING.value  # Feature extraction status
     error_message: str | None = None
     is_missing_commit: bool = False
 
-    # Dynamic Features
     features: dict = {}
 
-    tr_build_id: int | None = None
-    tr_build_number: int | None = None
-    tr_original_commit: str | None = None
-    git_trigger_commit: str | None = None
-    git_branch: str | None = None
-    tr_jobs: List[int] = []
-    tr_status: str | None = None
-    tr_duration: float | None = None
-    tr_log_num_jobs: int | None = None    
-    ci_provider: str | None = None
-    gh_build_started_at: datetime | None = None
-    gh_lang: str | None = None
-    tr_log_tests_run_sum: int | None = None
-
-    # Operational Status
     sonar_scan_status: str | None = None
 
     class Config:

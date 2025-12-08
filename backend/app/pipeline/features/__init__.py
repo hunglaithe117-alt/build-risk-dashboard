@@ -70,3 +70,4 @@ class FeatureNode(ABC):
         Useful for partial failures or when source data is missing.
         """
         return {}
+

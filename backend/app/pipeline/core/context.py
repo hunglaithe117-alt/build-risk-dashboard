@@ -165,6 +165,14 @@ class ExecutionContext:
         if result.warning:
             self.warnings.append(f"[{result.node_name}] {result.warning}")
 
+    def add_warning(self, message: str) -> None:
+        """Add a warning message."""
+        self.warnings.append(message)
+
+    def add_error(self, message: str) -> None:
+        """Add an error message."""
+        self.errors.append(message)
+
     def get_final_status(self) -> str:
         """Determine final status based on all results."""
         if any(r.is_failed for r in self.results):

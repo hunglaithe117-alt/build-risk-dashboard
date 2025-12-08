@@ -11,13 +11,18 @@ import re
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Set
+from typing import Any, Dict, Optional, Set
 
 from app.pipeline.features import FeatureNode
 from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.git_repo import GitRepoHandle
+from app.pipeline.utils.git_utils import (
+    get_commit_info,
+    get_author_email,
+    run_git,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,32 +53,35 @@ class TeamMembershipNode(FeatureNode):
             return {"gh_team_size": 0, "gh_by_core_team_member": False}
 
         repo = git_handle.repo
+        repo_path = git_handle.path
         effective_sha = git_handle.effective_sha
         build_sample = context.build_sample
         db = context.db
 
-        # Get reference date
+        # Get commit date - try GitPython first, then subprocess
+        committed_date: Optional[int] = None
         try:
             current_commit = repo.commit(effective_sha)
+            committed_date = current_commit.committed_date
         except Exception:
+            # Fallback to subprocess
+            commit_info = get_commit_info(repo_path, effective_sha)
+            committed_date = commit_info.get("committed_date")
+
+        if not committed_date:
             return {"gh_team_size": 0, "gh_by_core_team_member": False}
 
-        ref_date = getattr(build_sample, "created_at", None) or getattr(
-            build_sample, "gh_build_started_at", None
-        )
+        workflow_run = context.workflow_run
+        ref_date = getattr(workflow_run, "created_at", None) if workflow_run else None
         if not ref_date:
-            ref_date = datetime.fromtimestamp(
-                current_commit.committed_date, tz=timezone.utc
-            )
+            ref_date = datetime.fromtimestamp(committed_date, tz=timezone.utc)
         if ref_date.tzinfo is None:
             ref_date = ref_date.replace(tzinfo=timezone.utc)
 
         start_date = ref_date - timedelta(days=self.LOOKBACK_DAYS)
 
         # 1. Direct committers (excluding PR merges)
-        committer_names = self._get_direct_committers(
-            git_handle.path, start_date, ref_date
-        )
+        committer_names = self._get_direct_committers(repo_path, start_date, ref_date)
 
         # 2. PR mergers
         merger_logins = self._get_pr_mergers(
@@ -85,6 +93,8 @@ class TeamMembershipNode(FeatureNode):
 
         # Check if build author is in core team
         is_core_member = False
+
+        # Try GitPython first
         try:
             trigger_commit = repo.commit(effective_sha)
             author_name = trigger_commit.author.name
@@ -92,12 +102,32 @@ class TeamMembershipNode(FeatureNode):
             if author_name in core_team or committer_name in core_team:
                 is_core_member = True
         except Exception:
-            pass
+            # Fallback to subprocess for author/committer names
+            author_name = self._get_commit_author_name(repo_path, effective_sha)
+            committer_name = self._get_commit_committer_name(repo_path, effective_sha)
+            if author_name and author_name in core_team:
+                is_core_member = True
+            elif committer_name and committer_name in core_team:
+                is_core_member = True
 
         return {
             "gh_team_size": gh_team_size,
             "gh_by_core_team_member": is_core_member,
         }
+
+    def _get_commit_author_name(self, repo_path: Path, sha: str) -> Optional[str]:
+        """Get author name using subprocess."""
+        try:
+            return run_git(repo_path, ["log", "-1", "--format=%an", sha])
+        except Exception:
+            return None
+
+    def _get_commit_committer_name(self, repo_path: Path, sha: str) -> Optional[str]:
+        """Get committer name using subprocess."""
+        try:
+            return run_git(repo_path, ["log", "-1", "--format=%cn", sha])
+        except Exception:
+            return None
 
     def _get_direct_committers(
         self, repo_path: Path, start_date: datetime, end_date: datetime

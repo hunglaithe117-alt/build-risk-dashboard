@@ -1,16 +1,19 @@
-"""
-Feature Registry - Central registry for all feature nodes.
-
-This module provides a decorator-based registration system for feature nodes.
-Each feature node declares its dependencies and what features it provides.
-"""
-
+from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Type
 from dataclasses import dataclass, field
 import logging
 from app.pipeline.features import FeatureNode
 
 logger = logging.getLogger(__name__)
+
+
+class OutputFormat(str, Enum):
+    """Output format for list features when saving to DB."""
+
+    RAW = "raw"  # Keep as-is (list)
+    COMMA_SEPARATED = "comma"  # Join with comma: "a,b,c"
+    HASH_SEPARATED = "hash"  # Join with hash: "a#b#c" (for commit SHAs)
+    PIPE_SEPARATED = "pipe"  # Join with pipe: "a|b|c"
 
 
 @dataclass
@@ -25,27 +28,18 @@ class FeatureNodeMeta:
     group: Optional[str] = None
     enabled: bool = True
     priority: int = 0  # Higher priority = executed first when possible
+    output_formats: Dict[str, OutputFormat] = field(default_factory=dict)
 
 
 class FeatureRegistry:
     """
     Central registry for feature nodes.
-
-    Usage:
-        @register_feature(
-            name="git_commit_info",
-            requires_features={"workflow_run_data"},
-            requires_resources={"git_repo"},
-            provides={"git_all_built_commits", "git_prev_built_commit"},
-            group="git"
-        )
-        class GitCommitInfoNode(FeatureNode):
-            ...
     """
 
     def __init__(self):
         self._nodes: Dict[str, FeatureNodeMeta] = {}
         self._feature_providers: Dict[str, str] = {}  # feature_name -> node_name
+        self._output_formats: Dict[str, OutputFormat] = {}
 
     def register(
         self,
@@ -57,6 +51,7 @@ class FeatureRegistry:
         group: Optional[str] = None,
         enabled: bool = True,
         priority: int = 0,
+        output_formats: Optional[Dict[str, OutputFormat]] = None,
     ) -> None:
         """Register a feature node."""
         if name in self._nodes:
@@ -71,6 +66,7 @@ class FeatureRegistry:
             group=group,
             enabled=enabled,
             priority=priority,
+            output_formats=output_formats or {},
         )
 
         self._nodes[name] = meta
@@ -84,6 +80,9 @@ class FeatureRegistry:
                     f"now provided by '{name}'"
                 )
             self._feature_providers[feature] = name
+            # Track output format if specified
+            if output_formats and feature in output_formats:
+                self._output_formats[feature] = output_formats[feature]
 
         logger.debug(f"Registered feature node: {name}")
 
@@ -109,10 +108,40 @@ class FeatureRegistry:
         """Get all features that can be extracted."""
         return set(self._feature_providers.keys())
 
+    def get_output_format(self, feature_name: str) -> OutputFormat:
+        """Get the output format for a feature."""
+        return self._output_formats.get(feature_name, OutputFormat.RAW)
+
+    def format_features_for_storage(self, features: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Format feature values for storage in DB.
+        """
+        result = {}
+        for name, value in features.items():
+            output_format = self.get_output_format(name)
+
+            if value is None:
+                result[name] = None
+            elif isinstance(value, list):
+                if not value:
+                    result[name] = ""
+                elif output_format == OutputFormat.HASH_SEPARATED:
+                    result[name] = "#".join(str(v) for v in value)
+                elif output_format == OutputFormat.COMMA_SEPARATED:
+                    result[name] = ",".join(str(v) for v in value)
+                elif output_format == OutputFormat.PIPE_SEPARATED:
+                    result[name] = "|".join(str(v) for v in value)
+                else:
+                    # RAW - keep as list
+                    result[name] = value
+            else:
+                result[name] = value
+
+        return result
+
     def validate(self) -> List[str]:
         """
         Validate the registry for issues.
-        Returns a list of error messages.
         """
         errors = []
 
@@ -135,13 +164,6 @@ class FeatureRegistry:
     def get_dag_version(self) -> str:
         """
         Generate a hash representing the current DAG structure.
-
-        This version hash changes when:
-        - Nodes are added/removed
-        - Node dependencies change
-        - Node provides change
-
-        Useful for tracking which DAG version was used for a pipeline run.
         """
         import hashlib
 
@@ -178,10 +200,6 @@ class FeatureRegistry:
             "nodes": list(nodes.keys()),
             "groups": list(set(m.group for m in nodes.values() if m.group)),
         }
-
-    # =========================================================================
-    # Metadata Generation (for UI display)
-    # =========================================================================
 
     def _infer_category(self, feature_name: str, group: Optional[str]) -> str:
         """Infer category from feature name and group."""
@@ -284,10 +302,6 @@ class FeatureRegistry:
             result[node_name].append(feature_name)
         return result
 
-    # =========================================================================
-    # Resource Dependency Queries
-    # =========================================================================
-
     def get_features_requiring_resource(self, resource_name: str) -> Set[str]:
         """
         Get all features that require a specific resource.
@@ -333,13 +347,6 @@ class FeatureRegistry:
 
         Returns:
             True if the resource is needed, False otherwise
-
-        Example:
-            # Check if logs are needed for the requested features
-            needs_logs = registry.needs_resource_for_features(
-                "log_storage",
-                {"tr_log_tests_run_sum", "gh_diff_files_added"}
-            )
         """
         if requested_features is None:
             # No filter = all features = check if any node needs this resource
@@ -397,23 +404,23 @@ def register_feature(
     group: Optional[str] = None,
     enabled: bool = True,
     priority: int = 0,
-) -> Callable[[Type["FeatureNode"]], Type["FeatureNode"]]:
+    output_formats: Optional[Dict[str, OutputFormat]] = None,
+) -> Callable[[Type[FeatureNode]], Type[FeatureNode]]:
     """
     Decorator to register a feature node.
 
-    Example:
-        @register_feature(
-            name="build_log_features",
-            requires_resources={"log_storage", "workflow_run"},
-            provides={"tr_log_num_jobs", "tr_log_tests_run_sum", ...},
-            group="build_log"
-        )
-        class BuildLogFeaturesNode(FeatureNode):
-            async def extract(self, context: ExecutionContext) -> Dict[str, Any]:
-                ...
+    Args:
+        name: Unique node name
+        requires_features: Features this node depends on
+        requires_resources: Resources this node needs
+        provides: Features this node provides
+        group: Optional grouping
+        enabled: Whether node is active
+        priority: Execution priority (higher = first)
+        output_formats: Dict mapping feature names to OutputFormat
     """
 
-    def decorator(cls: Type["FeatureNode"]) -> Type["FeatureNode"]:
+    def decorator(cls: Type[FeatureNode]) -> Type[FeatureNode]:
         feature_registry.register(
             name=name,
             node_class=cls,
@@ -423,14 +430,16 @@ def register_feature(
             group=group,
             enabled=enabled,
             priority=priority,
+            output_formats=output_formats,
         )
-        # Store metadata on class for introspection
+
         cls._feature_meta = {
             "name": name,
             "requires_features": requires_features or set(),
             "requires_resources": requires_resources or set(),
             "provides": provides or set(),
             "group": group,
+            "output_formats": output_formats or {},
         }
         return cls
 

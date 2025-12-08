@@ -8,6 +8,8 @@ import logging
 from typing import Any, Dict
 
 from bson import ObjectId
+import redis
+import json
 
 from app.celery_app import celery_app
 from app.entities.build_sample import BuildSample
@@ -17,8 +19,7 @@ from app.repositories.workflow_run import WorkflowRunRepository
 from app.tasks.base import PipelineTask
 from app.pipeline.runner import FeaturePipeline
 from app.config import settings
-import redis
-import json
+from app.pipeline.core.registry import feature_registry
 
 logger = logging.getLogger(__name__)
 
@@ -112,9 +113,9 @@ def process_workflow_run(
             features_filter=set(feature_names),
         )
 
-        # Prepare updates for BuildSample
         updates = {}
-        updates["features"] = result.get("features", {})
+        raw_features = result.get("features", {})
+        updates["features"] = feature_registry.format_features_for_storage(raw_features)
 
         # Set status
         if result["status"] == "completed":
@@ -135,7 +136,6 @@ def process_workflow_run(
                 for w in result["warnings"]
             ):
                 updates["is_missing_commit"] = True
-
 
         # Save to database
         build_sample_repo.update_one(build_id, updates)

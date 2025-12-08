@@ -41,10 +41,7 @@ class TestFramework(str, Enum):
     CTEST = "ctest"
 
 
-class CIProvider(str, Enum):
-
-    GITHUB_ACTIONS = "github_actions"
-    TRAVIS_CI = "travis_ci"
+from app.ci_providers.models import CIProvider
 
 
 class ImportStatus(str, Enum):

@@ -34,26 +34,11 @@ STREAMING_THRESHOLD = 1000
 class ExportService:
     """
     Service for exporting build data.
-
-    Usage:
-        service = ExportService(db)
-
-        # For small datasets - stream directly
-        for chunk in service.stream_export(repo_id, format="csv"):
-            yield chunk
-
-        # For large datasets - create background job
-        job = service.create_export_job(repo_id, user_id)
-        run_export_job.delay(str(job.id))
     """
 
     def __init__(self, db: Database):
         self.db = db
         self.job_repo = ExportJobRepository(db)
-
-    # =========================================================================
-    # Query Building
-    # =========================================================================
 
     def _build_query(
         self,
@@ -77,10 +62,6 @@ class ExportService:
 
         return query
 
-    # =========================================================================
-    # Count & Size Estimation
-    # =========================================================================
-
     def estimate_row_count(
         self,
         repo_id: str,
@@ -102,10 +83,6 @@ class ExportService:
         """Determine if background job is needed based on count."""
         count = self.estimate_row_count(repo_id, start_date, end_date, build_status)
         return count > STREAMING_THRESHOLD
-
-    # =========================================================================
-    # Job Management
-    # =========================================================================
 
     def create_export_job(
         self,
@@ -138,93 +115,23 @@ class ExportService:
                 return path
         return None
 
-    # =========================================================================
-    # Row Formatting
-    # =========================================================================
-
-    # Features that contain commit SHAs - join with #
-    COMMIT_LIST_FEATURES = {
-        "git_all_built_commits",
-        "git_prev_built_commit",
-    }
-
-    # Features that contain language/framework lists - join with ,
-    LIST_FEATURES = {
-        "tr_log_lan_all",
-        "tr_log_frameworks_all",
-        "gh_lang",
-        "source_languages",
-    }
-
-    def _format_value(self, key: str, value: Any) -> Any:
-        """
-        Format a feature value for export.
-
-        - Lists of commit SHAs are joined with '#'
-        - Lists of languages/frameworks are joined with ','
-        - Other lists are joined with ','
-        - Other values are returned as-is
-        """
-        if value is None:
-            return None
-
-        if isinstance(value, list):
-            if not value:
-                return ""
-
-            # Check if this is a commit list
-            if key in self.COMMIT_LIST_FEATURES:
-                return "#".join(str(v) for v in value)
-
-            # All other lists use comma separator
-            return ",".join(str(v) for v in value)
-
-        return value
-
     def _format_row(
         self,
         doc: dict,
         features: Optional[List[str]] = None,
         all_feature_keys: Optional[Set[str]] = None,
     ) -> dict:
-        """
-        Format a MongoDB document as an export row.
-
-        Args:
-            doc: MongoDB document
-            features: Optional list of specific features to include
-            all_feature_keys: Optional set of all feature keys for consistent columns
-        """
-        # Base fields
-        row = {
-            "build_id": str(doc["_id"]),
-            "workflow_run_id": doc.get("workflow_run_id"),
-            "status": doc.get("status"),
-            "extraction_status": doc.get("extraction_status"),
-            "error_message": doc.get("error_message"),
-            "is_missing_commit": doc.get("is_missing_commit", False),
-            "created_at": (
-                doc.get("created_at").isoformat() if doc.get("created_at") else None
-            ),
-        }
-
-        # Add features with proper formatting
         feature_dict = doc.get("features", {})
+        row = {}
 
         if features:
-            # Only requested features
             for f in features:
-                raw_value = feature_dict.get(f)
-                row[f] = self._format_value(f, raw_value)
+                row[f] = feature_dict.get(f)
         elif all_feature_keys:
-            # All features with consistent keys
             for f in all_feature_keys:
-                raw_value = feature_dict.get(f)
-                row[f] = self._format_value(f, raw_value)
+                row[f] = feature_dict.get(f)
         else:
-            # All features from this document
-            for f, raw_value in feature_dict.items():
-                row[f] = self._format_value(f, raw_value)
+            row.update(feature_dict)
 
         return row
 
@@ -235,18 +142,12 @@ class ExportService:
         end_date: Optional[datetime] = None,
         build_status: Optional[str] = None,
     ) -> Set[str]:
-        """
-        Get all unique feature keys across all builds.
-
-        This ensures consistent CSV columns even when some builds
-        have different features.
-        """
         query = self._build_query(repo_id, start_date, end_date, build_status)
 
         pipeline = [
             {"$match": query},
             {"$project": {"feature_keys": {"$objectToArray": "$features"}}},
-            {"$unwind": "$feature_keys"},
+            {"$unwind": {"path": "$feature_keys", "preserveNullAndEmptyArrays": False}},
             {"$group": {"_id": None, "keys": {"$addToSet": "$feature_keys.k"}}},
         ]
 
@@ -254,10 +155,6 @@ class ExportService:
         if result:
             return set(result[0].get("keys", []))
         return set()
-
-    # =========================================================================
-    # Streaming Export (for small datasets)
-    # =========================================================================
 
     def stream_export(
         self,

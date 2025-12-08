@@ -12,8 +12,11 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
+  MoreVertical,
   Plus,
   RefreshCw,
+  RotateCcw,
+  Settings,
   X,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -29,6 +32,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { reposApi } from "@/lib/api";
 import type {
   RepoDetail,
@@ -365,55 +375,68 @@ export default function AdminReposPage() {
                         {repo.total_builds_imported.toLocaleString()}
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => handleRescan(repo, e)}
-                            disabled={
-                              rescanLoading[repo.id] ||
-                              repo.import_status === "queued" ||
-                              repo.import_status === "importing"
-                            }
-                            title="Sync New Builds"
-                          >
-                            {rescanLoading[repo.id] ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <RefreshCw className="h-4 w-4" />
-                            )}
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(e) => handleReprocess(repo, e)}
-                            disabled={
-                              reprocessLoading[repo.id] ||
-                              repo.import_status === "queued" ||
-                              repo.import_status === "importing" ||
-                              repo.total_builds_imported === 0
-                            }
-                            title="Re-extract Features"
-                          >
-                            {reprocessLoading[repo.id] ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              "Re-extract"
-                            )}
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openPanel(repo.id);
-                            }}
-                          >
-                            Settings
-                          </Button>
-                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MoreVertical className="h-4 w-4" />
+                              <span className="sr-only">Open menu</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRescan(repo, e as unknown as React.MouseEvent);
+                              }}
+                              disabled={
+                                rescanLoading[repo.id] ||
+                                repo.import_status === "queued" ||
+                                repo.import_status === "importing"
+                              }
+                            >
+                              {rescanLoading[repo.id] ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                              )}
+                              Sync New Builds
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReprocess(repo, e as unknown as React.MouseEvent);
+                              }}
+                              disabled={
+                                reprocessLoading[repo.id] ||
+                                repo.import_status === "queued" ||
+                                repo.import_status === "importing" ||
+                                repo.total_builds_imported === 0
+                              }
+                            >
+                              {reprocessLoading[repo.id] ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <RotateCcw className="mr-2 h-4 w-4" />
+                              )}
+                              Re-extract Features
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openPanel(repo.id);
+                              }}
+                            >
+                              <Settings className="mr-2 h-4 w-4" />
+                              Settings
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </td>
                     </tr>
                   ))
@@ -576,7 +599,6 @@ export default function AdminReposPage() {
                         </Button>
                       </div>
                     </div>
-
                   </div>
                 </div>
               )}

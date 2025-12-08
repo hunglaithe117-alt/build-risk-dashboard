@@ -56,6 +56,7 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
     if (pathname?.startsWith('/datasets')) return 'Projects / Datasets'
     if (pathname?.startsWith('/admin/repos')) return 'Repositories'
     if (pathname?.startsWith('/dashboard')) return 'Overview'
+    if (pathname?.startsWith('/admin/pipeline')) return 'Pipeline'
     return 'Workspace'
   }, [pathname])
 

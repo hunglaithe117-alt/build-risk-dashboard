@@ -64,6 +64,8 @@ export interface BuildDetail extends Build {
   git_num_all_built_commits?: number;
   gh_by_core_team_member?: boolean;
   gh_num_commits_on_files_touched?: number;
+  // Features object from API
+  features?: Record<string, unknown>;
 }
 
 export interface DatasetMapping {
@@ -88,7 +90,9 @@ export interface DatasetRecord {
   name: string;
   description?: string | null;
   file_name: string;
+  file_path?: string | null;
   source: string;
+  ci_provider?: CIProvider;
   rows: number;
   size_mb: number;
   columns: string[];
@@ -109,22 +113,28 @@ export interface DatasetListResponse {
   items: DatasetRecord[];
 }
 
+export interface RepoValidationItem {
+  repo_name: string;
+  status: "exists" | "not_found" | "error" | "invalid_format";
+  build_count: number;
+  message?: string | null;
+}
+
+export interface RepoValidationResponse {
+  total_repos: number;
+  valid_repos: number;
+  invalid_repos: number;
+  repos: RepoValidationItem[];
+}
+
 export interface DatasetTemplateRecord {
   id: string;
   name: string;
   description?: string | null;
-  file_name: string;
-  source: string;
-  rows: number;
-  size_mb: number;
-  columns: string[];
-  mapped_fields: DatasetMapping;
-  stats: DatasetStats;
+  feature_names: string[];
   tags: string[];
-  selected_template?: string | null;
-  selected_features: string[];
-  preview: DatasetPreviewRow[];
-  created_at?: string;
+  source: string;
+  created_at: string;
   updated_at?: string | null;
 }
 
@@ -157,6 +167,7 @@ export interface DatasetUpdatePayload {
   tags?: string[];
   selected_template?: string | null;
   selected_features?: string[];
+  ci_provider?: CIProvider;
 }
 
 export interface BuildListResponse {
@@ -225,14 +236,29 @@ export enum ScanJobStatus {
 }
 
 export enum TestFramework {
+  // Python
   PYTEST = "pytest",
   UNITTEST = "unittest",
+  // Ruby
   RSPEC = "rspec",
   MINITEST = "minitest",
   TESTUNIT = "testunit",
   CUCUMBER = "cucumber",
+  // Java
   JUNIT = "junit",
   TESTNG = "testng",
+  // JavaScript/TypeScript
+  JEST = "jest",
+  MOCHA = "mocha",
+  JASMINE = "jasmine",
+  VITEST = "vitest",
+  // Go
+  GOTEST = "gotest",
+  GOTESTSUM = "gotestsum",
+  // C/C++
+  GTEST = "gtest",
+  CATCH2 = "catch2",
+  CTEST = "ctest",
 }
 
 export type SourceLanguage = string;
@@ -251,8 +277,20 @@ export const SOURCE_LANGUAGE_PRESETS: SourceLanguage[] = [
 
 export enum CIProvider {
   GITHUB_ACTIONS = "github_actions",
+  GITLAB_CI = "gitlab_ci",
+  JENKINS = "jenkins",
+  CIRCLECI = "circleci",
   TRAVIS_CI = "travis_ci",
 }
+
+// Human-readable labels for CI providers
+export const CIProviderLabels: Record<CIProvider, string> = {
+  [CIProvider.GITHUB_ACTIONS]: "GitHub Actions",
+  [CIProvider.GITLAB_CI]: "GitLab CI",
+  [CIProvider.JENKINS]: "Jenkins",
+  [CIProvider.CIRCLECI]: "CircleCI",
+  [CIProvider.TRAVIS_CI]: "Travis CI",
+};
 
 export interface ScanJob {
   id: string;
@@ -312,10 +350,10 @@ export interface RepoImportPayload {
   test_frameworks?: string[];
   source_languages?: string[];
   ci_provider?: string;
-  feature_ids?: string[];
+  feature_names?: string[];
   max_builds?: number | null;
-  ingest_start_date?: string | null;
-  ingest_end_date?: string | null;
+  since_days?: number | null;
+  only_with_logs?: boolean;
 }
 
 export interface RepoUpdatePayload {
@@ -498,3 +536,168 @@ export interface TokenVerifyResponse {
   rate_limit_remaining?: number;
   rate_limit_limit?: number;
 }
+
+// ============================================================================
+// Pipeline Monitoring Types
+// ============================================================================
+
+export interface NodeExecutionResult {
+  node_name: string;
+  status: 'success' | 'failed' | 'skipped';
+  duration_ms: number;
+  features_extracted: string[];
+  error?: string | null;
+  warning?: string | null;
+  retry_count: number;
+}
+
+export interface PipelineRun {
+  id: string;
+  build_sample_id: string;
+  repo_id: string;
+  workflow_run_id: number;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  started_at?: string | null;
+  completed_at?: string | null;
+  duration_ms?: number | null;
+  feature_count: number;
+  nodes_executed: number;
+  nodes_failed: number;
+  nodes_skipped: number;
+  total_retries: number;
+  dag_version?: string | null;
+  errors: string[];
+  warnings: string[];
+  created_at: string;
+}
+
+export interface PipelineRunDetail extends PipelineRun {
+  features_extracted: string[];
+  node_results: NodeExecutionResult[];
+}
+
+export interface PipelineRunListResponse {
+  items: PipelineRun[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
+export interface PipelineStats {
+  total_runs: number;
+  completed: number;
+  failed: number;
+  success_rate: number;
+  avg_duration_ms: number;
+  total_features: number;
+  total_retries: number;
+  avg_nodes_executed: number;
+  period_days: number;
+}
+
+export interface DAGInfo {
+  version: string;
+  node_count: number;
+  feature_count: number;
+  nodes: string[];
+  groups: string[];
+}
+
+// ============================================================================
+// ENRICHMENT TYPES
+// ============================================================================
+
+export interface EnrichmentValidateResponse {
+  valid: boolean;
+  total_rows: number;
+  enrichable_rows: number;
+  repos_found: string[];
+  repos_missing: string[];
+  repos_invalid: string[];
+  mapping_complete: boolean;
+  missing_mappings: string[];
+  errors: string[];
+}
+
+export interface EnrichmentStartRequest {
+  selected_features: string[];
+  auto_import_repos?: boolean;
+  skip_existing?: boolean;
+}
+
+export interface EnrichmentStartResponse {
+  job_id: string;
+  status: string;
+  message: string;
+  websocket_url?: string;
+}
+
+export interface EnrichmentJob {
+  id: string;
+  dataset_id: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  total_rows: number;
+  processed_rows: number;
+  enriched_rows: number;
+  failed_rows: number;
+  skipped_rows: number;
+  progress_percent: number;
+  selected_features: string[];
+  repos_auto_imported: string[];
+  started_at?: string;
+  completed_at?: string;
+  error?: string;
+  output_file?: string;
+  created_at?: string;
+}
+
+export interface EnrichmentStatusResponse {
+  job_id: string;
+  status: string;
+  progress_percent: number;
+  processed_rows: number;
+  total_rows: number;
+  enriched_rows: number;
+  failed_rows: number;
+  repos_auto_imported: string[];
+  error?: string;
+  output_file?: string;
+  estimated_time_remaining_seconds?: number;
+}
+
+// WebSocket event types
+export interface EnrichmentProgressEvent {
+  type: "progress";
+  job_id: string;
+  processed_rows: number;
+  total_rows: number;
+  enriched_rows: number;
+  failed_rows: number;
+  progress_percent: number;
+  current_repo?: string;
+}
+
+export interface EnrichmentCompleteEvent {
+  type: "complete";
+  job_id: string;
+  status: string;
+  total_rows: number;
+  enriched_rows: number;
+  failed_rows: number;
+  output_file?: string;
+  duration_seconds?: number;
+}
+
+export interface EnrichmentErrorEvent {
+  type: "error";
+  job_id: string;
+  message: string;
+  row_index?: number;
+}
+
+export type EnrichmentWebSocketEvent =
+  | EnrichmentProgressEvent
+  | EnrichmentCompleteEvent
+  | EnrichmentErrorEvent
+  | { type: "connected"; job_id: string }
+  | { type: "heartbeat" };

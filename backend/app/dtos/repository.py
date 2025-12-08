@@ -18,7 +18,10 @@ class RepoImportRequest(BaseModel):
     )
     test_frameworks: Optional[List[str]] = Field(default=None)
     source_languages: Optional[List[str]] = Field(default=None)
-    ci_provider: Optional[str] = Field(default=None)
+    ci_provider: Optional[str] = Field(
+        default="github_actions",
+        description="CI/CD provider: github_actions, gitlab_ci, jenkins, circleci, travis_ci",
+    )
     template_id: Optional[str] = Field(
         default=None,
         description="Feature template ID to apply (overrides feature_ids)",
@@ -33,12 +36,15 @@ class RepoImportRequest(BaseModel):
         le=1000,
         description="Max number of latest workflow runs/builds to ingest",
     )
-    ingest_start_date: Optional[datetime] = Field(
-        default=None, description="Only ingest workflow runs created on/after this date"
-    )
-    ingest_end_date: Optional[datetime] = Field(
+    since_days: Optional[int] = Field(
         default=None,
-        description="Only ingest workflow runs created on/before this date",
+        ge=1,
+        le=365,
+        description="Only ingest builds from the last N days",
+    )
+    only_with_logs: bool = Field(
+        default=False,
+        description="Only ingest builds that still have logs available",
     )
 
 
@@ -90,8 +96,7 @@ class RepoUpdateRequest(BaseModel):
     notes: Optional[str] = None
     feature_names: Optional[List[str]] = None
     max_builds: Optional[int] = Field(default=None, ge=1, le=1000)
-    ingest_start_date: Optional[datetime] = None
-    ingest_end_date: Optional[datetime] = None
+    since_days: Optional[int] = Field(default=None, ge=1, le=365)
 
 
 class RepoSuggestion(BaseModel):

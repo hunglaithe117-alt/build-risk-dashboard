@@ -11,7 +11,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from app.pipeline.features import FeatureNode
-from app.pipeline.core.registry import register_feature
+from app.pipeline.core.registry import register_feature, OutputFormat
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.git_repo import GitRepoHandle
@@ -34,16 +34,14 @@ logger = logging.getLogger(__name__)
         "tr_prev_build",
     },
     group="git",
-    priority=10,  # Run early as other git features depend on this
+    priority=10,
+    output_formats={
+        "git_all_built_commits": OutputFormat.HASH_SEPARATED,
+    },
 )
 class GitCommitInfoNode(FeatureNode):
     """
     Determines which commits are part of this build.
-
-    A build may include multiple commits if:
-    - Multiple commits pushed before CI triggered
-    - Force push with new commits
-    - Merge commits
     """
 
     def extract(self, context: ExecutionContext) -> Dict[str, Any]:
@@ -76,7 +74,6 @@ class GitCommitInfoNode(FeatureNode):
     def _calculate_build_stats(
         self, db, build_sample, repo, repo_path, commit_sha: str
     ) -> Dict[str, Any]:
-        # Try GitPython first, then fallback to subprocess
         commits_hex: List[str] = [commit_sha]
         status = "no_previous_build"
         last_commit_sha: Optional[str] = None
@@ -84,7 +81,6 @@ class GitCommitInfoNode(FeatureNode):
 
         build_coll = db["build_samples"]
 
-        # Ensure repo_id is ObjectId for query
         from bson import ObjectId
 
         repo_id_query = build_sample.repo_id
@@ -94,7 +90,6 @@ class GitCommitInfoNode(FeatureNode):
         except Exception:
             pass
 
-        # Try GitPython iter_commits first
         walker = None
         use_subprocess = False
 

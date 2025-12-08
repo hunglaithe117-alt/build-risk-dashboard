@@ -2,7 +2,17 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Path as PathParam, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Path as PathParam,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from pymongo.database import Database
 
@@ -59,7 +69,10 @@ def list_datasets(
 
 
 @router.post(
-    "/", response_model=DatasetResponse, status_code=status.HTTP_201_CREATED, response_model_by_alias=False
+    "/",
+    response_model=DatasetResponse,
+    status_code=status.HTTP_201_CREATED,
+    response_model_by_alias=False,
 )
 def create_dataset(
     payload: DatasetCreateRequest,
@@ -83,6 +96,7 @@ async def upload_dataset(
     name: str | None = Form(default=None),
     description: str | None = Form(default=None),
     tags: list[str] = Form(default=[]),
+    ci_provider: str = Form(default="github_actions"),
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -102,6 +116,7 @@ async def upload_dataset(
         name=name,
         description=description,
         tags=tags,
+        ci_provider=ci_provider,
     )
 
 
@@ -145,7 +160,9 @@ def update_dataset(
 )
 def apply_template_to_dataset(
     dataset_id: str = PathParam(..., description="Dataset id (Mongo ObjectId)"),
-    template_id: str = PathParam(..., description="Dataset template id (Mongo ObjectId)"),
+    template_id: str = PathParam(
+        ..., description="Dataset template id (Mongo ObjectId)"
+    ),
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -153,6 +170,125 @@ def apply_template_to_dataset(
     user_id = str(current_user["_id"])
     service = DatasetTemplateService(db)
     return service.apply_template(dataset_id, template_id, user_id)
+
+
+@router.post(
+    "/{dataset_id}/validate-github-repos",
+    response_model_by_alias=False,
+)
+def validate_github_repos(
+    dataset_id: str = PathParam(..., description="Dataset id"),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Validate that repositories in the CSV exist on GitHub.
+
+    This checks each unique repo_name against the GitHub API to verify
+    the repository exists and is accessible.
+    """
+    import pandas as pd
+    from app.dtos import RepoValidationItem, RepoValidationResponse
+    from app.services.github.github_client import get_public_github_client
+
+    user_id = str(current_user["_id"])
+    dataset_repo = DatasetRepository(db)
+
+    dataset = dataset_repo.find_by_id(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    if dataset.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get mapping
+    mapping = dataset.get("mapped_fields", {})
+    repo_name_col = mapping.get("repo_name")
+
+    if not repo_name_col:
+        raise HTTPException(
+            status_code=400,
+            detail="repo_name column must be mapped before validation",
+        )
+
+    # Read CSV and count repos using pandas
+    file_path = dataset.get("file_path")
+    if not file_path or not Path(file_path).exists():
+        raise HTTPException(status_code=400, detail="CSV file not found")
+
+    try:
+        df = pd.read_csv(file_path, usecols=[repo_name_col], dtype=str)
+        df[repo_name_col] = df[repo_name_col].fillna("").str.strip()
+        repo_counts = df[repo_name_col].value_counts().to_dict()
+        repo_counts.pop("", None)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read CSV: {e}")
+
+    results: list[RepoValidationItem] = []
+    valid_count = 0
+    invalid_count = 0
+
+    try:
+        gh_client = get_public_github_client(db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Cannot connect to GitHub: {str(e)}",
+        )
+
+    for repo_name, count in repo_counts.items():
+        # Check format
+        if "/" not in repo_name:
+            results.append(
+                RepoValidationItem(
+                    repo_name=repo_name,
+                    status="invalid_format",
+                    build_count=count,
+                    message="Expected format: owner/repo",
+                )
+            )
+            invalid_count += 1
+            continue
+
+        # Check on GitHub
+        try:
+            gh_client.get_repository(repo_name)
+            results.append(
+                RepoValidationItem(
+                    repo_name=repo_name,
+                    status="exists",
+                    build_count=count,
+                )
+            )
+            valid_count += 1
+        except Exception as e:
+            error_msg = str(e)
+            if "404" in error_msg or "Not Found" in error_msg:
+                results.append(
+                    RepoValidationItem(
+                        repo_name=repo_name,
+                        status="not_found",
+                        build_count=count,
+                        message="Repository not found on GitHub",
+                    )
+                )
+            else:
+                results.append(
+                    RepoValidationItem(
+                        repo_name=repo_name,
+                        status="error",
+                        build_count=count,
+                        message=error_msg[:100],
+                    )
+                )
+            invalid_count += 1
+
+    return RepoValidationResponse(
+        total_repos=len(results),
+        valid_repos=valid_count,
+        invalid_repos=invalid_count,
+        repos=sorted(results, key=lambda x: (x.status != "exists", -x.build_count)),
+    )
 
 
 # ============================================================================
@@ -172,41 +308,41 @@ def validate_for_enrichment(
 ):
     """
     Validate dataset for enrichment.
-    
+
     Checks:
     - Required field mappings are complete
     - Which repositories exist in the system
     - Which repos will need to be auto-imported
     """
     import csv
-    
+
     user_id = str(current_user["_id"])
     dataset_repo = DatasetRepository(db)
     repo_repo = ImportedRepositoryRepository(db)
-    
+
     dataset = dataset_repo.find_by_id(dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    
+
     if dataset.get("user_id") != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     # Check mapping
     mapping = dataset.get("mapped_fields", {})
     required_fields = ["build_id", "repo_name"]
     missing_mappings = [f for f in required_fields if not mapping.get(f)]
     mapping_complete = len(missing_mappings) == 0
-    
+
     errors = []
     if not mapping_complete:
         errors.append(f"Missing required mappings: {', '.join(missing_mappings)}")
-    
+
     # Read CSV to check repos
     repos_found = []
     repos_missing = []
     repos_invalid = []
     total_rows = 0
-    
+
     file_path = dataset.get("file_path")
     if file_path and Path(file_path).exists():
         repo_name_col = mapping.get("repo_name")
@@ -228,7 +364,7 @@ def validate_for_enrichment(
                                 repos_found.append(repo_name)
                             else:
                                 repos_missing.append(repo_name)
-    
+
     return EnrichmentValidateResponse(
         valid=mapping_complete and len(repos_invalid) == 0,
         total_rows=total_rows,
@@ -255,7 +391,7 @@ def start_enrichment(
 ):
     """
     Start dataset enrichment job.
-    
+
     This is an async operation. Use the returned job_id to:
     - Poll /enrich/status for progress
     - Connect to WebSocket for real-time updates
@@ -263,20 +399,20 @@ def start_enrichment(
     user_id = str(current_user["_id"])
     job_repo = EnrichmentJobRepository(db)
     dataset_repo = DatasetRepository(db)
-    
+
     # Check dataset exists
     dataset = dataset_repo.find_by_id(dataset_id)
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    
+
     # Check for existing active job
     active_job = job_repo.find_active_by_dataset(dataset_id)
     if active_job:
         raise HTTPException(
             status_code=409,
-            detail=f"Enrichment already in progress (job_id: {str(active_job.id)})"
+            detail=f"Enrichment already in progress (job_id: {str(active_job.id)})",
         )
-    
+
     # Create job
     job = EnrichmentJob(
         dataset_id=dataset_id,
@@ -285,7 +421,7 @@ def start_enrichment(
         status="pending",
     )
     job = job_repo.create(job)
-    
+
     # Start Celery task
     enrich_dataset_task.delay(
         job_id=str(job.id),
@@ -295,7 +431,7 @@ def start_enrichment(
         auto_import_repos=payload.auto_import_repos,
         skip_existing=payload.skip_existing,
     )
-    
+
     return EnrichmentStartResponse(
         job_id=str(job.id),
         status="pending",
@@ -315,14 +451,14 @@ def get_enrichment_status(
 ):
     """Get current enrichment job status."""
     job_repo = EnrichmentJobRepository(db)
-    
+
     # Find most recent job for dataset
     jobs = job_repo.find_by_dataset(dataset_id)
     if not jobs:
         raise HTTPException(status_code=404, detail="No enrichment job found")
-    
+
     job = jobs[0]  # Most recent
-    
+
     return EnrichmentStatusResponse(
         job_id=str(job.id),
         status=job.status,
@@ -349,21 +485,21 @@ def cancel_enrichment(
     """Cancel running enrichment job."""
     from celery.result import AsyncResult
     from app.celery_app import celery_app
-    
+
     job_repo = EnrichmentJobRepository(db)
-    
+
     active_job = job_repo.find_active_by_dataset(dataset_id)
     if not active_job:
         raise HTTPException(status_code=404, detail="No active enrichment job")
-    
+
     # Revoke Celery task
     if active_job.celery_task_id:
         AsyncResult(active_job.celery_task_id, app=celery_app).revoke(terminate=True)
-    
+
     # Mark as cancelled
     job_repo.mark_cancelled(str(active_job.id))
     active_job.status = "cancelled"
-    
+
     return EnrichmentJobResponse(
         id=str(active_job.id),
         dataset_id=active_job.dataset_id,
@@ -386,18 +522,20 @@ def download_enriched_dataset(
 ):
     """Download enriched dataset as CSV."""
     job_repo = EnrichmentJobRepository(db)
-    
+
     # Find completed job
     jobs = job_repo.find_by_dataset(dataset_id)
-    completed_job = next((j for j in jobs if j.status == "completed" and j.output_file), None)
-    
+    completed_job = next(
+        (j for j in jobs if j.status == "completed" and j.output_file), None
+    )
+
     if not completed_job:
         raise HTTPException(status_code=404, detail="No completed enrichment found")
-    
+
     output_path = Path(completed_job.output_file)
     if not output_path.exists():
         raise HTTPException(status_code=404, detail="Enriched file not found")
-    
+
     return FileResponse(
         path=output_path,
         media_type="text/csv",
@@ -417,7 +555,7 @@ def list_enrichment_jobs(
     """List all enrichment jobs for a dataset."""
     job_repo = EnrichmentJobRepository(db)
     jobs = job_repo.find_by_dataset(dataset_id)
-    
+
     return [
         EnrichmentJobResponse(
             id=str(job.id),
@@ -438,4 +576,3 @@ def list_enrichment_jobs(
         )
         for job in jobs
     ]
-

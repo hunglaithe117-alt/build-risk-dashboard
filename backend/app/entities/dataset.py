@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from .base import BaseEntity, PyObjectId
+from app.ci_providers.models import CIProvider
 
 
 class DatasetMapping(BaseModel):
@@ -31,6 +32,10 @@ class DatasetProject(BaseEntity):
     description: Optional[str] = None
     file_name: str
     source: str = "upload"
+    ci_provider: CIProvider = Field(
+        default=CIProvider.GITHUB_ACTIONS,
+        description="CI/CD provider for build data",
+    )
     rows: int = 0
     size_mb: float = 0.0
     columns: List[str] = Field(default_factory=list)

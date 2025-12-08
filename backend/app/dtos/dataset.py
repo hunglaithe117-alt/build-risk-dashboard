@@ -28,7 +28,9 @@ class DatasetResponse(BaseModel):
     name: str
     description: Optional[str] = None
     file_name: str
+    file_path: Optional[str] = None
     source: str
+    ci_provider: str = "github_actions"
     rows: int
     size_mb: float
     columns: List[str]
@@ -75,3 +77,21 @@ class DatasetUpdateRequest(BaseModel):
     tags: Optional[List[str]] = None
     selected_template: Optional[str] = None
     selected_features: Optional[List[str]] = None
+
+
+class RepoValidationItem(BaseModel):
+    """Single repo validation result."""
+
+    repo_name: str
+    status: str  # "exists", "not_found", "error", "invalid_format"
+    build_count: int = 0  # Number of builds in CSV for this repo
+    message: Optional[str] = None
+
+
+class RepoValidationResponse(BaseModel):
+    """Response for GitHub repo validation."""
+
+    total_repos: int
+    valid_repos: int
+    invalid_repos: int
+    repos: List[RepoValidationItem]

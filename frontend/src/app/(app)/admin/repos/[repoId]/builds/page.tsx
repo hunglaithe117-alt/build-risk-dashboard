@@ -18,7 +18,6 @@ import { useCallback, useEffect, useState } from "react";
 import { BuildDrawer } from "@/components/build-drawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
     Card,
     CardContent,
@@ -29,70 +28,136 @@ import {
 import { useWebSocket } from "@/contexts/websocket-context";
 import { buildApi, reposApi } from "@/lib/api";
 import { formatDurationFromSeconds, formatTimestamp } from "@/lib/utils";
-import type { Build, RepoDetail, LazySyncPreviewResponse } from "@/types";
+import type { Build, RepoDetail } from "@/types";
+import { BuildStatus, ExtractionStatus } from "@/components/build-drawer";
+import { ExportPanel } from "./_components/ExportPanel";
 
 const PAGE_SIZE = 20;
 
 function StatusBadge({ status }: { status: string }) {
-    switch (status.toLowerCase()) {
-        case "completed":
-        case "success":
-        case "passed":
-            return (
-                <Badge variant="outline" className="border-green-500 text-green-600 gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> Passed
-                </Badge>
-            );
-        case "failed":
-        case "failure":
-            return (
-                <Badge variant="destructive" className="gap-1">
-                    <XCircle className="h-3 w-3" /> Failed
-                </Badge>
-            );
-        case "in_progress":
-        case "running":
-            return (
-                <Badge variant="default" className="bg-blue-500 hover:bg-blue-600 gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Running
-                </Badge>
-            );
-        case "queued":
-        case "pending":
-            return (
-                <Badge variant="secondary" className="gap-1">
-                    <Clock className="h-3 w-3" /> Pending
-                </Badge>
-            );
-        default:
-            return <Badge variant="secondary">{status}</Badge>;
+    const normalizedStatus = status.toLowerCase();
+
+    if (normalizedStatus === BuildStatus.SUCCESS || normalizedStatus === BuildStatus.PASSED) {
+        return (
+            <Badge variant="outline" className="border-green-500 text-green-600 gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Passed
+            </Badge>
+        );
     }
+
+    if (normalizedStatus === BuildStatus.FAILURE) {
+        return (
+            <Badge variant="destructive" className="gap-1">
+                <XCircle className="h-3 w-3" /> Failed
+            </Badge>
+        );
+    }
+
+    if ([BuildStatus.CANCELLED, "canceled"].includes(normalizedStatus as BuildStatus)) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <XCircle className="h-3 w-3" /> Cancelled
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === BuildStatus.SKIPPED) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <Clock className="h-3 w-3" /> Skipped
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === BuildStatus.TIMED_OUT) {
+        return (
+            <Badge variant="destructive" className="gap-1">
+                <Clock className="h-3 w-3" /> Timed Out
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === BuildStatus.NEUTRAL) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Neutral
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === "action_required") {
+        return (
+            <Badge variant="outline" className="border-amber-500 text-amber-600 gap-1">
+                <AlertCircle className="h-3 w-3" /> Action Required
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === "startup_failure") {
+        return (
+            <Badge variant="destructive" className="gap-1">
+                <XCircle className="h-3 w-3" /> Startup Failed
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === "stale") {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <Clock className="h-3 w-3" /> Stale
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === "queued") {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <Clock className="h-3 w-3" /> Queued
+            </Badge>
+        );
+    }
+
+    return <Badge variant="secondary">{status}</Badge>;
 }
 
 function ExtractionStatusBadge({ status }: { status: string }) {
-    switch (status.toLowerCase()) {
-        case "completed":
-            return (
-                <Badge variant="outline" className="border-green-500 text-green-600 gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> Done
-                </Badge>
-            );
-        case "failed":
-            return (
-                <Badge variant="destructive" className="gap-1">
-                    <XCircle className="h-3 w-3" /> Failed
-                </Badge>
-            );
-        case "pending":
-            return (
-                <Badge variant="secondary" className="gap-1">
-                    <Clock className="h-3 w-3" /> Pending
-                </Badge>
-            );
-        default:
-            return <Badge variant="secondary" className="text-xs">{status}</Badge>;
+    const normalizedStatus = status.toLowerCase();
+
+    if (normalizedStatus === ExtractionStatus.COMPLETED) {
+        return (
+            <Badge variant="outline" className="border-green-500 text-green-600 gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Done
+            </Badge>
+        );
     }
+
+    if (normalizedStatus === ExtractionStatus.PARTIAL) {
+        return (
+            <Badge variant="outline" className="border-amber-500 text-amber-600 gap-1">
+                <AlertCircle className="h-3 w-3" /> Partial
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === ExtractionStatus.FAILED) {
+        return (
+            <Badge variant="destructive" className="gap-1">
+                <XCircle className="h-3 w-3" /> Failed
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === ExtractionStatus.PENDING) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <Clock className="h-3 w-3" /> Pending
+            </Badge>
+        );
+    }
+
+    return <Badge variant="secondary" className="text-xs">{status}</Badge>;
 }
+
 
 export default function RepoBuildsPage() {
     const params = useParams();
@@ -248,6 +313,7 @@ export default function RepoBuildsPage() {
                             className="h-9"
                         />
                     </div>
+                    <ExportPanel repoId={repoId} repoName={repo?.full_name} />
                     <Button
                         variant="outline"
                         size="sm"

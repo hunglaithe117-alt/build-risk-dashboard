@@ -47,10 +47,8 @@ def publish_progress(job_id: str, event: Dict[str, Any]) -> None:
     try:
         client = get_redis_client()
         import json
-        client.publish(
-            f"{REDIS_CHANNEL_PREFIX}{job_id}",
-            json.dumps(event)
-        )
+
+        client.publish(f"{REDIS_CHANNEL_PREFIX}{job_id}", json.dumps(event))
     except Exception as e:
         logger.warning(f"Failed to publish progress event: {e}")
 
@@ -139,13 +137,18 @@ def enrich_dataset_task(
             try:
                 repo_name = row.get(repo_name_col, "").strip()
                 build_id = row.get(build_id_col, "").strip()
-                commit_sha = row.get(commit_sha_col, "").strip() if commit_sha_col else None
+                commit_sha = (
+                    row.get(commit_sha_col, "").strip() if commit_sha_col else None
+                )
 
                 if not repo_name or not build_id:
                     failed += 1
                     job_repo.update_progress(
-                        job_id, processed + 1, enriched, failed,
-                        {"row_index": idx, "error": "Missing repo_name or build_id"}
+                        job_id,
+                        processed + 1,
+                        enriched,
+                        failed,
+                        {"row_index": idx, "error": "Missing repo_name or build_id"},
                     )
                     processed += 1
                     continue
@@ -160,12 +163,18 @@ def enrich_dataset_task(
                         if repo:
                             repos_imported.add(repo_name)
                             job_repo.add_auto_imported_repo(job_id, repo_name)
-                    
+
                     if not repo:
                         failed += 1
                         job_repo.update_progress(
-                            job_id, processed + 1, enriched, failed,
-                            {"row_index": idx, "error": f"Repository not found: {repo_name}"}
+                            job_id,
+                            processed + 1,
+                            enriched,
+                            failed,
+                            {
+                                "row_index": idx,
+                                "error": f"Repository not found: {repo_name}",
+                            },
                         )
                         processed += 1
                         continue
@@ -178,10 +187,12 @@ def enrich_dataset_task(
                 if existing_build and skip_existing:
                     # Already has features, skip
                     skipped += 1
-                    enriched_rows.append({
-                        **row,
-                        **existing_build.features,
-                    })
+                    enriched_rows.append(
+                        {
+                            **row,
+                            **existing_build.features,
+                        }
+                    )
                     processed += 1
                     continue
 
@@ -206,42 +217,56 @@ def enrich_dataset_task(
                     build_sample=build_sample,
                     repo=repo,
                     workflow_run=workflow_run,
-                    features_filter=set(selected_features) if selected_features else None,
+                    features_filter=(
+                        set(selected_features) if selected_features else None
+                    ),
                 )
 
                 if result["status"] == "completed":
-                    # Save features to build sample
-                    build_repo.update_features(
-                        str(build_sample.id),
+                    # Format features for storage (convert lists to strings)
+                    from app.pipeline.core.registry import feature_registry
+
+                    formatted_features = feature_registry.format_features_for_storage(
                         result["features"]
                     )
+
+                    # Save features to build sample
+                    build_repo.update_features(str(build_sample.id), formatted_features)
                     enriched += 1
-                    enriched_rows.append({
-                        **row,
-                        **result["features"],
-                    })
+                    enriched_rows.append(
+                        {
+                            **row,
+                            **formatted_features,
+                        }
+                    )
                 else:
                     failed += 1
                     error_msg = result.get("errors", ["Unknown error"])[0]
                     job_repo.update_progress(
-                        job_id, processed + 1, enriched, failed,
-                        {"row_index": idx, "error": error_msg}
+                        job_id,
+                        processed + 1,
+                        enriched,
+                        failed,
+                        {"row_index": idx, "error": error_msg},
                     )
 
                 processed += 1
 
                 # Emit progress every 10 rows
                 if processed % 10 == 0 or processed == total_rows:
-                    publish_progress(job_id, {
-                        "type": "progress",
-                        "job_id": job_id,
-                        "processed_rows": processed,
-                        "total_rows": total_rows,
-                        "enriched_rows": enriched,
-                        "failed_rows": failed,
-                        "progress_percent": (processed / total_rows) * 100,
-                        "current_repo": repo_name,
-                    })
+                    publish_progress(
+                        job_id,
+                        {
+                            "type": "progress",
+                            "job_id": job_id,
+                            "processed_rows": processed,
+                            "total_rows": total_rows,
+                            "enriched_rows": enriched,
+                            "failed_rows": failed,
+                            "progress_percent": (processed / total_rows) * 100,
+                            "current_repo": repo_name,
+                        },
+                    )
                     job_repo.update_progress(job_id, processed, enriched, failed)
 
             except Exception as e:
@@ -249,33 +274,42 @@ def enrich_dataset_task(
                 failed += 1
                 processed += 1
                 job_repo.update_progress(
-                    job_id, processed, enriched, failed,
-                    {"row_index": idx, "error": str(e)}
+                    job_id,
+                    processed,
+                    enriched,
+                    failed,
+                    {"row_index": idx, "error": str(e)},
                 )
 
         # Write enriched CSV
         output_file = _write_enriched_csv(csv_path, enriched_rows, selected_features)
 
         # Mark job complete
-        job_repo.update_one(job_id, {
-            "processed_rows": processed,
-            "enriched_rows": enriched,
-            "failed_rows": failed,
-            "skipped_rows": skipped,
-            "repos_auto_imported": list(repos_imported),
-        })
+        job_repo.update_one(
+            job_id,
+            {
+                "processed_rows": processed,
+                "enriched_rows": enriched,
+                "failed_rows": failed,
+                "skipped_rows": skipped,
+                "repos_auto_imported": list(repos_imported),
+            },
+        )
         job_repo.mark_completed(job_id, output_file=str(output_file))
 
         # Emit completion event
-        publish_progress(job_id, {
-            "type": "complete",
-            "job_id": job_id,
-            "status": "completed",
-            "total_rows": total_rows,
-            "enriched_rows": enriched,
-            "failed_rows": failed,
-            "output_file": str(output_file),
-        })
+        publish_progress(
+            job_id,
+            {
+                "type": "complete",
+                "job_id": job_id,
+                "status": "completed",
+                "total_rows": total_rows,
+                "enriched_rows": enriched,
+                "failed_rows": failed,
+                "output_file": str(output_file),
+            },
+        )
 
         return {
             "status": "completed",
@@ -288,12 +322,15 @@ def enrich_dataset_task(
     except Exception as e:
         logger.error(f"Enrichment task failed: {e}", exc_info=True)
         job_repo.mark_failed(job_id, str(e))
-        
-        publish_progress(job_id, {
-            "type": "error",
-            "job_id": job_id,
-            "message": str(e),
-        })
+
+        publish_progress(
+            job_id,
+            {
+                "type": "error",
+                "job_id": job_id,
+                "message": str(e),
+            },
+        )
 
         return {
             "status": "failed",
@@ -352,7 +389,7 @@ def _get_or_create_workflow_run(
 ) -> Optional[WorkflowRunRaw]:
     """
     Get or create a workflow run record.
-    
+
     In production, this would fetch from GitHub API.
     For now, create a minimal placeholder.
     """
@@ -399,7 +436,7 @@ def _write_enriched_csv(
     # Create output path
     output_dir = original_path.parent / "enriched"
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     output_path = output_dir / f"{original_path.stem}_enriched.csv"
 
     if not enriched_rows:

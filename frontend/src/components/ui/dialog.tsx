@@ -4,6 +4,10 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+const DialogContext = React.createContext<{
+    onOpenChange: (open: boolean) => void;
+} | null>(null);
+
 interface DialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -11,21 +15,59 @@ interface DialogProps {
 }
 
 const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
-    if (!open) return null;
+    // Separate trigger from content
+    const triggerChild = React.Children.toArray(children).find(
+        (child) => React.isValidElement(child) && child.type === DialogTrigger
+    );
+
+    const contentChildren = React.Children.toArray(children).filter(
+        (child) => !(React.isValidElement(child) && child.type === DialogTrigger)
+    );
 
     return (
-        <div className="fixed inset-0 z-50">
-            <div
-                className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-                onClick={() => onOpenChange(false)}
-            />
-            <div className="fixed inset-0 overflow-y-auto">
-                <div className="flex min-h-full items-center justify-center p-4">
-                    {children}
+        <DialogContext.Provider value={{ onOpenChange }}>
+            {triggerChild}
+
+            {open && (
+                <div className="fixed inset-0 z-50">
+                    <div
+                        className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+                        onClick={() => onOpenChange(false)}
+                    />
+                    <div className="fixed inset-0 overflow-y-auto">
+                        <div className="flex min-h-full items-center justify-center p-4">
+                            {contentChildren}
+                        </div>
+                    </div>
                 </div>
-            </div>
-        </div>
+            )}
+        </DialogContext.Provider>
     );
+};
+
+interface DialogTriggerProps {
+    children: React.ReactNode;
+    asChild?: boolean;
+}
+
+const DialogTrigger = ({ children, asChild }: DialogTriggerProps) => {
+    const context = React.useContext(DialogContext);
+
+    if (!context) {
+        throw new Error("DialogTrigger must be used within a Dialog");
+    }
+
+    const handleClick = () => {
+        context.onOpenChange(true);
+    };
+
+    if (asChild && React.isValidElement(children)) {
+        return React.cloneElement(children as React.ReactElement<any>, {
+            onClick: handleClick,
+        });
+    }
+
+    return <button onClick={handleClick}>{children}</button>;
 };
 
 const DialogContent = React.forwardRef<
@@ -108,4 +150,5 @@ export {
     DialogFooter,
     DialogHeader,
     DialogTitle,
+    DialogTrigger,
 };

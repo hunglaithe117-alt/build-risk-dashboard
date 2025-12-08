@@ -241,6 +241,32 @@ export default function TokensPage() {
                         <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
                         Refresh
                     </Button>
+                    <Button
+                        variant="outline"
+                        onClick={async () => {
+                            try {
+                                setLoading(true);
+                                const result = await tokensApi.refreshAll();
+                                toast({
+                                    title: "Rate Limits Updated",
+                                    description: `${result.refreshed} tokens refreshed, ${result.failed} failed`,
+                                });
+                                fetchData();
+                            } catch (error) {
+                                toast({
+                                    title: "Error",
+                                    description: "Failed to refresh rate limits",
+                                    variant: "destructive",
+                                });
+                            } finally {
+                                setLoading(false);
+                            }
+                        }}
+                        disabled={loading}
+                    >
+                        <Activity className={`w-4 h-4 mr-2 ${loading ? "animate-pulse" : ""}`} />
+                        Sync Rate Limits
+                    </Button>
                     <Button onClick={() => setShowAddModal(true)}>
                         <Plus className="w-4 h-4 mr-2" />
                         Add Token
@@ -321,6 +347,43 @@ export default function TokensPage() {
                             {poolStatus.next_reset_at && (
                                 <span className="ml-1">Next reset in {formatResetTime(poolStatus.next_reset_at)}.</span>
                             )}
+                        </CardDescription>
+                    </CardHeader>
+                </Card>
+            )}
+
+            {/* Exhausted Requests Alert */}
+            {poolStatus && poolStatus.estimated_requests_available === 0 && poolStatus.pool_healthy && (
+                <Card className="border-orange-500 bg-orange-50 dark:bg-orange-950">
+                    <CardHeader className="pb-2">
+                        <div className="flex items-center gap-2">
+                            <AlertCircle className="w-5 h-5 text-orange-600" />
+                            <CardTitle className="text-orange-600">All Requests Exhausted</CardTitle>
+                        </div>
+                        <CardDescription className="text-orange-600/80">
+                            All tokens have reached their rate limit (0 requests remaining).
+                            You cannot make API calls until the rate limits reset.
+                            {poolStatus.next_reset_at && (
+                                <span className="block mt-1 font-medium">
+                                    Next reset in {formatResetTime(poolStatus.next_reset_at)}.
+                                </span>
+                            )}
+                        </CardDescription>
+                    </CardHeader>
+                </Card>
+            )}
+
+            {/* Low Quota Warning */}
+            {poolStatus && poolStatus.estimated_requests_available > 0 && poolStatus.estimated_requests_available < 500 && (
+                <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+                    <CardHeader className="pb-2">
+                        <div className="flex items-center gap-2">
+                            <AlertCircle className="w-5 h-5 text-yellow-600" />
+                            <CardTitle className="text-yellow-600">Low Quota Warning</CardTitle>
+                        </div>
+                        <CardDescription className="text-yellow-600/80">
+                            Only {poolStatus.estimated_requests_available.toLocaleString()} requests remaining.
+                            Consider adding more tokens or waiting for rate limits to reset.
                         </CardDescription>
                     </CardHeader>
                 </Card>

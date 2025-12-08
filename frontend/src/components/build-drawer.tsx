@@ -30,38 +30,170 @@ const Portal = ({ children }: { children: React.ReactNode }) => {
     return createPortal(children, document.body);
 };
 
-function StatusBadge({ status }: { status: string }) {
-    switch (status.toLowerCase()) {
-        case "completed":
-        case "success":
-        case "passed":
-            return (
-                <Badge variant="outline" className="border-green-500 text-green-600 gap-1">
-                    <CheckCircle2 className="h-3 w-3" /> Passed
-                </Badge>
-            );
-        case "failed":
-        case "failure":
-            return (
-                <Badge variant="destructive" className="gap-1">
-                    <XCircle className="h-3 w-3" /> Failed
-                </Badge>
-            );
-        case "in_progress":
-        case "running":
-            return (
-                <Badge variant="default" className="bg-blue-500 hover:bg-blue-600 gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Running
-                </Badge>
-            );
-        default:
-            return (
-                <Badge variant="secondary" className="gap-1">
-                    <Clock className="h-3 w-3" /> {status}
-                </Badge>
-            );
-    }
+// Build status enum matching backend - represents workflow run conclusion
+export enum BuildStatus {
+    SUCCESS = "success",
+    PASSED = "passed",
+    FAILURE = "failure",
+    CANCELLED = "cancelled",
+    SKIPPED = "skipped",
+    TIMED_OUT = "timed_out",
+    NEUTRAL = "neutral",
+    ACTION_REQUIRED = "action_required",
+    STARTUP_FAILURE = "startup_failure",
+    STALE = "stale",
+    QUEUED = "queued",
 }
+
+// Extraction status enum matching backend
+export enum ExtractionStatus {
+    PENDING = "pending",
+    COMPLETED = "completed",
+    PARTIAL = "partial",
+    FAILED = "failed",
+}
+
+function StatusBadge({ status }: { status: string }) {
+    const normalizedStatus = status.toLowerCase();
+
+    // Success / Passed
+    if (normalizedStatus === BuildStatus.SUCCESS || normalizedStatus === BuildStatus.PASSED) {
+        return (
+            <Badge variant="outline" className="border-green-500 text-green-600 gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Passed
+            </Badge>
+        );
+    }
+
+    // Failure
+    if (normalizedStatus === BuildStatus.FAILURE) {
+        return (
+            <Badge variant="destructive" className="gap-1">
+                <XCircle className="h-3 w-3" /> Failed
+            </Badge>
+        );
+    }
+
+    // Cancelled
+    if ([BuildStatus.CANCELLED, "canceled"].includes(normalizedStatus as BuildStatus)) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <XCircle className="h-3 w-3" /> Cancelled
+            </Badge>
+        );
+    }
+
+    // Skipped
+    if (normalizedStatus === BuildStatus.SKIPPED) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <Clock className="h-3 w-3" /> Skipped
+            </Badge>
+        );
+    }
+
+    // Timed out
+    if (normalizedStatus === BuildStatus.TIMED_OUT) {
+        return (
+            <Badge variant="destructive" className="gap-1">
+                <Clock className="h-3 w-3" /> Timed Out
+            </Badge>
+        );
+    }
+
+    // Neutral
+    if (normalizedStatus === BuildStatus.NEUTRAL) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Neutral
+            </Badge>
+        );
+    }
+
+    // Action Required
+    if (normalizedStatus === BuildStatus.ACTION_REQUIRED) {
+        return (
+            <Badge variant="outline" className="border-amber-500 text-amber-600 gap-1">
+                <AlertTriangle className="h-3 w-3" /> Action Required
+            </Badge>
+        );
+    }
+
+    // Startup Failure
+    if (normalizedStatus === BuildStatus.STARTUP_FAILURE) {
+        return (
+            <Badge variant="destructive" className="gap-1">
+                <XCircle className="h-3 w-3" /> Startup Failed
+            </Badge>
+        );
+    }
+
+    // Stale
+    if (normalizedStatus === BuildStatus.STALE) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <Clock className="h-3 w-3" /> Stale
+            </Badge>
+        );
+    }
+
+    // Queued
+    if (normalizedStatus === BuildStatus.QUEUED) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <Clock className="h-3 w-3" /> Queued
+            </Badge>
+        );
+    }
+
+    // Default fallback
+    return (
+        <Badge variant="secondary" className="gap-1">
+            <Clock className="h-3 w-3" /> {status}
+        </Badge>
+    );
+}
+
+function ExtractionStatusBadge({ status }: { status: string }) {
+    const normalizedStatus = status.toLowerCase();
+
+    if (normalizedStatus === ExtractionStatus.COMPLETED) {
+        return (
+            <Badge variant="outline" className="border-green-500 text-green-600 gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Done
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === ExtractionStatus.PARTIAL) {
+        return (
+            <Badge variant="outline" className="border-amber-500 text-amber-600 gap-1">
+                <AlertTriangle className="h-3 w-3" /> Partial
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === ExtractionStatus.FAILED) {
+        return (
+            <Badge variant="destructive" className="gap-1">
+                <XCircle className="h-3 w-3" /> Failed
+            </Badge>
+        );
+    }
+
+    if (normalizedStatus === ExtractionStatus.PENDING) {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <Clock className="h-3 w-3" /> Pending
+            </Badge>
+        );
+    }
+
+    return (
+        <Badge variant="secondary" className="text-xs">{status}</Badge>
+    );
+}
+
 
 interface BuildDrawerProps {
     repoId: string;
@@ -98,6 +230,16 @@ export function BuildDrawer({ repoId, buildId, onClose }: BuildDrawerProps) {
     }, [repoId, buildId]);
 
     if (!buildId) return null;
+
+    // Helper to get feature value with fallback
+    const f = build?.features || {};
+    // Type-safe helper to extract feature values as renderable types
+    const feat = (key: string): string | number | null => {
+        const value = f[key];
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'string' || typeof value === 'number') return value;
+        return String(value);
+    };
 
     return (
         <Portal>
@@ -166,22 +308,22 @@ export function BuildDrawer({ repoId, buildId, onClose }: BuildDrawerProps) {
                                             </div>
                                             <div>
                                                 <p className="text-xs text-muted-foreground">Jobs</p>
-                                                <p className="font-medium">{build.num_jobs ?? "—"}</p>
+                                                <p className="font-medium">{build.num_jobs ?? feat("tr_log_num_jobs") ?? "—"}</p>
                                             </div>
                                             <div>
                                                 <p className="text-xs text-muted-foreground">Tests</p>
-                                                <p className="font-medium">{build.num_tests ?? "—"}</p>
+                                                <p className="font-medium">{build.num_tests ?? feat("tr_log_tests_run_sum") ?? "—"}</p>
                                             </div>
                                             <div>
-                                                <p className="text-xs text-muted-foreground">Commit Age</p>
+                                                <p className="text-xs text-muted-foreground">Repo Age</p>
                                                 <p className="font-medium">
-                                                    {build.gh_repo_age ? `${build.gh_repo_age.toFixed(1)} days` : "—"}
+                                                    {feat("gh_repo_age") ? `${Number(feat("gh_repo_age")).toFixed(0)} days` : "—"}
                                                 </p>
                                             </div>
                                             <div>
                                                 <p className="text-xs text-muted-foreground">Total Commits</p>
                                                 <p className="font-medium">
-                                                    {build.gh_repo_num_commits ?? "—"}
+                                                    {feat("gh_repo_num_commits") ?? "—"}
                                                 </p>
                                             </div>
                                         </div>
@@ -201,19 +343,19 @@ export function BuildDrawer({ repoId, buildId, onClose }: BuildDrawerProps) {
                                                     <div className="flex justify-between text-sm">
                                                         <span>Added</span>
                                                         <span className="font-mono text-green-600">
-                                                            +{build.gh_diff_files_added ?? 0}
+                                                            +{feat("gh_diff_files_added") ?? 0}
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between text-sm">
                                                         <span>Modified</span>
                                                         <span className="font-mono text-blue-600">
-                                                            ~{build.gh_diff_files_modified ?? 0}
+                                                            ~{feat("gh_diff_files_modified") ?? 0}
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between text-sm">
                                                         <span>Deleted</span>
                                                         <span className="font-mono text-red-600">
-                                                            -{build.gh_diff_files_deleted ?? 0}
+                                                            -{feat("gh_diff_files_deleted") ?? 0}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -227,13 +369,13 @@ export function BuildDrawer({ repoId, buildId, onClose }: BuildDrawerProps) {
                                                     <div className="flex justify-between text-sm">
                                                         <span>Tests Added</span>
                                                         <span className="font-mono text-green-600">
-                                                            +{build.gh_diff_tests_added ?? 0}
+                                                            +{feat("gh_diff_tests_added") ?? 0}
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between text-sm">
                                                         <span>Tests Deleted</span>
                                                         <span className="font-mono text-red-600">
-                                                            -{build.gh_diff_tests_deleted ?? 0}
+                                                            -{feat("gh_diff_tests_deleted") ?? 0}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -254,14 +396,14 @@ export function BuildDrawer({ repoId, buildId, onClose }: BuildDrawerProps) {
                                                 <div className="mt-2 space-y-2 text-sm">
                                                     <div className="flex justify-between">
                                                         <span>Team Size (3m)</span>
-                                                        <span className="font-medium">{build.gh_team_size ?? "—"}</span>
+                                                        <span className="font-medium">{feat("gh_team_size") ?? "—"}</span>
                                                     </div>
                                                     <div className="flex justify-between">
                                                         <span>Core Member</span>
                                                         <span className="font-medium">
-                                                            {build.gh_by_core_team_member === true
+                                                            {feat("gh_by_core_team_member") === "true" || feat("gh_by_core_team_member") === 1
                                                                 ? "Yes"
-                                                                : build.gh_by_core_team_member === false
+                                                                : feat("gh_by_core_team_member") === "false" || feat("gh_by_core_team_member") === 0
                                                                     ? "No"
                                                                     : "—"}
                                                         </span>
@@ -277,19 +419,19 @@ export function BuildDrawer({ repoId, buildId, onClose }: BuildDrawerProps) {
                                                     <div className="flex justify-between">
                                                         <span>Commits in Build</span>
                                                         <span className="font-medium">
-                                                            {build.git_num_all_built_commits ?? "—"}
+                                                            {feat("git_num_all_built_commits") ?? "—"}
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between">
                                                         <span>Prev Build ID</span>
                                                         <span className="font-medium">
-                                                            {build.tr_prev_build ? `#${build.tr_prev_build}` : "—"}
+                                                            {feat("tr_prev_build") ? `#${feat("tr_prev_build")}` : "—"}
                                                         </span>
                                                     </div>
                                                     <div className="flex justify-between">
                                                         <span>Prev Resolution</span>
                                                         <span className="font-medium text-xs">
-                                                            {build.git_prev_commit_resolution_status ?? "—"}
+                                                            {feat("git_prev_commit_resolution_status") ?? "—"}
                                                         </span>
                                                     </div>
                                                 </div>
@@ -299,7 +441,7 @@ export function BuildDrawer({ repoId, buildId, onClose }: BuildDrawerProps) {
                                                 <div className="flex justify-between text-sm">
                                                     <span className="text-muted-foreground">Commits on touched files (3m)</span>
                                                     <span className="font-medium">
-                                                        {build.gh_num_commits_on_files_touched ?? "—"}
+                                                        {feat("gh_num_commits_on_files_touched") ?? "—"}
                                                     </span>
                                                 </div>
                                             </div>
@@ -315,19 +457,19 @@ export function BuildDrawer({ repoId, buildId, onClose }: BuildDrawerProps) {
                                             <div className="rounded-lg border bg-slate-50 p-3 dark:bg-slate-900/50">
                                                 <p className="text-xs text-muted-foreground">Source Churn</p>
                                                 <p className="text-lg font-semibold">
-                                                    {build.git_diff_src_churn ?? 0}
+                                                    {feat("git_diff_src_churn") ?? 0}
                                                 </p>
                                             </div>
                                             <div className="rounded-lg border bg-slate-50 p-3 dark:bg-slate-900/50">
                                                 <p className="text-xs text-muted-foreground">Test Churn</p>
                                                 <p className="text-lg font-semibold">
-                                                    {build.git_diff_test_churn ?? 0}
+                                                    {feat("git_diff_test_churn") ?? 0}
                                                 </p>
                                             </div>
                                             <div className="rounded-lg border bg-slate-50 p-3 dark:bg-slate-900/50">
                                                 <p className="text-xs text-muted-foreground">SLOC</p>
                                                 <p className="text-lg font-semibold">
-                                                    {build.gh_sloc?.toLocaleString() ?? "—"}
+                                                    {feat("gh_sloc") ? Number(feat("gh_sloc")).toLocaleString() : "—"}
                                                 </p>
                                             </div>
                                         </div>

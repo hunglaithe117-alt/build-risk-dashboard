@@ -79,12 +79,12 @@ class RepositoryService:
                         "installation_id": installation_id,
                         "test_frameworks": payload.test_frameworks,
                         "source_languages": payload.source_languages,
-                        "ci_provider": payload.ci_provider,
+                        "ci_provider": payload.ci_provider or "github_actions",
                         "import_status": ImportStatus.QUEUED.value,
-                        "requested_feature_names": resolved_features,  # Now stores feature names
+                        "requested_feature_names": resolved_features,
                         "max_builds_to_ingest": payload.max_builds,
-                        "ingest_start_date": payload.ingest_start_date,
-                        "ingest_end_date": payload.ingest_end_date,
+                        "since_days": payload.since_days,
+                        "only_with_logs": payload.only_with_logs,
                     },
                 )
 
@@ -96,19 +96,11 @@ class RepositoryService:
                     provider=payload.provider,
                     test_frameworks=payload.test_frameworks,
                     source_languages=payload.source_languages,
-                    ci_provider=payload.ci_provider,
-                    feature_names=payload.feature_names,
+                    ci_provider=payload.ci_provider or "github_actions",
+                    feature_names=resolved_features,
                     max_builds=payload.max_builds,
-                    ingest_start_date=(
-                        payload.ingest_start_date.isoformat()
-                        if payload.ingest_start_date
-                        else None
-                    ),
-                    ingest_end_date=(
-                        payload.ingest_end_date.isoformat()
-                        if payload.ingest_end_date
-                        else None
-                    ),
+                    since_days=payload.since_days,
+                    only_with_logs=payload.only_with_logs,
                 )
 
                 results.append(repo_doc)
@@ -249,17 +241,10 @@ class RepositoryService:
             )
 
         updates = payload.model_dump(exclude_unset=True)
-        # Map user-facing keys to stored fields
         if "feature_ids" in updates:
-            updates["requested_feature_ids"] = updates.pop(
-                "feature_ids"
-            )  # Now stores strings
+            updates["requested_feature_ids"] = updates.pop("feature_ids")
         if "max_builds" in updates:
             updates["max_builds_to_ingest"] = updates.pop("max_builds")
-        if "ingest_start_date" in updates:
-            updates["ingest_start_date"] = updates["ingest_start_date"]
-        if "ingest_end_date" in updates:
-            updates["ingest_end_date"] = updates["ingest_end_date"]
 
         if not updates:
             updated = repo_doc

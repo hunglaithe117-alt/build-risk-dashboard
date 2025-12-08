@@ -32,6 +32,23 @@ class Settings(BaseSettings):
     ]
     FRONTEND_BASE_URL: str = "http://localhost:3000"
 
+    # GitLab CI
+    GITLAB_TOKEN: Optional[str] = None
+    GITLAB_BASE_URL: str = "https://gitlab.com/api/v4"
+
+    # Jenkins
+    JENKINS_URL: Optional[str] = None
+    JENKINS_USERNAME: Optional[str] = None
+    JENKINS_TOKEN: Optional[str] = None
+
+    # CircleCI
+    CIRCLECI_TOKEN: Optional[str] = None
+    CIRCLECI_BASE_URL: str = "https://circleci.com/api/v2"
+
+    # Travis CI
+    TRAVIS_TOKEN: Optional[str] = None
+    TRAVIS_BASE_URL: str = "https://api.travis-ci.com"
+
     # ML Model
     # MODEL_PATH: str = "./app/ml/models/bayesian_cnn.pth"
 

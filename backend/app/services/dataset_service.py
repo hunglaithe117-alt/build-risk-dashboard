@@ -1,10 +1,10 @@
-import csv
 import logging
 from datetime import datetime, timezone
-from io import StringIO
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 from uuid import uuid4
+
+import pandas as pd
 
 from bson import ObjectId
 from fastapi import HTTPException, status
@@ -21,7 +21,7 @@ from app.repositories.dataset_repository import DatasetRepository
 logger = logging.getLogger(__name__)
 DATASET_DIR = Path("../repo-data/datasets")
 DATASET_DIR.mkdir(parents=True, exist_ok=True)
-REQUIRED_MAPPING_FIELDS = ["build_id", "commit_sha", "repo_name"]
+REQUIRED_MAPPING_FIELDS = ["build_id", "repo_name"]
 
 
 class DatasetService:
@@ -71,7 +71,9 @@ class DatasetService:
     def get_dataset(self, dataset_id: str, user_id: str) -> DatasetResponse:
         dataset = self.repo.find_by_id(dataset_id)
         if not dataset or (dataset.user_id and str(dataset.user_id) != user_id):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+            )
         return self._serialize(dataset)
 
     def create_dataset(
@@ -92,7 +94,9 @@ class DatasetService:
     ) -> DatasetResponse:
         dataset = self.repo.find_by_id(dataset_id)
         if not dataset or (dataset.user_id and str(dataset.user_id) != user_id):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+            )
 
         payload_dict = payload.model_dump(exclude_none=True)
         updates = {}
@@ -132,6 +136,7 @@ class DatasetService:
 
     def _guess_mapping(self, columns: Sequence[str]) -> Dict[str, Optional[str]]:
         """Best-effort mapping for required fields based on column names."""
+
         def find_match(options: Sequence[str]) -> Optional[str]:
             lowered = [c.lower() for c in columns]
             for opt in options:
@@ -143,14 +148,8 @@ class DatasetService:
             "build_id": find_match(
                 ["build_id", "build id", "id", "workflow_run_id", "run_id"]
             ),
-            "commit_sha": find_match(
-                ["commit_sha", "commit sha", "commit", "sha", "revision"]
-            ),
             "repo_name": find_match(
                 ["repo", "repository", "repo_name", "full_name", "project"]
-            ),
-            "timestamp": find_match(
-                ["timestamp", "started_at", "queued_at", "created_at", "time", "date"]
             ),
         }
 
@@ -162,6 +161,7 @@ class DatasetService:
         name: Optional[str] = None,
         description: Optional[str] = None,
         tags: Optional[Sequence[str]] = None,
+        ci_provider: str = "github_actions",
     ) -> DatasetResponse:
         """
         Create a dataset record from an uploaded CSV, streaming to disk to avoid large memory use.
@@ -188,33 +188,25 @@ class DatasetService:
                 detail=f"Failed to persist uploaded file: {exc}",
             )
 
-        # Parse header and preview from disk
         try:
-            with temp_path.open("r", newline="", encoding="utf-8", errors="ignore") as f:
-                reader = csv.reader(f)
-                try:
-                    header = next(reader)
-                except StopIteration:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST, detail="CSV file is empty"
-                    )
+            df_preview = pd.read_csv(temp_path, nrows=5, dtype=str)
 
-                columns = [col.strip() for col in header if col]
-                if not columns:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="CSV header is missing or invalid",
-                    )
+            columns = list(df_preview.columns)
+            if not columns:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="CSV header is missing or invalid",
+                )
 
-                preview = []
+            preview = df_preview.head(3).fillna("").to_dict(orient="records")
+
+            row_count = (
+                sum(1 for _ in open(temp_path, "r", encoding="utf-8", errors="ignore"))
+                - 1
+            )
+            if row_count < 0:
                 row_count = 0
-                for row in reader:
-                    row_count += 1
-                    if len(preview) < 3:
-                        entry = {}
-                        for idx, col in enumerate(columns):
-                            entry[col] = row[idx] if idx < len(row) else ""
-                        preview.append(entry)
+
         except HTTPException:
             temp_path.unlink(missing_ok=True)
             raise
@@ -226,18 +218,22 @@ class DatasetService:
             )
 
         mapping = self._guess_mapping(columns)
-        self._validate_required_mapping(mapping, columns)
-
         size_mb = round(size_bytes / 1024 / 1024, 2)
         coverage = len([v for v in mapping.values() if v]) / 4 if mapping else 0
 
         now = datetime.now(timezone.utc)
+
+        # Prepare final file path (will be set after moving temp file)
+        final_path = DATASET_DIR / f"pending_{uuid4()}_{filename}"
+
         document: Dict[str, Any] = {
             "user_id": ObjectId(user_id),
             "name": name or filename.rsplit(".", 1)[0],
             "description": description,
             "file_name": filename,
+            "file_path": str(final_path.resolve()),  # Store file path for enrichment
             "source": "upload",
+            "ci_provider": ci_provider,
             "rows": row_count,
             "size_mb": size_mb,
             "columns": columns,
@@ -258,6 +254,7 @@ class DatasetService:
 
         dataset = self.repo.insert_one(document)
 
+        # Move temp file to final location with dataset ID
         final_path = DATASET_DIR / f"{dataset.id}_{filename}"
         try:
             temp_path.rename(final_path)

@@ -1,10 +1,11 @@
 from app.entities.imported_repository import ImportStatus
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Set, Optional
 from bson import ObjectId
 from pathlib import Path
 import time
+import asyncio
 
 from app.celery_app import celery_app
 from app.services.github.github_client import get_app_github_client
@@ -15,7 +16,12 @@ from app.repositories.workflow_run import WorkflowRunRepository
 from app.entities.workflow_run import WorkflowRunRaw
 from app.pipeline.core.registry import feature_registry
 from app.pipeline.resources import ResourceNames
-
+from app.ci_providers import (
+    CIProvider,
+    get_provider_config,
+    get_ci_provider,
+)
+from app.services.github.github_client import get_public_github_client
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +46,8 @@ def import_repo(
     ci_provider: str = "github_actions",
     feature_names: list[str] | None = None,
     max_builds: int | None = None,
-    ingest_start_date: str | None = None,
-    ingest_end_date: str | None = None,
+    since_days: int | None = None,
+    only_with_logs: bool = False,
 ) -> Dict[str, Any]:
     import json
     from app.config import settings
@@ -69,19 +75,9 @@ def import_repo(
         except Exception as e:
             logger.error(f"Failed to publish status update: {e}")
 
-    # 1. Fetch metadata
-    from datetime import datetime
-
-    def _parse_date(val: str | None):
-        if not val:
-            return None
-        try:
-            return datetime.fromisoformat(val.replace("Z", "+00:00"))
-        except Exception:
-            return None
-
-    start_dt = _parse_date(ingest_start_date)
-    end_dt = _parse_date(ingest_end_date)
+    since_dt = None
+    if since_days:
+        since_dt = datetime.now(timezone.utc) - timedelta(days=since_days)
 
     try:
         # Find existing repo to get ID (it should exist now)
@@ -114,8 +110,8 @@ def import_repo(
                     "import_status": ImportStatus.IMPORTING.value,
                     "requested_feature_names": feature_names or [],
                     "max_builds_to_ingest": max_builds,
-                    "ingest_start_date": start_dt,
-                    "ingest_end_date": end_dt,
+                    "since_days": since_days,
+                    "only_with_logs": only_with_logs,
                 },
             )
             repo_id = str(repo_doc.id)
@@ -131,9 +127,6 @@ def import_repo(
         if installation_id:
             client_context = get_app_github_client(self.db, installation_id)
         else:
-            # Public repo import using system tokens
-            from app.services.github.github_client import get_public_github_client
-
             client_context = get_public_github_client()
 
         with client_context as gh:
@@ -172,11 +165,12 @@ def import_repo(
                     "source_languages": source_languages or detected_languages,
                     "ci_provider": ci_provider or "github_actions",
                     "import_status": ImportStatus.IMPORTING.value,
-                    "ingest_end_date": end_dt,
+                    "since_days": since_days,
+                    "only_with_logs": only_with_logs,
                     "requested_feature_names": feature_names or [],
                 },
             )
-            publish_status(repo_id, "importing", "Fetching workflow runs...")
+            publish_status(repo_id, "importing", "Fetching builds from CI provider...")
 
             total_runs = 0
             latest_run_created_at = None
@@ -187,53 +181,62 @@ def import_repo(
             last_synced_run_ts = None
             if current_repo_doc and current_repo_doc.latest_synced_run_created_at:
                 last_synced_run_ts = current_repo_doc.latest_synced_run_created_at
-                # Ensure timezone awareness
                 if last_synced_run_ts.tzinfo is None:
                     last_synced_run_ts = last_synced_run_ts.replace(tzinfo=timezone.utc)
 
-            # Metadata Collection (Newest -> Oldest)
-            # Only fetch completed workflow runs (not in_progress, queued, action_required, etc.)
-            for run in gh.paginate_workflow_runs(
-                full_name, params={"per_page": 100, "status": "completed"}
-            ):
-                run_id = run.get("id")
-                created_at_str = run.get("created_at")
-                if created_at_str:
-                    run_created_at = datetime.fromisoformat(
-                        created_at_str.replace("Z", "+00:00")
-                    )
-                    if start_dt and run_created_at < start_dt:
-                        continue
-                    if end_dt and run_created_at > end_dt:
-                        continue
+            ci_provider_enum = CIProvider(ci_provider)
+            provider_config = get_provider_config(ci_provider_enum)
 
-                # Filter out bot-triggered workflow runs (e.g., Dependabot, github-actions[bot])
-                triggering_actor = run.get("triggering_actor", {})
-                actor_type = triggering_actor.get("type")
-                if actor_type == "Bot":
-                    logger.info(
-                        f"Skipping bot-triggered run {run_id} in {full_name} (triggered by {triggering_actor.get('login', 'unknown bot')})"
-                    )
+            # For GitHub with installation, use installation token
+            if ci_provider_enum == CIProvider.GITHUB_ACTIONS and installation_id:
+                provider_config.token = gh._get_token()
+
+            ci_provider_instance = get_ci_provider(
+                ci_provider_enum, provider_config, db=db
+            )
+
+            # Run async fetch in sync context
+            # When limit is None, only_with_logs determines if we should
+            # only fetch builds that still have downloadable logs
+            builds = asyncio.get_event_loop().run_until_complete(
+                ci_provider_instance.fetch_builds(
+                    full_name,
+                    since=since_dt,
+                    limit=max_builds,
+                    only_with_logs=(max_builds is None),
+                    exclude_bots=True,  # Skip bot commits (dependabot, renovate, etc.)
+                )
+            )
+
+            logger.info(
+                f"Fetched {len(builds)} builds from {ci_provider} for {full_name}"
+            )
+
+            for build in builds:
+                run_id = build.build_id
+                run_created_at = build.created_at
+
+                # Filter by since_days
+                if since_dt and run_created_at and run_created_at < since_dt:
                     continue
 
+                # Create WorkflowRunRaw from BuildData
                 workflow_run = WorkflowRunRaw(
                     repo_id=ObjectId(repo_id),
-                    workflow_run_id=run_id,
-                    head_sha=run.get("head_sha"),
-                    run_number=run.get("run_number"),
-                    status=run.get("status"),
-                    conclusion=run.get("conclusion"),
-                    created_at=datetime.fromisoformat(
-                        run.get("created_at").replace("Z", "+00:00")
-                    ),
-                    updated_at=datetime.fromisoformat(
-                        run.get("updated_at").replace("Z", "+00:00")
-                    ),
-                    raw_payload=run,
+                    workflow_run_id=int(run_id) if run_id.isdigit() else hash(run_id),
+                    head_sha=build.commit_sha,
+                    run_number=build.build_number,
+                    status=build.status,
+                    conclusion=build.conclusion,
+                    created_at=run_created_at or datetime.now(timezone.utc),
+                    updated_at=run_created_at or datetime.now(timezone.utc),
+                    raw_payload=build.raw_data or {},
                     log_fetched=False,
                 )
 
-                existing = workflow_run_repo.find_by_repo_and_run_id(repo_id, run_id)
+                existing = workflow_run_repo.find_by_repo_and_run_id(
+                    repo_id, workflow_run.workflow_run_id
+                )
 
                 if existing:
                     if (
@@ -260,14 +263,19 @@ def import_repo(
                 else:
                     workflow_run_repo.insert_one(workflow_run)
 
-                run_created_at = workflow_run.created_at
-                if (
-                    latest_run_created_at is None
-                    or run_created_at > latest_run_created_at
-                ):
-                    latest_run_created_at = run_created_at
+                if run_created_at:
+                    if (
+                        latest_run_created_at is None
+                        or run_created_at > latest_run_created_at
+                    ):
+                        latest_run_created_at = run_created_at
 
-                runs_to_process.append((run_created_at, run_id))
+                runs_to_process.append(
+                    (
+                        run_created_at or datetime.now(timezone.utc),
+                        workflow_run.workflow_run_id,
+                    )
+                )
                 total_runs += 1
 
                 if max_builds and total_runs >= max_builds:

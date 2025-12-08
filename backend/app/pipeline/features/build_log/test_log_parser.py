@@ -11,7 +11,7 @@ Extracts test results from CI build logs:
 from typing import Any, Dict, Set
 
 from app.pipeline.features import FeatureNode
-from app.pipeline.core.registry import register_feature
+from app.pipeline.core.registry import register_feature, OutputFormat
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.log_storage import LogStorageHandle
@@ -32,6 +32,9 @@ from app.pipeline.log_parsers import TestLogParser
     },
     group="build_log",
     priority=5,  # Lower priority - requires expensive log parsing
+    output_formats={
+        "tr_log_frameworks_all": OutputFormat.COMMA_SEPARATED,
+    },
 )
 class TestLogParserNode(FeatureNode):
     """Parses CI logs to extract test results."""

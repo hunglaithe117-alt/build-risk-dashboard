@@ -42,6 +42,8 @@ from .dataset import (
     DatasetListResponse,
     DatasetCreateRequest,
     DatasetUpdateRequest,
+    RepoValidationItem,
+    RepoValidationResponse,
 )
 from .dataset_template import (
     DatasetTemplateResponse,
@@ -114,6 +116,8 @@ __all__ = [
     "DatasetListResponse",
     "DatasetCreateRequest",
     "DatasetUpdateRequest",
+    "RepoValidationItem",
+    "RepoValidationResponse",
     # Dataset templates
     "DatasetTemplateResponse",
     "DatasetTemplateListResponse",
@@ -144,4 +148,3 @@ __all__ = [
     "EnrichmentProgressEvent",
     "EnrichmentCompleteEvent",
 ]
-

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { BadgeCheck, Database, Home, Key } from "lucide-react";
+import { Activity, BadgeCheck, Database, Home, Key } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 const navigation = [
@@ -21,7 +21,12 @@ const navigation = [
     icon: BadgeCheck,
   },
   {
-    label: "GitHub Tokens",
+    label: "Pipeline Runs",
+    href: "/admin/pipeline",
+    icon: Activity,
+  },
+  {
+    label: "Public GitHub Tokens",
     href: "/admin/tokens",
     icon: Key,
   },

@@ -6,7 +6,6 @@ import {
     AlertCircle,
     CheckCircle2,
     Loader2,
-    RefreshCw,
     Search,
     X,
     Globe,
@@ -21,7 +20,6 @@ import { integrationApi, reposApi, featuresApi, datasetsApi } from "@/lib/api";
 import {
     RepoSuggestion,
     RepoImportPayload,
-    TestFramework,
     CIProvider,
     FeatureDefinitionSummary,
     DatasetTemplateRecord,
@@ -48,13 +46,6 @@ type FeatureCategoryGroup = {
     category: string;
     display_name: string;
     features: FeatureDefinitionSummary[];
-};
-
-// Map languages to suggested test frameworks
-const FRAMEWORKS_BY_LANG: Record<string, string[]> = {
-    python: [TestFramework.PYTEST, TestFramework.UNITTEST],
-    ruby: [TestFramework.RSPEC, TestFramework.MINITEST, TestFramework.TESTUNIT, TestFramework.CUCUMBER],
-    java: [TestFramework.JUNIT, TestFramework.TESTNG],
 };
 
 
@@ -84,8 +75,9 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
             test_frameworks: string[];
             source_languages: string[];
             ci_provider: string;
-            feature_ids: string[];  // FeatureDefinition ObjectIds
+            feature_names: string[];  // FeatureDefinition names
             max_builds?: number | null;
+            since_days?: number | null;
         }>
     >({});
     const [languageLoading, setLanguageLoading] = useState<Record<string, boolean>>({});
@@ -233,18 +225,6 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
         }
     }, [isOpen, performSearch, loadFrameworks]);
 
-    const handleSync = async () => {
-        setIsSearching(true);
-        try {
-            await reposApi.sync();
-            await performSearch(searchTerm, true);
-        } catch (err) {
-            console.error(err);
-            setSearchError("Failed to sync repositories from GitHub.");
-            setIsSearching(false);
-        }
-    };
-
     const [supportedLanguages, setSupportedLanguages] = useState<string[]>([]);
 
     useEffect(() => {
@@ -263,7 +243,6 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                 const res = await reposApi.detectLanguages(repo.full_name);
                 const detected = res.languages || [];
 
-                // Filter by supported languages if loaded
                 const validLangs = supportedLanguages.length > 0
                     ? detected.filter(l => supportedLanguages.some(sl => sl.toLowerCase() === l.toLowerCase()))
                     : detected;
@@ -272,14 +251,13 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
 
                 setRepoConfigs((current) => {
                     const existing = current[repo.full_name];
-                    const hasExistingLangs = existing?.source_languages?.length > 0;
                     return {
                         ...current,
                         [repo.full_name]: {
                             test_frameworks: existing?.test_frameworks || [],
-                            source_languages: hasExistingLangs ? existing.source_languages : validLangs,
+                            source_languages: existing?.source_languages || [],
                             ci_provider: existing?.ci_provider || CIProvider.GITHUB_ACTIONS,
-                            feature_ids: existing?.feature_ids || [],
+                            feature_names: existing?.feature_names || [],
                             max_builds: existing?.max_builds ?? null,
                         },
                     };
@@ -302,8 +280,29 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
             const next = { ...prev };
             if (next[repo.full_name]) {
                 delete next[repo.full_name];
-                // Remove config
+                // Remove config and all related states
                 setRepoConfigs((current) => {
+                    const updated = { ...current };
+                    delete updated[repo.full_name];
+                    return updated;
+                });
+                // Clean up related states to prevent stale data
+                setAvailableLanguages((current) => {
+                    const updated = { ...current };
+                    delete updated[repo.full_name];
+                    return updated;
+                });
+                setLanguageLoading((current) => {
+                    const updated = { ...current };
+                    delete updated[repo.full_name];
+                    return updated;
+                });
+                setLanguageError((current) => {
+                    const updated = { ...current };
+                    delete updated[repo.full_name];
+                    return updated;
+                });
+                setFeatureSearch((current) => {
                     const updated = { ...current };
                     delete updated[repo.full_name];
                     return updated;
@@ -317,10 +316,9 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                         test_frameworks: [],
                         source_languages: [],
                         ci_provider: CIProvider.GITHUB_ACTIONS,
-                        feature_ids: [],
+                        feature_names: [],
                         max_builds: null,
-                        ingest_start_date: null,
-                        ingest_end_date: null,
+                        since_days: null,
                     },
                 }));
             }
@@ -354,18 +352,18 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
             source_languages: string[];
         }) => {
             const languageSet = new Set(config.source_languages.map((l) => l.toLowerCase()));
+            // Get frameworks from API data based on selected languages
             const fromApi = Array.from(
                 new Set(
-                    Array.from(languageSet).flatMap((lang) => frameworksByLang[lang] || [])
-                )
-            );
-            const fromPreset = Array.from(
-                new Set(
-                    Array.from(languageSet).flatMap((lang) => FRAMEWORKS_BY_LANG[lang] || [])
+                    Array.from(languageSet).flatMap((lang) => {
+                        // Try exact match first, then try aliases (e.g., "c++" -> "cpp")
+                        return frameworksByLang[lang] ||
+                            frameworksByLang[lang.replace("+", "p")] ||
+                            [];
+                    })
                 )
             );
             if (fromApi.length) return fromApi;
-            if (fromPreset.length) return fromPreset;
             return frameworks || [];
         },
         [frameworksByLang, frameworks]
@@ -404,10 +402,9 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                     test_frameworks: config.test_frameworks,
                     source_languages: config.source_languages,
                     ci_provider: config.ci_provider,
-                    feature_ids: config.feature_ids,
+                    feature_names: config.feature_names,
                     max_builds: config.max_builds ?? null,
-                    ingest_start_date: (config as any).ingest_start_date || null,
-                    ingest_end_date: (config as any).ingest_end_date || null,
+                    since_days: config.since_days ?? null,
                 };
             });
 
@@ -565,25 +562,15 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                     <div className="flex-1 overflow-y-auto">
                         {step === 1 ? (
                             <div className="space-y-6">
-                                <div className="flex gap-2">
-                                    <div className="relative flex-1">
-                                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                        <input
-                                            type="text"
-                                            className="w-full rounded-lg border border-slate-200 bg-transparent pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-0 focus:border-primary"
-                                            placeholder="Search repositories (e.g. owner/repo)..."
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                        />
-                                    </div>
-                                    <Button
-                                        variant="outline"
-                                        onClick={handleSync}
-                                        title="Sync private repositories from GitHub App"
-                                        disabled={isSearching}
-                                    >
-                                        <RefreshCw className={`h-4 w-4 ${isSearching ? "animate-spin" : ""}`} />
-                                    </Button>
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                    <input
+                                        type="text"
+                                        className="w-full rounded-lg border border-slate-200 bg-transparent pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-0 focus:border-primary"
+                                        placeholder="Search repositories (e.g. owner/repo)..."
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                    />
                                 </div>
                                 {selectedList.length > 0 && (
                                     <div className="rounded-lg border bg-slate-50 dark:bg-slate-900/30 px-3 py-2">
@@ -716,7 +703,7 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                                                         test_frameworks: [],
                                                         source_languages: [],
                                                         ci_provider: CIProvider.GITHUB_ACTIONS,
-                                                        feature_ids: [],
+                                                        feature_names: [],
                                                         max_builds: null,
                                                     }
                                                 }
@@ -755,23 +742,21 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                                             onSearchChange={(repoName, val) =>
                                                 setFeatureSearch((prev) => ({ ...prev, [repoName]: val }))
                                             }
-                                            onUpdateFeatures={(fullName, featureIds) =>
+                                            onUpdateFeatures={(fullName, featureNames) =>
                                                 setRepoConfigs((prev) => ({
                                                     ...prev,
                                                     [fullName]: {
                                                         ...prev[fullName],
-                                                        feature_ids: featureIds,
+                                                        feature_names: featureNames,
                                                     },
                                                 }))
                                             }
-                                            onApplyTemplate={(fullName, featureIds) =>
+                                            onApplyTemplate={(fullName, featureNames) =>
                                                 setRepoConfigs((prev) => ({
                                                     ...prev,
                                                     [fullName]: {
                                                         ...prev[fullName],
-                                                        feature_ids: Array.from(
-                                                            new Set([...(prev[fullName]?.feature_ids || []), ...featureIds])
-                                                        ),
+                                                        feature_names: featureNames, // Overwrite selection
                                                     },
                                                 }))
                                             }
@@ -805,7 +790,7 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                                     onClick={() => setStep(2)}
                                     disabled={selectedList.length === 0 || frameworksLoading || anyLanguageLoading}
                                 >
-                                    Next ({selectedList.length})
+                                    Next
                                 </Button>
                             ) : step === 2 ? (
                                 <Button
@@ -817,7 +802,7 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                                         selectedList.length === 0
                                     }
                                 >
-                                    Next (Features)
+                                    Next
                                 </Button>
                             ) : (
                                 <Button
@@ -893,8 +878,7 @@ function RepoConfigItem({
         ci_provider: string;
         features?: string[];
         max_builds?: number | null;
-        ingest_start_date?: string | null;
-        ingest_end_date?: string | null;
+        since_days?: number | null;
     };
     languageLoading?: boolean;
     languageError?: string | null;
@@ -959,7 +943,7 @@ function RepoConfigItem({
                                 ? availableFrameworks
                                 : frameworks && frameworks.length
                                     ? frameworks
-                                    : Object.values(TestFramework)
+                                    : []
                             ).map((fw) => (
                                 <label key={fw} className="flex items-center gap-2 text-sm cursor-pointer">
                                     <input
@@ -1050,40 +1034,34 @@ function RepoConfigItem({
                 <p className="text-xs text-muted-foreground">
                     Leave blank to ingest all available workflow runs.
                 </p>
-                <div className="grid grid-cols-2 gap-4 mt-3">
-                    <div className="space-y-1">
-                        <label className="text-xs font-semibold text-muted-foreground uppercase block">
-                            Start Date
-                        </label>
-                        <Input
-                            type="date"
-                            value={config.ingest_start_date || ""}
-                            onChange={(e) =>
-                                onChange({
-                                    ...config,
-                                    ingest_start_date: e.target.value || null,
-                                })
-                            }
-                            className="[&::-webkit-calendar-picker-indicator]:ml-auto"
-                        />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-xs font-semibold text-muted-foreground uppercase block">
-                            End Date
-                        </label>
-                        <Input
-                            type="date"
-                            value={config.ingest_end_date || ""}
-                            onChange={(e) =>
-                                onChange({
-                                    ...config,
-                                    ingest_end_date: e.target.value || null,
-                                })
-                            }
-                            className="[&::-webkit-calendar-picker-indicator]:ml-auto"
-                        />
-                    </div>
-                </div>
+            </div>
+
+            <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase mb-2 block">
+                    Since
+                </label>
+                <select
+                    className="w-full rounded-lg border bg-transparent px-3 py-2 text-sm"
+                    value={config.since_days || ""}
+                    onChange={(e) =>
+                        onChange({
+                            ...config,
+                            since_days: e.target.value ? Number(e.target.value) : null,
+                        })
+                    }
+                >
+                    <option value="">All time (no limit)</option>
+                    <option value="7">Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="60">Last 60 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="180">Last 6 months</option>
+                    <option value="365">Last year</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                    Only ingest builds from the selected time period.
+                </p>
             </div>
 
             <div>
@@ -1096,7 +1074,14 @@ function RepoConfigItem({
                     onChange={(e) => onChange({ ...config, ci_provider: e.target.value })}
                 >
                     <option value={CIProvider.GITHUB_ACTIONS}>GitHub Actions</option>
+                    <option value={CIProvider.GITLAB_CI}>GitLab CI</option>
+                    <option value={CIProvider.JENKINS}>Jenkins</option>
+                    <option value={CIProvider.CIRCLECI}>CircleCI</option>
+                    <option value={CIProvider.TRAVIS_CI}>Travis CI</option>
                 </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                    Select the CI/CD system used by this repository.
+                </p>
             </div>
         </div>
     );
@@ -1118,15 +1103,15 @@ function FeaturesStep({
     onLoadDAG,
 }: {
     selectedList: RepoSuggestion[];
-    repoConfigs: Record<string, { feature_ids?: string[] }>;
+    repoConfigs: Record<string, { feature_names?: string[] }>;
     availableFeatures: FeatureCategoryGroup[] | null;
     featuresLoading: boolean;
     featuresError: string | null;
     templates: DatasetTemplateRecord[];
     searchTerms: Record<string, string>;
     onSearchChange: (fullName: string, value: string) => void;
-    onUpdateFeatures: (fullName: string, featureIds: string[]) => void;
-    onApplyTemplate: (fullName: string, featureIds: string[]) => void;
+    onUpdateFeatures: (fullName: string, featureNames: string[]) => void;
+    onApplyTemplate: (fullName: string, featureNames: string[]) => void;
     dagData: FeatureDAGData | null;
     dagLoading: boolean;
     onLoadDAG: () => void;
@@ -1165,19 +1150,21 @@ function FeaturesStep({
     };
 
     // Mappings for ID <-> Name resolution
-    const { nameToId, idToName, idLabels } = useMemo(() => {
+    const { nameToId, idToName, idLabels, nameLabels } = useMemo(() => {
         const n2i: Record<string, string> = {};
         const i2n: Record<string, string> = {};
-        const labels: Record<string, string> = {};
+        const labels: Record<string, string> = {}; // ID/Name -> Label mapping (since keys for nameLabels will be names)
+
 
         groupedFeatures.forEach((cat) => {
             cat.features.forEach((feat) => {
                 n2i[feat.name] = feat.id;
                 i2n[feat.id] = feat.name;
                 labels[feat.id] = feat.display_name || feat.name;
+                labels[feat.name] = feat.display_name || feat.name; // Add name mapping too
             });
         });
-        return { nameToId: n2i, idToName: i2n, idLabels: labels };
+        return { nameToId: n2i, idToName: i2n, idLabels: labels, nameLabels: labels };
     }, [groupedFeatures]);
 
     // Get node labels from DAG data
@@ -1190,20 +1177,18 @@ function FeaturesStep({
     }, [dagData]);
 
     // Get active (selected) nodes based on selected features
-    const getActiveNodes = useCallback((selectedIds: string[]): Set<string> => {
+    const getActiveNodes = useCallback((selectedNames: string[]): Set<string> => {
         if (!dagData) return new Set();
-        // Convert IDs to names for DAG comparison
-        const selectedNames = new Set(
-            selectedIds.map(id => idToName[id]).filter((n): n is string => !!n)
-        );
+        const selectedSet = new Set(selectedNames);
         const active = new Set<string>();
         dagData.nodes.forEach((node) => {
-            if (node.features.some((f) => selectedNames.has(f))) {
+            // Check if ANY of the feature names in the node are selected
+            if (node.features.some((f) => selectedSet.has(f))) {
                 active.add(node.id);
             }
         });
         return active;
-    }, [dagData, idToName]);
+    }, [dagData]);
 
     return (
         <div className="space-y-4">
@@ -1256,7 +1241,7 @@ function FeaturesStep({
             ) : null}
 
             {selectedList.map((repo) => {
-                const current = repoConfigs[repo.full_name]?.feature_ids || [];
+                const current = repoConfigs[repo.full_name]?.feature_names || [];
                 const searchTerm = searchTerms[repo.full_name] || "";
                 const activeNodes = getActiveNodes(current);
 
@@ -1319,7 +1304,7 @@ function FeaturesStep({
                                                             >
                                                                 <div className="flex items-center justify-between">
                                                                     <span className="font-medium text-sm">{tpl.name}</span>
-                                                                    <Badge variant="secondary" className="text-[10px]">{tpl.selected_features.length} feats</Badge>
+                                                                    <Badge variant="secondary" className="text-[10px]">{(tpl.feature_names || []).length} feats</Badge>
                                                                 </div>
                                                                 <span className="text-xs text-muted-foreground line-clamp-1">{tpl.description}</span>
                                                             </div>
@@ -1335,10 +1320,8 @@ function FeaturesStep({
                                                 const tplId = searchTerms[tplSelIdKey];
                                                 const tpl = templates.find(t => t.id === tplId);
                                                 if (tpl) {
-                                                    const ids = tpl.selected_features
-                                                        .map(name => nameToId[name])
-                                                        .filter((id): id is string => !!id);
-                                                    onApplyTemplate(repo.full_name, ids);
+                                                    const selectedFeatures = tpl.feature_names || [];
+                                                    onApplyTemplate(repo.full_name, selectedFeatures);
                                                 }
                                             }}
                                         >
@@ -1357,7 +1340,7 @@ function FeaturesStep({
                                                 <div className="font-medium">Selected: {tpl.name}</div>
                                                 <p className="text-muted-foreground text-xs">{tpl.description}</p>
                                                 <div className="flex flex-wrap gap-1">
-                                                    {tpl.tags.map((b) => (
+                                                    {(tpl.tags || []).map((b) => (
                                                         <Badge key={b} variant="outline" className="text-[10px]">
                                                             {b}
                                                         </Badge>
@@ -1376,10 +1359,9 @@ function FeaturesStep({
                                 <FeatureDAGVisualization
                                     className="w-full h-[500px]"
                                     dagData={dagData}
-                                    selectedFeatures={current.map(id => idToName[id]).filter((n): n is string => !!n)}
+                                    selectedFeatures={current}
                                     onFeaturesChange={(names) => {
-                                        const ids = names.map(n => nameToId[n]).filter((id): id is string => !!id);
-                                        onUpdateFeatures(repo.full_name, ids);
+                                        onUpdateFeatures(repo.full_name, names);
                                     }}
                                     isLoading={dagLoading}
                                 />
@@ -1387,11 +1369,12 @@ function FeaturesStep({
                                 {/* Selected Features Panel */}
                                 <SelectedFeaturesPanel
                                     selectedFeatures={current}
-                                    featureLabels={idLabels}
-                                    onRemove={(featureId) =>
+                                    featureLabels={nameLabels}
+
+                                    onRemove={(featureName) =>
                                         onUpdateFeatures(
                                             repo.full_name,
-                                            current.filter((id) => id !== featureId)
+                                            current.filter((name) => name !== featureName)
                                         )
                                     }
                                     onClear={() => onUpdateFeatures(repo.full_name, [])}
@@ -1468,11 +1451,11 @@ function FeaturesStep({
                                                                 className="flex items-start gap-2 rounded-lg border border-transparent p-2 hover:border-slate-200 dark:hover:border-slate-800"
                                                             >
                                                                 <Checkbox
-                                                                    checked={current.includes(feat.id)}
-                                                                    onChange={() => {
-                                                                        const next = current.includes(feat.id)
-                                                                            ? current.filter((id) => id !== feat.id)
-                                                                            : [...current, feat.id];
+                                                                    checked={current.includes(feat.name)}
+                                                                    onCheckedChange={() => {
+                                                                        const next = current.includes(feat.name)
+                                                                            ? current.filter((n) => n !== feat.name)
+                                                                            : [...current, feat.name];
                                                                         onUpdateFeatures(repo.full_name, next);
                                                                     }}
                                                                 />

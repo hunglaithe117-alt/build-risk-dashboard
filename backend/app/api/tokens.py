@@ -1,8 +1,9 @@
 """GitHub Token management API endpoints."""
 
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, Path, HTTPException, status, Body
 from pymongo.database import Database
+from pydantic import BaseModel
 
 from app.database.mongo import get_db
 from app.middleware.auth import get_current_user
@@ -22,12 +23,122 @@ from app.services.github.github_token_manager import (
     get_public_token_by_id,
     get_tokens_pool_status,
     verify_github_token,
+    get_token_rate_limit,
     hash_token,
     mask_token,
+    get_raw_token_from_cache,
     PublicTokenStatus,
 )
 
 router = APIRouter(prefix="/tokens", tags=["GitHub Tokens"])
+
+
+class RefreshAllResponse(BaseModel):
+    """Response for refresh all tokens."""
+
+    refreshed: int
+    failed: int
+    results: List[dict]
+
+
+@router.post("/refresh-all", response_model=RefreshAllResponse)
+async def refresh_all_tokens(
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Refresh rate limit info for all tokens by querying GitHub API.
+
+    Uses tokens from in-memory cache (seeded from GITHUB_TOKENS env var).
+    This is the recommended way to update token stats.
+    """
+    from datetime import datetime, timezone
+    from bson import ObjectId
+
+    tokens = list(
+        db.github_tokens.find({"status": {"$ne": PublicTokenStatus.DISABLED}})
+    )
+    results = []
+    refreshed = 0
+    failed = 0
+
+    for token_doc in tokens:
+        token_id = str(token_doc["_id"])
+        token_hash = token_doc.get("token_hash")
+
+        if not token_hash:
+            results.append({"id": token_id, "success": False, "error": "No token hash"})
+            failed += 1
+            continue
+
+        # Get raw token from cache
+        raw_token = get_raw_token_from_cache(token_hash)
+        if not raw_token:
+            results.append(
+                {
+                    "id": token_id,
+                    "success": False,
+                    "error": "Token not in cache (add to GITHUB_TOKENS env var)",
+                }
+            )
+            failed += 1
+            continue
+
+        # Query GitHub API for rate limit
+        rate_limit_info = await get_token_rate_limit(raw_token)
+
+        if rate_limit_info:
+            update_data = {
+                "rate_limit_remaining": rate_limit_info["remaining"],
+                "rate_limit_limit": rate_limit_info["limit"],
+                "rate_limit_reset_at": rate_limit_info["reset_at"],
+                "last_validated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            }
+
+            # Update status based on remaining
+            if rate_limit_info["remaining"] == 0:
+                update_data["status"] = PublicTokenStatus.RATE_LIMITED
+            else:
+                update_data["status"] = PublicTokenStatus.ACTIVE
+                update_data["validation_error"] = None
+
+            db.github_tokens.update_one(
+                {"_id": ObjectId(token_id)},
+                {"$set": update_data},
+            )
+
+            results.append(
+                {
+                    "id": token_id,
+                    "success": True,
+                    "remaining": rate_limit_info["remaining"],
+                    "limit": rate_limit_info["limit"],
+                }
+            )
+            refreshed += 1
+        else:
+            # Token might be invalid
+            db.github_tokens.update_one(
+                {"_id": ObjectId(token_id)},
+                {
+                    "$set": {
+                        "status": PublicTokenStatus.INVALID,
+                        "validation_error": "Failed to get rate limit",
+                        "last_validated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+            results.append(
+                {
+                    "id": token_id,
+                    "success": False,
+                    "error": "Failed to get rate limit from GitHub API",
+                }
+            )
+            failed += 1
+
+    return RefreshAllResponse(refreshed=refreshed, failed=failed, results=results)
 
 
 @router.get("/", response_model=TokenListResponse)

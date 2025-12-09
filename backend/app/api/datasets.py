@@ -20,6 +20,7 @@ from app.dtos import (
     DatasetListResponse,
     DatasetResponse,
     DatasetTemplateListResponse,
+    DatasetTemplateResponse,
     DatasetUpdateRequest,
     EnrichmentStartRequest,
     EnrichmentStartResponse,
@@ -50,6 +51,30 @@ def list_dataset_templates(
 ):
     service = DatasetTemplateService(db)
     return service.list_templates()
+
+
+@router.get(
+    "/templates/by-name/{name}",
+    response_model=DatasetTemplateResponse,
+    response_model_by_alias=False,
+)
+def get_template_by_name(
+    name: str,
+    db: Database = Depends(get_db),
+    _current_user: dict = Depends(get_current_user),
+):
+    """Get a template by its exact name."""
+    from app.repositories.dataset_template_repository import DatasetTemplateRepository
+
+    repo = DatasetTemplateRepository(db)
+    template = repo.find_by_name(name)
+    if not template:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Template with name '{name}' not found",
+        )
+    payload = template.model_dump(by_alias=True)
+    return DatasetTemplateResponse.model_validate(payload)
 
 
 @router.get("/", response_model=DatasetListResponse, response_model_by_alias=False)

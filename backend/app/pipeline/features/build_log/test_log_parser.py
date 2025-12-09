@@ -16,6 +16,7 @@ from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.log_storage import LogStorageHandle
 from app.pipeline.log_parsers import TestLogParser
+from app.pipeline.feature_metadata.build_log import TEST_LOG_PARSER
 
 
 @register_feature(
@@ -31,10 +32,11 @@ from app.pipeline.log_parsers import TestLogParser
         "tr_log_testduration_sum",
     },
     group="build_log",
-    priority=5,  # Lower priority - requires expensive log parsing
+    priority=5,
     output_formats={
         "tr_log_frameworks_all": OutputFormat.COMMA_SEPARATED,
     },
+    feature_metadata=TEST_LOG_PARSER,
 )
 class TestLogParserNode(FeatureNode):
     """Parses CI logs to extract test results."""

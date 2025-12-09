@@ -69,7 +69,7 @@ class BuildService:
                     _id=str(sample.id),
                     build_number=self._get_feature(sample, "tr_build_number", 0),
                     status=self._get_feature(sample, "tr_status", "unknown"),
-                    extraction_status=sample.status,
+                    extraction_status=sample.extraction_status,
                     commit_sha=self._get_feature(sample, "tr_original_commit")
                     or (workflow.head_sha if workflow else ""),
                     created_at=workflow.created_at if workflow else None,
@@ -102,7 +102,7 @@ class BuildService:
             _id=str(sample.id),
             build_number=self._get_feature(sample, "tr_build_number", 0),
             status=self._get_feature(sample, "tr_status", "unknown"),
-            extraction_status=sample.status,
+            extraction_status=sample.extraction_status,
             commit_sha=self._get_feature(sample, "tr_original_commit")
             or (workflow.head_sha if workflow else ""),
             created_at=workflow.created_at if workflow else None,
@@ -139,7 +139,7 @@ class BuildService:
                     _id=str(sample.id),
                     build_number=self._get_feature(sample, "tr_build_number", 0),
                     status=self._get_feature(sample, "tr_status", "unknown"),
-                    extraction_status=sample.status,
+                    extraction_status=sample.extraction_status,
                     commit_sha=self._get_feature(sample, "tr_original_commit")
                     or (workflow.head_sha if workflow else ""),
                     created_at=workflow.created_at if workflow else None,

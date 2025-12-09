@@ -17,7 +17,6 @@ from app.dtos import (
 )
 from datetime import datetime, timezone
 from app.repositories.model_repository import ModelRepositoryRepository
-from app.repositories.dataset_template_repository import DatasetTemplateRepository
 from app.services.github.github_client import (
     get_public_github_client,
     get_user_github_client,
@@ -40,15 +39,6 @@ class RepositoryService:
     def __init__(self, db: Database):
         self.db = db
         self.repo_repo = ModelRepositoryRepository(db)
-        self.template_repo = DatasetTemplateRepository(db)
-
-    def _resolve_feature_names(self, payload: RepoImportRequest) -> Optional[List[str]]:
-        """Resolve feature names from template_id or use feature_names directly."""
-        if payload.template_id:
-            template = self.template_repo.find_by_id(ObjectId(payload.template_id))
-            if template:
-                return template.feature_names
-        return payload.feature_names  # May be None
 
     def bulk_import_repositories(
         self, user_id: str, payloads: List[RepoImportRequest]
@@ -63,25 +53,16 @@ class RepositoryService:
             # The upsert_repository below will handle updates.
 
             try:
-                # Resolve feature names from template or use feature_ids directly
-                resolved_features = self._resolve_feature_names(payload)
-
-                # Note: We store feature names directly now, not ObjectIds
-                # This aligns with code-defined registry approach
-
                 repo_doc = self.repo_repo.upsert_repository(
-                    query={
-                        "user_id": ObjectId(target_user_id),
-                        "provider": payload.provider,
-                        "full_name": payload.full_name,
-                    },
+                    user_id=target_user_id,
+                    full_name=payload.full_name,
                     data={
+                        "provider": payload.provider,
                         "installation_id": installation_id,
                         "test_frameworks": payload.test_frameworks,
                         "source_languages": payload.source_languages,
                         "ci_provider": payload.ci_provider or "github_actions",
                         "import_status": ImportStatus.QUEUED.value,
-                        "requested_feature_names": resolved_features,
                         "max_builds_to_ingest": payload.max_builds,
                         "since_days": payload.since_days,
                         "only_with_logs": payload.only_with_logs,
@@ -97,7 +78,6 @@ class RepositoryService:
                     test_frameworks=payload.test_frameworks,
                     source_languages=payload.source_languages,
                     ci_provider=payload.ci_provider or "github_actions",
-                    feature_names=resolved_features,
                     max_builds=payload.max_builds,
                     since_days=payload.since_days,
                     only_with_logs=payload.only_with_logs,
@@ -279,10 +259,9 @@ class RepositoryService:
             test_frameworks=repo_doc.test_frameworks,
             source_languages=repo_doc.source_languages,
             ci_provider=repo_doc.ci_provider,
-            feature_ids=[
-                str(fid) for fid in getattr(repo_doc, "requested_feature_ids", [])
-            ],
             max_builds=getattr(repo_doc, "max_builds_to_ingest", None),
+            since_days=getattr(repo_doc, "since_days", None),
+            only_with_logs=getattr(repo_doc, "only_with_logs", False),
         )
 
         return {"status": "queued"}

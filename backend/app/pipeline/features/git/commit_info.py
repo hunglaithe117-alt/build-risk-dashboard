@@ -19,6 +19,7 @@ from app.pipeline.utils.git_utils import (
     get_commit_parents,
     iter_commit_history,
 )
+from app.pipeline.feature_metadata.git import COMMIT_INFO
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ logger = logging.getLogger(__name__)
     output_formats={
         "git_all_built_commits": OutputFormat.HASH_SEPARATED,
     },
+    feature_metadata=COMMIT_INFO,
 )
 class GitCommitInfoNode(FeatureNode):
     """
@@ -79,7 +81,7 @@ class GitCommitInfoNode(FeatureNode):
         last_commit_sha: Optional[str] = None
         prev_build_id = None
 
-        build_coll = db["build_samples"]
+        build_coll = db["model_builds"]
 
         from bson import ObjectId
 
@@ -135,8 +137,7 @@ class GitCommitInfoNode(FeatureNode):
                 existing_build = build_coll.find_one(
                     {
                         "repo_id": repo_id_query,
-                        "tr_original_commit": hexsha,
-                        "status": "completed",
+                        "head_sha": hexsha,
                         "workflow_run_id": {"$ne": build_sample.workflow_run_id},
                     }
                 )
@@ -197,8 +198,7 @@ class GitCommitInfoNode(FeatureNode):
             existing_build = build_coll.find_one(
                 {
                     "repo_id": repo_id_query,
-                    "tr_original_commit": hexsha,
-                    "status": "completed",
+                    "head_sha": hexsha,
                     "workflow_run_id": {"$ne": build_sample.workflow_run_id},
                 }
             )

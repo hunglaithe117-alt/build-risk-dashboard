@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { integrationApi, reposApi, featuresApi, datasetsApi } from "@/lib/api";
 import {
     RepoSuggestion,
@@ -48,7 +49,78 @@ type FeatureCategoryGroup = {
     features: FeatureDefinitionSummary[];
 };
 
+// Panel to display selected features with tooltips and expand/collapse
+function SelectedFeaturesPanelWithTooltips({
+    selectedFeatures,
+    featuresData,
+}: {
+    selectedFeatures: string[];
+    featuresData: FeatureCategoryGroup[] | null;
+}) {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const INITIAL_SHOW = 20;
 
+    // Build a map of feature name -> description from featuresData
+    const featureDescriptions = useMemo(() => {
+        const map: Record<string, string> = {};
+        if (featuresData) {
+            for (const group of featuresData) {
+                for (const feature of group.features) {
+                    map[feature.name] = feature.description || feature.display_name || feature.name;
+                }
+            }
+        }
+        return map;
+    }, [featuresData]);
+
+    const displayedFeatures = isExpanded ? selectedFeatures : selectedFeatures.slice(0, INITIAL_SHOW);
+    const hasMore = selectedFeatures.length > INITIAL_SHOW;
+
+    return (
+        <div className="rounded-xl border bg-blue-50/50 dark:bg-blue-900/10 p-4">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+                    Selected Feature Set
+                </span>
+                <Badge className="bg-blue-600">{selectedFeatures.length} features</Badge>
+            </div>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
+                All repositories will automatically extract these features for Bayesian risk prediction.
+                <span className="ml-1 text-blue-500">(Hover for description)</span>
+            </p>
+            <div className={`flex flex-wrap gap-1.5 ${isExpanded ? 'max-h-[300px]' : 'max-h-[120px]'} overflow-y-auto transition-all`}>
+                {displayedFeatures.map(feat => (
+                    <Badge
+                        key={feat}
+                        variant="secondary"
+                        className="text-xs cursor-help hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                        title={featureDescriptions[feat] || feat}
+                    >
+                        {feat}
+                    </Badge>
+                ))}
+                {hasMore && !isExpanded && (
+                    <Badge
+                        variant="outline"
+                        className="text-xs cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900"
+                        onClick={() => setIsExpanded(true)}
+                    >
+                        +{selectedFeatures.length - INITIAL_SHOW} more
+                    </Badge>
+                )}
+            </div>
+            {hasMore && isExpanded && (
+                <button
+                    onClick={() => setIsExpanded(false)}
+                    className="mt-2 text-xs text-blue-600 hover:underline"
+                >
+                    Show less
+                </button>
+            )}
+        </div>
+    );
+
+}
 
 interface ImportRepoModalProps {
     isOpen: boolean;
@@ -76,7 +148,6 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
             test_frameworks: string[];
             source_languages: string[];
             ci_provider: string;
-            // feature_names removed - TravisTorrent features are auto-applied
             max_builds?: number | null;
             since_days?: number | null;
         }>
@@ -185,18 +256,23 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
         }
     }, [dagData, dagLoading]);
 
-    const loadTemplates = useCallback(async () => {
-        if (templatesLoading || templates.length > 0) return;
+    const [selectedFeatures, setselectedFeatures] = useState<string[]>([]);
+    const loadSelectedTemplate = useCallback(async () => {
+        if (templatesLoading) return;
+        if (selectedFeatures.length > 0) return;
         setTemplatesLoading(true);
         try {
-            const data = await datasetsApi.listTemplates();
-            setTemplates(data.items);
+            const template = await datasetsApi.getTemplateByName("TravisTorrent Full");
+            setTemplates([template]);
+            setselectedFeatures(template.feature_names || []);
         } catch (err) {
-            console.error("Failed to load templates:", err);
+            console.error("Failed to load selected template:", err);
+            // Fallback: leave empty, showing all features
         } finally {
             setTemplatesLoading(false);
         }
-    }, [templatesLoading, templates.length]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [templatesLoading]);
 
     useEffect(() => {
         if (isOpen && debouncedSearchTerm === searchTerm) {
@@ -379,12 +455,12 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
             }
         });
         if (step === 2) {
-            loadFeatures();
-            loadFrameworks();
-            loadDAG();
-            loadTemplates();
+            void loadDAG();
+            void loadSelectedTemplate();
+            void loadFeatures(); // Load feature descriptions for tooltips
         }
-    }, [step, loadFeatures, loadFrameworks, loadDAG, loadTemplates, selectedList, availableLanguages, fetchLanguages]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [step, selectedList.length]);
 
     const handleImport = async () => {
         if (!selectedList.length) return;
@@ -401,7 +477,6 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                     test_frameworks: config.test_frameworks,
                     source_languages: config.source_languages,
                     ci_provider: config.ci_provider,
-                    // feature_names removed - TravisTorrent features auto-applied server-side
                     max_builds: config.max_builds ?? null,
                     since_days: config.since_days ?? null,
                 };
@@ -689,20 +764,6 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                                         </div>
                                     ) : (
                                         <div className="space-y-4">
-                                            {/* Info banner about TravisTorrent features */}
-                                            <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/50 dark:bg-blue-900/20">
-                                                <div className="flex items-start gap-3">
-                                                    <CheckCircle2 className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                                                    <div>
-                                                        <h3 className="text-sm font-medium text-blue-900 dark:text-blue-200">
-                                                            TravisTorrent Features (42)
-                                                        </h3>
-                                                        <p className="mt-1 text-sm text-blue-700 dark:text-blue-300">
-                                                            All repositories will automatically extract the complete TravisTorrent feature set for Bayesian risk prediction model.
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
 
                                             <RepoConfigItem
                                                 key={activeRepo}
@@ -736,6 +797,56 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                                                     }))
                                                 }
                                             />
+
+                                            {/* DAG Visualization - Selected Features */}
+                                            {dagLoading || templatesLoading ? (
+                                                <div className="mt-6 pt-4 border-t flex items-center gap-2 text-sm text-muted-foreground">
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                    Loading feature extraction plan...
+                                                </div>
+                                            ) : dagData && selectedFeatures.length > 0 && (
+                                                <div className="mt-6 pt-4 border-t space-y-4">
+                                                    <h4 className="text-sm font-semibold flex items-center gap-2">
+                                                        <span>Features Extraction Plan</span>
+                                                        <Badge variant="secondary" className="text-xs">
+                                                            {selectedFeatures.length} features
+                                                        </Badge>
+                                                    </h4>
+
+                                                    {/* 1. Extraction Plan Timeline - filter nodes with selected features */}
+                                                    <ExtractionPlanTimeline
+                                                        executionLevels={dagData.execution_levels.map(level => ({
+                                                            ...level,
+                                                            nodes: level.nodes.filter(nodeId => {
+                                                                const node = dagData.nodes.find(n => n.id === nodeId);
+                                                                return node?.features.some(f => selectedFeatures.includes(f));
+                                                            })
+                                                        })).filter(level => level.nodes.length > 0)}
+                                                        nodeLabels={Object.fromEntries(
+                                                            dagData.nodes?.map((n: { id: string; label?: string }) => [n.id, n.label || n.id]) || []
+                                                        )}
+                                                        activeNodes={new Set(
+                                                            dagData.nodes
+                                                                ?.filter(n => n.features.some(f => selectedFeatures.includes(f)))
+                                                                .map(n => n.id) || []
+                                                        )}
+                                                    />
+
+                                                    {/* 2. Visual DAG Graph - show ALL nodes, highlight selected features */}
+                                                    <FeatureDAGVisualization
+                                                        dagData={dagData as FeatureDAGData}
+                                                        selectedFeatures={selectedFeatures}
+                                                        onFeaturesChange={() => { }}
+                                                        className="h-[350px]"
+                                                    />
+
+                                                    {/* 3. Selected Features Panel */}
+                                                    <SelectedFeaturesPanelWithTooltips
+                                                        selectedFeatures={selectedFeatures}
+                                                        featuresData={featuresData}
+                                                    />
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

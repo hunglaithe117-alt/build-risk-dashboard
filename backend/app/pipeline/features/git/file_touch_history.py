@@ -19,6 +19,7 @@ from app.pipeline.utils.git_utils import (
     get_commit_parents,
     get_diff_files,
 )
+from app.pipeline.feature_metadata.git import FILE_TOUCH_HISTORY
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +32,10 @@ logger = logging.getLogger(__name__)
         "gh_num_commits_on_files_touched",
     },
     group="git",
-    priority=3,  # Lower priority - expensive operation
+    priority=3,
+    feature_metadata=FILE_TOUCH_HISTORY,
 )
 class FileTouchHistoryNode(FeatureNode):
-    """
-    Calculates how many historical commits touched the same files as this build.
-    """
-
     LOOKBACK_DAYS = 90
     CHUNK_SIZE = 50
 
@@ -58,14 +56,12 @@ class FileTouchHistoryNode(FeatureNode):
         workflow_run = context.workflow_run
         ref_date = getattr(workflow_run, "created_at", None) if workflow_run else None
         if not ref_date:
-            # Try GitPython first
             try:
                 current_commit = repo.commit(effective_sha)
                 ref_date = datetime.fromtimestamp(
                     current_commit.committed_date, tz=timezone.utc
                 )
             except Exception:
-                # Fallback to subprocess
                 commit_info = get_commit_info(repo_path, effective_sha)
                 if commit_info["committed_date"]:
                     ref_date = datetime.fromtimestamp(

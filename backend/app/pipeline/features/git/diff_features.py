@@ -23,6 +23,7 @@ from app.pipeline.analyzers import (
     _is_source_file,
     _is_test_file,
 )
+from app.pipeline.feature_metadata.git import DIFF_FEATURES
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ logger = logging.getLogger(__name__)
         "gh_diff_other_files",
     },
     group="git",
+    feature_metadata=DIFF_FEATURES,
 )
 class GitDiffFeaturesNode(FeatureNode):
     """

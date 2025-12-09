@@ -79,7 +79,7 @@ class GitHubActionsProvider(CIProviderInterface):
         )
 
         # If we have a DB, use the token pool for rate limit tracking
-        if self._db:
+        if self._db is not None:
             return get_public_github_client(self._db)
 
         # Otherwise use the config token directly

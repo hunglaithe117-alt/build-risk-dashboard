@@ -177,12 +177,64 @@ async def events_websocket(websocket: WebSocket):
     Connect to receive server-wide events published to Redis 'events' channel.
     """
     await manager.connect(websocket)
+
+    # Create Redis subscription for this connection
+    redis_client = await get_async_redis()
+    pubsub = redis_client.pubsub()
+    await pubsub.subscribe("events")
+
+    async def listen_redis():
+        """Listen for Redis events and broadcast to this websocket."""
+        try:
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    data = message["data"]
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
+                    try:
+                        await websocket.send_text(data)
+                    except Exception:
+                        break
+        except Exception as e:
+            logger.error(f"Redis listener error: {e}")
+
+    async def receive_client():
+        """Keep connection alive by receiving client messages."""
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
     try:
-        while True:
-            # Keep connection alive
-            await websocket.receive_text()
+        # Run both tasks concurrently
+        redis_task = asyncio.create_task(listen_redis())
+        receive_task = asyncio.create_task(receive_client())
+
+        # Wait for either task to complete (disconnect or error)
+        done, pending = await asyncio.wait(
+            [redis_task, receive_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        # Cancel pending tasks
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        logger.info("WebSocket client disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
+    finally:
         manager.disconnect(websocket)
+        try:
+            await pubsub.unsubscribe("events")
+            await redis_client.close()
+        except Exception:
+            pass

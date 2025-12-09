@@ -26,6 +26,7 @@ import type {
   DatasetRecord,
   DatasetUpdatePayload,
   DatasetTemplateListResponse,
+  DatasetTemplateRecord,
   RepoValidationResponse,
   GithubToken,
   TokenListResponse,
@@ -221,6 +222,10 @@ export const datasetsApi = {
   },
   listTemplates: async () => {
     const response = await api.get<DatasetTemplateListResponse>("/datasets/templates");
+    return response.data;
+  },
+  getTemplateByName: async (name: string) => {
+    const response = await api.get<DatasetTemplateRecord>(`/datasets/templates/by-name/${encodeURIComponent(name)}`);
     return response.data;
   },
   get: async (datasetId: string) => {

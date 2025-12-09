@@ -1,7 +1,7 @@
 from app.entities.model_repository import ImportStatus
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Set, Optional
+from typing import Dict, Any
 from bson import ObjectId
 from pathlib import Path
 import time
@@ -44,7 +44,6 @@ def import_repo(
     test_frameworks: list[str] | None = None,
     source_languages: list[str] | None = None,
     ci_provider: str = "github_actions",
-    feature_names: list[str] | None = None,
     max_builds: int | None = None,
     since_days: int | None = None,
     only_with_logs: bool = False,
@@ -91,12 +90,10 @@ def import_repo(
         )
         if not repo:
             repo_doc = model_repo_repo.upsert_repository(
-                query={
-                    "user_id": ObjectId(user_id),
-                    "provider": provider,
-                    "full_name": full_name,
-                },
+                user_id=user_id,
+                full_name=full_name,
                 data={
+                    "provider": provider,
                     "default_branch": "main",
                     "is_private": False,
                     "main_lang": None,
@@ -108,7 +105,6 @@ def import_repo(
                     "source_languages": source_languages or [],
                     "ci_provider": ci_provider or "github_actions",
                     "import_status": ImportStatus.IMPORTING.value,
-                    "requested_feature_names": feature_names or [],
                     "max_builds_to_ingest": max_builds,
                     "since_days": since_days,
                     "only_with_logs": only_with_logs,
@@ -167,7 +163,6 @@ def import_repo(
                     "import_status": ImportStatus.IMPORTING.value,
                     "since_days": since_days,
                     "only_with_logs": only_with_logs,
-                    "requested_feature_names": feature_names or [],
                 },
             )
             publish_status(repo_id, "importing", "Fetching builds from CI provider...")
@@ -192,7 +187,7 @@ def import_repo(
                 provider_config.token = gh._get_token()
 
             ci_provider_instance = get_ci_provider(
-                ci_provider_enum, provider_config, db=db
+                ci_provider_enum, provider_config, db=self.db
             )
 
             # Run async fetch in sync context
@@ -295,20 +290,39 @@ def import_repo(
                 f"Scheduling {len(runs_to_process)} runs for processing...",
             )
 
-            # Check if any requested features require log downloads
             # Uses registry to dynamically determine this from feature metadata
-            requested_feature_set: Optional[Set[str]] = (
-                set(feature_names) if feature_names else None
-            )
+            from app.pipeline.constants import TRAVISTORRENT_FEATURES
+
             needs_logs = feature_registry.needs_resource_for_features(
                 ResourceNames.LOG_STORAGE,
-                requested_feature_set,
+                TRAVISTORRENT_FEATURES,
             )
 
             logger.info(
                 f"Scheduling {len(runs_to_process)} runs for processing "
-                f"(logs_required={needs_logs}, features={len(feature_names) if feature_names else 'all'})"
+                f"(logs_required={needs_logs}, features=TravisTorrent default)"
             )
+
+            from app.repositories.model_build import ModelBuildRepository
+            from app.entities.model_build import ModelBuild
+
+            model_build_repo = ModelBuildRepository(self.db)
+            for run_created_at, run_id in runs_to_process:
+                existing = model_build_repo.find_by_repo_and_run_id(repo_id, run_id)
+                if not existing:
+                    workflow_run = workflow_run_repo.find_by_repo_and_run_id(
+                        repo_id, run_id
+                    )
+                    if workflow_run:
+                        build_status = workflow_run.conclusion or "success"
+                        model_build = ModelBuild(
+                            repo_id=ObjectId(repo_id),
+                            workflow_run_id=run_id,
+                            head_sha=workflow_run.head_sha,
+                            status=build_status,
+                            extraction_status="pending",
+                        )
+                        model_build_repo.insert_one(model_build)
 
             for _, run_id in runs_to_process:
                 if needs_logs:
@@ -321,18 +335,27 @@ def import_repo(
                         args=[repo_id, run_id],
                     )
 
+            # Count of scheduled runs is the accurate total
+            scheduled_count = len(runs_to_process)
+            logger.info(
+                f"Import complete for {full_name}: scheduled={scheduled_count}, "
+                f"total_runs_counter={total_runs}, latest_run={latest_run_created_at}"
+            )
+
             model_repo_repo.update_repository(
                 repo_id,
                 {
                     "import_status": ImportStatus.IMPORTED.value,
-                    "total_builds_imported": total_runs,
+                    "total_builds_imported": scheduled_count,
                     "last_scanned_at": datetime.now(timezone.utc),
                     "last_synced_at": datetime.now(timezone.utc),
                     "last_sync_status": "success",
                     "latest_synced_run_created_at": latest_run_created_at,
                 },
             )
-            publish_status(repo_id, "imported", f"Imported {total_runs} workflow runs.")
+            publish_status(
+                repo_id, "imported", f"Imported {scheduled_count} workflow runs."
+            )
 
     except GithubRateLimitError as e:
         wait = e.retry_after if e.retry_after else 60

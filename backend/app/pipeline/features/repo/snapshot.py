@@ -22,6 +22,7 @@ from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.git_repo import GitRepoHandle
 from app.pipeline.languages import LanguageRegistry
 from app.utils.locking import repo_lock
+from app.pipeline.feature_metadata.repo import REPO_METADATA
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ logger = logging.getLogger(__name__)
         "gh_build_started_at",
     },
     group="repo",
+    feature_metadata=REPO_METADATA,
 )
 class RepoSnapshotNode(FeatureNode):
     """

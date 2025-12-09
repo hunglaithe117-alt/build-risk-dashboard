@@ -238,8 +238,12 @@ def enrich_dataset_task(
                     )
 
                     # Save features to enrichment build
-                    enrichment_build_repo.update_features(
-                        str(enrichment_build.id), formatted_features
+                    enrichment_build_repo.update_one(
+                        str(enrichment_build.id),
+                        {
+                            "features": formatted_features,
+                            "extraction_status": "completed",
+                        },
                     )
                     enriched += 1
                     enriched_rows.append(

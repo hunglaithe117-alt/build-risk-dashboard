@@ -6,16 +6,15 @@ This resource provider initializes the MetricsExporter client that can:
 2. Fetch measures/metrics from SonarQube API
 """
 
+from __future__ import annotations
+
 import logging
-from typing import TYPE_CHECKING
 
 from app.pipeline.resources import ResourceProvider
 from app.services.sonar.exporter import MetricsExporter
 from app.services.sonar.runner import SonarCommitRunner
 from app.config import settings
-
-if TYPE_CHECKING:
-    from app.pipeline.core.context import ExecutionContext
+from app.pipeline.core.context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 

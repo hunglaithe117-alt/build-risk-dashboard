@@ -118,7 +118,10 @@ class RedisTokenPool:
 
     def acquire_token(self) -> Tuple[str, str]:
         """
-        Acquire an available token using atomic round-robin.
+        Acquire an available token using atomic Lua script.
+
+        This is thread-safe and process-safe across multiple Celery workers.
+        Tokens are selected by priority (highest remaining quota first).
 
         Returns:
             Tuple of (token_hash, raw_token)
@@ -128,59 +131,97 @@ class RedisTokenPool:
         """
         from app.services.github.exceptions import GithubAllRateLimitError
 
+        # Lua script for atomic token acquisition
+        # This prevents race conditions where multiple workers grab the same token
+        acquire_lua = """
+        local pool_key = KEYS[1]
+        local cooldown_prefix = KEYS[2]
+        local stats_prefix = KEYS[3]
+        local raw_key = KEYS[4]
+        local now_ts = tonumber(ARGV[1])
+        local now_iso = ARGV[2]
+        
+        -- Get all tokens sorted by priority (highest remaining quota first)
+        local tokens = redis.call('ZREVRANGE', pool_key, 0, -1)
+        
+        local earliest_cooldown = nil
+        
+        for i, token_hash in ipairs(tokens) do
+            local cooldown_key = cooldown_prefix .. ':' .. token_hash
+            local cooldown = redis.call('GET', cooldown_key)
+            
+            if cooldown then
+                local cooldown_ts = tonumber(cooldown)
+                if cooldown_ts > now_ts then
+                    -- Token is on cooldown, track earliest
+                    if not earliest_cooldown or cooldown_ts < earliest_cooldown then
+                        earliest_cooldown = cooldown_ts
+                    end
+                else
+                    -- Cooldown expired, clear it
+                    redis.call('DEL', cooldown_key)
+                    cooldown = nil
+                end
+            end
+            
+            if not cooldown then
+                -- Token is available, check if raw token exists
+                local raw_token = redis.call('HGET', raw_key, token_hash)
+                if raw_token then
+                    -- Update stats atomically
+                    local stats_key = stats_prefix .. ':' .. token_hash
+                    redis.call('HINCRBY', stats_key, 'total_requests', 1)
+                    redis.call('HSET', stats_key, 'last_used_at', now_iso)
+                    
+                    -- Return token_hash and raw_token
+                    return {token_hash, raw_token}
+                end
+            end
+        end
+        
+        -- No tokens available, return earliest cooldown if any
+        if earliest_cooldown then
+            return {'__COOLDOWN__', tostring(earliest_cooldown)}
+        end
+        
+        return nil
+        """
+
         now_ts = _now_ts()
+        now_iso = _now().isoformat()
 
-        # Get all tokens sorted by priority (highest remaining quota first)
-        token_hashes = self._redis.zrevrange(KEY_POOL, 0, -1)
+        result = self._redis.eval(
+            acquire_lua,
+            4,  # Number of KEYS
+            KEY_POOL,
+            KEY_COOLDOWN,
+            KEY_STATS,
+            KEY_RAW,
+            str(now_ts),
+            now_iso,
+        )
 
-        if not token_hashes:
+        if result is None:
             raise GithubAllRateLimitError(
                 "No GitHub tokens configured in Redis pool.",
                 retry_after=None,
             )
 
-        # Try to find an available token
-        earliest_cooldown = None
+        # Handle bytes from Redis
+        if isinstance(result[0], bytes):
+            result = [r.decode() if isinstance(r, bytes) else r for r in result]
 
-        for token_hash in token_hashes:
-            # Check cooldown
-            cooldown_until = self._redis.get(f"{KEY_COOLDOWN}:{token_hash}")
-
-            if cooldown_until:
-                cooldown_ts = float(cooldown_until)
-                if cooldown_ts > now_ts:
-                    # Still on cooldown
-                    if earliest_cooldown is None or cooldown_ts < earliest_cooldown:
-                        earliest_cooldown = cooldown_ts
-                    continue
-                else:
-                    # Cooldown expired, remove it
-                    self._redis.delete(f"{KEY_COOLDOWN}:{token_hash}")
-
-            # Token is available, get raw token
-            raw_token = self._redis.hget(KEY_RAW, token_hash)
-
-            if not raw_token:
-                # Token hash exists but raw token missing, skip
-                continue
-
-            # Update usage stats atomically
-            pipe = self._redis.pipeline()
-            pipe.hincrby(f"{KEY_STATS}:{token_hash}", "total_requests", 1)
-            pipe.hset(f"{KEY_STATS}:{token_hash}", "last_used_at", _now().isoformat())
-            pipe.execute()
-
-            return token_hash, raw_token
-
-        # All tokens on cooldown
-        retry_after = None
-        if earliest_cooldown:
+        if result[0] == "__COOLDOWN__":
+            # All tokens on cooldown
+            earliest_cooldown = float(result[1])
             retry_after = datetime.fromtimestamp(earliest_cooldown, tz=timezone.utc)
+            raise GithubAllRateLimitError(
+                "All GitHub tokens hit rate limits. Please wait before retrying.",
+                retry_after=retry_after,
+            )
 
-        raise GithubAllRateLimitError(
-            "All GitHub tokens hit rate limits. Please wait before retrying.",
-            retry_after=retry_after,
-        )
+        token_hash, raw_token = result[0], result[1]
+        return token_hash, raw_token
 
     def update_rate_limit(
         self,
@@ -227,7 +268,7 @@ class RedisTokenPool:
             )
 
         # Sync to MongoDB if available
-        if self._db:
+        if self._db is not None:
             try:
                 db_update_token_rate_limit(
                     self._db, token_hash, remaining, limit, reset_at
@@ -266,7 +307,7 @@ class RedisTokenPool:
         )
 
         # Sync to MongoDB
-        if self._db:
+        if self._db is not None:
             try:
                 db_mark_token_rate_limited(self._db, token_hash, reset_at)
             except Exception as e:

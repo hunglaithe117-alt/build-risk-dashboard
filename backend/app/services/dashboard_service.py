@@ -9,7 +9,7 @@ from app.dtos import DashboardSummaryResponse, DashboardMetrics, RepoDistributio
 class DashboardService:
     def __init__(self, db: Database):
         self.db = db
-        self.build_collection = db["build_samples"]
+        self.build_collection = db["model_builds"]
         self.repo_collection = db["repositories"]
 
     def get_summary(self) -> DashboardSummaryResponse:

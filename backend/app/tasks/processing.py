@@ -71,13 +71,29 @@ def process_workflow_run(
         logger.error(f"Repository {repo_id} not found")
         return {"status": "error", "message": "Repository not found"}
 
-    # Find or create ModelBuild
     model_build = model_build_repo.find_by_repo_and_run_id(repo_id, workflow_run_id)
     if not model_build:
+        logger.info(f"Creating ModelBuild during processing (not pre-created)")
+        build_status = workflow_run.conclusion or "success"
+        if build_status == "success":
+            build_status = "success"
+        elif build_status == "failure":
+            build_status = "failure"
+        elif build_status == "cancelled":
+            build_status = "cancelled"
+        elif build_status == "skipped":
+            build_status = "skipped"
+        elif build_status == "timed_out":
+            build_status = "timed_out"
+        else:
+            logger.warning(f"Unknown build status: {build_status}")
+            build_status = "success"
+
         model_build = ModelBuild(
             repo_id=ObjectId(repo_id),
             workflow_run_id=workflow_run_id,
-            status="pending",
+            status=build_status,
+            extraction_status="pending",
         )
         model_build = model_build_repo.insert_one(model_build)
 
@@ -109,13 +125,12 @@ def process_workflow_run(
         raw_features = result.get("features", {})
         updates["features"] = feature_registry.format_features_for_storage(raw_features)
 
-        # Set status
         if result["status"] == "completed":
-            updates["status"] = "completed"
+            updates["extraction_status"] = "completed"
         elif result["status"] == "partial":
-            updates["status"] = "completed"  # Still mark as completed but with warnings
+            updates["extraction_status"] = "partial"
         else:
-            updates["status"] = "failed"
+            updates["extraction_status"] = "failed"
 
         # Handle errors and warnings
         if result.get("errors"):
@@ -132,8 +147,8 @@ def process_workflow_run(
         # Save to database
         model_build_repo.update_one(build_id, updates)
 
-        # Notify clients of completion
-        publish_build_update(repo_id, build_id, updates["status"])
+        # Notify clients of extraction completion
+        publish_build_update(repo_id, build_id, updates["extraction_status"])
 
         logger.info(
             f"Pipeline completed for build {build_id}: "

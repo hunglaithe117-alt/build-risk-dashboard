@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Type
+from typing import Any, Callable, Dict, List, Optional, Set, Type, Union
 from dataclasses import dataclass, field
 import logging
 from app.pipeline.features import FeatureNode
@@ -16,6 +16,57 @@ class OutputFormat(str, Enum):
     PIPE_SEPARATED = "pipe"  # Join with pipe: "a|b|c"
 
 
+class FeatureCategory(str, Enum):
+    """Categories for features."""
+
+    BUILD_LOG = "build_log"
+    GIT_HISTORY = "git_history"
+    GIT_DIFF = "git_diff"
+    REPO_SNAPSHOT = "repo_snapshot"
+    PR_INFO = "pr_info"
+    DISCUSSION = "discussion"
+    TEAM = "team"
+    METADATA = "metadata"
+    WORKFLOW = "workflow"
+
+
+class FeatureDataType(str, Enum):
+    """Data types for features."""
+
+    STRING = "string"
+    INTEGER = "integer"
+    FLOAT = "float"
+    BOOLEAN = "boolean"
+    DATETIME = "datetime"
+    LIST_STRING = "list_string"
+    LIST_INTEGER = "list_integer"
+
+
+class FeatureSource(str, Enum):
+    """Source types for features."""
+
+    BUILD_LOG = "build_log"
+    GIT_REPO = "git_repo"
+    GITHUB_API = "github_api"
+    WORKFLOW_RUN = "workflow_run"
+    METADATA = "metadata"
+    COMPUTED = "computed"
+
+
+@dataclass
+class FeatureMetadata:
+    """Custom metadata for a single feature."""
+
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[Union[FeatureCategory, str]] = None
+    source: Optional[Union[FeatureSource, str]] = None
+    data_type: Optional[Union[FeatureDataType, str]] = None
+    nullable: bool = True
+    example_value: Optional[str] = None
+    unit: Optional[str] = None
+
+
 @dataclass
 class FeatureNodeMeta:
     """Metadata about a registered feature node."""
@@ -29,6 +80,7 @@ class FeatureNodeMeta:
     enabled: bool = True
     priority: int = 0  # Higher priority = executed first when possible
     output_formats: Dict[str, OutputFormat] = field(default_factory=dict)
+    feature_metadata: Dict[str, FeatureMetadata] = field(default_factory=dict)
 
 
 class FeatureRegistry:
@@ -52,6 +104,7 @@ class FeatureRegistry:
         enabled: bool = True,
         priority: int = 0,
         output_formats: Optional[Dict[str, OutputFormat]] = None,
+        feature_metadata: Optional[Dict[str, FeatureMetadata]] = None,
     ) -> None:
         """Register a feature node."""
         if name in self._nodes:
@@ -67,6 +120,7 @@ class FeatureRegistry:
             enabled=enabled,
             priority=priority,
             output_formats=output_formats or {},
+            feature_metadata=feature_metadata or {},
         )
 
         self._nodes[name] = meta
@@ -271,17 +325,40 @@ class FeatureRegistry:
         if not meta:
             return None
 
+        # Get custom metadata if exists, otherwise use empty FeatureMetadata
+        custom = meta.feature_metadata.get(feature_name, FeatureMetadata())
+
+        # Helper to get enum value as string
+        def enum_value(v):
+            return v.value if isinstance(v, Enum) else v
+
         return {
             "name": feature_name,
-            "display_name": self._generate_display_name(feature_name),
-            "description": f"Extracted by {node_name}",
-            "category": self._infer_category(feature_name, meta.group),
-            "source": self._infer_source(meta.requires_resources),
-            "data_type": self._infer_data_type(feature_name),
+            "display_name": custom.display_name
+            or self._generate_display_name(feature_name),
+            "description": custom.description or f"Extracted by {node_name}",
+            "category": (
+                enum_value(custom.category)
+                if custom.category
+                else self._infer_category(feature_name, meta.group)
+            ),
+            "source": (
+                enum_value(custom.source)
+                if custom.source
+                else self._infer_source(meta.requires_resources)
+            ),
+            "data_type": (
+                enum_value(custom.data_type)
+                if custom.data_type
+                else self._infer_data_type(feature_name)
+            ),
             "extractor_node": node_name,
             "depends_on_features": list(meta.requires_features),
             "depends_on_resources": list(meta.requires_resources),
             "is_active": meta.enabled,
+            "nullable": custom.nullable,
+            "example_value": custom.example_value,
+            "unit": custom.unit,
         }
 
     def get_features_with_metadata(self) -> List[Dict]:
@@ -405,6 +482,7 @@ def register_feature(
     enabled: bool = True,
     priority: int = 0,
     output_formats: Optional[Dict[str, OutputFormat]] = None,
+    feature_metadata: Optional[Dict[str, FeatureMetadata]] = None,
 ) -> Callable[[Type[FeatureNode]], Type[FeatureNode]]:
     """
     Decorator to register a feature node.
@@ -418,6 +496,7 @@ def register_feature(
         enabled: Whether node is active
         priority: Execution priority (higher = first)
         output_formats: Dict mapping feature names to OutputFormat
+        feature_metadata: Dict mapping feature names to FeatureMetadata for custom config
     """
 
     def decorator(cls: Type[FeatureNode]) -> Type[FeatureNode]:
@@ -431,6 +510,7 @@ def register_feature(
             enabled=enabled,
             priority=priority,
             output_formats=output_formats,
+            feature_metadata=feature_metadata,
         )
 
         cls._feature_meta = {
@@ -440,6 +520,7 @@ def register_feature(
             "provides": provides or set(),
             "group": group,
             "output_formats": output_formats or {},
+            "feature_metadata": feature_metadata or {},
         }
         return cls
 

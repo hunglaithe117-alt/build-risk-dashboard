@@ -291,7 +291,7 @@ def preview_export(
     # Get sample rows (first 5)
     query = service._build_query(repo_id, start_date, end_date, build_status)
     sample_docs = list(
-        service.db.build_samples.find(query).sort("created_at", 1).limit(5)
+        service.db.model_builds.find(query).sort("created_at", 1).limit(5)
     )
 
     feature_list = features.split(",") if features else None

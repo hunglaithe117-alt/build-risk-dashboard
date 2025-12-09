@@ -10,6 +10,9 @@ import sys
 # Mocking modules that might not be easily importable or initialized in test env
 sys.modules["app.pipeline.resources"] = MagicMock()
 sys.modules["app.pipeline.resources.git_repo"] = MagicMock()
+sys.modules["app.pipeline.resources.log_storage"] = MagicMock()
+sys.modules["app.pipeline.resources.github_client"] = MagicMock()
+sys.modules["app.pipeline.resources.sonar"] = MagicMock()
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.git_repo import GitRepoHandle
 
@@ -93,19 +96,15 @@ class TestGitPipelineFeatures(unittest.TestCase):
 
         self.git_handle.effective_sha = c3
 
-        # Mock DB: C1 was a completed build
-        # The node calls: db["build_samples"].find_one(...)
+        # Mock DB: C1 was a pre-created build (exists in DB)
+        # The node calls: db["model_builds"].find_one(...) with head_sha field
 
         def find_one_side_effect(query):
-            # Check if query matches C1
-            if (
-                query.get("tr_original_commit") == c1
-                and query.get("status") == "completed"
-            ):
+            # Check if query matches C1 by head_sha field
+            if query.get("head_sha") == c1:
                 return {
                     "workflow_run_id": 99,
-                    "tr_original_commit": c1,
-                    "status": "completed",
+                    "head_sha": c1,
                 }
             return None
 

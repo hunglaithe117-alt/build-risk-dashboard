@@ -35,15 +35,3 @@ class ModelBuildRepository(BaseRepository[ModelBuild]):
             skip=skip,
             limit=limit,
         )
-
-    def update_features(
-        self, build_id: str, features: Dict[str, Any]
-    ) -> Optional[ModelBuild]:
-        """Update extracted features for a build."""
-        return self.update_one(
-            build_id,
-            {
-                "features": features,
-                "extraction_status": "completed",
-            },
-        )

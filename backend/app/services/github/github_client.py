@@ -16,6 +16,7 @@ from app.services.github.exceptions import (
     GithubRateLimitError,
     GithubRetryableError,
     GithubAllRateLimitError,
+    GithubSecondaryRateLimitError,
 )
 from app.services.github.github_app import (
     github_app_configured,
@@ -72,7 +73,7 @@ class GitHubTokenPool:
             self._tokens = normalized
             self._token_hashes = {hash_token(t): t for t in normalized}
             self._db_mode = False
-        elif db:
+        elif db is not None:
             # Database mode - load tokens from MongoDB
             self._tokens = []
             self._token_hashes = {}
@@ -87,7 +88,7 @@ class GitHubTokenPool:
 
     def _load_tokens_from_db(self) -> None:
         """Load tokens from database. Should be called periodically to refresh."""
-        if not self._db:
+        if self._db is None:
             return
 
         now = _now()
@@ -309,8 +310,12 @@ class GitHubClient:
                 except (TypeError, ValueError):
                     pass
 
-        if response.status_code == 403 and "rate limit" in response.text.lower():
-            self._handle_rate_limit(response)
+        if response.status_code == 403:
+            text_lower = response.text.lower()
+            if "secondary rate limit" in text_lower:
+                self._handle_secondary_rate_limit(response)
+            elif "rate limit" in text_lower:
+                self._handle_rate_limit(response)
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:  # pragma: no cover - passthrough for now
@@ -356,6 +361,47 @@ class GitHubClient:
             "GitHub rate limit reached", retry_after=wait_seconds
         )
 
+    def _handle_secondary_rate_limit(self, response: httpx.Response) -> None:
+        """
+        Handle GitHub secondary rate limit (abuse detection).
+
+        Secondary rate limits require longer backoff (typically 60s+).
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        retry_after_header = response.headers.get("Retry-After")
+        wait_seconds = 120.0  # Default 2 minutes for secondary
+
+        if retry_after_header:
+            try:
+                wait_seconds = max(float(retry_after_header), 60.0)
+            except ValueError:
+                pass
+
+        logger.warning(
+            f"GitHub secondary rate limit (abuse detection) hit, "
+            f"waiting {wait_seconds}s before retry"
+        )
+
+        # Mark token as rate limited with longer cooldown
+        reset_at = datetime.now(timezone.utc) + timedelta(seconds=wait_seconds)
+
+        if self._token_pool and self._current_token_key:
+            self._token_pool.mark_rate_limited(
+                self._current_token_key,
+                reset_epoch=str(reset_at.timestamp()),
+            )
+
+        if self._redis_pool and self._current_token_key:
+            self._redis_pool.mark_rate_limited(self._current_token_key, reset_at)
+
+        raise GithubSecondaryRateLimitError(
+            "GitHub secondary rate limit (abuse detection) hit",
+            retry_after=wait_seconds,
+        )
+
     def _retry_on_rate_limit(
         self, request_func: Callable[[], httpx.Response]
     ) -> httpx.Response:
@@ -377,6 +423,103 @@ class GitHubClient:
 
         response = self._retry_on_rate_limit(_do_request)
         return response.json()
+
+    def _get_with_cache(
+        self,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        ttl: int = 3600,
+    ) -> Dict[str, Any]:
+        """
+        GET request with ETag-based caching.
+
+        Conditional requests (304 Not Modified) don't count against rate limits,
+        potentially reducing API quota usage by up to 90%.
+
+        Args:
+            path: API endpoint path
+            params: Query parameters
+            ttl: Cache TTL in seconds
+
+        Returns:
+            Response data (from cache or fresh)
+        """
+        from app.services.github.github_cache import get_github_cache
+
+        cache = get_github_cache()
+        url = f"{self._api_url}{path}"
+
+        # Get cached ETag
+        etag, last_modified, cached_data = cache.get_cached(url)
+
+        # Build headers with conditional request
+        headers = self._headers()
+        if etag:
+            headers["If-None-Match"] = etag
+        if last_modified:
+            headers["If-Modified-Since"] = last_modified
+
+        # Make request directly (not via _retry_on_rate_limit) to handle 304
+        try:
+            response = self._rest.get(path, headers=headers, params=params)
+        except httpx.RequestError as exc:
+            # Network error - return cached data if available
+            if cached_data:
+                return cached_data
+            raise GithubRetryableError(str(exc)) from exc
+
+        # Handle 304 Not Modified - return cached data (FREE - doesn't count against rate limit!)
+        if response.status_code == 304 and cached_data:
+            return cached_data
+
+        # Update rate limit info from headers
+        if self._token_pool and self._current_token_key:
+            self._token_pool.update_rate_limit_from_headers(
+                self._current_token_key,
+                response.headers,
+            )
+
+        # Handle rate limits
+        if response.status_code == 403:
+            text_lower = response.text.lower()
+            if "secondary rate limit" in text_lower:
+                self._handle_secondary_rate_limit(response)
+            elif "rate limit" in text_lower:
+                self._handle_rate_limit(response)
+
+        # Check for other errors
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise GithubRetryableError(str(exc)) from exc
+
+        # Fresh response - cache it
+        data = response.json()
+        new_etag = response.headers.get("ETag")
+        new_last_modified = response.headers.get("Last-Modified")
+
+        if new_etag or new_last_modified:
+            cache.set_cached(url, data, new_etag, new_last_modified, ttl)
+
+        return data
+
+    def _throttled_request(
+        self,
+        method: str,
+        path: str,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """
+        Make a throttled request to avoid secondary rate limits.
+
+        Uses sliding window rate limiter to spread requests over time.
+        """
+        from app.services.github.rate_limiter import get_rate_limiter
+
+        # Wait if needed to respect rate limit
+        get_rate_limiter().wait()
+
+        return self._rest_request(method, path, **kwargs)
 
     def _paginate(
         self, path: str, params: Optional[Dict[str, Any]] = None
@@ -405,13 +548,28 @@ class GitHubClient:
                         query = None  # GitHub link already contains query params
                         break
 
-    def get_repository(self, full_name: str) -> Dict[str, Any]:
+    def get_repository(self, full_name: str, use_cache: bool = True) -> Dict[str, Any]:
+        """
+        Get repository information.
+
+        Args:
+            full_name: Repository full name (owner/repo)
+            use_cache: Whether to use ETag caching (default True)
+        """
+        if use_cache:
+            return self._get_with_cache(f"/repos/{full_name}", ttl=3600)
         return self._rest_request("GET", f"/repos/{full_name}")
 
-    def list_languages(self, full_name: str) -> Dict[str, int]:
+    def list_languages(self, full_name: str, use_cache: bool = True) -> Dict[str, int]:
         """
         Return language usage statistics for a repository (bytes of code per language).
+
+        Args:
+            full_name: Repository full name (owner/repo)
+            use_cache: Whether to use ETag caching (default True)
         """
+        if use_cache:
+            return self._get_with_cache(f"/repos/{full_name}/languages", ttl=86400)
         return self._rest_request("GET", f"/repos/{full_name}/languages")
 
     def list_authenticated_repositories(

@@ -13,6 +13,7 @@ from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.log_storage import LogStorageHandle
+from app.pipeline.feature_metadata.build_log import JOB_METADATA
 
 
 @register_feature(
@@ -23,7 +24,8 @@ from app.pipeline.resources.log_storage import LogStorageHandle
         "tr_log_num_jobs",
     },
     group="build_log",
-    priority=8,  # Medium priority - cheap to compute from existing logs
+    priority=8,
+    feature_metadata=JOB_METADATA,
 )
 class JobMetadataNode(FeatureNode):
     """Extracts job IDs and count from log storage."""

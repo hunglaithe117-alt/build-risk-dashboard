@@ -71,7 +71,7 @@ class ExportService:
     ) -> int:
         """Estimate number of rows for export."""
         query = self._build_query(repo_id, start_date, end_date, build_status)
-        return self.db.build_samples.count_documents(query)
+        return self.db.model_builds.count_documents(query)
 
     def should_use_background_job(
         self,
@@ -151,7 +151,7 @@ class ExportService:
             {"$group": {"_id": None, "keys": {"$addToSet": "$feature_keys.k"}}},
         ]
 
-        result = list(self.db.build_samples.aggregate(pipeline))
+        result = list(self.db.model_builds.aggregate(pipeline))
         if result:
             return set(result[0].get("keys", []))
         return set()
@@ -179,7 +179,7 @@ class ExportService:
                 repo_id, start_date, end_date, build_status
             )
 
-        cursor = self.db.build_samples.find(query).sort("created_at", 1).batch_size(100)
+        cursor = self.db.model_builds.find(query).sort("created_at", 1).batch_size(100)
 
         if format == "csv":
             yield from self._stream_csv(cursor, features, all_feature_keys)
@@ -265,7 +265,7 @@ class ExportService:
                 job.build_status,
             )
 
-        cursor = self.db.build_samples.find(query).sort("created_at", 1).batch_size(100)
+        cursor = self.db.model_builds.find(query).sort("created_at", 1).batch_size(100)
 
         if job.format == "csv":
             self._write_csv_file(

@@ -29,3 +29,18 @@ class GithubAllRateLimitError(GithubError):
     def __init__(self, message: str, retry_after: int | float | None = None):
         super().__init__(message)
         self.retry_after = retry_after
+
+
+class GithubSecondaryRateLimitError(GithubRateLimitError):
+    """
+    Raised when GitHub's secondary rate limit (abuse detection) is triggered.
+
+    Secondary rate limits are triggered by:
+    - Too many requests in a short time window (burst)
+    - Too many concurrent requests
+    - Too many CPU-intensive requests
+
+    These require longer backoff (typically 60s+) compared to primary rate limits.
+    """
+
+    pass

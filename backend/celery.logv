@@ -1,0 +1,81 @@
+[2025-12-10 01:17:25,708: INFO/MainProcess] Task app.tasks.ingestion.import_repo[41306741-0334-484d-9d87-aec9b1bbf704] received
+[2025-12-10 01:17:26,670: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice "HTTP/1.1 200 OK"
+[2025-12-10 01:17:27,158: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/languages "HTTP/1.1 200 OK"
+[2025-12-10 01:17:27,883: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/actions/runs?per_page=2 "HTTP/1.1 200 OK"
+[2025-12-10 01:17:27,897: INFO/ForkPoolWorker-8] Fetched 2 builds from github_actions for microsoft/VibeVoice
+[2025-12-10 01:17:27,928: INFO/ForkPoolWorker-8] Reached requested max_builds (2) for microsoft/VibeVoice
+[2025-12-10 01:17:27,932: INFO/ForkPoolWorker-8] Scheduling 2 runs for processing (logs_required=True, features=TravisTorrent default)
+[2025-12-10 01:17:28,028: INFO/ForkPoolWorker-8] Import complete for microsoft/VibeVoice: scheduled=2, total_runs_counter=2, latest_run=2025-12-09 04:28:38+00:00
+[2025-12-10 01:17:28,041: INFO/MainProcess] Task app.tasks.ingestion.download_job_logs[e938f9f3-149c-4973-9574-3ed454a339f2] received
+[2025-12-10 01:17:28,043: INFO/MainProcess] Task app.tasks.ingestion.download_job_logs[800b48a2-fe25-4ac1-bac2-6272b4f8d527] received
+[2025-12-10 01:17:28,056: INFO/ForkPoolWorker-8] Task app.tasks.ingestion.import_repo[41306741-0334-484d-9d87-aec9b1bbf704] succeeded in 2.275123041938059s: {'status': 'completed', 'repo_id': '693867b52a9342098b84dc41', 'runs_found': 2}
+[2025-12-10 01:17:29,010: INFO/ForkPoolWorker-1] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/actions/runs/20051815726/jobs "HTTP/1.1 200 OK"
+[2025-12-10 01:17:29,010: INFO/ForkPoolWorker-2] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/actions/runs/20051963806/jobs "HTTP/1.1 200 OK"
+[2025-12-10 01:17:29,454: INFO/ForkPoolWorker-1] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/actions/jobs/57509273516/logs "HTTP/1.1 302 Found"
+[2025-12-10 01:17:29,930: INFO/ForkPoolWorker-2] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/actions/jobs/57509692216/logs "HTTP/1.1 302 Found"
+[2025-12-10 01:17:30,680: INFO/ForkPoolWorker-1] HTTP Request: GET https://productionresultssa9.blob.core.windows.net/actions-results/47876573-c84d-4661-aa01-11410092b7d1/workflow-job-run-915806d0-5666-53cf-bb59-d0dccece89f1/logs/job/job-logs.txt?rsct=text%2Fplain&se=2025-12-09T18%3A27%3A29Z&sig=SyMTycwb2yite8nM09S9UaGQxvu13Jg9i6R%2FcY7MqEk%3D&ske=2025-12-10T04%3A38%3A33Z&skoid=ca7593d4-ee42-46cd-af88-8b886a2f84eb&sks=b&skt=2025-12-09T16%3A38%3A33Z&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skv=2025-11-05&sp=r&spr=https&sr=b&st=2025-12-09T18%3A17%3A24Z&sv=2025-11-05 "HTTP/1.1 200 OK"
+[2025-12-10 01:17:31,139: INFO/ForkPoolWorker-2] HTTP Request: GET https://productionresultssa0.blob.core.windows.net/actions-results/46641db0-fd77-43bd-9340-dd81dba4314f/workflow-job-run-bb04bf62-7473-532b-8b6f-26e924791f3e/logs/job/job-logs.txt?rsct=text%2Fplain&se=2025-12-09T18%3A27%3A29Z&sig=FXsqO78TjhO2Kq4rJt%2Fpm3AX7x8GUA2e2YQNMX0ATPc%3D&ske=2025-12-10T04%3A46%3A01Z&skoid=ca7593d4-ee42-46cd-af88-8b886a2f84eb&sks=b&skt=2025-12-09T16%3A46%3A01Z&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skv=2025-11-05&sp=r&spr=https&sr=b&st=2025-12-09T18%3A17%3A24Z&sv=2025-11-05 "HTTP/1.1 200 OK"
+[2025-12-10 01:17:31,851: INFO/MainProcess] Task app.tasks.processing.process_workflow_run[ce392e90-b8cf-4976-a84b-a8961acfd481] received
+[2025-12-10 01:17:31,853: INFO/ForkPoolWorker-1] Task app.tasks.ingestion.download_job_logs[e938f9f3-149c-4973-9574-3ed454a339f2] succeeded in 3.7294370000017807s: {'repo_id': '693867b52a9342098b84dc41', 'run_id': 20051815726, 'jobs_processed': 1, 'logs_collected': 1}
+[2025-12-10 01:17:31,917: INFO/ForkPoolWorker-8] Cloning microsoft/VibeVoice to ../repo-data/repos/693867b52a9342098b84dc41
+[2025-12-10 01:17:32,224: INFO/MainProcess] Task app.tasks.processing.process_workflow_run[91938337-027f-4ed3-9bde-720cfaea4f3c] received
+[2025-12-10 01:17:32,229: INFO/ForkPoolWorker-2] Task app.tasks.ingestion.download_job_logs[800b48a2-fe25-4ac1-bac2-6272b4f8d527] succeeded in 4.086907999939285s: {'repo_id': '693867b52a9342098b84dc41', 'run_id': 20051963806, 'jobs_processed': 1, 'logs_collected': 1}
+[2025-12-10 01:18:03,814: INFO/ForkPoolWorker-8] Executing feature pipeline with 2 levels
+[2025-12-10 01:18:03,824: INFO/ForkPoolWorker-8] Executed workflow_metadata in 5.88ms, extracted 6 features
+[2025-12-10 01:18:03,832: INFO/ForkPoolWorker-8] Executed job_metadata in 13.15ms, extracted 2 features
+[2025-12-10 01:18:03,843: INFO/ForkPoolWorker-8] Executed test_log_parser in 13.64ms, extracted 7 features
+[2025-12-10 01:18:03,883: WARNING/ForkPoolWorker-8] Exception ignored in: 
+[2025-12-10 01:18:03,883: WARNING/ForkPoolWorker-8] <function _CatFileContentStream.__del__ at 0x109bb6de0>
+[2025-12-10 01:18:03,883: WARNING/ForkPoolWorker-8] Traceback (most recent call last):
+[2025-12-10 01:18:03,883: WARNING/ForkPoolWorker-8]   File "/Users/hunglai/hust/20251/thesis/build-risk-dashboard/backend/.venv/lib/python3.12/site-packages/git/cmd.py", line 532, in __del__
+[2025-12-10 01:18:03,885: WARNING/ForkPoolWorker-8]     
+[2025-12-10 01:18:03,885: WARNING/ForkPoolWorker-8] self._stream.read(bytes_left + 1)
+[2025-12-10 01:18:03,886: WARNING/ForkPoolWorker-8] ValueError
+[2025-12-10 01:18:03,886: WARNING/ForkPoolWorker-8] : 
+[2025-12-10 01:18:03,886: WARNING/ForkPoolWorker-8] read of closed file
+[2025-12-10 01:18:03,920: INFO/ForkPoolWorker-8] Executed git_commit_info in 103.71ms, extracted 5 features
+[2025-12-10 01:18:03,923: INFO/ForkPoolWorker-8] Executed team_membership in 99.29ms, extracted 2 features
+[2025-12-10 01:18:04,734: INFO/ForkPoolWorker-1] Executing feature pipeline with 2 levels
+[2025-12-10 01:18:04,742: INFO/ForkPoolWorker-1] Executed job_metadata in 3.19ms, extracted 2 features
+[2025-12-10 01:18:04,746: INFO/ForkPoolWorker-1] Executed workflow_metadata in 7.80ms, extracted 6 features
+[2025-12-10 01:18:04,759: INFO/ForkPoolWorker-1] Executed test_log_parser in 14.77ms, extracted 7 features
+[2025-12-10 01:18:04,795: INFO/ForkPoolWorker-1] Executed git_commit_info in 59.65ms, extracted 5 features
+[2025-12-10 01:18:04,806: WARNING/ForkPoolWorker-1] Exception ignored in: 
+[2025-12-10 01:18:04,806: WARNING/ForkPoolWorker-1] <function _CatFileContentStream.__del__ at 0x109bb6de0>
+[2025-12-10 01:18:04,806: WARNING/ForkPoolWorker-1] Traceback (most recent call last):
+[2025-12-10 01:18:04,806: WARNING/ForkPoolWorker-1]   File "/Users/hunglai/hust/20251/thesis/build-risk-dashboard/backend/.venv/lib/python3.12/site-packages/git/cmd.py", line 532, in __del__
+[2025-12-10 01:18:04,806: WARNING/ForkPoolWorker-1]     
+[2025-12-10 01:18:04,806: WARNING/ForkPoolWorker-1] self._stream.read(bytes_left + 1)
+[2025-12-10 01:18:04,807: WARNING/ForkPoolWorker-1] ValueError
+[2025-12-10 01:18:04,807: WARNING/ForkPoolWorker-1] : 
+[2025-12-10 01:18:04,807: WARNING/ForkPoolWorker-1] read of closed file
+[2025-12-10 01:18:04,835: INFO/ForkPoolWorker-1] Executed team_membership in 96.14ms, extracted 2 features
+[2025-12-10 01:18:06,795: INFO/ForkPoolWorker-8] Executed repo_snapshot_features in 2963.01ms, extracted 15 features
+[2025-12-10 01:18:07,125: INFO/ForkPoolWorker-8] Executed file_touch_history in 328.60ms, extracted 1 features
+[2025-12-10 01:18:07,511: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/eb09b39cc32854a9cad8e812ab56c11fae8d8bb5/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:07,921: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/9b0643856052c42a008812c48913f127881278d2/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:08,172: INFO/ForkPoolWorker-8] Executed git_diff_features in 1375.27ms, extracted 10 features
+[2025-12-10 01:18:08,299: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/c1c5e40bef660e2c8abd8564360e9cd22fe83326/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:08,681: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/73a9711d8e97b73c2f4d7fdb0bcf897235d7f43a/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:08,699: INFO/ForkPoolWorker-1] Executed repo_snapshot_features in 3952.10ms, extracted 15 features
+[2025-12-10 01:18:08,755: INFO/ForkPoolWorker-1] Executed file_touch_history in 55.06ms, extracted 1 features
+[2025-12-10 01:18:08,771: INFO/ForkPoolWorker-1] Executed git_diff_features in 70.54ms, extracted 10 features
+[2025-12-10 01:18:09,105: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/04d19f8352a43ec0ea566ffa009c2e39d0c203a7/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:09,240: INFO/ForkPoolWorker-1] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/d295d1e1d0fff1ad42bc0450d5b593f8e59356b9/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:09,518: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/79470ff5768e17cbef6a3e1a93d1fd82ecc9a00d/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:09,658: INFO/ForkPoolWorker-1] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/pulls/6/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:09,661: INFO/ForkPoolWorker-1] Executed github_discussion_features in 958.33ms, extracted 4 features
+[2025-12-10 01:18:09,704: INFO/ForkPoolWorker-1] Pipeline completed for build 693867b701881722e53054d7: status=completed, features=52
+[2025-12-10 01:18:09,709: INFO/ForkPoolWorker-1] Task app.tasks.processing.process_workflow_run[91938337-027f-4ed3-9bde-720cfaea4f3c] succeeded in 37.48333733307663s: {'status': 'completed', 'build_id': '693867b701881722e53054d7', 'feature_count': 52, 'errors': [], 'warnings': []}
+[2025-12-10 01:18:09,927: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/a507d67f8e78d9ff6b2ec0b79f1f43ad89477187/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:10,316: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/042656cb4bff067331461f386bcae59133f1eb96/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:10,747: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/7ea24a4fb976adfd271a6673f0fc00cbc3c65394/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:11,578: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/adc08b157548ece467d3e100353ee03f625df0a4/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:12,041: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/82d5f29842d067ea4e70907f4824c570cdfc6f94/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:12,529: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/fc83be5d9251d8274ab9a96326728bf69aba050b/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:13,143: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/e81395cf6d2d438fe5f39adca16f8ac35847b9fc/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:13,555: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/commits/8107244b0b794780f8b4daf0973a334b506e77c8/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:13,951: INFO/ForkPoolWorker-8] HTTP Request: GET https://api.github.com/repos/microsoft/VibeVoice/pulls/6/comments "HTTP/1.1 200 OK"
+[2025-12-10 01:18:13,954: INFO/ForkPoolWorker-8] Executed github_discussion_features in 7157.47ms, extracted 4 features
+[2025-12-10 01:18:13,994: INFO/ForkPoolWorker-8] Pipeline completed for build 693867b701881722e53054d6: status=completed, features=52
+[2025-12-10 01:18:13,999: INFO/ForkPoolWorker-8] Task app.tasks.processing.process_workflow_run[ce392e90-b8cf-4976-a84b-a8961acfd481] succeeded in 42.14415983308572s: {'status': 'completed', 'build_id': '693867b701881722e53054d6', 'feature_count': 52, 'errors': [], 'warnings': []}

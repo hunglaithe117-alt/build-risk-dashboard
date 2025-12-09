@@ -198,9 +198,18 @@ export default function AdminReposPage() {
   const openPanel = async (repoId: string) => {
     setPanelLoading(true);
     setPanelRepo(null);
+    setPanelForm({}); // Reset form
+    setPanelNotes(""); // Reset notes
     try {
       const detail = await reposApi.get(repoId);
       setPanelRepo(detail);
+      // Populate form with repo data
+      setPanelForm({
+        default_branch: detail.default_branch,
+        test_frameworks: detail.test_frameworks || [],
+        source_languages: detail.source_languages || [],
+      });
+      setPanelNotes(detail.notes || "");
     } catch (err) {
       console.error(err);
       setFeedback("Unable to load repository details.");
@@ -211,6 +220,8 @@ export default function AdminReposPage() {
 
   const closePanel = () => {
     setPanelRepo(null);
+    setPanelForm({});
+    setPanelNotes("");
   };
 
   const handlePanelSave = async () => {

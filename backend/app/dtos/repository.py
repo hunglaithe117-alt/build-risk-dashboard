@@ -22,16 +22,6 @@ class RepoImportRequest(BaseModel):
         default="github_actions",
         description="CI/CD provider: github_actions, gitlab_ci, jenkins, circleci, travis_ci",
     )
-    # DEPRECATED: TravisTorrent features are now always applied
-    template_id: Optional[str] = Field(
-        default=None,
-        description="[DEPRECATED] Feature template ID - ignored, TravisTorrent template is always used",
-    )
-    # DEPRECATED: TravisTorrent features are now always applied
-    feature_names: Optional[List[str]] = Field(
-        default=None,
-        description="[DEPRECATED] Custom feature list - ignored, TravisTorrent features are always used",
-    )
     max_builds: Optional[int] = Field(
         default=None,
         ge=1,
@@ -66,10 +56,12 @@ class RepoResponse(BaseModel):
     test_frameworks: List[TestFramework] = Field(default_factory=list)
     source_languages: List[str] = Field(default_factory=list)
     total_builds_imported: int = 0
+    import_status: Optional[str] = Field(
+        default="imported",
+        description="Import status: queued, importing, imported, failed",
+    )
     last_sync_error: Optional[str] = None
     notes: Optional[str] = None
-    # DEPRECATED: TravisTorrent features are now always applied
-    requested_feature_names: List[str] = Field(default_factory=list)  # [DEPRECATED]
     max_builds_to_ingest: Optional[int] = None
     # Always detect languages; no toggle exposed
 
@@ -97,8 +89,6 @@ class RepoUpdateRequest(BaseModel):
     source_languages: Optional[List[str]] = None
     default_branch: Optional[str] = None
     notes: Optional[str] = None
-    # DEPRECATED: TravisTorrent features are now always applied
-    feature_names: Optional[List[str]] = None  # [DEPRECATED] ignored
     max_builds: Optional[int] = Field(default=None, ge=1, le=1000)
     since_days: Optional[int] = Field(default=None, ge=1, le=365)
 

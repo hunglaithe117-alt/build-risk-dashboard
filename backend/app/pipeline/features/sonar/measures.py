@@ -20,14 +20,13 @@ from app.pipeline.core.context import ExecutionContext
 from app.pipeline.core.registry import register_feature
 from app.services.sonar.exporter import MetricsExporter
 from app.config import settings
+from app.pipeline.feature_metadata.sonar import SONAR_METADATA
 
 logger = logging.getLogger(__name__)
 
-# Load metrics list from exporter to generate feature names
 _exporter = MetricsExporter()
 SONAR_METRICS = _exporter.metrics
 
-# Generate feature names with sonar_ prefix
 SONAR_FEATURE_NAMES = {f"sonar_{metric}" for metric in SONAR_METRICS}
 
 
@@ -36,6 +35,7 @@ SONAR_FEATURE_NAMES = {f"sonar_{metric}" for metric in SONAR_METRICS}
     group="sonar",
     requires_resources={"sonar_client"},
     provides=SONAR_FEATURE_NAMES,
+    feature_metadata=SONAR_METADATA,
 )
 class SonarMeasuresNode(FeatureNode):
     """

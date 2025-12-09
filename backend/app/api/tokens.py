@@ -25,7 +25,6 @@ from app.services.github.github_token_manager import (
     verify_github_token,
     get_token_rate_limit,
     hash_token,
-    mask_token,
     get_raw_token_from_cache,
     PublicTokenStatus,
 )

@@ -152,7 +152,13 @@ def export_metrics_from_webhook(self, component_key: str, build_id: str = None):
                 build_repo = ModelBuildRepository(db)
 
             # Update build with sonar features
-            build_repo.update_features(str(pending.build_id), sonar_features)
+            build_repo.update_one(
+                str(pending.build_id),
+                {
+                    "features": sonar_features,
+                    "extraction_status": "completed",
+                },
+            )
 
             # Mark pending as completed
             pending_repo.mark_completed(pending.id, metrics)

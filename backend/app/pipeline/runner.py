@@ -646,14 +646,13 @@ def run_feature_pipeline(
     # Run pipeline with requested feature IDs from repo
     pipeline = FeaturePipeline(db)
 
-    # Get feature names from repo configuration
-    feature_names = getattr(repo, "requested_feature_names", None) or []
+    from app.pipeline.constants import TRAVISTORRENT_FEATURES
 
     result = pipeline.run(
         model_build,
         repo,
         workflow_run,
-        features_filter=set(feature_names) if feature_names else None,
+        features_filter=TRAVISTORRENT_FEATURES,
     )
 
     # Save features to ModelBuild

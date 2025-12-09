@@ -1,11 +1,3 @@
-"""
-Team Membership Node.
-
-Extracts team membership metrics:
-- gh_team_size: Number of unique contributors in last 90 days
-- gh_by_core_team_member: Whether the build author is a core team member
-"""
-
 import logging
 import re
 import subprocess
@@ -23,6 +15,7 @@ from app.pipeline.utils.git_utils import (
     get_author_email,
     run_git,
 )
+from app.pipeline.feature_metadata.git import TEAM_MEMBERSHIP
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +29,9 @@ logger = logging.getLogger(__name__)
     },
     group="git",
     priority=5,
+    feature_metadata=TEAM_MEMBERSHIP,
 )
 class TeamMembershipNode(FeatureNode):
-    """
-    Calculates team membership metrics.
-
-    Core team = Direct committers (excluding PR merges) + PR mergers
-    """
-
     LOOKBACK_DAYS = 90
 
     def extract(self, context: ExecutionContext) -> Dict[str, Any]:
@@ -58,13 +46,11 @@ class TeamMembershipNode(FeatureNode):
         build_sample = context.build_sample
         db = context.db
 
-        # Get commit date - try GitPython first, then subprocess
         committed_date: Optional[int] = None
         try:
             current_commit = repo.commit(effective_sha)
             committed_date = current_commit.committed_date
         except Exception:
-            # Fallback to subprocess
             commit_info = get_commit_info(repo_path, effective_sha)
             committed_date = commit_info.get("committed_date")
 

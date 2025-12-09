@@ -344,11 +344,6 @@ def get_public_token_by_id(db: Database, token_id: str) -> Optional[dict]:
     }
 
 
-# ============================================================================
-# Token Pool Management
-# ============================================================================
-
-
 def get_tokens_pool_status(db: Database) -> dict:
     """
     Get overall status of the token pool.

@@ -3,6 +3,7 @@ from .git import GIT_METADATA
 from .github import GITHUB_METADATA
 from .repo import REPO_METADATA
 from .sonar import SONAR_METADATA, SONAR_KEY_TO_FEATURE, get_sonar_metric_keys
+from .trivy import TRIVY_METADATA
 
 ALL_FEATURE_METADATA = {
     **BUILD_LOG_METADATA,
@@ -10,6 +11,7 @@ ALL_FEATURE_METADATA = {
     **GITHUB_METADATA,
     **REPO_METADATA,
     **SONAR_METADATA,
+    **TRIVY_METADATA,
 }
 
 __all__ = [
@@ -20,5 +22,6 @@ __all__ = [
     "SONAR_METADATA",
     "SONAR_KEY_TO_FEATURE",
     "get_sonar_metric_keys",
+    "TRIVY_METADATA",
     "ALL_FEATURE_METADATA",
 ]

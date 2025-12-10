@@ -105,10 +105,6 @@ class DatasetService:
             updates["name"] = payload_dict["name"]
         if "description" in payload_dict:
             updates["description"] = payload_dict["description"]
-        if "tags" in payload_dict:
-            updates["tags"] = payload_dict["tags"]
-        if "selected_template" in payload_dict:
-            updates["selected_template"] = payload_dict["selected_template"]
         if "selected_features" in payload_dict:
             updates["selected_features"] = payload_dict["selected_features"] or []
 
@@ -160,7 +156,6 @@ class DatasetService:
         upload_file,
         name: Optional[str] = None,
         description: Optional[str] = None,
-        tags: Optional[Sequence[str]] = None,
         ci_provider: str = "github_actions",
     ) -> DatasetResponse:
         """
@@ -241,8 +236,6 @@ class DatasetService:
                 "duplicate_rate": 0.0,
                 "build_coverage": coverage,
             },
-            "tags": list(tags or []),
-            "selected_template": None,
             "selected_features": [],
             "preview": preview,
             "created_at": now,

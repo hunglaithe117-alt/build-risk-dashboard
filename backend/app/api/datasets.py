@@ -223,11 +223,18 @@ def validate_for_enrichment(
     if not dataset:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    if dataset.get("user_id") != user_id:
+    # Compare user_id as strings to handle ObjectId vs str
+    if str(dataset.user_id) != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
     # Check mapping
-    mapping = dataset.get("mapped_fields", {})
+    mapping = dataset.mapped_fields or {}
+    # Convert Pydantic model to dict if needed
+    if hasattr(mapping, "model_dump"):
+        mapping = mapping.model_dump()
+    elif hasattr(mapping, "dict"):
+        mapping = mapping.dict()
+
     required_fields = ["build_id", "repo_name"]
     missing_mappings = [f for f in required_fields if not mapping.get(f)]
     mapping_complete = len(missing_mappings) == 0
@@ -242,8 +249,11 @@ def validate_for_enrichment(
     repos_invalid = []
     total_rows = 0
 
-    file_path = dataset.get("file_path")
-    if file_path and Path(file_path).exists():
+    # Construct file path from file_name
+    # Dataset files are stored in ../repo-data/datasets/
+    dataset_dir = Path(__file__).parent.parent.parent / "repo-data" / "datasets"
+    file_path = dataset_dir / dataset.file_name if dataset.file_name else None
+    if file_path and file_path.exists():
         repo_name_col = mapping.get("repo_name")
         if repo_name_col:
             with open(file_path, "r", encoding="utf-8") as f:

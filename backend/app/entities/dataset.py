@@ -39,7 +39,5 @@ class DatasetProject(BaseEntity):
     columns: List[str] = Field(default_factory=list)
     mapped_fields: DatasetMapping = Field(default_factory=DatasetMapping)
     stats: DatasetStats = Field(default_factory=DatasetStats)
-    tags: List[str] = Field(default_factory=list)
-    selected_template: Optional[str] = None
     selected_features: List[str] = Field(default_factory=list)
     preview: List[Dict[str, Any]] = Field(default_factory=list)

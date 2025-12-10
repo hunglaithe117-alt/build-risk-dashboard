@@ -562,7 +562,10 @@ export const enrichmentApi = {
 
   getWebSocketUrl: (jobId: string): string => {
     const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = process.env.NEXT_PUBLIC_API_URL?.replace(/^https?:\/\//, "") || "localhost:8000";
+    // Remove protocol and /api suffix to get just host:port
+    const host = process.env.NEXT_PUBLIC_API_URL
+      ?.replace(/^https?:\/\//, "")
+      ?.replace(/\/api\/?$/, "") || "localhost:8000";
     return `${wsProtocol}//${host}/api/ws/enrichment/${jobId}`;
   },
 };
@@ -713,3 +716,63 @@ export const exportApi = {
     return response.data;
   },
 };
+
+export interface DataSourceInfo {
+  source_type: string;
+  display_name: string;
+  description: string;
+  icon: string;
+  requires_config: boolean;
+  config_fields: Array<{
+    name: string;
+    type: string;
+    label: string;
+    description?: string;
+    required?: boolean;
+    default?: any;
+    options?: Array<{ value: string; label: string }>;
+    placeholder?: string;
+  }>;
+  features_count: number;
+  is_available: boolean;
+  is_configured: boolean;
+}
+
+export interface DataSourceListResponse {
+  sources: DataSourceInfo[];
+  total: number;
+}
+
+export interface DataSourceDetailResponse extends DataSourceInfo {
+  features: string[];
+  resource_dependencies: string[];
+}
+
+export const dataSourcesApi = {
+  // List all data sources with availability status
+  list: async (): Promise<DataSourceListResponse> => {
+    const response = await api.get<DataSourceListResponse>("/data-sources");
+    return response.data;
+  },
+
+  // Get details for a specific data source
+  get: async (sourceType: string): Promise<DataSourceDetailResponse> => {
+    const response = await api.get<DataSourceDetailResponse>(
+      `/data-sources/${sourceType}`
+    );
+    return response.data;
+  },
+
+  // Get features for a specific data source
+  getFeatures: async (
+    sourceType: string
+  ): Promise<{ source_type: string; features: string[]; count: number }> => {
+    const response = await api.get<{
+      source_type: string;
+      features: string[];
+      count: number;
+    }>(`/data-sources/${sourceType}/features`);
+    return response.data;
+  },
+};
+

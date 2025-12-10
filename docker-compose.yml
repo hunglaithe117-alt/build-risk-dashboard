@@ -70,6 +70,17 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
+  # Trivy Vulnerability Scanner Server
+  trivy:
+    image: aquasec/trivy:latest
+    container_name: build-risk-trivy
+    command: server --listen 0.0.0.0:4954
+    ports:
+      - "4954:4954"
+    volumes:
+      - trivy_cache:/root/.cache/trivy
+    restart: unless-stopped
+
   # Celery Worker for Data Processing
   celery-worker:
     build:
@@ -234,6 +245,7 @@ volumes:
   sonarqube_data:
   sonarqube_extensions:
   sonarqube_logs:
+  trivy_cache:  # Trivy vulnerability database cache
   shared_data:  # Shared volume for repo mirrors
   loki_data:
   grafana_data:

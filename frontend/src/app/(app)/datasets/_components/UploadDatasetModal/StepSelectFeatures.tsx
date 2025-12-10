@@ -69,6 +69,19 @@ export function StepSelectFeatures({
         return labels;
     }, [features]);
 
+    // Create feature descriptions mapping (feature name -> description)
+    const featureDescriptions = useMemo(() => {
+        const descriptions: Record<string, string> = {};
+        features.forEach(group => {
+            group.features.forEach(feat => {
+                if (feat.description) {
+                    descriptions[feat.name] = feat.description;
+                }
+            });
+        });
+        return descriptions;
+    }, [features]);
+
     // Get node labels from DAG data
     const nodeLabels = useMemo(() => {
         const labels: Record<string, string> = {};
@@ -115,6 +128,9 @@ export function StepSelectFeatures({
                     <p className="text-sm text-muted-foreground">
                         Choose features to extract from your dataset builds
                     </p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                        ℹ️ <code className="bg-blue-50 dark:bg-blue-900/30 px-1 rounded">tr_build_id</code> and <code className="bg-blue-50 dark:bg-blue-900/30 px-1 rounded">gh_project_name</code> are always included automatically
+                    </p>
                 </div>
                 <div className="flex items-center gap-3">
                     <Badge variant="secondary" className="text-sm">
@@ -126,8 +142,8 @@ export function StepSelectFeatures({
                             type="button"
                             onClick={() => setViewMode("dag")}
                             className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === "dag"
-                                    ? "bg-blue-500 text-white shadow-sm"
-                                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                ? "bg-blue-500 text-white shadow-sm"
+                                : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
                                 }`}
                         >
                             <span className="flex items-center gap-1.5">
@@ -141,8 +157,8 @@ export function StepSelectFeatures({
                             type="button"
                             onClick={() => setViewMode("list")}
                             className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === "list"
-                                    ? "bg-blue-500 text-white shadow-sm"
-                                    : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                ? "bg-blue-500 text-white shadow-sm"
+                                : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
                                 }`}
                         >
                             <span className="flex items-center gap-1.5">
@@ -183,6 +199,7 @@ export function StepSelectFeatures({
                     <SelectedFeaturesPanel
                         selectedFeatures={selectedFeaturesArray}
                         featureLabels={featureLabels}
+                        featureDescriptions={featureDescriptions}
                         onRemove={handleRemoveFeature}
                         onClear={onClearAll}
                     />

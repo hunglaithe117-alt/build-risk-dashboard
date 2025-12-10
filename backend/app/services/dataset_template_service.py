@@ -54,7 +54,6 @@ class DatasetTemplateService:
         combined = list(dict.fromkeys([*current_features, *template_features]))
 
         updates = {
-            "selected_template": str(template.id) if getattr(template, "id", None) else template_id,
             "selected_features": combined,
             "updated_at": datetime.now(timezone.utc),
         }
@@ -63,7 +62,6 @@ class DatasetTemplateService:
         final = updated or dataset
         if not updated:
             # ensure we return the merged features even if update failed silently
-            final.selected_template = updates["selected_template"]
             final.selected_features = combined
 
         payload = (

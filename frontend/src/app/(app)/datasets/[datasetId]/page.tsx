@@ -3,44 +3,31 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-    ArrowLeft,
     Database,
-    Download,
     FileSpreadsheet,
     Loader2,
-    RefreshCw,
+    Plug,
     Settings,
     Zap,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { datasetsApi, enrichmentApi } from "@/lib/api";
+import type { DatasetRecord, EnrichmentJob } from "@/types";
+
+import { DatasetHeader } from "./_components/DatasetHeader";
+import { DatasetSidebar } from "./_components/DatasetSidebar";
+import { OverviewTab, EnrichmentTab, ConfigurationTab } from "./_components/tabs";
+import { DatasetIntegrationsTab } from "./_components/DatasetIntegrationsTab";
 import {
     Card,
-    CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { datasetsApi, enrichmentApi } from "@/lib/api";
-import type { DatasetRecord } from "@/types";
-
-import { DatasetOverviewTab } from "./_components/DatasetOverviewTab";
-import { DatasetFeaturesTab } from "./_components/DatasetFeaturesTab";
-import { SonarFeaturesTab } from "./_components/SonarFeaturesTab";
-
-function formatDate(value?: string | null) {
-    if (!value) return "—";
-    try {
-        return new Intl.DateTimeFormat(undefined, {
-            dateStyle: "medium",
-            timeStyle: "short",
-        }).format(new Date(value));
-    } catch {
-        return value;
-    }
-}
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 
 export default function DatasetDetailPage() {
     const params = useParams();
@@ -51,6 +38,8 @@ export default function DatasetDetailPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState("overview");
+    const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentJob | null>(null);
+    const [enrichmentLoading, setEnrichmentLoading] = useState(false);
 
     const loadDataset = useCallback(async () => {
         try {
@@ -85,21 +74,40 @@ export default function DatasetDetailPage() {
         }
     };
 
-    const getStatusBadge = () => {
-        if (!dataset) return null;
-        const hasMapping = dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name;
-        const hasFeatures = (dataset.selected_features?.length || 0) > 0;
-
-        if (!hasMapping) {
-            return <Badge variant="secondary">Pending Mapping</Badge>;
+    const handleStartEnrichment = async () => {
+        try {
+            setEnrichmentLoading(true);
+            await enrichmentApi.start(datasetId, {
+                selected_features: dataset?.selected_features || [],
+                auto_import_repos: true,
+            });
+            // Refresh to get latest status
+            loadDataset();
+        } catch (err) {
+            console.error("Failed to start enrichment:", err);
+        } finally {
+            setEnrichmentLoading(false);
         }
-        if (!hasFeatures) {
-            return <Badge variant="outline" className="border-amber-500 text-amber-600">No Features</Badge>;
-        }
-        return <Badge variant="outline" className="border-green-500 text-green-600">Ready</Badge>;
     };
 
-    // Count sonar features
+    const handleDelete = async () => {
+        if (!confirm(`Delete dataset "${dataset?.name}"? This cannot be undone.`)) {
+            return;
+        }
+        try {
+            await datasetsApi.delete(datasetId);
+            router.push("/datasets");
+        } catch (err) {
+            console.error("Failed to delete dataset:", err);
+        }
+    };
+
+    // Configuration status
+    const hasMapping = Boolean(dataset?.mapped_fields?.build_id && dataset?.mapped_fields?.repo_name);
+    const hasFeatures = (dataset?.selected_features?.length || 0) > 0;
+    const isFullyConfigured = hasMapping && hasFeatures;
+
+    // Count features by category
     const sonarFeatures = dataset?.selected_features?.filter(f => f.startsWith("sonar_")) || [];
     const regularFeatures = dataset?.selected_features?.filter(f => !f.startsWith("sonar_")) || [];
 
@@ -130,73 +138,122 @@ export default function DatasetDetailPage() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4">
-                    <Button variant="ghost" size="icon" onClick={() => router.push("/datasets")}>
-                        <ArrowLeft className="h-4 w-4" />
-                    </Button>
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <FileSpreadsheet className="h-6 w-6 text-muted-foreground" />
-                            <h1 className="text-2xl font-bold">{dataset.name}</h1>
-                            {getStatusBadge()}
-                        </div>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                            {dataset.file_name} • {dataset.rows.toLocaleString()} rows • Created {formatDate(dataset.created_at)}
-                        </p>
-                    </div>
+            <DatasetHeader
+                dataset={dataset}
+                onRefresh={loadDataset}
+                onDownload={handleDownload}
+            />
+
+            {/* Main Content with Sidebar */}
+            <div className="flex gap-6">
+                {/* Main Content Area */}
+                <div className="flex-1 min-w-0">
+                    <Tabs value={activeTab} onValueChange={setActiveTab}>
+                        <TabsList className="grid w-full grid-cols-4">
+                            <TabsTrigger value="overview" className="gap-2">
+                                <Database className="h-4 w-4" />
+                                Overview
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="enrichment"
+                                className="gap-2"
+                                disabled={!isFullyConfigured}
+                            >
+                                <Zap className="h-4 w-4" />
+                                Enrichment
+                                {regularFeatures.length > 0 && (
+                                    <Badge variant="secondary" className="ml-1 text-xs">
+                                        {regularFeatures.length}
+                                    </Badge>
+                                )}
+                            </TabsTrigger>
+                            <TabsTrigger value="configuration" className="gap-2">
+                                <Settings className="h-4 w-4" />
+                                Configuration
+                            </TabsTrigger>
+                            <TabsTrigger
+                                value="integrations"
+                                className="gap-2"
+                                disabled={!isFullyConfigured}
+                            >
+                                <Plug className="h-4 w-4" />
+                                Integrations
+                                {sonarFeatures.length > 0 && (
+                                    <Badge variant="secondary" className="ml-1 text-xs">
+                                        {sonarFeatures.length}
+                                    </Badge>
+                                )}
+                            </TabsTrigger>
+                        </TabsList>
+
+                        {/* Configuration Warning Banner */}
+                        {!isFullyConfigured && activeTab === "overview" && (
+                            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex-shrink-0">
+                                        <FileSpreadsheet className="h-5 w-5 text-amber-600" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                                            Configuration Required
+                                        </p>
+                                        <p className="text-sm text-amber-700 dark:text-amber-400">
+                                            {!hasMapping && "Please complete column mapping. "}
+                                            {!hasFeatures && "Please select features to extract."}
+                                        </p>
+                                    </div>
+                                    <Button
+                                        size="sm"
+                                        className="bg-amber-600 hover:bg-amber-700 text-white"
+                                        onClick={() => setActiveTab("configuration")}
+                                    >
+                                        Configure
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
+
+                        <TabsContent value="overview" className="mt-6">
+                            <OverviewTab dataset={dataset} onRefresh={loadDataset} />
+                        </TabsContent>
+
+                        <TabsContent value="enrichment" className="mt-6">
+                            <EnrichmentTab
+                                datasetId={datasetId}
+                                dataset={dataset}
+                                onEnrichmentStatusChange={setEnrichmentStatus}
+                            />
+                        </TabsContent>
+
+                        <TabsContent value="configuration" className="mt-6">
+                            <ConfigurationTab
+                                dataset={dataset}
+                                onEditMapping={() => router.push(`/datasets?configure=${datasetId}`)}
+                                onEditFeatures={() => router.push(`/datasets?configure=${datasetId}`)}
+                                onEditSources={() => router.push(`/datasets?configure=${datasetId}`)}
+                            />
+                        </TabsContent>
+
+                        <TabsContent value="integrations" className="mt-6">
+                            <DatasetIntegrationsTab
+                                datasetId={datasetId}
+                                sonarFeatures={sonarFeatures}
+                            />
+                        </TabsContent>
+                    </Tabs>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={loadDataset}>
-                        <RefreshCw className="mr-2 h-4 w-4" /> Refresh
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleDownload}>
-                        <Download className="mr-2 h-4 w-4" /> Download
-                    </Button>
-                </div>
+
+                {/* Sidebar */}
+                <DatasetSidebar
+                    dataset={dataset}
+                    enrichmentStatus={enrichmentStatus}
+                    onStartEnrichment={handleStartEnrichment}
+                    onDownload={handleDownload}
+                    onEditConfig={() => setActiveTab("configuration")}
+                    onDelete={handleDelete}
+                    isEnrichmentLoading={enrichmentLoading}
+                />
             </div>
-
-            {/* Tabs */}
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="overview" className="gap-2">
-                        <Database className="h-4 w-4" /> Overview
-                    </TabsTrigger>
-                    <TabsTrigger value="features" className="gap-2">
-                        <Zap className="h-4 w-4" />
-                        Features
-                        {regularFeatures.length > 0 && (
-                            <Badge variant="secondary" className="ml-1">{regularFeatures.length}</Badge>
-                        )}
-                    </TabsTrigger>
-                    <TabsTrigger value="sonar" className="gap-2">
-                        <Settings className="h-4 w-4" />
-                        SonarQube
-                        {sonarFeatures.length > 0 && (
-                            <Badge variant="secondary" className="ml-1">{sonarFeatures.length}</Badge>
-                        )}
-                    </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="overview" className="mt-6">
-                    <DatasetOverviewTab dataset={dataset} onRefresh={loadDataset} />
-                </TabsContent>
-
-                <TabsContent value="features" className="mt-6">
-                    <DatasetFeaturesTab
-                        datasetId={datasetId}
-                        features={regularFeatures}
-                        mappingReady={Boolean(dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name)}
-                    />
-                </TabsContent>
-
-                <TabsContent value="sonar" className="mt-6">
-                    <SonarFeaturesTab
-                        datasetId={datasetId}
-                        features={sonarFeatures}
-                    />
-                </TabsContent>
-            </Tabs>
         </div>
     );
 }

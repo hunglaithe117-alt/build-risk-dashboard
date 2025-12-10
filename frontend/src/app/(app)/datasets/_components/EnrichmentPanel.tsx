@@ -33,6 +33,7 @@ interface EnrichmentPanelProps {
     datasetId: string;
     selectedFeatures: string[];
     mappingReady: boolean;
+    autoStart?: boolean;
     onEnrichmentComplete?: () => void;
 }
 
@@ -50,6 +51,7 @@ export function EnrichmentPanel({
     datasetId,
     selectedFeatures,
     mappingReady,
+    autoStart,
     onEnrichmentComplete,
 }: EnrichmentPanelProps) {
     const [state, setState] = useState<EnrichmentState>("idle");
@@ -243,12 +245,21 @@ export function EnrichmentPanel({
         }
     }, [datasetId]);
 
-    // Auto-validate when mapping is ready
+    // Auto-validate when mapping is ready (only once on mount)
+    const hasValidated = useRef(false);
     useEffect(() => {
-        if (mappingReady && state === "idle") {
+        if (mappingReady && state === "idle" && !hasValidated.current) {
+            hasValidated.current = true;
             handleValidate();
         }
     }, [mappingReady, state, handleValidate]);
+
+    // Auto-start enrichment after validation if autoStart is true
+    useEffect(() => {
+        if (autoStart && state === "validated" && validation?.valid && selectedFeatures.length > 0) {
+            handleStartEnrichment();
+        }
+    }, [autoStart, state, validation?.valid, selectedFeatures.length, handleStartEnrichment]);
 
     // Render based on state
     const renderContent = () => {

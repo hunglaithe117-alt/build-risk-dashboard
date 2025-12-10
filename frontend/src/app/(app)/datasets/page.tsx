@@ -153,8 +153,8 @@ export default function DatasetsPage() {
   };
 
   const handleUploadSuccess = (dataset: DatasetRecord) => {
-    setFeedback(`Dataset "${dataset.name}" uploaded successfully.`);
-    loadDatasets(page, true);
+    // Navigate directly to dataset detail page
+    router.push(`/datasets/${dataset.id}`);
   };
 
   const openPanel = async (datasetId: string) => {

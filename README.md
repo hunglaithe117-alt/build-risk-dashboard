@@ -33,23 +33,48 @@ This will start:
 
 **RabbitMQ Management Console**: [http://localhost:15672](http://localhost:15672) (default: `myuser` / `mypass`)
 
-### 2. SonarQube Server (Optional)
+### 2. SonarQube & Trivy Setup (Optional)
 
-If you want to use SonarQube scanning, you have two options:
+The platform supports code quality analysis (SonarQube) and vulnerability scanning (Trivy).
 
-#### Option A: Local SonarQube with Docker
+#### Using Docker Compose (Recommended)
+
+Both services are included in the docker-compose.yml:
 
 ```bash
-docker run -d --name sonarqube -p 9000:9000 sonarqube:latest
+# Start all infrastructure including SonarQube and Trivy
+docker-compose up -d
 ```
 
-Then visit [http://localhost:9000](http://localhost:9000) (default login: `admin` / `admin`).
+This starts:
+- **SonarQube**: [http://localhost:9000](http://localhost:9000) (default: `admin` / `admin`)
+- **Trivy Server**: Port 4954 (used internally by backend)
 
-Generate a token: User → My Account → Security → Generate Tokens
+**First-time SonarQube Setup:**
+1. Wait ~2 minutes for SonarQube to initialize
+2. Visit [http://localhost:9000](http://localhost:9000)
+3. Login with `admin` / `admin`, change password when prompted
+4. Generate API token: User icon → My Account → Security → Generate Tokens
+5. Add token to backend `.env`:
+   ```env
+   SONAR_TOKEN=your_generated_token
+   ```
 
-#### Option B: Use SonarCloud
+#### Using SonarCloud (Alternative)
 
 Sign up at [sonarcloud.io](https://sonarcloud.io) and obtain your organization token.
+
+#### Trivy Configuration
+
+Trivy runs automatically when enabled. Add to backend `.env`:
+
+```env
+# Enable Trivy scanning
+TRIVY_ENABLED=true
+TRIVY_SEVERITY=CRITICAL,HIGH,MEDIUM
+TRIVY_TIMEOUT=300
+TRIVY_SKIP_DIRS=node_modules,vendor,.git
+```
 
 ### 3. Backend Setup
 

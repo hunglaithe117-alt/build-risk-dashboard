@@ -19,7 +19,7 @@ from app.pipeline.feature_metadata.build_log import WORKFLOW_METADATA
 
 @register_feature(
     name="workflow_metadata",
-    requires_resources=set(),
+    requires_resources={ResourceNames.GITHUB_CLIENT},
     provides={
         "tr_build_id",
         "tr_build_number",

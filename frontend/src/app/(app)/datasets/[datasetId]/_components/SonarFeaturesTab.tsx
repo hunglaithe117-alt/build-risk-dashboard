@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,11 +11,11 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { api, sonarApi } from "@/lib/api";
+import { api } from "@/lib/api";
+import { useDynamicWebSocket } from "@/hooks/use-websocket";
 import {
     AlertCircle,
     CheckCircle2,
-    Clock,
     Loader2,
     RefreshCw,
     Search,
@@ -43,88 +43,44 @@ export function SonarFeaturesTab({ datasetId, features }: SonarFeaturesTabProps)
     const [search, setSearch] = useState("");
     const [pendingScans, setPendingScans] = useState<PendingScan[]>([]);
     const [loading, setLoading] = useState(true);
-    const [wsConnected, setWsConnected] = useState(false);
-    const wsRef = useRef<WebSocket | null>(null);
 
     // Load pending scans
     const loadPendingScans = useCallback(async () => {
         try {
-            // Get pending scans for this dataset's builds
             const response = await api.get<{ items: PendingScan[] }>(
                 `/sonar/dataset/${datasetId}/pending`
             );
             setPendingScans(response.data.items || []);
         } catch {
-            // No pending scans
             setPendingScans([]);
         } finally {
             setLoading(false);
         }
     }, [datasetId]);
 
-    // Connect WebSocket for real-time updates
-    const connectWebSocket = useCallback(() => {
-        try {
-            const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-            const host = process.env.NEXT_PUBLIC_API_URL?.replace(/^https?:\/\//, "") || "localhost:8000";
-            const wsUrl = `${wsProtocol}//${host}/api/sonar/ws/dataset/${datasetId}`;
-
-            const ws = new WebSocket(wsUrl);
-            wsRef.current = ws;
-
-            ws.onopen = () => {
-                setWsConnected(true);
-                console.log("SonarQube WebSocket connected");
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === "scan_update") {
-                        // Update pending scan status
-                        setPendingScans((prev) =>
-                            prev.map((scan) =>
-                                scan.component_key === data.component_key
-                                    ? { ...scan, ...data }
-                                    : scan
-                            )
-                        );
-                    } else if (data.type === "scan_complete") {
-                        // Remove completed scan from pending
-                        setPendingScans((prev) =>
-                            prev.filter((scan) => scan.component_key !== data.component_key)
-                        );
-                    }
-                } catch (e) {
-                    console.error("WebSocket message parse error:", e);
-                }
-            };
-
-            ws.onclose = () => {
-                setWsConnected(false);
-                wsRef.current = null;
-                // Reconnect after 5 seconds
-                setTimeout(connectWebSocket, 5000);
-            };
-
-            ws.onerror = () => {
-                setWsConnected(false);
-            };
-        } catch (err) {
-            console.error("WebSocket connection error:", err);
-        }
-    }, [datasetId]);
+    // Use shared WebSocket hook
+    const { isConnected } = useDynamicWebSocket({
+        path: `/api/sonar/ws/dataset/${datasetId}`,
+        onMessage: (data) => {
+            if (data.type === "scan_update") {
+                setPendingScans((prev) =>
+                    prev.map((scan) =>
+                        scan.component_key === data.component_key
+                            ? { ...scan, ...data }
+                            : scan
+                    )
+                );
+            } else if (data.type === "scan_complete") {
+                setPendingScans((prev) =>
+                    prev.filter((scan) => scan.component_key !== data.component_key)
+                );
+            }
+        },
+    });
 
     useEffect(() => {
         loadPendingScans();
-        connectWebSocket();
-
-        return () => {
-            if (wsRef.current) {
-                wsRef.current.close();
-            }
-        };
-    }, [loadPendingScans, connectWebSocket]);
+    }, [loadPendingScans]);
 
     // Filter features
     const filteredFeatures = features.filter((f) =>
@@ -150,7 +106,7 @@ export function SonarFeaturesTab({ datasetId, features }: SonarFeaturesTabProps)
                             </CardDescription>
                         </div>
                         <div className="flex items-center gap-2">
-                            {wsConnected ? (
+                            {isConnected ? (
                                 <Badge variant="outline" className="border-green-500 text-green-600">
                                     <Wifi className="mr-1 h-3 w-3" /> Connected
                                 </Badge>

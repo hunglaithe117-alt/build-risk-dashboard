@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import Papa from "papaparse";
 import { CIProvider, type DatasetRecord, type DatasetTemplateRecord } from "@/types";
 import { datasetsApi, featuresApi, reposApi } from "@/lib/api";
 import type { CSVPreview, MappingKey, RepoConfig, FeatureCategoryGroup, Step, FeatureDAGData } from "../types";
@@ -46,7 +47,12 @@ export function useUploadDatasetForm({
     const [supportedLanguages, setSupportedLanguages] = useState<string[]>([]);
     const [transitionLoading, setTransitionLoading] = useState(false);
 
-    // Step 3: Feature selection state
+    // Step 3: Data sources state
+    const [enabledSources, setEnabledSources] = useState<Set<string>>(
+        new Set(["git", "build_log", "github_api"]) // Core sources enabled by default
+    );
+
+    // Step 4: Feature selection state
     const [features, setFeatures] = useState<FeatureCategoryGroup[]>([]);
     const [templates, setTemplates] = useState<DatasetTemplateRecord[]>([]);
     const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set());
@@ -77,6 +83,7 @@ export function useUploadDatasetForm({
         setAvailableLanguages({});
         setLanguageLoading({});
         setActiveRepo(null);
+        setEnabledSources(new Set(["git", "build_log", "github_api"]));
         setSelectedFeatures(new Set());
         setFeatureSearch("");
         setCollapsedCategories(new Set());
@@ -160,44 +167,47 @@ export function useUploadDatasetForm({
 
     const parseCSVPreview = useCallback(async (file: File): Promise<CSVPreview> => {
         return new Promise((resolve, reject) => {
+            const previewSlice = file.slice(0, 100000);
             const reader = new FileReader();
+
             reader.onload = (e) => {
-                try {
-                    const text = e.target?.result as string;
-                    const lines = text.split("\n").filter(line => line.trim());
+                const csvText = e.target?.result as string;
 
-                    if (lines.length === 0) {
-                        reject(new Error("CSV file is empty"));
-                        return;
-                    }
+                Papa.parse(csvText, {
+                    header: true,
+                    skipEmptyLines: true,
+                    preview: 5,
+                    complete: (results) => {
+                        if (results.errors.length > 0 && results.data.length === 0) {
+                            reject(new Error(results.errors[0].message));
+                            return;
+                        }
 
-                    const header = lines[0].split(",").map(col => col.trim().replace(/^"|"$/g, ""));
+                        const columns = results.meta.fields || [];
+                        const rows = results.data as Record<string, string>[];
 
-                    const previewRows: Record<string, string>[] = [];
-                    for (let i = 1; i < Math.min(6, lines.length); i++) {
-                        const values = lines[i].split(",").map(v => v.trim().replace(/^"|"$/g, ""));
-                        const row: Record<string, string> = {};
-                        header.forEach((col, idx) => {
-                            row[col] = values[idx] || "";
+                        const avgRowSize = csvText.length / Math.max(rows.length + 1, 1);
+                        const estimatedTotalRows = Math.floor(file.size / avgRowSize) - 1;
+
+                        resolve({
+                            columns,
+                            rows,
+                            totalRows: estimatedTotalRows > 0 ? estimatedTotalRows : rows.length,
+                            fileName: file.name,
+                            fileSize: file.size,
                         });
-                        previewRows.push(row);
-                    }
-
-                    resolve({
-                        columns: header,
-                        rows: previewRows,
-                        totalRows: lines.length - 1,
-                        fileName: file.name,
-                        fileSize: file.size,
-                    });
-                } catch (err) {
-                    reject(err);
-                }
+                    },
+                    error: (error: Error) => {
+                        reject(new Error(error.message));
+                    },
+                });
             };
+
             reader.onerror = () => reject(new Error("Failed to read file"));
-            reader.readAsText(file.slice(0, 100000));
+            reader.readAsText(previewSlice);
         });
     }, []);
+
 
     const guessMapping = useCallback((columns: string[]) => {
         const lowered = columns.map(c => c.toLowerCase());
@@ -517,6 +527,19 @@ export function useUploadDatasetForm({
         });
     };
 
+    // Toggle data source on/off
+    const toggleSource = (sourceType: string) => {
+        setEnabledSources(prev => {
+            const next = new Set(prev);
+            if (next.has(sourceType)) {
+                next.delete(sourceType);
+            } else {
+                next.add(sourceType);
+            }
+            return next;
+        });
+    };
+
     // Load DAG data
     const loadDAG = useCallback(async () => {
         if (dagData || dagLoading) return;
@@ -567,6 +590,103 @@ export function useUploadDatasetForm({
         setPreview(null);
     };
 
+    // Map enabledSources (data source types) to feature source values
+    // enabledSources: git, build_log, github_api, sonarqube, trivy
+    // feature.source: git_repo, build_log, github_api, sonarqube, trivy, workflow_run, metadata, computed
+    const SOURCE_TYPE_TO_FEATURE_SOURCE: Record<string, string[]> = {
+        git: ["git_repo"],
+        build_log: ["build_log"],
+        github_api: ["github_api", "workflow_run"],
+        sonarqube: ["sonarqube"],
+        trivy: ["trivy"],
+        // metadata and computed features are always included
+    };
+
+    // Filter features based on enabledSources
+    const filteredFeatures = useMemo(() => {
+        // Get all allowed feature sources based on enabledSources
+        const allowedFeatureSources = new Set<string>();
+
+        // Always include metadata and computed sources
+        allowedFeatureSources.add("metadata");
+        allowedFeatureSources.add("computed");
+
+        // Add sources based on enabled data sources
+        for (const source of enabledSources) {
+            const featureSources = SOURCE_TYPE_TO_FEATURE_SOURCE[source];
+            if (featureSources) {
+                featureSources.forEach(s => allowedFeatureSources.add(s));
+            }
+        }
+
+        // Filter features by source
+        return features
+            .map(group => ({
+                ...group,
+                features: group.features.filter(f =>
+                    allowedFeatureSources.has(f.source || "")
+                ),
+            }))
+            .filter(group => group.features.length > 0);
+    }, [features, enabledSources]);
+
+    // Filter DAG data based on enabledSources (removes nodes from disabled sources)
+    const filteredDagData = useMemo((): FeatureDAGData | null => {
+        if (!dagData) return null;
+
+        // Map enabledSources to resource names used in DAG
+        // Backend resources: git_repo, github_client, log_storage, sonar_client, trivy_client
+        const SOURCE_TO_RESOURCE: Record<string, string[]> = {
+            git: ["git_repo"],
+            build_log: ["log_storage"],
+            github_api: ["github_client"],
+            sonarqube: ["sonar_client"],
+            trivy: ["trivy_client"],
+        };
+
+        // Get allowed resources
+        const allowedResources = new Set<string>();
+        for (const source of enabledSources) {
+            const resources = SOURCE_TO_RESOURCE[source];
+            if (resources) {
+                resources.forEach(r => allowedResources.add(r));
+            }
+        }
+
+        // Filter nodes: keep resource nodes if allowed, keep extractor nodes if their required resources are all allowed
+        const filteredNodes = dagData.nodes.filter(node => {
+            if (node.type === "resource") {
+                return allowedResources.has(node.id);
+            }
+            // Extractor nodes: check if all required resources are enabled
+            const requiredResources = node.requires_resources || [];
+            return requiredResources.every(r => allowedResources.has(r));
+        });
+
+        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+
+        // Filter edges: keep only edges where both source and target exist
+        const filteredEdges = dagData.edges.filter(edge =>
+            filteredNodeIds.has(edge.source) && filteredNodeIds.has(edge.target)
+        );
+
+        // Recalculate execution levels
+        const filteredExecutionLevels = dagData.execution_levels
+            .map(level => ({
+                ...level,
+                nodes: level.nodes.filter(n => filteredNodeIds.has(n)),
+            }))
+            .filter(level => level.nodes.length > 0);
+
+        return {
+            nodes: filteredNodes,
+            edges: filteredEdges,
+            execution_levels: filteredExecutionLevels,
+            total_features: filteredNodes.reduce((sum, n) => sum + (n.feature_count || 0), 0),
+            total_nodes: filteredNodes.filter(n => n.type === "extractor").length,
+        };
+    }, [dagData, enabledSources]);
+
     return {
         // State
         step,
@@ -586,16 +706,17 @@ export function useUploadDatasetForm({
         activeRepo,
         transitionLoading,
         frameworksByLang,
-        features,
+        features: filteredFeatures,
         templates,
         selectedFeatures,
         featureSearch,
         featuresLoading,
         collapsedCategories,
-        dagData,
+        dagData: filteredDagData,
         dagLoading,
         minStep,
         fileInputRef,
+        enabledSources,
 
         // Setters
         setStep,
@@ -620,5 +741,6 @@ export function useUploadDatasetForm({
         toggleCategory,
         loadDAG,
         setSelectedFeaturesFromDAG,
+        toggleSource,
     };
 }

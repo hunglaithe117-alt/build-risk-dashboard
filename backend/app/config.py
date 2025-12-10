@@ -79,6 +79,13 @@ class Settings(BaseSettings):
     SONAR_WEBHOOK_SECRET: str = "change-me-change-me"
     SONAR_WEBHOOK_PUBLIC_URL: str = "http://localhost:8000/api/sonar/webhook"
 
+    # Trivy (security scanner)
+    TRIVY_ENABLED: bool = False
+    TRIVY_SEVERITY: str = "CRITICAL,HIGH,MEDIUM"
+    TRIVY_TIMEOUT: int = 300  # Seconds
+    TRIVY_SKIP_DIRS: str = "node_modules,vendor,.git"
+    TRIVY_ASYNC_THRESHOLD: int = 1000
+
     class Config:
         env_file = ".env"
         case_sensitive = True

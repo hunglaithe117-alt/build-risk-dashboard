@@ -462,3 +462,125 @@ def _write_enriched_csv(
         writer.writerows(enriched_rows)
 
     return output_path
+
+
+@shared_task(
+    name="app.tasks.enrichment.run_scheduled_enrichments",
+    bind=True,
+    queue="data_processing",
+)
+def run_scheduled_enrichments(self) -> Dict[str, Any]:
+    """
+    Run scheduled enrichment jobs for datasets with auto-refresh enabled.
+
+    Checks for datasets with enrichment_schedule set and triggers
+    enrichment if the last enrichment was before the schedule interval.
+    """
+    from datetime import timedelta
+    from bson import ObjectId
+
+    db = get_database()
+    dataset_repo = DatasetRepository(db)
+    job_repo = EnrichmentJobRepository(db)
+
+    # Find datasets with schedules
+    # For now, we look for datasets that have:
+    # 1. enrichment_schedule field set (e.g., "daily", "weekly")
+    # 2. Last enrichment older than the schedule interval
+
+    results = {
+        "checked": 0,
+        "triggered": 0,
+        "skipped": 0,
+        "errors": [],
+    }
+
+    try:
+        # Query datasets with enrichment schedule
+        datasets = list(
+            db.datasets.find(
+                {
+                    "enrichment_schedule": {"$exists": True, "$ne": None},
+                    "selected_features": {"$exists": True, "$ne": []},
+                }
+            )
+        )
+
+        for dataset in datasets:
+            results["checked"] += 1
+            dataset_id = str(dataset["_id"])
+
+            try:
+                schedule = dataset.get("enrichment_schedule", "")
+                last_enriched = dataset.get("last_enriched_at")
+
+                # Calculate interval
+                if schedule == "hourly":
+                    interval = timedelta(hours=1)
+                elif schedule == "daily":
+                    interval = timedelta(days=1)
+                elif schedule == "weekly":
+                    interval = timedelta(weeks=1)
+                else:
+                    results["skipped"] += 1
+                    continue
+
+                # Check if enrichment is due
+                now = datetime.now(timezone.utc)
+                if last_enriched:
+                    if isinstance(last_enriched, str):
+                        last_enriched = datetime.fromisoformat(
+                            last_enriched.replace("Z", "+00:00")
+                        )
+                    if now - last_enriched < interval:
+                        results["skipped"] += 1
+                        continue
+
+                # Check if there's already a running job
+                existing_job = job_repo.find_pending_or_running(dataset_id)
+                if existing_job:
+                    results["skipped"] += 1
+                    continue
+
+                # Create enrichment job
+                from app.entities.enrichment_job import EnrichmentJob
+
+                job = EnrichmentJob(
+                    dataset_id=ObjectId(dataset_id),
+                    user_id=ObjectId(
+                        dataset.get("user_id", "000000000000000000000000")
+                    ),
+                    selected_features=dataset.get("selected_features", []),
+                    auto_import_repos=True,
+                    skip_existing=True,
+                )
+                job = job_repo.insert_one(job)
+
+                # Trigger enrichment task
+                enrich_dataset_task.delay(
+                    job_id=str(job.id),
+                    dataset_id=dataset_id,
+                    user_id=str(dataset.get("user_id", "")),
+                    selected_features=dataset.get("selected_features", []),
+                    auto_import_repos=True,
+                    skip_existing=True,
+                )
+
+                results["triggered"] += 1
+                logger.info(f"Triggered scheduled enrichment for dataset {dataset_id}")
+
+            except Exception as e:
+                error_msg = f"Dataset {dataset_id}: {str(e)}"
+                results["errors"].append(error_msg)
+                logger.error(f"Scheduled enrichment error: {error_msg}")
+
+    except Exception as e:
+        logger.error(f"run_scheduled_enrichments failed: {e}")
+        results["errors"].append(str(e))
+
+    logger.info(
+        f"Scheduled enrichments: checked={results['checked']}, "
+        f"triggered={results['triggered']}, skipped={results['skipped']}"
+    )
+
+    return results

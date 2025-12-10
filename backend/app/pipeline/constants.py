@@ -1,12 +1,3 @@
-"""
-TravisTorrent Feature Constants.
-
-This module defines the fixed feature set for the Bayesian Risk Prediction model.
-These features are automatically applied when importing repositories for model training.
-
-When adding or modifying features, update the appropriate constant set below.
-"""
-
 from typing import Set
 
 # =============================================================================
@@ -79,30 +70,16 @@ FEATURES_REPO: Set[str] = {
     "gh_build_started_at",
 }
 
-# =============================================================================
-# COMBINED FEATURE SETS
-# =============================================================================
-
 # All TravisTorrent features for Bayesian model
 TRAVISTORRENT_FEATURES: Set[str] = (
     FEATURES_BUILD_LOG | FEATURES_GIT | FEATURES_GITHUB | FEATURES_REPO
 )
 
-# Default features that are always included (IDs, status, basic metadata)
-# These are not selectable but always extracted
+# Default features always extracted (required for mapping/identification)
+# These are not selectable in custom feature wizard - always included automatically
 DEFAULT_FEATURES: Set[str] = {
     "tr_build_id",
-    "tr_build_number",
-    "tr_original_commit",
-    "git_trigger_commit",
-    "git_branch",
-    "tr_jobs",
-    "tr_status",
-    "tr_duration",
-    "tr_log_num_jobs",
-    "ci_provider",
-    "gh_build_started_at",
-    "gh_lang",
+    "gh_project_name",
 }
 
 # All features including defaults

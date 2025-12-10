@@ -31,16 +31,21 @@ REPOS_DIR.mkdir(parents=True, exist_ok=True)
 
 @dataclass
 class GitRepoHandle:
-    """Handle to an initialized git repository."""
+    """Handle to an initialized git repository with shared worktree."""
 
     repo: Repo
-    path: Path
+    path: Path  # bare repo path
+    worktree_path: Optional[Path]  # checkout at commit (shared across nodes)
     effective_sha: Optional[str]
     original_sha: str  # The originally requested SHA
 
     @property
     def is_commit_available(self) -> bool:
         return self.effective_sha is not None
+
+    @property
+    def has_worktree(self) -> bool:
+        return self.worktree_path is not None and self.worktree_path.exists()
 
 
 class GitRepoProvider(ResourceProvider):
@@ -86,11 +91,15 @@ class GitRepoProvider(ResourceProvider):
             if effective_sha:
                 self._prefetch_commit_blobs(repo_path, effective_sha)
 
+            # Create shared worktree at the commit
+            worktree_path = self._create_shared_worktree(repo_path, effective_sha)
+
         git_repo = Repo(str(repo_path))
 
         return GitRepoHandle(
             repo=git_repo,
             path=repo_path,
+            worktree_path=worktree_path,
             effective_sha=effective_sha,
             original_sha=commit_sha,
         )
@@ -126,7 +135,7 @@ class GitRepoProvider(ResourceProvider):
                     "git",
                     "clone",
                     "--bare",
-                    "--filter=blob:none",  # Partial clone - fetch blobs on demand
+                    "--filter=blob:none",
                     clone_url,
                     str(repo_path),
                 ]
@@ -136,7 +145,7 @@ class GitRepoProvider(ResourceProvider):
                     check=True,
                     capture_output=True,
                     text=True,
-                    timeout=600,  # 10 minutes timeout for clone
+                    timeout=600,
                 )
 
                 logger.info(f"Successfully cloned {repo.full_name}")
@@ -247,6 +256,77 @@ class GitRepoProvider(ResourceProvider):
             return get_installation_token(repo.installation_id)
         return None
 
+    def _create_shared_worktree(
+        self, repo_path: Path, commit_sha: str
+    ) -> Optional[Path]:
+        """
+        Create a shared worktree at the commit for all feature nodes to use.
+
+        Worktrees are stored in: repo-data/worktrees/{repo_id}/{commit_sha}
+        """
+        import shutil
+
+        if not commit_sha:
+            return None
+
+        worktree_base = repo_path.parent.parent / "worktrees" / repo_path.name
+        worktree_base.mkdir(parents=True, exist_ok=True)
+        worktree_path = worktree_base / commit_sha
+
+        try:
+            # Remove existing worktree if present
+            if worktree_path.exists():
+                subprocess.run(
+                    ["git", "worktree", "remove", str(worktree_path), "--force"],
+                    cwd=str(repo_path),
+                    capture_output=True,
+                    check=False,
+                )
+                shutil.rmtree(worktree_path, ignore_errors=True)
+
+            # Create new worktree at the commit
+            result = subprocess.run(
+                ["git", "worktree", "add", "--detach", str(worktree_path), commit_sha],
+                cwd=str(repo_path),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Failed to create shared worktree: {result.stderr}")
+                return None
+
+            logger.info(
+                f"Created shared worktree at {worktree_path} for commit {commit_sha[:8]}"
+            )
+            return worktree_path
+
+        except Exception as e:
+            logger.error(f"Error creating shared worktree: {e}")
+            return None
+
+    def _remove_shared_worktree(self, repo_path: Path, worktree_path: Path) -> None:
+        """Remove the shared worktree after pipeline completes."""
+        import shutil
+
+        if not worktree_path or not worktree_path.exists():
+            return
+
+        try:
+            subprocess.run(
+                ["git", "worktree", "remove", str(worktree_path), "--force"],
+                cwd=str(repo_path),
+                capture_output=True,
+                check=False,
+            )
+            shutil.rmtree(worktree_path, ignore_errors=True)
+            logger.debug(f"Removed shared worktree {worktree_path}")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup shared worktree: {e}")
+
     def cleanup(self, context: "ExecutionContext") -> None:
-        # Git repos persist between runs, no cleanup needed
-        pass
+        """Cleanup shared worktree when pipeline ends."""
+        git_handle = context.get_resource(ResourceNames.GIT_REPO)
+        if git_handle and git_handle.worktree_path:
+            self._remove_shared_worktree(git_handle.path, git_handle.worktree_path)

@@ -66,7 +66,7 @@ function StatusBadge({ status }: { status: string }) {
     }
 
     // Failure
-    if (normalizedStatus === BuildStatus.FAILURE) {
+    if (normalizedStatus === BuildStatus.FAILURE || normalizedStatus === "failed") {
         return (
             <Badge variant="destructive" className="gap-1">
                 <XCircle className="h-3 w-3" /> Failed

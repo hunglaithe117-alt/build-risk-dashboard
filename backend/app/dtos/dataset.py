@@ -34,8 +34,6 @@ class DatasetResponse(BaseModel):
     columns: List[str]
     mapped_fields: DatasetMappingDto = Field(default_factory=DatasetMappingDto)
     stats: DatasetStatsDto = Field(default_factory=DatasetStatsDto)
-    tags: List[str] = Field(default_factory=list)
-    selected_template: Optional[str] = None
     selected_features: List[str] = Field(default_factory=list)
     preview: List[Dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
@@ -61,8 +59,6 @@ class DatasetCreateRequest(BaseModel):
     source: str = "upload"
     mapped_fields: Optional[DatasetMappingDto] = None
     stats: Optional[DatasetStatsDto] = None
-    tags: List[str] = Field(default_factory=list)
-    selected_template: Optional[str] = None
     selected_features: List[str] = Field(default_factory=list)
     preview: List[Dict[str, Any]] = Field(default_factory=list)
 
@@ -72,8 +68,6 @@ class DatasetUpdateRequest(BaseModel):
     description: Optional[str] = None
     mapped_fields: Optional[DatasetMappingDto] = None
     stats: Optional[DatasetStatsDto] = None
-    tags: Optional[List[str]] = None
-    selected_template: Optional[str] = None
     selected_features: Optional[List[str]] = None
 
 

@@ -24,6 +24,8 @@ import {
     Zap,
 } from "lucide-react";
 
+import { EnrichmentPanel } from "../../_components/EnrichmentPanel";
+
 interface DatasetFeaturesTabProps {
     datasetId: string;
     features: string[];
@@ -99,6 +101,14 @@ export function DatasetFeaturesTab({
 
     return (
         <div className="space-y-6">
+            {/* Enrichment Panel - shows validation, start button, progress */}
+            <EnrichmentPanel
+                datasetId={datasetId}
+                selectedFeatures={features}
+                mappingReady={mappingReady}
+                onEnrichmentComplete={() => loadStatus()}
+            />
+
             {/* Status Card */}
             <Card>
                 <CardHeader>

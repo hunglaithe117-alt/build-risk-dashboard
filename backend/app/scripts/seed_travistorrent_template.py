@@ -22,6 +22,12 @@ logger = logging.getLogger(__name__)
 
 # Build Log Features
 FEATURES_BUILD_LOG = {
+    "tr_jobs",
+    "tr_build_number",
+    "tr_duration",
+    "tr_status",
+    "tr_original_commit",
+    "tr_log_num_jobs",
     "tr_log_lan_all",
     "tr_log_tests_run_sum",
     "tr_log_tests_failed_sum",
@@ -89,21 +95,8 @@ FEATURES_REPO = {
 # All features combined
 ALL_FEATURES = FEATURES_BUILD_LOG | FEATURES_GIT | FEATURES_GITHUB | FEATURES_REPO
 
-# Default features that are always included (IDs, status, basic metadata)
-DEFAULT_FEATURES = {
-    "tr_build_id",
-    "tr_build_number",
-    "tr_original_commit",
-    "git_trigger_commit",
-    "git_branch",
-    "tr_jobs",
-    "tr_status",
-    "tr_duration",
-    "tr_log_num_jobs",
-    "ci_provider",
-    "gh_build_started_at",
-    "gh_lang",
-}
+# Import DEFAULT_FEATURES from constants (always extracted, not user-selectable)
+from app.pipeline.constants import DEFAULT_FEATURES
 
 
 def seed_travistorrent_template():

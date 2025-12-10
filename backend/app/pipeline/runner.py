@@ -106,6 +106,11 @@ class FeaturePipeline:
 
         self.resource_manager.register(SonarClientProvider())
 
+        # Register Trivy resource provider
+        from app.pipeline.resources.trivy import TrivyResourceProvider
+
+        self.resource_manager.register(TrivyResourceProvider())
+
         # Repository for history tracking
         self.pipeline_run_repo = PipelineRunRepository(db) if track_history else None
 

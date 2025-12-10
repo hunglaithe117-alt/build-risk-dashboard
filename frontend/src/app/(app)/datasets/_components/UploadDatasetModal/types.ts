@@ -4,7 +4,7 @@ import type { FeatureDAGData } from "@/app/(app)/admin/repos/_components/Feature
 export { type FeatureDAGData };
 
 export type MappingKey = "build_id" | "repo_name";
-export type Step = 1 | 2 | 3;
+export type Step = 1 | 2 | 3 | 4;
 
 export interface UploadDatasetModalProps {
     open: boolean;

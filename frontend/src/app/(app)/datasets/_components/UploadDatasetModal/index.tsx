@@ -9,6 +9,7 @@ import type { UploadDatasetModalProps, Step } from "./types";
 import { StepIndicator } from "./StepIndicator";
 import { StepUpload } from "./StepUpload";
 import { StepConfigureRepos } from "./StepConfigureRepos";
+import { StepDataSources } from "./StepDataSources";
 import { StepSelectFeatures } from "./StepSelectFeatures";
 import { useUploadDatasetForm } from "./hooks/useUploadDatasetForm";
 
@@ -24,7 +25,8 @@ const Portal = ({ children }: { children: React.ReactNode }) => {
 const STEP_TITLES: Record<Step, string> = {
     1: "Upload & Map Columns",
     2: "Configure Repositories",
-    3: "Select Features",
+    3: "Data Sources",
+    4: "Select Features",
 };
 
 export function UploadDatasetModal({
@@ -51,7 +53,7 @@ export function UploadDatasetModal({
                         <div>
                             <h2 className="text-xl font-semibold">Upload Dataset</h2>
                             <p className="text-sm text-muted-foreground">
-                                Step {form.step} of 3: {STEP_TITLES[form.step]}
+                                Step {form.step} of 4: {STEP_TITLES[form.step]}
                             </p>
                         </div>
                         <button
@@ -115,6 +117,13 @@ export function UploadDatasetModal({
                         )}
 
                         {form.step === 3 && (
+                            <StepDataSources
+                                enabledSources={form.enabledSources}
+                                onToggleSource={form.toggleSource}
+                            />
+                        )}
+
+                        {form.step === 4 && (
                             <div className="space-y-6">
                                 <StepSelectFeatures
                                     features={form.features}
@@ -175,11 +184,17 @@ export function UploadDatasetModal({
 
                             {form.step === 2 && (
                                 <Button onClick={() => form.setStep(3)} className="gap-2">
-                                    Continue to Features
+                                    Continue to Data Sources
                                 </Button>
                             )}
 
                             {form.step === 3 && (
+                                <Button onClick={() => form.setStep(4)} className="gap-2">
+                                    Continue to Features
+                                </Button>
+                            )}
+
+                            {form.step === 4 && (
                                 <Button
                                     onClick={form.handleSubmit}
                                     disabled={form.uploading}

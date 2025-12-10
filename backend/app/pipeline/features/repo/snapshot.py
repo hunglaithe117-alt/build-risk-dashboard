@@ -55,8 +55,8 @@ class RepoSnapshotNode(FeatureNode):
     """
     Captures repository state at the build's commit.
 
-    Uses git worktree to checkout the specific commit without
-    affecting the main repository.
+    Uses shared worktree from GitRepoProvider when available,
+    falls back to creating temporary worktree if needed.
     """
 
     def extract(self, context: ExecutionContext) -> Dict[str, Any]:
@@ -88,7 +88,7 @@ class RepoSnapshotNode(FeatureNode):
         # History metrics
         age, num_commits = self._get_history_metrics(context, repo_path, effective_sha)
 
-        # Snapshot metrics (SLOC, tests)
+        # Collect languages
         languages = []
         if repo.source_languages:
             for lang in repo.source_languages:
@@ -97,10 +97,17 @@ class RepoSnapshotNode(FeatureNode):
                 )
                 languages.append(val)
 
-        with repo_lock(str(repo.id)):
-            snapshot_metrics = self._analyze_snapshot(
-                repo_path, effective_sha, languages
+        # Use shared worktree from GitRepoProvider (preferred)
+        if git_handle.has_worktree:
+            snapshot_metrics = self._analyze_worktree(
+                git_handle.worktree_path, languages
             )
+        else:
+            # Fallback: create temporary worktree
+            with repo_lock(str(repo.id)):
+                snapshot_metrics = self._analyze_snapshot_legacy(
+                    repo_path, effective_sha, languages
+                )
 
         return {
             "gh_repo_age": age,
@@ -123,7 +130,6 @@ class RepoSnapshotNode(FeatureNode):
     ) -> Tuple[float, int]:
         """Calculate repository age and total commits."""
         try:
-            # First commit timestamp
             first_commit_ts = (
                 subprocess.run(
                     ["git", "log", "--reverse", "--format=%ct", sha],
@@ -141,7 +147,6 @@ class RepoSnapshotNode(FeatureNode):
             )
             age_days = (datetime.now(timezone.utc) - first_commit_date).days
 
-            # Commit count
             commit_count = subprocess.run(
                 ["git", "rev-list", "--count", sha],
                 cwd=str(repo_path),
@@ -156,10 +161,100 @@ class RepoSnapshotNode(FeatureNode):
             context.add_warning(f"Failed to get history metrics: {e}")
             return 0.0, 0
 
-    def _analyze_snapshot(
+    def _analyze_worktree(
+        self, worktree_path: Path, languages: list[str]
+    ) -> Dict[str, Any]:
+        """Analyze code using shared worktree."""
+        metrics = {
+            "gh_sloc": 0,
+            "gh_test_lines_per_kloc": 0.0,
+            "gh_test_cases_per_kloc": 0.0,
+            "gh_asserts_case_per_kloc": 0.0,
+        }
+
+        try:
+            src_lines, test_lines, test_cases, asserts = self._count_code_metrics(
+                worktree_path, languages
+            )
+
+            metrics["gh_sloc"] = src_lines
+            if src_lines > 0:
+                kloc = src_lines / 1000.0
+                metrics["gh_test_lines_per_kloc"] = test_lines / kloc
+                metrics["gh_test_cases_per_kloc"] = test_cases / kloc
+                metrics["gh_asserts_case_per_kloc"] = asserts / kloc
+
+        except Exception as e:
+            logger.error(f"Failed to analyze worktree: {e}")
+
+        return metrics
+
+    def _count_code_metrics(
+        self, worktree_path: Path, languages: list[str]
+    ) -> Tuple[int, int, int, int]:
+        """
+        Count source lines, test lines, test cases, and assertions.
+
+        Returns:
+            Tuple of (src_lines, test_lines, test_cases, asserts)
+        """
+        src_lines = 0
+        test_lines = 0
+        test_cases = 0
+        asserts = 0
+
+        langs_to_check = languages if languages else [None]
+
+        for path in worktree_path.rglob("*"):
+            if not path.is_file():
+                continue
+
+            rel_path = str(path.relative_to(worktree_path))
+
+            # Skip hidden and vendor directories
+            if any(part.startswith(".") for part in rel_path.split("/")):
+                continue
+            if any(x in rel_path for x in ["vendor/", "node_modules/", "venv/"]):
+                continue
+
+            try:
+                content = path.read_text(errors="ignore")
+                lines = content.splitlines()
+                line_count = len(lines)
+
+                matched_strategy = None
+                is_test = False
+
+                for lang_name in langs_to_check:
+                    strategy = LanguageRegistry.get_strategy(lang_name or "")
+                    if strategy.is_test_file(rel_path):
+                        is_test = True
+                        matched_strategy = strategy
+                        break
+
+                if is_test and matched_strategy:
+                    test_lines += line_count
+                    for line in lines:
+                        clean_line = matched_strategy.strip_comments(line)
+                        if matched_strategy.matches_test_definition(clean_line):
+                            test_cases += 1
+                        if matched_strategy.matches_assertion(clean_line):
+                            asserts += 1
+                else:
+                    for lang_name in langs_to_check:
+                        strategy = LanguageRegistry.get_strategy(lang_name or "")
+                        if strategy.is_source_file(rel_path):
+                            src_lines += line_count
+                            break
+            except Exception:
+                continue
+
+        return src_lines, test_lines, test_cases, asserts
+
+    def _analyze_snapshot_legacy(
         self, repo_path: Path, sha: str, languages: list[str]
     ) -> Dict[str, Any]:
-        """Analyze code at specific commit using worktree."""
+        """Analyze code using temporary worktree (fallback)."""
         metrics = {
             "gh_sloc": 0,
             "gh_test_lines_per_kloc": 0.0,
@@ -171,7 +266,6 @@ class RepoSnapshotNode(FeatureNode):
             worktree_path = Path(tmpdir) / "snapshot"
 
             try:
-                # Create worktree
                 subprocess.run(
                     ["git", "worktree", "add", "--detach", str(worktree_path), sha],
                     cwd=str(repo_path),
@@ -179,76 +273,11 @@ class RepoSnapshotNode(FeatureNode):
                     check=True,
                 )
 
-                # Analyze files
-                src_lines = 0
-                test_lines = 0
-                test_cases = 0
-                asserts = 0
-
-                for path in worktree_path.rglob("*"):
-                    if not path.is_file():
-                        continue
-
-                    rel_path = str(path.relative_to(worktree_path))
-
-                    # Skip hidden and vendor directories
-                    if any(part.startswith(".") for part in rel_path.split("/")):
-                        continue
-                    if any(
-                        x in rel_path for x in ["vendor/", "node_modules/", "venv/"]
-                    ):
-                        continue
-
-                    try:
-                        content = path.read_text(errors="ignore")
-                        lines = content.splitlines()
-                        line_count = len(lines)
-
-                        # Check against all selected languages
-                        matched_lang = None
-                        matched_strategy = None
-                        is_test = False
-
-                        # If no languages selected, try generic check (pass None -> generic)
-                        langs_to_check = languages if languages else [None]
-
-                        # First pass: Check if it's a test file in any language
-                        for lang_name in langs_to_check:
-                            strategy = LanguageRegistry.get_strategy(lang_name or "")
-                            if strategy.is_test_file(rel_path):
-                                is_test = True
-                                matched_lang = lang_name
-                                matched_strategy = strategy
-                                break
-
-                        if is_test and matched_strategy:
-                            test_lines += line_count
-                            # Count test cases and assertions using the matched strategy
-                            for line in lines:
-                                clean_line = matched_strategy.strip_comments(line)
-                                if matched_strategy.matches_test_definition(clean_line):
-                                    test_cases += 1
-                                if matched_strategy.matches_assertion(clean_line):
-                                    asserts += 1
-                        else:
-                            # Second pass: Check if it's a source file in any language
-                            is_source = False
-                            for lang_name in langs_to_check:
-                                strategy = LanguageRegistry.get_strategy(
-                                    lang_name or ""
-                                )
-                                if strategy.is_source_file(rel_path):
-                                    is_source = True
-                                    break
-
-                            if is_source:
-                                src_lines += line_count
-                    except Exception:
-                        continue
+                src_lines, test_lines, test_cases, asserts = self._count_code_metrics(
+                    worktree_path, languages
+                )
 
                 metrics["gh_sloc"] = src_lines
-
-                # Calculate per-KLOC metrics
                 if src_lines > 0:
                     kloc = src_lines / 1000.0
                     metrics["gh_test_lines_per_kloc"] = test_lines / kloc
@@ -258,7 +287,6 @@ class RepoSnapshotNode(FeatureNode):
             except Exception as e:
                 logger.error(f"Failed to analyze snapshot: {e}")
             finally:
-                # Clean up worktree
                 try:
                     subprocess.run(
                         ["git", "worktree", "remove", "--force", str(worktree_path)],

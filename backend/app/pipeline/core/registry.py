@@ -28,6 +28,8 @@ class FeatureCategory(str, Enum):
     TEAM = "team"
     METADATA = "metadata"
     WORKFLOW = "workflow"
+    SECURITY = "security"
+    CODE_QUALITY = "code_quality"
 
 
 class FeatureDataType(str, Enum):
@@ -40,6 +42,7 @@ class FeatureDataType(str, Enum):
     DATETIME = "datetime"
     LIST_STRING = "list_string"
     LIST_INTEGER = "list_integer"
+    JSON = "json"
 
 
 class FeatureSource(str, Enum):
@@ -51,6 +54,8 @@ class FeatureSource(str, Enum):
     WORKFLOW_RUN = "workflow_run"
     METADATA = "metadata"
     COMPUTED = "computed"
+    TRIVY = "trivy"
+    SONARQUBE = "sonarqube"
 
 
 @dataclass

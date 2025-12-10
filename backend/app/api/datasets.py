@@ -140,7 +140,6 @@ async def upload_dataset(
         upload_file=upload_fobj,
         name=name,
         description=description,
-        tags=tags,
         ci_provider=ci_provider,
     )
 

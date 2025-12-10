@@ -203,7 +203,7 @@ export function UploadDatasetModal({
                                     {form.uploading ? (
                                         <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
                                     ) : (
-                                        <><CheckCircle2 className="h-4 w-4" /> Create Dataset</>
+                                        <><CheckCircle2 className="h-4 w-4" /> Import Dataset</>
                                     )}
                                 </Button>
                             )}

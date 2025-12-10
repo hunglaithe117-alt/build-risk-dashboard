@@ -18,8 +18,7 @@ import type { DatasetRecord, EnrichmentJob } from "@/types";
 
 import { DatasetHeader } from "./_components/DatasetHeader";
 import { DatasetSidebar } from "./_components/DatasetSidebar";
-import { OverviewTab, EnrichmentTab, ConfigurationTab } from "./_components/tabs";
-import { DatasetIntegrationsTab } from "./_components/DatasetIntegrationsTab";
+import { OverviewTab, EnrichmentTab, ConfigurationTab, IntegrationsTab } from "./_components/tabs";
 import {
     Card,
     CardDescription,
@@ -109,7 +108,8 @@ export default function DatasetDetailPage() {
 
     // Count features by category
     const sonarFeatures = dataset?.selected_features?.filter(f => f.startsWith("sonar_")) || [];
-    const regularFeatures = dataset?.selected_features?.filter(f => !f.startsWith("sonar_")) || [];
+    const trivyFeatures = dataset?.selected_features?.filter(f => f.startsWith("trivy_")) || [];
+    const regularFeatures = dataset?.selected_features?.filter(f => !f.startsWith("sonar_") && !f.startsWith("trivy_")) || [];
 
     if (loading) {
         return (
@@ -235,9 +235,10 @@ export default function DatasetDetailPage() {
                         </TabsContent>
 
                         <TabsContent value="integrations" className="mt-6">
-                            <DatasetIntegrationsTab
+                            <IntegrationsTab
                                 datasetId={datasetId}
                                 sonarFeatures={sonarFeatures}
+                                trivyFeatures={trivyFeatures}
                             />
                         </TabsContent>
                     </Tabs>

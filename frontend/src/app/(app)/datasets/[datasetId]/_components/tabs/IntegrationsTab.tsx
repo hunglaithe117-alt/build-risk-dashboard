@@ -16,9 +16,7 @@ import { useDynamicWebSocket } from "@/hooks/use-websocket";
 import {
     AlertCircle,
     CheckCircle2,
-    ExternalLink,
     Loader2,
-    Plus,
     RefreshCw,
     Search,
     Settings,
@@ -27,9 +25,10 @@ import {
     WifiOff,
 } from "lucide-react";
 
-interface DatasetIntegrationsTabProps {
+interface IntegrationsTabProps {
     datasetId: string;
     sonarFeatures: string[];
+    trivyFeatures: string[];
 }
 
 interface PendingScan {
@@ -51,10 +50,11 @@ interface IntegrationTool {
     featuresCount?: number;
 }
 
-export function DatasetIntegrationsTab({
+export function IntegrationsTab({
     datasetId,
-    sonarFeatures
-}: DatasetIntegrationsTabProps) {
+    sonarFeatures,
+    trivyFeatures
+}: IntegrationsTabProps) {
     const [search, setSearch] = useState("");
     const [pendingScans, setPendingScans] = useState<PendingScan[]>([]);
     const [loading, setLoading] = useState(true);
@@ -75,14 +75,8 @@ export function DatasetIntegrationsTab({
             name: "Trivy",
             description: "Container & dependency scanning",
             icon: <Shield className="h-6 w-6" />,
-            status: "coming_soon",
-        },
-        {
-            id: "snyk",
-            name: "Snyk",
-            description: "Vulnerability & license scanning",
-            icon: <Shield className="h-6 w-6" />,
-            status: "coming_soon",
+            status: trivyFeatures.length > 0 ? "connected" : "not_configured",
+            featuresCount: trivyFeatures.length,
         },
     ];
 
@@ -136,22 +130,15 @@ export function DatasetIntegrationsTab({
     return (
         <div className="space-y-6">
             {/* Integration Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {integrations.map((integration) => (
                     <Card
                         key={integration.id}
                         className={`cursor-pointer transition-all hover:shadow-md ${activeIntegration === integration.id
                             ? "ring-2 ring-primary"
                             : ""
-                            } ${integration.status === "coming_soon"
-                                ? "opacity-60"
-                                : ""
                             }`}
-                        onClick={() => {
-                            if (integration.status !== "coming_soon") {
-                                setActiveIntegration(integration.id);
-                            }
-                        }}
+                        onClick={() => setActiveIntegration(integration.id)}
                     >
                         <CardContent className="pt-6">
                             <div className="flex items-start justify-between">
@@ -163,9 +150,6 @@ export function DatasetIntegrationsTab({
                                         <CheckCircle2 className="h-3 w-3 mr-1" />
                                         Connected
                                     </Badge>
-                                )}
-                                {integration.status === "coming_soon" && (
-                                    <Badge variant="secondary">Coming Soon</Badge>
                                 )}
                                 {integration.status === "not_configured" && (
                                     <Badge variant="outline">Not Configured</Badge>
@@ -183,18 +167,6 @@ export function DatasetIntegrationsTab({
                         </CardContent>
                     </Card>
                 ))}
-
-                {/* Add Integration Card */}
-                <Card className="cursor-pointer border-dashed hover:border-primary transition-colors">
-                    <CardContent className="pt-6 flex flex-col items-center justify-center h-full min-h-[180px]">
-                        <div className="p-3 rounded-full bg-slate-100 dark:bg-slate-800">
-                            <Plus className="h-6 w-6 text-muted-foreground" />
-                        </div>
-                        <p className="mt-3 text-sm text-muted-foreground">
-                            Add Integration
-                        </p>
-                    </CardContent>
-                </Card>
             </div>
 
             {/* Active Integration Details */}
@@ -364,6 +336,112 @@ export function DatasetIntegrationsTab({
                 </div>
             )}
 
+            {/* Trivy Details */}
+            {activeIntegration === "trivy" && (
+                <div className="space-y-6">
+                    {/* Trivy Status Card */}
+                    <Card>
+                        <CardHeader>
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Shield className="h-5 w-5" /> Trivy
+                                    </CardTitle>
+                                    <CardDescription>
+                                        {trivyFeatures.length} metrics selected
+                                    </CardDescription>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Badge variant="outline" className="border-blue-500 text-blue-600">
+                                        Container & Dependency Scanning
+                                    </Badge>
+                                </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent>
+                            <div className="grid gap-4 md:grid-cols-3">
+                                <div className="flex items-center gap-3 rounded-lg bg-red-50 px-4 py-3 dark:bg-red-900/20">
+                                    <AlertCircle className="h-5 w-5 text-red-500" />
+                                    <div>
+                                        <p className="text-sm font-medium">Vulnerabilities</p>
+                                        <p className="text-xs text-muted-foreground">Critical & High</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 rounded-lg bg-amber-50 px-4 py-3 dark:bg-amber-900/20">
+                                    <AlertCircle className="h-5 w-5 text-amber-500" />
+                                    <div>
+                                        <p className="text-sm font-medium">Misconfigurations</p>
+                                        <p className="text-xs text-muted-foreground">Security issues</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3 rounded-lg bg-purple-50 px-4 py-3 dark:bg-purple-900/20">
+                                    <Shield className="h-5 w-5 text-purple-500" />
+                                    <div>
+                                        <p className="text-sm font-medium">Secrets</p>
+                                        <p className="text-xs text-muted-foreground">Detected secrets</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    {/* Search Trivy Features */}
+                    <div className="relative">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                            placeholder="Search Trivy metrics..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="pl-10"
+                        />
+                    </div>
+
+                    {/* Trivy Metrics Table */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Selected Metrics</CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <div className="max-h-[400px] overflow-auto">
+                                <table className="min-w-full text-sm">
+                                    <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left font-medium">Metric</th>
+                                            <th className="px-4 py-3 text-left font-medium">Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {trivyFeatures.filter(f => f.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
+                                            <tr>
+                                                <td colSpan={2} className="px-4 py-8 text-center text-muted-foreground">
+                                                    {trivyFeatures.length === 0
+                                                        ? "No Trivy metrics selected"
+                                                        : "No metrics match your search"}
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            trivyFeatures
+                                                .filter(f => f.toLowerCase().includes(search.toLowerCase()))
+                                                .map((feature) => {
+                                                    const metricName = feature.replace("trivy_", "");
+                                                    return (
+                                                        <tr key={feature} className="hover:bg-slate-50 dark:hover:bg-slate-900/40">
+                                                            <td className="px-4 py-2 font-mono text-xs">{feature}</td>
+                                                            <td className="px-4 py-2 text-muted-foreground">
+                                                                {getTrivyMetricDescription(metricName)}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
+
             {/* Loading */}
             {loading && (
                 <div className="flex items-center justify-center py-12">
@@ -391,3 +469,27 @@ function getMetricDescription(metric: string): string {
     };
     return descriptions[metric] || `SonarQube ${metric} metric`;
 }
+
+function getTrivyMetricDescription(metric: string): string {
+    const descriptions: Record<string, string> = {
+        vuln_critical: "Number of critical vulnerabilities",
+        vuln_high: "Number of high severity vulnerabilities",
+        vuln_medium: "Number of medium severity vulnerabilities",
+        vuln_low: "Number of low severity vulnerabilities",
+        vuln_total: "Total number of vulnerabilities",
+        misconfig_critical: "Number of critical misconfigurations",
+        misconfig_high: "Number of high severity misconfigurations",
+        misconfig_medium: "Number of medium severity misconfigurations",
+        misconfig_low: "Number of low severity misconfigurations",
+        misconfig_total: "Total number of misconfigurations",
+        secrets_count: "Number of detected secrets",
+        scan_duration_ms: "Scan duration in milliseconds",
+        packages_scanned: "Number of packages scanned",
+        files_scanned: "Number of files scanned",
+        has_critical: "Whether critical vulnerabilities exist",
+        has_high: "Whether high severity vulnerabilities exist",
+        top_vulnerable_packages: "List of most vulnerable packages",
+    };
+    return descriptions[metric] || `Trivy ${metric} metric`;
+}
+

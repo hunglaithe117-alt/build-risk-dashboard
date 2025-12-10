@@ -17,8 +17,10 @@ import {
     Download,
     Edit,
     FileSpreadsheet,
+    HardDrive,
     Layers,
     Loader2,
+    Percent,
     Play,
     Settings,
     Trash2,
@@ -33,6 +35,14 @@ interface DatasetSidebarProps {
     onEditConfig?: () => void;
     onDelete?: () => void;
     isEnrichmentLoading?: boolean;
+}
+
+function formatFileSize(bytes: number): string {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 export function DatasetSidebar({
@@ -58,6 +68,11 @@ export function DatasetSidebar({
 
     const isRunning = enrichmentStatus?.status === "running";
     const isCompleted = enrichmentStatus?.status === "completed";
+
+    // Calculate success rate from enrichment status
+    const successRate = enrichmentStatus && enrichmentStatus.total_rows > 0
+        ? ((enrichmentStatus.enriched_rows / enrichmentStatus.total_rows) * 100).toFixed(1)
+        : null;
 
     return (
         <div className="w-80 flex-shrink-0 space-y-4">
@@ -95,6 +110,22 @@ export function DatasetSidebar({
                                 Repositories
                             </span>
                             <span className="font-medium">{uniqueRepos}</span>
+                        </div>
+                    )}
+                    <div className="flex items-center justify-between text-sm">
+                        <span className="flex items-center gap-2 text-muted-foreground">
+                            <HardDrive className="h-4 w-4" />
+                            File Size
+                        </span>
+                        <span className="font-medium">{formatFileSize(dataset.size_bytes || 0)}</span>
+                    </div>
+                    {successRate && (
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="flex items-center gap-2 text-muted-foreground">
+                                <Percent className="h-4 w-4" />
+                                Success Rate
+                            </span>
+                            <span className="font-medium text-green-600">{successRate}%</span>
                         </div>
                     )}
                 </CardContent>

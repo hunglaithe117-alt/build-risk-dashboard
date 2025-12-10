@@ -1,8 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
@@ -10,23 +8,16 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { enrichmentApi } from "@/lib/api";
 import type { DatasetRecord, EnrichmentJob } from "@/types";
 import {
     Activity,
-    AlertCircle,
     CheckCircle2,
     ChevronDown,
     ChevronRight,
     Clock,
     Database,
-    FileSpreadsheet,
-    HardDrive,
-    Layers,
-    TrendingUp,
     XCircle,
-    Zap,
 } from "lucide-react";
 
 interface OverviewTabProps {
@@ -44,14 +35,6 @@ function formatDate(value?: string | null) {
     } catch {
         return value;
     }
-}
-
-function formatFileSize(bytes: number): string {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 function formatRelativeTime(dateStr: string | undefined | null): string {
@@ -75,25 +58,6 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
     const [loading, setLoading] = useState(true);
     const [previewExpanded, setPreviewExpanded] = useState(true);
 
-    const hasMapping = Boolean(dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name);
-    const totalFeatures = dataset.selected_features?.length || 0;
-    const sonarFeatures = dataset.selected_features?.filter(f => f.startsWith("sonar_")).length || 0;
-    const regularFeatures = totalFeatures - sonarFeatures;
-
-    // Calculate health score
-    const calculateHealthScore = (): number => {
-        let score = 0;
-        // Mapping (30 points)
-        if (hasMapping) score += 30;
-        // Features selected (30 points)
-        if (totalFeatures > 0) score += Math.min(30, totalFeatures);
-        // Recent enrichment (40 points)
-        const latestJob = enrichmentJobs[0];
-        if (latestJob?.status === "completed") score += 40;
-        else if (latestJob?.status === "running") score += 20;
-        return Math.min(100, score);
-    };
-
     // Load enrichment history
     const loadEnrichmentHistory = useCallback(async () => {
         try {
@@ -110,146 +74,8 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
         loadEnrichmentHistory();
     }, [loadEnrichmentHistory]);
 
-    const healthScore = calculateHealthScore();
-    const latestJob = enrichmentJobs[0];
-
-    // Health check items
-    const healthItems = [
-        {
-            label: "Column mapping complete",
-            passed: hasMapping,
-            icon: hasMapping ? CheckCircle2 : XCircle,
-        },
-        {
-            label: `${totalFeatures} features selected`,
-            passed: totalFeatures > 0,
-            icon: totalFeatures > 0 ? CheckCircle2 : AlertCircle,
-        },
-        {
-            label: latestJob
-                ? `Last enrichment: ${formatRelativeTime(latestJob.completed_at || latestJob.started_at)}`
-                : "No enrichment run yet",
-            passed: latestJob?.status === "completed",
-            icon: latestJob?.status === "completed" ? CheckCircle2 : Clock,
-        },
-    ];
-
     return (
         <div className="space-y-6">
-            {/* Health Score Card */}
-            <Card className="overflow-hidden">
-                <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <CardTitle className="flex items-center gap-2">
-                                <TrendingUp className="h-5 w-5 text-emerald-500" />
-                                Dataset Health Score
-                            </CardTitle>
-                            <CardDescription>
-                                Overall readiness for feature extraction
-                            </CardDescription>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-4xl font-bold">{healthScore}</p>
-                            <p className="text-sm text-muted-foreground">/100</p>
-                        </div>
-                    </div>
-                </CardHeader>
-                <CardContent className="pt-4">
-                    <Progress
-                        value={healthScore}
-                        className={`h-3 ${healthScore >= 80 ? "[&>div]:bg-emerald-500" : healthScore >= 50 ? "[&>div]:bg-amber-500" : "[&>div]:bg-red-500"}`}
-                    />
-                    <div className="mt-4 space-y-2">
-                        {healthItems.map((item, idx) => {
-                            const Icon = item.icon;
-                            return (
-                                <div key={idx} className="flex items-center gap-2 text-sm">
-                                    <Icon
-                                        className={`h-4 w-4 ${item.passed ? "text-green-500" : "text-amber-500"}`}
-                                    />
-                                    <span className={item.passed ? "" : "text-muted-foreground"}>
-                                        {item.label}
-                                    </span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Statistics Grid */}
-            <div className="grid gap-4 md:grid-cols-5">
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>Total Rows</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex items-center gap-2">
-                            <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
-                            <span className="text-2xl font-bold">{dataset.rows.toLocaleString()}</span>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>Columns</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex items-center gap-2">
-                            <Layers className="h-5 w-5 text-muted-foreground" />
-                            <span className="text-2xl font-bold">{dataset.columns?.length || 0}</span>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>Selected Features</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex items-center gap-2">
-                            <Zap className="h-5 w-5 text-amber-500" />
-                            <span className="text-2xl font-bold">{totalFeatures}</span>
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                            {regularFeatures} regular, {sonarFeatures} sonar
-                        </p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>File Size</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex items-center gap-2">
-                            <HardDrive className="h-5 w-5 text-muted-foreground" />
-                            <span className="text-2xl font-bold">
-                                {formatFileSize(dataset.size_bytes || 0)}
-                            </span>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="pb-2">
-                        <CardDescription>Success Rate</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-5 w-5 text-green-500" />
-                            <span className="text-2xl font-bold">
-                                {latestJob && latestJob.total_rows > 0
-                                    ? `${((latestJob.enriched_rows / latestJob.total_rows) * 100).toFixed(1)}%`
-                                    : "—"}
-                            </span>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
             {/* Recent Activity */}
             <Card>
                 <CardHeader>

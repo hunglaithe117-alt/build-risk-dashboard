@@ -311,7 +311,7 @@ class GitRepoProvider(ResourceProvider):
                 cwd=str(repo_path),
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=180,
             )
 
             if result.returncode != 0:

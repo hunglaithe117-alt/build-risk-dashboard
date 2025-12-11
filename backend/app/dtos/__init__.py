@@ -67,16 +67,10 @@ from .feature import (
     ExecutionLevelResponse,
     DAGResponse,
 )
-from .enrichment import (
-    EnrichmentValidateRequest,
-    EnrichmentStartRequest,
-    EnrichmentValidateResponse,
-    EnrichmentJobResponse,
-    EnrichmentStartResponse,
-    EnrichmentStatusResponse,
-    EnrichmentJobListResponse,
-    EnrichmentProgressEvent,
-    EnrichmentCompleteEvent,
+from .dataset_version import (
+    CreateVersionRequest,
+    VersionResponse,
+    VersionListResponse,
 )
 
 __all__ = [
@@ -137,14 +131,8 @@ __all__ = [
     "DAGEdgeResponse",
     "ExecutionLevelResponse",
     "DAGResponse",
-    # Enrichment
-    "EnrichmentValidateRequest",
-    "EnrichmentStartRequest",
-    "EnrichmentValidateResponse",
-    "EnrichmentJobResponse",
-    "EnrichmentStartResponse",
-    "EnrichmentStatusResponse",
-    "EnrichmentJobListResponse",
-    "EnrichmentProgressEvent",
-    "EnrichmentCompleteEvent",
+    # Dataset Version
+    "CreateVersionRequest",
+    "VersionResponse",
+    "VersionListResponse",
 ]

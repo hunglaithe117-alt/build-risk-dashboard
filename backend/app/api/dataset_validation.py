@@ -56,7 +56,7 @@ async def start_validation(
 ):
     """Start async validation of builds in a dataset."""
     service = DatasetValidationService(db)
-    result = service.start_validation(dataset_id)
+    result = await service.start_validation(dataset_id)
     return StartValidationResponse(**result)
 
 

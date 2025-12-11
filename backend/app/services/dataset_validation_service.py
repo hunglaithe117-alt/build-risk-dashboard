@@ -13,7 +13,7 @@ from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.enrichment_repo_repository import EnrichmentRepoRepository
 from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.tasks.dataset_validation import validate_dataset_task
-from app.core.redis import get_redis
+from app.core.redis import get_async_redis
 
 
 class RepoConfig:
@@ -72,7 +72,7 @@ class DatasetValidationService:
 
         return {"saved": saved_count, "message": f"Saved {saved_count} repositories"}
 
-    def start_validation(self, dataset_id: str) -> dict:
+    async def start_validation(self, dataset_id: str) -> dict:
         """Start async validation of builds in a dataset."""
         dataset = self._get_dataset_or_404(dataset_id)
 
@@ -95,6 +95,10 @@ class DatasetValidationService:
                 status_code=400,
                 detail="No validated repositories found. Please complete Step 2 first.",
             )
+
+        # Clear any existing cancel flag before starting/resuming
+        redis = await get_async_redis()
+        await redis.delete(f"dataset_validation:{dataset_id}:cancelled")
 
         task = validate_dataset_task.delay(dataset_id)
         return {"task_id": task.id, "message": "Validation started"}
@@ -125,7 +129,7 @@ class DatasetValidationService:
         if dataset.get("validation_status") != "validating":
             raise HTTPException(status_code=400, detail="No validation in progress")
 
-        redis = await get_redis()
+        redis = await get_async_redis()
         await redis.set(
             f"dataset_validation:{dataset_id}:cancelled",
             "1",
@@ -180,7 +184,7 @@ class DatasetValidationService:
         self._get_dataset_or_404(dataset_id)
 
         # Cancel any running task
-        redis = await get_redis()
+        redis = await get_async_redis()
         await redis.set(f"dataset_validation:{dataset_id}:cancelled", "1", ex=3600)
 
         # Reset validation status
@@ -207,7 +211,7 @@ class DatasetValidationService:
         self._get_dataset_or_404(dataset_id)
 
         # Cancel any running validation task
-        redis = await get_redis()
+        redis = await get_async_redis()
         await redis.set(f"dataset_validation:{dataset_id}:cancelled", "1", ex=3600)
 
         # Delete all enrichment repositories for this dataset
@@ -233,6 +237,10 @@ class DatasetValidationService:
                         "builds_total": 0,
                         "builds_found": 0,
                         "builds_not_found": 0,
+                    },
+                    "mapped_fields": {
+                        "build_id": None,
+                        "repo_name": None,
                     },
                     "source_languages": [],
                     "test_frameworks": [],

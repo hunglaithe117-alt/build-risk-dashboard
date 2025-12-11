@@ -209,6 +209,126 @@ def get_feature_dag(
     )
 
 
+@router.get("/by-source")
+def get_features_by_source():
+    """
+    Get features grouped by data source for the list view.
+    Returns features with full metadata including descriptions,
+    organized by source -> extractor -> features.
+    """
+    all_features = feature_registry.get_features_with_metadata()
+
+    # Filter out default features
+    features = [f for f in all_features if f["name"] not in DEFAULT_FEATURES]
+
+    # Group by source -> extractor
+    by_source: dict = defaultdict(lambda: {"extractors": defaultdict(list), "total": 0})
+
+    for f in features:
+        source = f["source"]
+        extractor = f["extractor_node"]
+        by_source[source]["extractors"][extractor].append(
+            {
+                "name": f["name"],
+                "display_name": f["display_name"],
+                "description": f["description"],
+                "data_type": f["data_type"],
+                "is_active": f["is_active"],
+                "depends_on_features": f["depends_on_features"],
+                "depends_on_resources": f["depends_on_resources"],
+            }
+        )
+        by_source[source]["total"] += 1
+
+    # Build result with source metadata
+    result = {}
+    for source, data in by_source.items():
+        # Check if source is configured (for SonarQube, Trivy, etc.)
+        is_configured = _check_source_configured(source)
+
+        result[source] = {
+            "source": source,
+            "display_name": _get_source_display_name(source),
+            "description": _get_source_description(source),
+            "icon": _get_source_icon(source),
+            "is_configured": is_configured,
+            "extractors": {
+                ext_name: {
+                    "name": ext_name,
+                    "display_name": ext_name.replace("_", " ").title(),
+                    "features": sorted(ext_features, key=lambda x: x["name"]),
+                    "feature_count": len(ext_features),
+                }
+                for ext_name, ext_features in data["extractors"].items()
+            },
+            "total_features": data["total"],
+        }
+
+    return {"sources": result}
+
+
+def _check_source_configured(source: str) -> bool:
+    """Check if a data source is configured/available."""
+    # Git and build_log are always available
+    if source in ("git", "build_log", "repo"):
+        return True
+    # GitHub requires tokens
+    if source == "github":
+        from app.config import settings
+
+        return bool(settings.GITHUB_TOKENS)
+    # SonarQube requires server config
+    if source == "sonarqube":
+        from app.config import settings
+
+        return bool(getattr(settings, "SONARQUBE_URL", None))
+    # Trivy requires CLI to be installed
+    if source == "trivy":
+        import shutil
+
+        return shutil.which("trivy") is not None
+    return True
+
+
+def _get_source_display_name(source: str) -> str:
+    """Get display name for a data source."""
+    names = {
+        "git": "Git Repository",
+        "github": "GitHub API",
+        "build_log": "Build Logs",
+        "sonarqube": "SonarQube",
+        "trivy": "Trivy Scanner",
+        "repo": "Repository Metadata",
+    }
+    return names.get(source, source.replace("_", " ").title())
+
+
+def _get_source_description(source: str) -> str:
+    """Get description for a data source."""
+    descriptions = {
+        "git": "Commit info, diff changes, and team contributions",
+        "github": "Pull requests, issues, and GitHub-specific metadata",
+        "build_log": "Test results and CI job information",
+        "sonarqube": "Code quality metrics and security analysis",
+        "trivy": "Container and dependency vulnerability scanning",
+        "repo": "Repository metadata and configuration",
+    }
+    return descriptions.get(source, "")
+
+
+def _get_source_icon(source: str) -> str:
+    """Get icon name for a data source."""
+    icons = {
+        "git": "git-branch",
+        "github": "github",
+        "build_log": "file-text",
+        "sonarqube": "shield-check",
+        "trivy": "shield-alert",
+        "repo": "database",
+    }
+    return icons.get(source, "box")
+
+
 @router.get("/", response_model=FeatureListResponse)
 def list_features(
     category: Optional[str] = Query(None, description="Filter by category"),

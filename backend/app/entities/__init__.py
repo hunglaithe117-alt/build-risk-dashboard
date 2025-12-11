@@ -40,7 +40,6 @@ from .pipeline_run import (
     PipelineRunStatus,
     NodeExecutionStatus,
 )
-from .enrichment_job import EnrichmentJob, EnrichmentJobStatus
 from .export_job import ExportJob, ExportStatus, ExportFormat
 from .workflow_run import WorkflowRunRaw
 
@@ -79,8 +78,6 @@ __all__ = [
     "NodeExecutionResult",
     "PipelineRunStatus",
     "NodeExecutionStatus",
-    "EnrichmentJob",
-    "EnrichmentJobStatus",
     "ExportJob",
     "ExportStatus",
     "ExportFormat",

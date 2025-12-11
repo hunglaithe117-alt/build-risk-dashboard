@@ -23,6 +23,7 @@ from app.api import (
     export,
     data_sources,
     dataset_validation,
+    dataset_versions,
     templates,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
@@ -67,6 +68,7 @@ app.include_router(data_sources.router, prefix="/api", tags=["Data Sources"])
 app.include_router(
     dataset_validation.router, prefix="/api", tags=["Dataset Validation"]
 )
+app.include_router(dataset_versions.router, prefix="/api", tags=["Dataset Versions"])
 app.include_router(templates.router, prefix="/api", tags=["Templates"])
 
 

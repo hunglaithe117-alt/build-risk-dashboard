@@ -17,7 +17,7 @@ celery_app = Celery(
         "app.tasks.ingestion",
         "app.tasks.processing",
         "app.tasks.maintenance",
-        "app.tasks.enrichment",
+        "app.tasks.version_enrichment",
         "app.tasks.export",
         "app.tasks.sonar",
         "app.tasks.trivy",
@@ -93,10 +93,6 @@ celery_app.conf.update(
             "task": "app.tasks.export.cleanup_old_exports",
             "schedule": crontab(hour=5, minute=0, day_of_week=0),  # Sunday 5 AM
             "args": (7,),  # Keep 7 days of exports
-        },
-        "run-scheduled-enrichments-hourly": {
-            "task": "app.tasks.enrichment.run_scheduled_enrichments",
-            "schedule": crontab(minute=30),  # Every hour at :30
         },
     },
     timezone="UTC",

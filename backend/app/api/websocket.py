@@ -16,7 +16,6 @@ import redis.asyncio as aioredis
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.config import settings
-from app.repositories.enrichment_job import EnrichmentJobRepository
 
 logger = logging.getLogger(__name__)
 

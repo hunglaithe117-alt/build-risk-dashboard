@@ -17,7 +17,6 @@ from .user import UserRepository
 from .workflow_run import WorkflowRunRepository
 from .dataset_template_repository import DatasetTemplateRepository
 from .pipeline_run import PipelineRunRepository
-from .enrichment_job import EnrichmentJobRepository
 from .dataset_repository import DatasetRepository
 
 __all__ = [
@@ -35,6 +34,5 @@ __all__ = [
     "WorkflowRunRepository",
     "DatasetTemplateRepository",
     "PipelineRunRepository",
-    "EnrichmentJobRepository",
     "DatasetRepository",
 ]

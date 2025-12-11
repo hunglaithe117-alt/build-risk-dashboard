@@ -329,3 +329,21 @@ class GitHubActionsProvider(CIProviderInterface):
 
     def get_build_url(self, repo_name: str, build_id: str) -> str:
         return f"https://github.com/{repo_name}/actions/runs/{build_id}"
+
+    async def get_workflow_run(self, repo_name: str, run_id: int) -> Optional[dict]:
+        """Get a specific workflow run from GitHub API."""
+        with self._get_github_client() as client:
+            try:
+                run = client.get_workflow_run(repo_name, run_id)
+                if run:
+                    return run
+                return None
+            except Exception as e:
+                logger.warning(
+                    f"Failed to get workflow run {run_id} for {repo_name}: {e}"
+                )
+                return None
+
+    def is_run_completed(self, run_data: dict) -> bool:
+        """Check if GitHub workflow run is completed."""
+        return run_data.get("status") == "completed"

@@ -31,7 +31,7 @@ import type {
 
 interface EnrichmentPanelProps {
     datasetId: string;
-    selectedFeatures: string[];
+    selectedFeatures?: string[];
     mappingReady: boolean;
     autoStart?: boolean;
     onEnrichmentComplete?: () => void;
@@ -49,7 +49,7 @@ type EnrichmentState =
 
 export function EnrichmentPanel({
     datasetId,
-    selectedFeatures,
+    selectedFeatures = [],
     mappingReady,
     autoStart,
     onEnrichmentComplete,

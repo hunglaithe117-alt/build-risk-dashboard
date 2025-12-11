@@ -12,15 +12,20 @@ from .model_repository import (
 from .model_build import ModelBuild, BuildStatus, ExtractionStatus
 
 # Enrichment flow entities (Dataset enrichment)
-from .enrichment_repository import EnrichmentRepository, EnrichmentImportStatus
+from .enrichment_repository import (
+    EnrichmentRepository,
+    EnrichmentImportStatus,
+    RepoValidationStatus,
+)
 from .enrichment_build import EnrichmentBuild, EnrichmentExtractionStatus
+from .dataset_build import DatasetBuild, DatasetBuildStatus
 
 # Other entities
 from .github_installation import GithubInstallation
 from .oauth_identity import OAuthIdentity
 from .user import User
 from .dataset_template import DatasetTemplate
-from .dataset import DatasetProject, DatasetMapping, DatasetStats
+from .dataset import DatasetProject, DatasetMapping, DatasetStats, ValidationStats
 from .github_token import GithubToken
 from .pipeline_run import PipelineRun, NodeExecutionResult
 from .enrichment_job import EnrichmentJob
@@ -42,6 +47,9 @@ __all__ = [
     "EnrichmentBuild",
     "EnrichmentImportStatus",
     "EnrichmentExtractionStatus",
+    "RepoValidationStatus",
+    "DatasetBuild",
+    "DatasetBuildStatus",
     # Other
     "GithubInstallation",
     "OAuthIdentity",
@@ -49,6 +57,7 @@ __all__ = [
     "DatasetProject",
     "DatasetMapping",
     "DatasetStats",
+    "ValidationStats",
     "GithubToken",
     "DatasetTemplate",
     "PipelineRun",

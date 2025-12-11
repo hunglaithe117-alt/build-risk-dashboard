@@ -65,8 +65,8 @@ class WorkflowMetadataNode(FeatureNode):
 
     def _compute_duration(self, workflow_run) -> float:
         """Compute build duration from workflow timestamps."""
-        if workflow_run and workflow_run.created_at and workflow_run.updated_at:
-            delta = workflow_run.updated_at - workflow_run.created_at
+        if workflow_run and workflow_run.ci_created_at and workflow_run.ci_updated_at:
+            delta = workflow_run.ci_updated_at - workflow_run.ci_created_at
             return delta.total_seconds()
         return 0.0
 

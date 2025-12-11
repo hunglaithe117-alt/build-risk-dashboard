@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -22,6 +23,18 @@ class DatasetStats(BaseModel):
     build_coverage: float = 0.0
 
 
+class ValidationStats(BaseModel):
+    """Statistics from dataset validation process."""
+
+    repos_total: int = 0
+    repos_valid: int = 0
+    repos_invalid: int = 0
+    repos_not_found: int = 0
+    builds_total: int = 0
+    builds_found: int = 0
+    builds_not_found: int = 0
+
+
 class DatasetProject(BaseEntity):
     """Dataset/project metadata stored in MongoDB."""
 
@@ -29,15 +42,27 @@ class DatasetProject(BaseEntity):
     name: str
     description: Optional[str] = None
     file_name: str
+    file_path: str
     source: str = "upload"
-    ci_provider: CIProvider = Field(
-        default=CIProvider.GITHUB_ACTIONS,
-        description="CI/CD provider for build data",
-    )
     rows: int = 0
     size_bytes: int = 0
     columns: List[str] = Field(default_factory=list)
     mapped_fields: DatasetMapping = Field(default_factory=DatasetMapping)
     stats: DatasetStats = Field(default_factory=DatasetStats)
-    selected_features: List[str] = Field(default_factory=list)
+    source_languages: List[str] = Field(default_factory=list)
+    test_frameworks: List[str] = Field(default_factory=list)
     preview: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Validation status
+    validation_status: str = (
+        "pending"  # pending, validating, completed, failed, cancelled
+    )
+    validation_task_id: Optional[str] = None
+    validation_started_at: Optional[datetime] = None
+    validation_completed_at: Optional[datetime] = None
+    validation_progress: int = 0  # 0-100
+    validation_stats: ValidationStats = Field(default_factory=ValidationStats)
+    validation_error: Optional[str] = None
+
+    # Setup progress tracking (1=uploaded, 2=configured, 3=validated)
+    setup_step: int = 1

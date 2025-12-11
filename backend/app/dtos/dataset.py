@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.entities.base import PyObjectIdStr
-from app.ci_providers.models import CIProvider
 
 
 class DatasetMappingDto(BaseModel):
@@ -29,13 +28,13 @@ class DatasetResponse(BaseModel):
     file_name: str
     file_path: Optional[str] = None
     source: str
-    ci_provider: CIProvider = CIProvider.GITHUB_ACTIONS
     rows: int
     size_bytes: int
     columns: List[str]
     mapped_fields: DatasetMappingDto = Field(default_factory=DatasetMappingDto)
     stats: DatasetStatsDto = Field(default_factory=DatasetStatsDto)
-    selected_features: List[str] = Field(default_factory=list)
+    source_languages: List[str] = Field(default_factory=list)
+    test_frameworks: List[str] = Field(default_factory=list)
     preview: List[Dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -60,7 +59,6 @@ class DatasetCreateRequest(BaseModel):
     source: str = "upload"
     mapped_fields: Optional[DatasetMappingDto] = None
     stats: Optional[DatasetStatsDto] = None
-    selected_features: List[str] = Field(default_factory=list)
     preview: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -69,7 +67,9 @@ class DatasetUpdateRequest(BaseModel):
     description: Optional[str] = None
     mapped_fields: Optional[DatasetMappingDto] = None
     stats: Optional[DatasetStatsDto] = None
-    selected_features: Optional[List[str]] = None
+    source_languages: Optional[List[str]] = None
+    test_frameworks: Optional[List[str]] = None
+    setup_step: Optional[int] = None
 
 
 class RepoValidationItem(BaseModel):

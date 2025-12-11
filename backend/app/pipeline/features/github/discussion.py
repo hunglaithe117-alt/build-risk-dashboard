@@ -87,10 +87,10 @@ class GitHubDiscussionNode(FeatureNode):
 
         # 3. Issue comments (within time window around the build)
         num_issue_comments = 0
-        if workflow_run and workflow_run.created_at:
+        if workflow_run and workflow_run.ci_created_at:
             try:
                 num_issue_comments = self._count_recent_issue_comments(
-                    client, full_name, workflow_run.created_at
+                    client, full_name, workflow_run.ci_created_at
                 )
             except Exception as e:
                 logger.warning(f"Failed to fetch issue comments: {e}")

@@ -86,16 +86,8 @@ export function EnrichmentTab({ datasetId, dataset, onEnrichmentStatusChange }: 
     const [loading, setLoading] = useState(true);
     const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(["git", "github", "build_log"]));
 
-    const features = dataset.selected_features || [];
+    // Features are now selected per-enrichment-job, not stored on dataset
     const mappingReady = Boolean(dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name);
-
-    // Group features by category
-    const groupedFeatures = features.reduce((acc, feature) => {
-        const category = categorizeFeature(feature);
-        if (!acc[category]) acc[category] = [];
-        acc[category].push(feature);
-        return acc;
-    }, {} as Record<FeatureCategory, string[]>);
 
     // Load enrichment status and history
     const loadEnrichmentData = useCallback(async () => {
@@ -142,12 +134,26 @@ export function EnrichmentTab({ datasetId, dataset, onEnrichmentStatusChange }: 
         );
     }
 
+    // Get features from the current/latest enrichment job
+    const latestJobFeatures = enrichmentStatus?.selected_features ||
+        (jobHistory.length > 0 ? jobHistory[0].selected_features : []) || [];
+
+    // Group features by category (from latest job)
+    const groupedFeatures: Record<FeatureCategory, string[]> = latestJobFeatures.reduce(
+        (acc: Record<FeatureCategory, string[]>, feature: string) => {
+            const category = categorizeFeature(feature);
+            if (!acc[category]) acc[category] = [];
+            acc[category].push(feature);
+            return acc;
+        },
+        {} as Record<FeatureCategory, string[]>
+    );
+
     return (
         <div className="space-y-6">
             {/* Enrichment Control Panel */}
             <EnrichmentPanel
                 datasetId={datasetId}
-                selectedFeatures={features}
                 mappingReady={mappingReady}
                 onEnrichmentComplete={() => loadEnrichmentData()}
             />
@@ -201,67 +207,76 @@ export function EnrichmentTab({ datasetId, dataset, onEnrichmentStatusChange }: 
                 </Card>
             )}
 
-            {/* Feature Groups */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Zap className="h-5 w-5 text-amber-500" />
-                        Selected Features ({features.length})
-                    </CardTitle>
-                    <CardDescription>
-                        Features grouped by extraction source
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                    {Object.entries(groupedFeatures).map(([category, categoryFeatures]) => {
-                        const config = CATEGORY_CONFIG[category as FeatureCategory];
-                        const isExpanded = expandedCategories.has(category);
-                        const Icon = config.icon;
+            {/* Feature Groups (from latest job) */}
+            {latestJobFeatures.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Zap className="h-5 w-5 text-amber-500" />
+                            Latest Job Features ({latestJobFeatures.length})
+                        </CardTitle>
+                        <CardDescription>
+                            Features from the most recent enrichment job
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                        {Object.entries(groupedFeatures).map(([category, categoryFeatures]) => {
+                            const config = CATEGORY_CONFIG[category as FeatureCategory];
+                            const isExpanded = expandedCategories.has(category);
+                            const Icon = config.icon;
+                            const featuresList = categoryFeatures as string[];
 
-                        return (
-                            <div key={category} className="rounded-lg border">
-                                <button
-                                    className="flex w-full items-center justify-between p-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
-                                    onClick={() => toggleCategory(category)}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className={`rounded-lg p-2 ${config.color}`}>
-                                            <Icon className="h-4 w-4" />
+                            return (
+                                <div key={category} className="rounded-lg border">
+                                    <button
+                                        className="flex w-full items-center justify-between p-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800"
+                                        onClick={() => toggleCategory(category)}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className={`rounded-lg p-2 ${config.color}`}>
+                                                <Icon className="h-4 w-4" />
+                                            </div>
+                                            <div>
+                                                <p className="font-medium">{config.label}</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {featuresList.length} features
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <p className="font-medium">{config.label}</p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {categoryFeatures.length} features
-                                            </p>
+                                        {isExpanded ? (
+                                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                                        ) : (
+                                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                        )}
+                                    </button>
+                                    {isExpanded && (
+                                        <div className="border-t px-3 py-2">
+                                            <div className="flex flex-wrap gap-2">
+                                                {featuresList.map((feature: string) => (
+                                                    <Badge key={feature} variant="secondary" className="font-mono text-xs">
+                                                        {feature}
+                                                    </Badge>
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                    {isExpanded ? (
-                                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                                    ) : (
-                                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
                                     )}
-                                </button>
-                                {isExpanded && (
-                                    <div className="border-t px-3 py-2">
-                                        <div className="flex flex-wrap gap-2">
-                                            {categoryFeatures.map(feature => (
-                                                <Badge key={feature} variant="secondary" className="font-mono text-xs">
-                                                    {feature}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
-                    {features.length === 0 && (
-                        <p className="py-8 text-center text-muted-foreground">
-                            No features selected. Go to Configuration to add features.
-                        </p>
-                    )}
-                </CardContent>
-            </Card>
+                                </div>
+                            );
+                        })}
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* No jobs yet message */}
+            {latestJobFeatures.length === 0 && !enrichmentStatus && (
+                <Card>
+                    <CardContent className="py-8 text-center text-muted-foreground">
+                        <Zap className="mx-auto h-12 w-12 text-muted-foreground/50 mb-3" />
+                        <p>No enrichment jobs yet.</p>
+                        <p className="text-sm">Create an enrichment job above to select features and start processing.</p>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Job History */}
             {jobHistory.length > 0 && (

@@ -48,7 +48,7 @@ import type {
 } from "@/types";
 import { useDebounce } from "@/hooks/use-debounce";
 import { EnrichmentPanel } from "./_components/EnrichmentPanel";
-import { UploadDatasetModal } from "./_components/UploadDatasetModal";
+import { UploadDatasetModal } from "./_components/UploadDatasetModal/index";
 import { createPortal } from "react-dom";
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
@@ -127,13 +127,6 @@ export default function DatasetsPage() {
     []
   );
 
-  // Load templates
-  useEffect(() => {
-    datasetsApi.listTemplates().then((res) => {
-      setTemplates(res.items || []);
-    }).catch(console.error);
-  }, []);
-
   useEffect(() => {
     loadDatasets(1, true);
   }, [loadDatasets]);
@@ -188,28 +181,31 @@ export default function DatasetsPage() {
     }
   };
 
-  const handleApplyTemplate = async (datasetId: string, templateId: string) => {
-    try {
-      await datasetsApi.applyTemplate(datasetId, templateId);
-      setFeedback("Template applied successfully.");
-      loadDatasets(page, true);
-    } catch (err) {
-      console.error(err);
-      setFeedback("Failed to apply template.");
-    }
-  };
-
   const getStatusBadge = (dataset: DatasetRecord) => {
-    const hasMapping = dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name;
-    const hasFeatures = dataset.selected_features?.length > 0;
+    const validationStatus = dataset.validation_status;
+    const setupStep = dataset.setup_step || 1;
 
-    if (!hasMapping) {
-      return <Badge variant="secondary">Pending Mapping</Badge>;
+    // Check validation status first (takes priority)
+    if (validationStatus === "validating") {
+      return <Badge variant="outline" className="border-blue-500 text-blue-600">Validating...</Badge>;
     }
-    if (!hasFeatures) {
-      return <Badge variant="outline" className="border-amber-500 text-amber-600">No Features</Badge>;
+    if (validationStatus === "cancelled") {
+      return <Badge variant="outline" className="border-amber-500 text-amber-600">Cancelled</Badge>;
     }
-    return <Badge variant="outline" className="border-green-500 text-green-600">Ready</Badge>;
+    if (validationStatus === "failed") {
+      return <Badge variant="destructive">Validation Failed</Badge>;
+    }
+    if (validationStatus === "completed") {
+      return <Badge variant="outline" className="border-green-500 text-green-600">Validated</Badge>;
+    }
+
+    // Use setup_step for pending/not-started states
+    if (setupStep >= 2) {
+      return <Badge variant="outline" className="border-blue-400 text-blue-500">Ready for Validation</Badge>;
+    }
+
+    // Step 1 complete but Step 2 not done
+    return <Badge variant="outline" className="border-slate-400 text-slate-500">Pending Config</Badge>;
   };
 
   if (loading) {
@@ -300,7 +296,7 @@ export default function DatasetsPage() {
                     Rows
                   </th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-500">
-                    Features
+                    Enrichments
                   </th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-500">
                     Created
@@ -332,7 +328,21 @@ export default function DatasetsPage() {
                     <tr
                       key={dataset.id}
                       className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-900/40"
-                      onClick={() => router.push(`/datasets/${dataset.id}`)}
+                      onClick={async () => {
+                        if (dataset.validation_status === "completed") {
+                          router.push(`/datasets/${dataset.id}`);
+                        } else {
+                          // Open upload modal to continue setup
+                          try {
+                            const freshDataset = await datasetsApi.get(dataset.id);
+                            setResumeDataset(freshDataset);
+                            setUploadModalOpen(true);
+                          } catch (err) {
+                            console.error("Failed to fetch dataset:", err);
+                            setFeedback("Failed to load dataset.");
+                          }
+                        }
+                      }}
                     >
                       <td className="px-6 py-4">
                         <div>
@@ -347,7 +357,7 @@ export default function DatasetsPage() {
                         {formatNumber(dataset.rows)}
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">
-                        {dataset.selected_features?.length || 0}
+                        {dataset.enrichment_jobs_count || 0}
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">
                         {formatDate(dataset.created_at)}
@@ -366,13 +376,20 @@ export default function DatasetsPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {/* Continue Setup for incomplete datasets */}
-                            {(dataset.selected_features?.length || 0) === 0 && (
+                            {/* Continue Setup for incomplete datasets (validation not completed) */}
+                            {dataset.validation_status !== "completed" && (
                               <DropdownMenuItem
-                                onClick={(e) => {
+                                onClick={async (e) => {
                                   e.stopPropagation();
-                                  setResumeDataset(dataset);
-                                  setUploadModalOpen(true);
+                                  // Fetch fresh data to get latest setup_step
+                                  try {
+                                    const freshDataset = await datasetsApi.get(dataset.id);
+                                    setResumeDataset(freshDataset);
+                                    setUploadModalOpen(true);
+                                  } catch (err) {
+                                    console.error("Failed to fetch dataset:", err);
+                                    setFeedback("Failed to load dataset.");
+                                  }
                                 }}
                                 className="text-blue-600"
                               >
@@ -456,6 +473,7 @@ export default function DatasetsPage() {
           if (!open) setResumeDataset(null);
         }}
         onSuccess={handleUploadSuccess}
+        onDatasetCreated={() => loadDatasets(page, false)}
         existingDataset={resumeDataset || undefined}
       />
 
@@ -509,30 +527,45 @@ export default function DatasetsPage() {
                     </div>
                   </div>
 
-                  {/* Selected Features */}
+                  {/* Languages & Frameworks */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-semibold">Selected Features</h3>
+                      <h3 className="font-semibold">Source Languages</h3>
                       <span className="text-sm text-muted-foreground">
-                        {panelDataset.selected_features?.length || 0} features
+                        {panelDataset.source_languages?.length || 0} languages
                       </span>
                     </div>
-                    {panelDataset.selected_features?.length > 0 ? (
+                    {(panelDataset.source_languages?.length || 0) > 0 ? (
                       <div className="flex flex-wrap gap-2">
-                        {panelDataset.selected_features.slice(0, 20).map((f) => (
-                          <Badge key={f} variant="secondary" className="text-xs">
-                            {f}
+                        {panelDataset.source_languages?.map((lang) => (
+                          <Badge key={lang} variant="secondary" className="text-xs">
+                            {lang}
                           </Badge>
                         ))}
-                        {panelDataset.selected_features.length > 20 && (
-                          <Badge variant="outline" className="text-xs">
-                            +{panelDataset.selected_features.length - 20} more
-                          </Badge>
-                        )}
                       </div>
                     ) : (
                       <p className="text-sm text-muted-foreground">
-                        No features selected yet.
+                        No languages configured.
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-2">
+                      <h3 className="font-semibold">Test Frameworks</h3>
+                      <span className="text-sm text-muted-foreground">
+                        {panelDataset.test_frameworks?.length || 0} frameworks
+                      </span>
+                    </div>
+                    {(panelDataset.test_frameworks?.length || 0) > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {panelDataset.test_frameworks?.map((fw) => (
+                          <Badge key={fw} variant="outline" className="text-xs">
+                            {fw}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No frameworks configured.
                       </p>
                     )}
                   </div>
@@ -570,7 +603,6 @@ export default function DatasetsPage() {
                   <EnrichmentPanel
                     datasetId={panelDataset.id}
                     mappingReady={Boolean(panelDataset.mapped_fields?.build_id && panelDataset.mapped_fields?.repo_name)}
-                    selectedFeatures={panelDataset.selected_features || []}
                   />
                 </div>
               )}

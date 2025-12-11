@@ -190,21 +190,42 @@ def import_repo(
                 run_id = build.build_id
                 run_created_at = build.created_at
 
+                # Only keep completed workflow runs
+                if str(build.status).lower() != "completed":
+                    continue
+
                 # Filter by since_days
                 if since_dt and run_created_at and run_created_at < since_dt:
                     continue
 
                 # Create WorkflowRunRaw from BuildData
+                # Normalize status/conclusion to enums (fallback to UNKNOWN)
+                from app.entities.workflow_run import (
+                    WorkflowRunStatus,
+                    WorkflowConclusion,
+                )
+
+                try:
+                    status_enum = WorkflowRunStatus(str(build.status))
+                except Exception:
+                    status_enum = WorkflowRunStatus.UNKNOWN
+
+                try:
+                    conclusion_enum = WorkflowConclusion(str(build.conclusion))
+                except Exception:
+                    conclusion_enum = WorkflowConclusion.UNKNOWN
+
                 workflow_run = WorkflowRunRaw(
                     repo_id=ObjectId(repo_id),
                     workflow_run_id=int(run_id) if run_id.isdigit() else hash(run_id),
                     head_sha=build.commit_sha,
                     run_number=build.build_number,
-                    status=build.status,
-                    conclusion=build.conclusion,
-                    created_at=run_created_at or datetime.now(timezone.utc),
-                    updated_at=run_created_at or datetime.now(timezone.utc),
+                    status=status_enum,
+                    conclusion=conclusion_enum,
+                    ci_created_at=run_created_at or datetime.now(timezone.utc),
+                    ci_updated_at=run_created_at or datetime.now(timezone.utc),
                     raw_payload=build.raw_data or {},
+                    branch=build.branch,
                 )
 
                 existing = workflow_run_repo.find_by_repo_and_run_id(
@@ -221,16 +242,16 @@ def import_repo(
                             {
                                 "status": workflow_run.status,
                                 "conclusion": workflow_run.conclusion,
-                                "updated_at": workflow_run.updated_at,
+                                "ci_updated_at": workflow_run.ci_updated_at,
                             },
                         )
 
                     if (
                         last_synced_run_ts
-                        and workflow_run.created_at <= last_synced_run_ts
+                        and workflow_run.ci_created_at <= last_synced_run_ts
                     ):
                         logger.info(
-                            f"Reached previously synced run {run_id} ({workflow_run.created_at}). Stopping backfill."
+                            f"Reached previously synced run {run_id} ({workflow_run.ci_created_at}). Stopping backfill."
                         )
                         break
                 else:
@@ -287,7 +308,7 @@ def import_repo(
                             workflow_run_id=run_id,
                             head_sha=workflow_run.head_sha,
                             build_number=workflow_run.run_number,
-                            build_created_at=workflow_run.created_at,
+                            build_created_at=workflow_run.ci_created_at,
                             status=build_status,
                             extraction_status=ExtractionStatus.PENDING.value,
                         )

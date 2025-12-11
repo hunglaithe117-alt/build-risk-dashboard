@@ -29,7 +29,6 @@ class DatasetRepository(BaseRepository[DatasetProject]):
             query["$or"] = [
                 {"name": {"$regex": q, "$options": "i"}},
                 {"file_name": {"$regex": q, "$options": "i"}},
-                {"tags": {"$elemMatch": {"$regex": q, "$options": "i"}}},
             ]
 
         return self.paginate(

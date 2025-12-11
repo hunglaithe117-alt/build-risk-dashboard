@@ -71,18 +71,27 @@ export interface DatasetRecord {
   file_name: string;
   file_path?: string | null;
   source: string;
-  ci_provider?: CIProvider;
   rows: number;
   size_bytes: number;
   columns: string[];
   mapped_fields: DatasetMapping;
   stats: DatasetStats;
-  tags: string[];
-  selected_template?: string | null;
-  selected_features: string[];
+  source_languages?: string[];
+  test_frameworks?: string[];
   preview: DatasetPreviewRow[];
   created_at?: string;
   updated_at?: string | null;
+  // Validation fields
+  validation_status?: "pending" | "validating" | "completed" | "failed" | "cancelled";
+  validation_task_id?: string;
+  validation_started_at?: string;
+  validation_completed_at?: string;
+  validation_progress?: number;
+  validation_error?: string;
+  // Setup progress tracking (1=uploaded, 2=configured, 3=validated)
+  setup_step?: number;
+  // Aggregated enrichment info (computed from enrichment_jobs)
+  enrichment_jobs_count?: number;
 }
 
 export interface DatasetListResponse {
@@ -132,9 +141,6 @@ export interface DatasetCreatePayload {
   source?: string;
   mapped_fields?: DatasetMapping;
   stats?: DatasetStats;
-  tags?: string[];
-  selected_template?: string | null;
-  selected_features?: string[];
   preview?: DatasetPreviewRow[];
 }
 
@@ -143,10 +149,9 @@ export interface DatasetUpdatePayload {
   description?: string | null;
   mapped_fields?: DatasetMapping;
   stats?: DatasetStats;
-  tags?: string[];
-  selected_template?: string | null;
-  selected_features?: string[];
-  ci_provider?: CIProvider;
+  source_languages?: string[];
+  test_frameworks?: string[];
+  setup_step?: number;
 }
 
 export interface BuildListResponse {
@@ -681,3 +686,48 @@ export type EnrichmentWebSocketEvent =
   | EnrichmentErrorEvent
   | { type: "connected"; job_id: string }
   | { type: "heartbeat" };
+
+export interface ValidationStats {
+  repos_total: number;
+  repos_valid: number;
+  repos_invalid: number;
+  repos_not_found: number;
+  builds_total: number;
+  builds_found: number;
+  builds_not_found: number;
+}
+
+export interface DatasetValidationStatus {
+  dataset_id: string;
+  status: "pending" | "validating" | "completed" | "failed" | "cancelled";
+  progress: number;
+  task_id?: string;
+  started_at?: string;
+  completed_at?: string;
+  error?: string;
+  stats?: ValidationStats;
+}
+
+export interface RepoValidationResultNew {
+  id: string;
+  full_name: string;
+  validation_status: "pending" | "valid" | "invalid" | "not_found" | "error";
+  validation_error?: string;
+  default_branch?: string;
+  is_private: boolean;
+  builds_found?: number;
+  builds_not_found?: number;
+}
+
+export interface ValidationSummary {
+  dataset_id: string;
+  status: string;
+  stats: ValidationStats;
+  repos: RepoValidationResultNew[];
+}
+
+export interface StartValidationResponse {
+  task_id: string;
+  message: string;
+}
+

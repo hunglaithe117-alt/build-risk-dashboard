@@ -409,14 +409,18 @@ def _get_or_create_workflow_run(
             return existing
 
         # Create minimal placeholder
+        from bson import ObjectId
+
         workflow = WorkflowRunRaw(
-            repository_id=str(repo.id),
-            run_id=int(build_id) if build_id.isdigit() else hash(build_id),
-            name="Unknown",
+            repo_id=ObjectId(str(repo.id)),
+            workflow_run_id=int(build_id) if build_id.isdigit() else hash(build_id),
             head_sha=commit_sha or "",
+            run_number=0,
             status="completed",
             conclusion="success",
-            created_at=datetime.now(timezone.utc),
+            branch="",
+            ci_created_at=datetime.now(timezone.utc),
+            ci_updated_at=datetime.now(timezone.utc),
         )
 
         return workflow_repo.create(workflow)

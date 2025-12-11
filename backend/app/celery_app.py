@@ -21,6 +21,7 @@ celery_app = Celery(
         "app.tasks.export",
         "app.tasks.sonar",
         "app.tasks.trivy",
+        "app.tasks.dataset_validation",
     ],
 )
 

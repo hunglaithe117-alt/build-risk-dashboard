@@ -31,22 +31,22 @@ export function DatasetHeader({ dataset, onRefresh, onDownload }: DatasetHeaderP
     const hasMapping = Boolean(
         dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name
     );
-    const hasFeatures = (dataset.selected_features?.length || 0) > 0;
+    const isValidated = dataset.validation_status === "completed";
 
     const getStatusBadge = () => {
         if (!hasMapping) {
             return <Badge variant="secondary">Pending Mapping</Badge>;
         }
-        if (!hasFeatures) {
+        if (!isValidated) {
             return (
                 <Badge variant="outline" className="border-amber-500 text-amber-600">
-                    No Features
+                    Pending Validation
                 </Badge>
             );
         }
         return (
             <Badge variant="outline" className="border-green-500 text-green-600">
-                Ready
+                Validated ✓
             </Badge>
         );
     };

@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import HTTPException, status
 from pymongo.database import Database
@@ -7,9 +6,7 @@ from pymongo.database import Database
 from app.dtos import (
     DatasetTemplateListResponse,
     DatasetTemplateResponse,
-    DatasetResponse,
 )
-from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.dataset_template_repository import DatasetTemplateRepository
 
 
@@ -17,7 +14,6 @@ class DatasetTemplateService:
     def __init__(self, db: Database):
         self.db = db
         self.template_repo = DatasetTemplateRepository(db)
-        self.dataset_repo = DatasetRepository(db)
 
     def _serialize_template(self, template) -> DatasetTemplateResponse:
         payload = (
@@ -28,43 +24,37 @@ class DatasetTemplateService:
         return DatasetTemplateResponse.model_validate(payload)
 
     def list_templates(self) -> DatasetTemplateListResponse:
+        """List all available dataset templates."""
         templates = self.template_repo.find_many({}, sort=[("created_at", -1)])
         return DatasetTemplateListResponse(
             total=len(templates),
             items=[self._serialize_template(template) for template in templates],
         )
 
-    def apply_template(
-        self, dataset_id: str, template_id: str, user_id: Optional[str]
-    ) -> DatasetResponse:
-        dataset = self.dataset_repo.find_by_id(dataset_id)
-        if not dataset or (dataset.user_id and str(dataset.user_id) != user_id):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
-            )
-
+    def get_template(self, template_id: str) -> DatasetTemplateResponse:
+        """Get a single template by ID."""
         template = self.template_repo.find_by_id(template_id)
         if not template:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
             )
+        return self._serialize_template(template)
 
-        template_features = getattr(template, "selected_features", []) or []
-        current_features = getattr(dataset, "selected_features", []) or []
-        combined = list(dict.fromkeys([*current_features, *template_features]))
+    def get_template_by_name(self, name: str) -> DatasetTemplateResponse:
+        """Get a single template by name."""
+        template = self.template_repo.find_by_name(name)
+        if not template:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Template '{name}' not found",
+            )
+        return self._serialize_template(template)
 
-        updates = {
-            "selected_features": combined,
-            "updated_at": datetime.now(timezone.utc),
-        }
-
-        updated = self.dataset_repo.update_one(dataset_id, updates)
-        final = updated or dataset
-        if not updated:
-            # ensure we return the merged features even if update failed silently
-            final.selected_features = combined
-
-        payload = (
-            final.model_dump(by_alias=True) if hasattr(final, "model_dump") else final
-        )
-        return DatasetResponse.model_validate(payload)
+    def get_template_features(self, template_id: str) -> List[str]:
+        """Get the list of features from a template."""
+        template = self.template_repo.find_by_id(template_id)
+        if not template:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
+            )
+        return getattr(template, "feature_names", []) or []

@@ -10,14 +10,13 @@ from bson import ObjectId
 from fastapi import HTTPException, status
 from pymongo.database import Database
 
-from app.ci_providers.models import CIProvider
-
 from app.dtos import (
     DatasetCreateRequest,
     DatasetListResponse,
     DatasetResponse,
     DatasetUpdateRequest,
 )
+from app.entities.dataset import DatasetProject, DatasetMapping, DatasetStats
 from app.repositories.dataset_repository import DatasetRepository
 
 logger = logging.getLogger(__name__)
@@ -32,7 +31,6 @@ class DatasetService:
         self.repo = DatasetRepository(db)
 
     def _serialize(self, dataset) -> DatasetResponse:
-        # Ensure nested models are converted to plain data for Pydantic response DTO
         payload = (
             dataset.model_dump(by_alias=True)
             if hasattr(dataset, "model_dump")
@@ -107,8 +105,12 @@ class DatasetService:
             updates["name"] = payload_dict["name"]
         if "description" in payload_dict:
             updates["description"] = payload_dict["description"]
-        if "selected_features" in payload_dict:
-            updates["selected_features"] = payload_dict["selected_features"] or []
+        if "setup_step" in payload_dict:
+            updates["setup_step"] = payload_dict["setup_step"]
+        if "source_languages" in payload_dict:
+            updates["source_languages"] = payload_dict["source_languages"]
+        if "test_frameworks" in payload_dict:
+            updates["test_frameworks"] = payload_dict["test_frameworks"]
 
         if "mapped_fields" in payload_dict:
             merged = {}
@@ -158,7 +160,6 @@ class DatasetService:
         upload_file,
         name: Optional[str] = None,
         description: Optional[str] = None,
-        ci_provider: CIProvider = CIProvider.GITHUB_ACTIONS,
     ) -> DatasetResponse:
         """
         Create a dataset record from an uploaded CSV
@@ -213,45 +214,64 @@ class DatasetService:
             )
 
         mapping = self._guess_mapping(columns)
-        coverage = len([v for v in mapping.values() if v]) / 4 if mapping else 0
 
         now = datetime.now(timezone.utc)
 
-        # Prepare final file path (will be set after moving temp file)
-        final_path = DATASET_DIR / f"pending_{uuid4()}_{filename}"
+        dataset_entity = DatasetProject(
+            user_id=ObjectId(user_id),
+            name=name or filename.rsplit(".", 1)[0],
+            description=description,
+            file_name=filename,
+            file_path=str(temp_path.resolve()),
+            source="upload",
+            rows=row_count,
+            size_bytes=size_bytes,
+            columns=columns,
+            mapped_fields=DatasetMapping(**mapping),
+            stats=DatasetStats(),
+            preview=preview,
+            created_at=now,
+            updated_at=now,
+        )
 
-        document: Dict[str, Any] = {
-            "user_id": ObjectId(user_id),
-            "name": name or filename.rsplit(".", 1)[0],
-            "description": description,
-            "file_name": filename,
-            "file_path": str(final_path.resolve()),
-            "source": "upload",
-            "ci_provider": ci_provider,
-            "rows": row_count,
-            "size_bytes": size_bytes,
-            "columns": columns,
-            "mapped_fields": mapping,
-            "stats": {
-                "coverage": coverage,
-                "missing_rate": 0.0,
-                "duplicate_rate": 0.0,
-                "build_coverage": coverage,
-            },
-            "selected_features": [],
-            "preview": preview,
-            "created_at": now,
-            "updated_at": now,
-        }
+        dataset = self.repo.insert_one(dataset_entity)
 
-        dataset = self.repo.insert_one(document)
-
-        # Move temp file to final location with dataset ID
         final_path = DATASET_DIR / f"{dataset.id}_{filename}"
         try:
             temp_path.rename(final_path)
+            self.repo.update_one(
+                str(dataset.id), {"file_path": str(final_path.resolve())}
+            )
         except Exception as e:
-            logger.warning("Failed to move uploaded dataset file into place: %s", e)
-            # keep temp file if move fails
+            logger.warning("Failed to move uploaded dataset file: %s", e)
+            # file_path already set to temp_path, so just log warning
 
-        return self._serialize(dataset)
+        return self._serialize(self.repo.find_by_id(str(dataset.id)))
+
+    def delete_dataset(self, dataset_id: str, user_id: str) -> None:
+        """Delete a dataset and all associated data."""
+        dataset = self.repo.find_by_id(dataset_id)
+        if not dataset or (dataset.user_id and str(dataset.user_id) != user_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+            )
+
+        dataset_oid = ObjectId(dataset_id)
+
+        # Delete associated enrichment_repositories
+        self.db.enrichment_repositories.delete_many({"dataset_id": dataset_oid})
+
+        # Delete associated dataset_builds
+        self.db.dataset_builds.delete_many({"dataset_id": dataset_oid})
+
+        # Delete the CSV file if exists
+        if dataset.file_path:
+            try:
+                file_path = Path(dataset.file_path)
+                if file_path.exists():
+                    file_path.unlink()
+            except Exception as e:
+                logger.warning("Failed to delete dataset file: %s", e)
+
+        # Delete the dataset document
+        self.repo.delete_one(dataset_id)

@@ -228,11 +228,11 @@ export const datasetsApi = {
     return response.data;
   },
   listTemplates: async () => {
-    const response = await api.get<DatasetTemplateListResponse>("/datasets/templates");
+    const response = await api.get<DatasetTemplateListResponse>("/templates");
     return response.data;
   },
   getTemplateByName: async (name: string) => {
-    const response = await api.get<DatasetTemplateRecord>(`/datasets/templates/by-name/${encodeURIComponent(name)}`);
+    const response = await api.get<DatasetTemplateRecord>(`/templates/by-name/${encodeURIComponent(name)}`);
     return response.data;
   },
   get: async (datasetId: string) => {
@@ -247,21 +247,11 @@ export const datasetsApi = {
     const response = await api.patch<DatasetRecord>(`/datasets/${datasetId}`, payload);
     return response.data;
   },
-  applyTemplate: async (datasetId: string, templateId: string) => {
-    const response = await api.post<DatasetRecord>(
-      `/datasets/${datasetId}/apply-template/${templateId}`
-    );
-    return response.data;
-  },
-  upload: async (file: File, payload?: { name?: string; description?: string; tags?: string[]; ci_provider?: string }) => {
+  upload: async (file: File, payload?: { name?: string; description?: string; }) => {
     const formData = new FormData();
     formData.append("file", file);
     if (payload?.name) formData.append("name", payload.name);
     if (payload?.description) formData.append("description", payload.description);
-    if (payload?.tags) {
-      payload.tags.forEach((tag) => formData.append("tags", tag));
-    }
-    if (payload?.ci_provider) formData.append("ci_provider", payload.ci_provider);
 
     const response = await api.post<DatasetRecord>("/datasets/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },
@@ -523,7 +513,7 @@ export const enrichmentApi = {
   // Validate dataset for enrichment
   validate: async (datasetId: string): Promise<EnrichmentValidateResponse> => {
     const response = await api.post<EnrichmentValidateResponse>(
-      `/datasets/${datasetId}/validate`
+      `/datasets/${datasetId}/validate-enrichment`
     );
     return response.data;
   },
@@ -783,3 +773,86 @@ export const dataSourcesApi = {
   },
 };
 
+import type {
+  DatasetValidationStatus,
+  ValidationSummary,
+  StartValidationResponse,
+} from "@/types";
+
+export const datasetValidationApi = {
+  saveRepos: async (datasetId: string, repos: Array<{
+    full_name: string;
+    ci_provider: string;
+    source_languages: string[];
+    test_frameworks: string[];
+    validation_status: string;
+  }>): Promise<{ saved: number; message: string }> => {
+    const response = await api.post<{ saved: number; message: string }>(
+      `/datasets/${datasetId}/repos`,
+      { repos }
+    );
+    return response.data;
+  },
+
+  start: async (datasetId: string): Promise<StartValidationResponse> => {
+    const response = await api.post<StartValidationResponse>(
+      `/datasets/${datasetId}/validate`
+    );
+    return response.data;
+  },
+
+  getStatus: async (datasetId: string): Promise<DatasetValidationStatus> => {
+    const response = await api.get<DatasetValidationStatus>(
+      `/datasets/${datasetId}/validation-status`
+    );
+    return response.data;
+  },
+
+  // Cancel ongoing validation
+  cancel: async (datasetId: string): Promise<{ message: string }> => {
+    const response = await api.delete<{ message: string }>(
+      `/datasets/${datasetId}/validation`
+    );
+    return response.data;
+  },
+
+  // Get validation summary (after completion)
+  getSummary: async (datasetId: string): Promise<ValidationSummary> => {
+    const response = await api.get<ValidationSummary>(
+      `/datasets/${datasetId}/validation-summary`
+    );
+    return response.data;
+  },
+
+  // Reset validation to allow re-running
+  resetValidation: async (datasetId: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(
+      `/datasets/${datasetId}/reset-validation`
+    );
+    return response.data;
+  },
+
+  resetStep2: async (datasetId: string): Promise<{ message: string }> => {
+    const response = await api.post<{ message: string }>(
+      `/datasets/${datasetId}/reset-step2`
+    );
+    return response.data;
+  },
+
+  // Update existing repo configurations
+  updateRepos: async (
+    datasetId: string,
+    repos: Array<{
+      full_name: string;
+      ci_provider: string;
+      source_languages: string[];
+      test_frameworks: string[];
+    }>
+  ): Promise<{ saved: number; message: string }> => {
+    const response = await api.put<{ saved: number; message: string }>(
+      `/datasets/${datasetId}/repos`,
+      { repos }
+    );
+    return response.data;
+  },
+};

@@ -39,7 +39,6 @@ from app.pipeline.features.git import (
 from app.pipeline.features.github import discussion
 from app.pipeline.features.repo import snapshot
 
-# Use Any type for build_sample to support both ModelBuild and EnrichmentBuild
 from typing import Any
 from app.entities.workflow_run import WorkflowRunRaw
 from app.entities.pipeline_run import PipelineRun, NodeExecutionResult

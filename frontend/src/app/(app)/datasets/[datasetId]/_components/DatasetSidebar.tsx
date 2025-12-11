@@ -57,9 +57,8 @@ export function DatasetSidebar({
     const hasMapping = Boolean(
         dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name
     );
-    const featuresCount = dataset.selected_features?.length || 0;
-    const sonarFeatures = dataset.selected_features?.filter(f => f.startsWith("sonar_")).length || 0;
-    const regularFeatures = featuresCount - sonarFeatures;
+    const enrichmentsCount = dataset.enrichment_jobs_count || 0;
+    const languagesCount = dataset.source_languages?.length || 0;
 
     // Count unique repos from preview data
     const uniqueRepos = new Set(
@@ -99,9 +98,9 @@ export function DatasetSidebar({
                     <div className="flex items-center justify-between text-sm">
                         <span className="flex items-center gap-2 text-muted-foreground">
                             <Zap className="h-4 w-4" />
-                            Features
+                            Enrichments
                         </span>
-                        <span className="font-medium">{featuresCount}</span>
+                        <span className="font-medium">{enrichmentsCount}</span>
                     </div>
                     {uniqueRepos > 0 && (
                         <div className="flex items-center justify-between text-sm">
@@ -177,7 +176,7 @@ export function DatasetSidebar({
                         className="w-full justify-start gap-2"
                         size="sm"
                         onClick={onStartEnrichment}
-                        disabled={!hasMapping || featuresCount === 0 || isRunning || isEnrichmentLoading}
+                        disabled={!hasMapping || isRunning || isEnrichmentLoading}
                     >
                         {isEnrichmentLoading ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -243,15 +242,14 @@ export function DatasetSidebar({
                         )}
                     </div>
                     <div className="space-y-1">
-                        <p className="text-muted-foreground">Features</p>
+                        <p className="text-muted-foreground">Languages</p>
                         <div className="flex flex-wrap gap-1">
-                            <Badge variant="outline" className="text-xs">
-                                {regularFeatures} regular
-                            </Badge>
-                            {sonarFeatures > 0 && (
+                            {languagesCount > 0 ? (
                                 <Badge variant="outline" className="text-xs">
-                                    {sonarFeatures} sonar
+                                    {languagesCount} languages
                                 </Badge>
+                            ) : (
+                                <span className="text-xs text-muted-foreground">Not configured</span>
                             )}
                         </div>
                     </div>

@@ -121,7 +121,7 @@ class RepoSnapshotNode(FeatureNode):
             "git_branch": head_branch,
             "git_trigger_commit": workflow_run.head_sha if workflow_run else None,
             "ci_provider": repo.ci_provider,
-            "gh_build_started_at": workflow_run.created_at if workflow_run else None,
+            "gh_build_started_at": workflow_run.ci_created_at if workflow_run else None,
         }
 
     def _get_history_metrics(
@@ -269,5 +269,5 @@ class RepoSnapshotNode(FeatureNode):
             "git_branch": head_branch,
             "git_trigger_commit": workflow_run.head_sha if workflow_run else None,
             "ci_provider": repo.ci_provider,
-            "gh_build_started_at": workflow_run.created_at if workflow_run else None,
+            "gh_build_started_at": workflow_run.ci_created_at if workflow_run else None,
         }

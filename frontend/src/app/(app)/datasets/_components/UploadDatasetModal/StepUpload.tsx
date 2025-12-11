@@ -24,6 +24,7 @@ export function StepUpload({
     description,
     mappings,
     isMappingValid,
+    isDatasetCreated,
     fileInputRef,
     onFileSelect,
     onNameChange,
@@ -36,7 +37,7 @@ export function StepUpload({
             <div className="flex justify-center">
                 <div className="w-full max-w-lg">
                     <input
-                        ref={fileInputRef}
+                        ref={fileInputRef as React.RefObject<HTMLInputElement>}
                         type="file"
                         accept=".csv"
                         className="hidden"
@@ -73,7 +74,6 @@ export function StepUpload({
 
     return (
         <>
-            {/* File Info */}
             <div className="flex items-center gap-3 rounded-lg bg-slate-100 px-4 py-3 dark:bg-slate-800">
                 <FileSpreadsheet className="h-5 w-5 text-emerald-500" />
                 <div className="flex-1">
@@ -82,9 +82,11 @@ export function StepUpload({
                         {preview.totalRows.toLocaleString()} rows • {preview.columns.length} columns
                     </p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={onClearFile}>
-                    <X className="h-4 w-4" />
-                </Button>
+                {!isDatasetCreated && (
+                    <Button variant="ghost" size="sm" onClick={onClearFile}>
+                        <X className="h-4 w-4" />
+                    </Button>
+                )}
             </div>
 
             {/* Dataset Info */}
@@ -139,9 +141,14 @@ export function StepUpload({
 
             {/* Preview */}
             <div className="space-y-2">
-                <Label className="text-base font-semibold">Preview</Label>
+                <div className="flex items-center justify-between">
+                    <Label className="text-base font-semibold">Preview</Label>
+                    <span className="text-xs text-muted-foreground">
+                        {preview.columns.length} columns
+                    </span>
+                </div>
                 <div className="rounded-lg border">
-                    <div className="overflow-x-auto max-h-48">
+                    <div className="overflow-x-auto max-h-64">
                         <table className="min-w-full text-sm">
                             <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0">
                                 <tr>

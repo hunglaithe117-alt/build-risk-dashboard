@@ -115,3 +115,29 @@ class CIProviderInterface(ABC):
     def get_build_url(self, repo_name: str, build_id: str) -> str:
         """Get web URL for a specific build."""
         raise NotImplementedError
+
+    async def get_workflow_run(self, repo_name: str, run_id: int) -> Optional[dict]:
+        """
+        Get a specific workflow run from CI provider.
+
+        Args:
+            repo_name: Repository name (e.g., "owner/repo")
+            run_id: Workflow run ID
+
+        Returns:
+            Dict with workflow run data or None if not found
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def is_run_completed(self, run_data: dict) -> bool:
+        """
+        Check if a workflow run/build is completed (success, failed, etc.).
+
+        Args:
+            run_data: Raw run data from provider API
+
+        Returns:
+            True if the run is in a final state, False otherwise
+        """
+        pass

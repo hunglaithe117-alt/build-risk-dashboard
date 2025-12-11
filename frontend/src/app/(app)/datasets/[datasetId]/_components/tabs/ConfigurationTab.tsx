@@ -71,20 +71,14 @@ export function ConfigurationTab({
     onEditSources,
     onEditFeatures,
 }: ConfigurationTabProps) {
-    const [showAllFeatures, setShowAllFeatures] = useState(false);
-
     const hasMapping = Boolean(
         dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name
     );
-    const features = dataset.selected_features || [];
 
-    // Group features by category for summary
-    const groupedFeatures = features.reduce((acc, feature) => {
-        const category = categorizeFeature(feature);
-        if (!acc[category]) acc[category] = [];
-        acc[category].push(feature);
-        return acc;
-    }, {} as Record<FeatureCategory, string[]>);
+    // Features are now selected per-enrichment-job, not stored on dataset
+    // Display languages and frameworks instead
+    const languages = dataset.source_languages || [];
+    const frameworks = dataset.test_frameworks || [];
 
     // Get unique repos from preview data
     const repoField = dataset.mapped_fields?.repo_name || "";
@@ -95,16 +89,6 @@ export function ConfigurationTab({
                 .filter(Boolean) || []
         )
     ).slice(0, 10);
-
-    // Determine which sources are enabled based on selected features
-    const enabledSources = new Set<string>();
-    features.forEach(f => {
-        if (f.startsWith("git_")) enabledSources.add("git");
-        if (f.startsWith("gh_")) enabledSources.add("github_api");
-        if (f.startsWith("tr_log_")) enabledSources.add("build_log");
-        if (f.startsWith("sonar_")) enabledSources.add("sonarqube");
-        if (f.startsWith("trivy_")) enabledSources.add("trivy");
-    });
 
     return (
         <div className="space-y-6">
@@ -171,128 +155,72 @@ export function ConfigurationTab({
                 </CardContent>
             </Card>
 
-            {/* Data Sources */}
+            {/* Languages & Frameworks */}
             <Card>
                 <CardHeader>
                     <div className="flex items-center justify-between">
                         <div>
                             <CardTitle className="flex items-center gap-2">
                                 <Settings className="h-5 w-5" />
-                                Data Sources
+                                Languages & Frameworks
                             </CardTitle>
                             <CardDescription>
-                                Enabled sources for feature extraction
+                                Configured languages and test frameworks for this dataset
                             </CardDescription>
                         </div>
-                        {onEditSources && (
-                            <Button variant="outline" size="sm" onClick={onEditSources}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Edit
-                            </Button>
-                        )}
                     </div>
                 </CardHeader>
                 <CardContent>
-                    <div className="grid gap-3 md:grid-cols-3">
-                        {DATA_SOURCES.map(source => {
-                            const isEnabled = enabledSources.has(source.id);
-                            const Icon = source.icon;
-                            return (
-                                <div
-                                    key={source.id}
-                                    className={`flex items-center gap-3 rounded-lg border p-3 ${isEnabled
-                                            ? "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-900/20"
-                                            : "border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/50"
-                                        }`}
-                                >
-                                    <div className={`rounded-lg p-2 ${isEnabled ? "bg-green-100 text-green-600" : "bg-slate-100 text-slate-400"}`}>
-                                        <Icon className="h-4 w-4" />
-                                    </div>
-                                    <div>
-                                        <p className={`font-medium ${isEnabled ? "" : "text-muted-foreground"}`}>
-                                            {source.name}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
-                                            {isEnabled ? "Enabled" : "Disabled"}
-                                        </p>
-                                    </div>
+                    <div className="space-y-4">
+                        <div>
+                            <h4 className="text-sm font-medium mb-2">Source Languages</h4>
+                            {languages.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {languages.map((lang: string) => (
+                                        <Badge key={lang} variant="secondary">
+                                            {lang}
+                                        </Badge>
+                                    ))}
                                 </div>
-                            );
-                        })}
+                            ) : (
+                                <p className="text-sm text-muted-foreground">No languages configured</p>
+                            )}
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-medium mb-2">Test Frameworks</h4>
+                            {frameworks.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                    {frameworks.map((fw: string) => (
+                                        <Badge key={fw} variant="outline">
+                                            {fw}
+                                        </Badge>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-sm text-muted-foreground">No frameworks configured</p>
+                            )}
+                        </div>
                     </div>
                 </CardContent>
             </Card>
 
-            {/* Selected Features */}
+            {/* Feature Selection Info */}
             <Card>
                 <CardHeader>
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <CardTitle className="flex items-center gap-2">
-                                <Zap className="h-5 w-5 text-amber-500" />
-                                Selected Features ({features.length})
-                            </CardTitle>
-                            <CardDescription>
-                                Features to extract from builds
-                            </CardDescription>
-                        </div>
-                        {onEditFeatures && (
-                            <Button variant="outline" size="sm" onClick={onEditFeatures}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Edit
-                            </Button>
-                        )}
-                    </div>
+                    <CardTitle className="flex items-center gap-2">
+                        <Zap className="h-5 w-5 text-amber-500" />
+                        Feature Selection
+                    </CardTitle>
+                    <CardDescription>
+                        Features are selected when creating enrichment jobs
+                    </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {features.length > 0 ? (
-                        <>
-                            {/* Category summary badges */}
-                            <div className="mb-4 flex flex-wrap gap-2">
-                                {Object.entries(groupedFeatures).map(([category, categoryFeatures]) => {
-                                    const config = CATEGORY_CONFIG[category as FeatureCategory];
-                                    return (
-                                        <Badge key={category} className={config.color}>
-                                            {config.label}: {categoryFeatures.length}
-                                        </Badge>
-                                    );
-                                })}
-                            </div>
-
-                            {/* Feature badges */}
-                            <div className="flex flex-wrap gap-2">
-                                {(showAllFeatures ? features : features.slice(0, 15)).map(feature => (
-                                    <Badge key={feature} variant="secondary" className="font-mono text-xs">
-                                        {feature}
-                                    </Badge>
-                                ))}
-                                {features.length > 15 && !showAllFeatures && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setShowAllFeatures(true)}
-                                        className="h-6 text-xs"
-                                    >
-                                        +{features.length - 15} more
-                                    </Button>
-                                )}
-                                {showAllFeatures && features.length > 15 && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setShowAllFeatures(false)}
-                                        className="h-6 text-xs"
-                                    >
-                                        Show less
-                                    </Button>
-                                )}
-                            </div>
-                        </>
-                    ) : (
-                        <p className="py-4 text-center text-muted-foreground">
-                            No features selected yet.
-                        </p>
-                    )}
+                    <p className="text-sm text-muted-foreground">
+                        Each enrichment job can have different features selected,
+                        allowing you to create multiple enriched versions of your dataset.
+                        Go to the <strong>Enrichment</strong> tab to create a new enrichment job and select features.
+                    </p>
                 </CardContent>
             </Card>
 

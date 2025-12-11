@@ -76,8 +76,9 @@ export default function DatasetDetailPage() {
     const handleStartEnrichment = async () => {
         try {
             setEnrichmentLoading(true);
+            // Features will be selected in the enrichment wizard
             await enrichmentApi.start(datasetId, {
-                selected_features: dataset?.selected_features || [],
+                selected_features: [], // Empty - will be populated in wizard
                 auto_import_repos: true,
             });
             // Refresh to get latest status
@@ -103,13 +104,11 @@ export default function DatasetDetailPage() {
 
     // Configuration status
     const hasMapping = Boolean(dataset?.mapped_fields?.build_id && dataset?.mapped_fields?.repo_name);
-    const hasFeatures = (dataset?.selected_features?.length || 0) > 0;
-    const isFullyConfigured = hasMapping && hasFeatures;
+    const isValidated = dataset?.validation_status === "completed";
+    const isFullyConfigured = hasMapping && isValidated;
 
-    // Count features by category
-    const sonarFeatures = dataset?.selected_features?.filter(f => f.startsWith("sonar_")) || [];
-    const trivyFeatures = dataset?.selected_features?.filter(f => f.startsWith("trivy_")) || [];
-    const regularFeatures = dataset?.selected_features?.filter(f => !f.startsWith("sonar_") && !f.startsWith("trivy_")) || [];
+    // Count enrichments (features are per-enrichment-job now)
+    const enrichmentsCount = dataset?.enrichment_jobs_count || 0;
 
     if (loading) {
         return (
@@ -161,9 +160,9 @@ export default function DatasetDetailPage() {
                             >
                                 <Zap className="h-4 w-4" />
                                 Enrichment
-                                {regularFeatures.length > 0 && (
+                                {enrichmentsCount > 0 && (
                                     <Badge variant="secondary" className="ml-1 text-xs">
-                                        {regularFeatures.length}
+                                        {enrichmentsCount}
                                     </Badge>
                                 )}
                             </TabsTrigger>
@@ -178,11 +177,6 @@ export default function DatasetDetailPage() {
                             >
                                 <Plug className="h-4 w-4" />
                                 Integrations
-                                {sonarFeatures.length > 0 && (
-                                    <Badge variant="secondary" className="ml-1 text-xs">
-                                        {sonarFeatures.length}
-                                    </Badge>
-                                )}
                             </TabsTrigger>
                         </TabsList>
 
@@ -199,7 +193,7 @@ export default function DatasetDetailPage() {
                                         </p>
                                         <p className="text-sm text-amber-700 dark:text-amber-400">
                                             {!hasMapping && "Please complete column mapping. "}
-                                            {!hasFeatures && "Please select features to extract."}
+                                            {!isValidated && "Please complete validation."}
                                         </p>
                                     </div>
                                     <Button
@@ -237,8 +231,8 @@ export default function DatasetDetailPage() {
                         <TabsContent value="integrations" className="mt-6">
                             <IntegrationsTab
                                 datasetId={datasetId}
-                                sonarFeatures={sonarFeatures}
-                                trivyFeatures={trivyFeatures}
+                                sonarFeatures={[]}
+                                trivyFeatures={[]}
                             />
                         </TabsContent>
                     </Tabs>

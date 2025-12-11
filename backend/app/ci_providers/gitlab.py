@@ -368,3 +368,33 @@ class GitLabCIProvider(CIProviderInterface):
         base = self.config.base_url or "https://gitlab.com"
         base = base.replace("/api/v4", "")
         return f"{base}/{repo_name}/-/pipelines/{build_id}"
+
+    async def get_workflow_run(self, repo_name: str, run_id: int) -> Optional[dict]:
+        """Get a specific pipeline from GitLab."""
+        base_url = self._get_base_url()
+        project_path = self._encode_project_path(repo_name)
+        url = f"{base_url}/projects/{project_path}/pipelines/{run_id}"
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    url,
+                    headers=self._get_headers(),
+                    timeout=30.0,
+                )
+                if response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                logger.warning(f"Failed to get pipeline {run_id} for {repo_name}: {e}")
+                return None
+
+    def is_run_completed(self, run_data: dict) -> bool:
+        """Check if GitLab pipeline is completed."""
+        return run_data.get("status") in [
+            "success",
+            "failed",
+            "canceled",
+            "skipped",
+        ]

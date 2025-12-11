@@ -131,9 +131,7 @@ def _handle_workflow_run_event(
 ) -> Dict[str, object]:
     """Handle workflow_run events."""
     action = payload.get("action")
-    # We usually care about 'completed' to get logs, but maybe 'in_progress' too?
-    # For logs, we need it to be completed usually, or at least jobs completed.
-    # Let's process 'completed' for now to ensure logs are ready.
+    # Only process completed runs; we additionally filter by conclusion below.
     if action != "completed":
         return {"status": "ignored", "reason": f"action_{action}_not_supported_yet"}
 
@@ -143,6 +141,11 @@ def _handle_workflow_run_event(
 
     if not full_name or not workflow_run:
         return {"status": "ignored", "reason": "missing_data"}
+    # Accept only runs whose conclusion is completed; status can vary.
+    conclusion_val = (workflow_run.get("conclusion") or "").lower()
+    if conclusion_val != "completed":
+        return {"status": "ignored", "reason": f"conclusion_{conclusion_val}_ignored"}
+
 
     # Filter out bot-triggered workflow runs (e.g., Dependabot, github-actions[bot])
     triggering_actor = workflow_run.get("triggering_actor", {})
@@ -189,24 +192,47 @@ def _handle_workflow_run_event(
         # New workflow run - insert and trigger processing
         created_at = workflow_run.get("created_at")
         updated_at = workflow_run.get("updated_at")
+        from app.entities.workflow_run import WorkflowRunStatus, WorkflowConclusion
+
+        status = workflow_run.get("status")
+        try:
+            status_enum = (
+                WorkflowRunStatus(status)
+                if status
+                else WorkflowRunStatus.UNKNOWN
+            )
+        except Exception:
+            status_enum = WorkflowRunStatus.UNKNOWN
+
+        conclusion = workflow_run.get("conclusion")
+        try:
+            conclusion_enum = (
+                WorkflowConclusion(conclusion)
+                if conclusion
+                else WorkflowConclusion.UNKNOWN
+            )
+        except Exception:
+            conclusion_enum = WorkflowConclusion.UNKNOWN
+
         new_run = WorkflowRunRaw(
             repo_id=ObjectId(repo_id),
             workflow_run_id=run_id,
             head_sha=workflow_run.get("head_sha"),
             run_number=workflow_run.get("run_number"),
-            status=workflow_run.get("status"),
-            conclusion=workflow_run.get("conclusion"),
-            created_at=(
+            status=status_enum,
+            conclusion=conclusion_enum,
+            ci_created_at=(
                 datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                 if created_at
                 else datetime.now(timezone.utc)
             ),
-            updated_at=(
+            ci_updated_at=(
                 datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
                 if updated_at
                 else datetime.now(timezone.utc)
             ),
             raw_payload=workflow_run,
+            branch=workflow_run.get("head_branch"),
         )
         workflow_run_repo.insert_one(new_run)
 

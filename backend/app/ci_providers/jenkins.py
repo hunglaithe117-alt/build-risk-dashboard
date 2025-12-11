@@ -315,3 +315,28 @@ class JenkinsProvider(CIProviderInterface):
         base = self._get_base_url()
         job_path = repo_name.replace("/", "/job/")
         return f"{base}/job/{job_path}/{build_id}"
+
+    async def get_workflow_run(self, repo_name: str, run_id: int) -> Optional[dict]:
+        """Get a specific build from Jenkins."""
+        base_url = self._get_base_url()
+        job_path = repo_name.replace("/", "/job/")
+        url = f"{base_url}/job/{job_path}/{run_id}/api/json"
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    url,
+                    headers=self._get_headers(),
+                    timeout=30.0,
+                )
+                if response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                logger.warning(f"Failed to get build {run_id} for {repo_name}: {e}")
+                return None
+
+    def is_run_completed(self, run_data: dict) -> bool:
+        """Check if Jenkins build is completed."""
+        return not run_data.get("building") and run_data.get("result") is not None

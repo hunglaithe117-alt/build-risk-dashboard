@@ -87,6 +87,7 @@ export interface DatasetRecord {
   validation_completed_at?: string;
   validation_progress?: number;
   validation_error?: string;
+  validation_stats?: ValidationStats;
   // Setup progress tracking (1=uploaded, 2=configured, 3=validated)
   setup_step?: number;
   // Aggregated enrichment info (computed from enrichment_jobs)

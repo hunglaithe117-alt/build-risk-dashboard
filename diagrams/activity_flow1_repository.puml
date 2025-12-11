@@ -1,0 +1,64 @@
+@startuml activity_flow1_repository
+!theme plain
+title Activity Diagram - Flow 1: Live Repository Integration
+
+start
+
+:Admin registers GitHub repository;
+note right
+  Provide GitHub repository ID
+  and authentication credentials
+end note
+
+:System validates repository access;
+
+if (Access valid?) then (yes)
+    :Store repository configuration in DB;
+else (no)
+    :Display error message;
+    stop
+endif
+
+:Backend periodically polls GitHub Actions;
+
+while (Monitoring active?) is (yes)
+    :Check for new workflow runs;
+    
+    if (New build detected?) then (yes)
+        :Fetch build metadata from GitHub;
+        note right
+          Status, timestamps, commit info,
+          test results
+        end note
+        
+        :Run DAG-based feature extraction;
+        note right
+          Extract from multiple sources:
+          - Git
+          - GitHub
+          - Build logs
+          - SonarQube
+          - Trivy
+        end note
+        
+        :Execute Bayesian model inference;
+        note right
+          Produce risk classification
+          + uncertainty estimate
+        end note
+        
+        :Store results in MongoDB;
+        
+        :Send WebSocket update to dashboard;
+        
+        :Display results on frontend;
+    else (no)
+        :Continue monitoring;
+    endif
+endwhile (monitoring stopped)
+
+:End repository monitoring;
+
+stop
+
+@enduml

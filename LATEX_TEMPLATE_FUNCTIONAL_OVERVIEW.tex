@@ -1,0 +1,149 @@
+% Mẫu cấu trúc Functional Overview hoàn chỉnh cho thesis của bạn
+% Copy and paste sections này vào 2_Survey.tex của bạn
+
+\section{Functional Overview}
+\label{section:2.2}
+
+% Intro paragraphs
+This section provides a comprehensive overview of the "Uncertainty-Aware CI/CD Build Risk Evaluation System" without detailing implementation specifics. The system is designed as a web-based application integrated with GitHub repositories and GitHub Actions CI/CD pipelines. At a high level, it provides the following core capabilities: (1) collecting build data and commit metadata from GitHub for selected repositories, (2) enriching this data with code quality metrics from SonarQube, (3) running inference through a trained Bayesian machine learning model to produce risk predictions with uncertainty estimates, (4) displaying results through an interactive web dashboard, and (5) supporting administrative configuration for system operation.
+
+% [... existing content about roles, architecture, functional areas ...]
+% [Insert your existing User Roles, System Architecture, and Core Functional Areas sections here]
+
+\subsection{General Use Case Diagram}
+\label{subsection:2.2.6}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figure/diagrams/use_case_general.png}
+    \caption{General use case diagram for CI/CD Build Risk Evaluation System}
+    \label{fig:usecase_general}
+\end{figure}
+
+Figure~\ref{fig:usecase_general} illustrates the high-level use cases and actors in the system. The system distinguishes between two primary user roles: \textbf{Authenticated User} (representing developers and team members) and \textbf{System Administrator} (representing DevOps engineers and system operators). The diagram shows the main functional areas accessible to each role.
+
+\subsubsection{Actors}
+
+The use case diagram identifies two primary actors:
+
+\textbf{Authenticated User:} Represents developers, researchers, and team members who interact with the system to view build risk evaluations and manage their own datasets. These users have read-only access to the dashboard and can upload and enrich their own datasets.
+
+\textbf{System Administrator:} Represents DevOps engineers and system operators responsible for configuring and maintaining the system. Administrators have elevated privileges to register repositories, configure system settings, monitor pipeline execution, and manage user access.
+
+\subsubsection{Main Use Cases}
+
+The system supports the following primary use cases:
+
+\begin{itemize}
+    \item \textbf{View Build Dashboard:} Users can access the main dashboard to view build risk evaluations, filter by date or risk level, and inspect detailed build information.
+    
+    \item \textbf{Upload Dataset:} Users can upload CSV files containing their build records to be enriched with additional features.
+    
+    \item \textbf{Create Dataset Version:} Users can create multiple enriched versions of their dataset by selecting different combinations of features.
+    
+    \item \textbf{Download Enriched Dataset:} Users can download the enriched CSV files once enrichment is complete.
+    
+    \item \textbf{Explore Features:} Users can browse the feature registry to understand available features and their dependencies.
+    
+    \item \textbf{Register Repository} (Admin only): Administrators can connect GitHub repositories for live monitoring.
+    
+    \item \textbf{Configure System Settings} (Admin only): Administrators can adjust system parameters like risk thresholds and model selection.
+    
+    \item \textbf{Monitor Pipeline Execution} (Admin only): Administrators can view pipeline execution history and diagnostic information.
+    
+    \item \textbf{Manage Users \& Access} (Admin only): Administrators can manage user accounts and role assignments (planned enhancement).
+\end{itemize}
+
+\subsection{Detailed Use Case Scenarios}
+\label{subsection:2.2.7}
+
+The general use cases are realized through two distinct workflows, each with specific data processing requirements. This section describes these workflows in detail.
+
+\subsubsection{Workflow 1: Live Repository Integration}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figure/diagrams/activity_flow1_repository.png}
+    \caption{Activity diagram: Live Repository Integration workflow}
+    \label{fig:activity_flow1}
+\end{figure}
+
+Figure~\ref{fig:activity_flow1} illustrates the detailed workflow for live repository integration and monitoring. The process begins when an administrator registers a GitHub repository with the system. The system validates access permissions and stores the repository configuration. Subsequently, the backend periodically polls GitHub Actions for new workflow runs. When a new build is detected, the system:
+
+\begin{enumerate}
+    \item Fetches comprehensive build metadata from GitHub
+    \item Executes the DAG-based feature extraction pipeline
+    \item Extracts features from multiple data sources (Git, GitHub, build logs, SonarQube, Trivy)
+    \item Runs Bayesian model inference to produce risk predictions
+    \item Stores results in MongoDB
+    \item Updates the dashboard in real-time via WebSocket
+\end{enumerate}
+
+This workflow provides continuous, automated monitoring without manual intervention after initial setup.
+
+\subsubsection{Workflow 2: Dataset Enrichment with Feature Selection}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figure/diagrams/activity_flow2_dataset_enrichment.png}
+    \caption{Activity diagram: Dataset Enrichment workflow}
+    \label{fig:activity_flow2}
+\end{figure}
+
+Figure~\ref{fig:activity_flow2} illustrates the detailed workflow for custom dataset enrichment. Users can upload their own datasets and select which features to extract. The system automatically infers required data sources based on feature selections. The enrichment process:
+
+\begin{enumerate}
+    \item Parses the uploaded CSV and detects columns
+    \item Validates required field mapping (build\_id, repo\_name)
+    \item Collects dataset metadata (languages, test frameworks)
+    \item Creates a dataset version with selected features
+    \item Launches an asynchronous Celery task for enrichment
+    \item For each row: queries external APIs, extracts features, handles errors gracefully
+    \item Provides progress tracking and allows download of enriched results
+\end{enumerate}
+
+This workflow enables research and analysis use cases where users want to experiment with different feature combinations without setting up live repository monitoring.
+
+\subsubsection{Workflow 3: Build Risk Evaluation}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth]{Figure/diagrams/activity_build_risk_evaluation.png}
+    \caption{Activity diagram: Build Risk Evaluation process}
+    \label{fig:activity_evaluation}
+\end{figure}
+
+Figure~\ref{fig:activity_evaluation} illustrates the detailed process of evaluating build risk. When triggered by a new build (either from live monitoring or batch processing), the system:
+
+\begin{enumerate}
+    \item Fetches build metadata from GitHub
+    \item Executes feature extraction from multiple sources in parallel
+    \item Combines extracted features into a feature vector
+    \item Validates feature completeness
+    \item Loads the trained Bayesian model
+    \item Runs inference to produce risk classification, score, and uncertainty
+    \item Stores results in the database
+    \item Sends real-time updates to the dashboard via WebSocket
+    \item Logs evaluation metrics for monitoring
+\end{enumerate}
+
+The parallel execution of feature extraction ensures efficient processing even when handling multiple builds concurrently.
+
+\subsection{Business Process Integration}
+\label{subsection:2.2.8}
+
+The workflows described above integrate into the overall system operation as follows:
+
+\begin{itemize}
+    \item \textbf{Operational Monitoring (Flow 1):} Organizations using the system for continuous CI/CD monitoring set up repository connections once. The system then automatically processes all new builds, providing real-time risk assessments and uncertainty estimates. Team members can view the dashboard to make informed deployment decisions.
+    
+    \item \textbf{Research and Analysis (Flow 2):} Researchers and data scientists can upload their own build datasets and experiment with different feature combinations. Multiple versions of the same dataset can be created and compared to evaluate model performance with different feature sets.
+    
+    \item \textbf{Model Integration:} Both workflows utilize the same trained Bayesian neural network model and the same DAG-based feature extraction pipeline, ensuring consistent risk predictions across different usage scenarios.
+    
+    \item \textbf{Data Continuity:} Results from Flow 1 (live monitoring) can be exported and used as input for Flow 2 (batch enrichment), supporting iterative analysis and model improvement.
+\end{itemize}
+
+% [Continue with implementation status and future extensions sections...]
+
+\end{document}

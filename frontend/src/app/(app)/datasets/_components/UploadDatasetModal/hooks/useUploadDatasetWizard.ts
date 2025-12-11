@@ -54,6 +54,7 @@ export function useUploadDatasetWizard({
 
         try {
             await datasetValidationApi.resetStep2(datasetId);
+            step1.resetMappings(); // Clear mappings but keep file preview
             step2.resetStep2();
             step3.resetStep3();
             setStep(1);
@@ -98,40 +99,28 @@ export function useUploadDatasetWizard({
         const setupStep = existingDataset.setup_step || 1;
         const validationStatus = existingDataset.validation_status;
 
-        // Extract repos from preview
+        let extractedRepos: string[] = [];
         if (existingDataset.preview?.length && existingDataset.mapped_fields?.repo_name) {
             const repoCol = existingDataset.mapped_fields.repo_name;
-            const repos = [
-                ...new Set(
-                    existingDataset.preview
-                        .map((row) => String(row[repoCol] ?? ""))
-                        .filter(Boolean)
-                ),
-            ];
-
-            if (repos.length > 0) {
-                // Manually set repos since we can't call extractAndSetRepos with preview here
-                const validRepos = repos.filter((r) => r.includes("/") && r.split("/").length === 2);
-                step2.extractAndSetRepos(
-                    {
-                        columns: existingDataset.columns || [],
-                        rows: (existingDataset.preview || []).map((row) => {
-                            const converted: Record<string, string> = {};
-                            Object.entries(row).forEach(([key, value]) => {
-                                converted[key] = String(value ?? "");
-                            });
-                            return converted;
-                        }),
-                        totalRows: existingDataset.rows || 0,
-                        fileName: existingDataset.file_name || "dataset.csv",
-                        fileSize: existingDataset.size_bytes || 0,
-                    },
-                    existingDataset.mapped_fields.repo_name
-                );
-            }
+            const { valid } = step2.extractAndSetRepos(
+                {
+                    columns: existingDataset.columns || [],
+                    rows: (existingDataset.preview || []).map((row) => {
+                        const converted: Record<string, string> = {};
+                        Object.entries(row).forEach(([key, value]) => {
+                            converted[key] = String(value ?? "");
+                        });
+                        return converted;
+                    }),
+                    totalRows: existingDataset.rows || 0,
+                    fileName: existingDataset.file_name || "dataset.csv",
+                    fileSize: existingDataset.size_bytes || 0,
+                },
+                existingDataset.mapped_fields.repo_name
+            );
+            extractedRepos = valid;
         }
 
-        // Determine starting step
         if (
             setupStep >= 3 ||
             (validationStatus && ["validating", "completed", "failed", "cancelled"].includes(validationStatus))
@@ -146,9 +135,10 @@ export function useUploadDatasetWizard({
             }
         } else if (setupStep >= 2) {
             setStep(2);
-            // Fetch languages for repos
-            if (step2.uniqueRepos.length > 0) {
-                step2.fetchLanguagesForAllRepos(step2.uniqueRepos);
+            // Fetch languages for repos using the extracted repos (not stale state)
+            if (extractedRepos.length > 0) {
+                step2.fetchLanguagesForAllRepos(extractedRepos);
+                step2.setActiveRepo(extractedRepos[0]);
             }
         } else {
             setStep(1);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Download, FileSpreadsheet, RefreshCw } from "lucide-react";
+import { ArrowLeft, FileSpreadsheet, RefreshCw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,6 @@ import type { DatasetRecord } from "@/types";
 interface DatasetHeaderProps {
     dataset: DatasetRecord;
     onRefresh: () => void;
-    onDownload: () => void;
 }
 
 function formatDate(value?: string | null) {
@@ -25,7 +24,7 @@ function formatDate(value?: string | null) {
     }
 }
 
-export function DatasetHeader({ dataset, onRefresh, onDownload }: DatasetHeaderProps) {
+export function DatasetHeader({ dataset, onRefresh }: DatasetHeaderProps) {
     const router = useRouter();
 
     const hasMapping = Boolean(
@@ -76,9 +75,6 @@ export function DatasetHeader({ dataset, onRefresh, onDownload }: DatasetHeaderP
             <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={onRefresh}>
                     <RefreshCw className="mr-2 h-4 w-4" /> Refresh
-                </Button>
-                <Button variant="outline" size="sm" onClick={onDownload}>
-                    <Download className="mr-2 h-4 w-4" /> Download
                 </Button>
             </div>
         </div>

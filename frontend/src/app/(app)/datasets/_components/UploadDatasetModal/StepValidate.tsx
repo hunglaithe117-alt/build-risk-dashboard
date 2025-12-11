@@ -183,7 +183,7 @@ export function StepValidate({
                         <div className="flex items-center gap-2">
                             <CheckCircle2 className="h-5 w-5 text-green-600" />
                             <p className="text-sm text-green-700 dark:text-green-300 font-medium">
-                                Validation complete! Click "Import Dataset" to proceed.
+                                Validation complete! Click &quot;Import Dataset&quot; to proceed.
                             </p>
                         </div>
                     </div>

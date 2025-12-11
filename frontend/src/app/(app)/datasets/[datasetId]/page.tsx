@@ -12,8 +12,8 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { datasetsApi, enrichmentApi } from "@/lib/api";
-import type { DatasetRecord, EnrichmentJob } from "@/types";
+import { datasetsApi } from "@/lib/api";
+import type { DatasetRecord } from "@/types";
 
 import { DatasetHeader } from "./_components/DatasetHeader";
 import { DatasetSidebar } from "./_components/DatasetSidebar";
@@ -36,8 +36,7 @@ export default function DatasetDetailPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState("overview");
-    const [enrichmentStatus, setEnrichmentStatus] = useState<EnrichmentJob | null>(null);
-    const [enrichmentLoading, setEnrichmentLoading] = useState(false);
+    const [hasActiveEnrichment, setHasActiveEnrichment] = useState(false);
 
     const loadDataset = useCallback(async () => {
         try {
@@ -63,39 +62,6 @@ export default function DatasetDetailPage() {
         loadDataset();
     }, [loadDataset]);
 
-    const handleDownload = async () => {
-        try {
-            const blob = await enrichmentApi.download(datasetId);
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `enriched_${dataset?.file_name || "dataset"}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-        } catch (err) {
-            console.error("Download failed:", err);
-        }
-    };
-
-    const handleStartEnrichment = async () => {
-        try {
-            setEnrichmentLoading(true);
-            // Features will be selected in the enrichment wizard
-            await enrichmentApi.start(datasetId, {
-                selected_features: [], // Empty - will be populated in wizard
-                auto_import_repos: true,
-            });
-            // Refresh to get latest status
-            loadDataset();
-        } catch (err) {
-            console.error("Failed to start enrichment:", err);
-        } finally {
-            setEnrichmentLoading(false);
-        }
-    };
-
     const handleDelete = async () => {
         if (!confirm(`Delete dataset "${dataset?.name}"? This cannot be undone.`)) {
             return;
@@ -107,9 +73,6 @@ export default function DatasetDetailPage() {
             console.error("Failed to delete dataset:", err);
         }
     };
-
-    // Count enrichments (features are per-enrichment-job now)
-    const enrichmentsCount = dataset?.enrichment_jobs_count || 0;
 
     if (loading) {
         return (
@@ -141,7 +104,6 @@ export default function DatasetDetailPage() {
             <DatasetHeader
                 dataset={dataset}
                 onRefresh={loadDataset}
-                onDownload={handleDownload}
             />
 
             {/* Main Content with Sidebar */}
@@ -157,9 +119,9 @@ export default function DatasetDetailPage() {
                             <TabsTrigger value="enrichment" className="gap-2">
                                 <Zap className="h-4 w-4" />
                                 Enrichment
-                                {enrichmentsCount > 0 && (
-                                    <Badge variant="secondary" className="ml-1 text-xs">
-                                        {enrichmentsCount}
+                                {hasActiveEnrichment && (
+                                    <Badge variant="secondary" className="ml-1 text-xs animate-pulse">
+                                        Active
                                     </Badge>
                                 )}
                             </TabsTrigger>
@@ -181,7 +143,7 @@ export default function DatasetDetailPage() {
                             <EnrichmentTab
                                 datasetId={datasetId}
                                 dataset={dataset}
-                                onEnrichmentStatusChange={setEnrichmentStatus}
+                                onEnrichmentStatusChange={setHasActiveEnrichment}
                             />
                         </TabsContent>
 
@@ -207,12 +169,9 @@ export default function DatasetDetailPage() {
                 {/* Sidebar */}
                 <DatasetSidebar
                     dataset={dataset}
-                    enrichmentStatus={enrichmentStatus}
-                    onStartEnrichment={handleStartEnrichment}
-                    onDownload={handleDownload}
-                    onEditConfig={() => setActiveTab("configuration")}
+                    onEditConfig={() => setActiveTab("enrichment")}
                     onDelete={handleDelete}
-                    isEnrichmentLoading={enrichmentLoading}
+                    onRefresh={loadDataset}
                 />
             </div>
         </div>

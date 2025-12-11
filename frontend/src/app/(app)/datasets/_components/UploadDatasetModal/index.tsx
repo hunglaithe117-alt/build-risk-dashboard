@@ -63,7 +63,9 @@ export function UploadDatasetModal({
                             type="button"
                             className="rounded-full p-2 text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800"
                             onClick={() => {
-                                wizard.resetAll();
+                                if (step3.validationStatus !== "validating") {
+                                    wizard.resetAll();
+                                }
                                 onOpenChange(false);
                             }}
                         >

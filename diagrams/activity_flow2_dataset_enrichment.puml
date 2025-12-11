@@ -1,0 +1,107 @@
+@startuml activity_flow2_dataset_enrichment
+!theme plain
+title Activity Diagram - Flow 2: Dataset Enrichment with Feature Selection
+
+start
+
+:User uploads CSV dataset;
+
+:System parses file and detects columns;
+
+:System displays column summary;
+
+:User maps required fields;
+note right
+  Map dataset columns to:
+  - build_id (required)
+  - repo_name (required)
+  - other fields (optional)
+end note
+
+if (Required fields mapped?) then (yes)
+    :Validate mapping;
+else (no)
+    :Display mapping error;
+    stop
+endif
+
+:User provides dataset metadata;
+note right
+  Programming languages
+  Test frameworks used
+  Repository characteristics
+end note
+
+:User selects features for enrichment;
+note right
+  Choose from registry:
+  - Git features
+  - GitHub features
+  - Build log features
+  - SonarQube features
+  - Trivy features
+end note
+
+:System infers required data sources;
+note right
+  Based on selected features,
+  determine which APIs to query
+end note
+
+:Create dataset version in DB;
+
+:Launch Celery enrichment task (async);
+
+:For each row in dataset do;
+
+while (Process all rows?) is (yes)
+    :Extract build_id & repo_name;
+    
+    :Query external APIs for enrichment data;
+    note right
+      GitHub API
+      Git repository
+      SonarQube API
+      Trivy API
+    end note
+    
+    if (API queries successful?) then (yes)
+        :Extract selected features;
+        
+        :Append feature columns to row;
+        
+        :Mark row as enriched;
+    else (no)
+        if (Retry available?) then (yes)
+            :Retry API queries;
+        else (no)
+            :Mark row as failed/skipped;
+            note right
+              Log error reason
+              Log missing data sources
+            end note
+        endif
+    endif
+    
+    :Update progress tracking;
+    note right
+      Total rows processed
+      Enriched count
+      Failed count
+      Progress percentage
+    end note
+endwhile (all rows processed)
+
+:Enrichment task complete;
+
+:Store enriched dataset in DB;
+
+:Notify user of completion;
+
+:User downloads enriched CSV;
+
+:End enrichment process;
+
+stop
+
+@enduml

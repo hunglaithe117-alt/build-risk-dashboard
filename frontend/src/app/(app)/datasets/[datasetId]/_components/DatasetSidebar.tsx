@@ -5,23 +5,17 @@ import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
-    CardDescription,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import type { DatasetRecord, EnrichmentJob } from "@/types";
+import type { DatasetRecord } from "@/types";
 import {
-    CheckCircle2,
-    Clock,
-    Download,
     Edit,
     FileSpreadsheet,
+    GitBranch,
     HardDrive,
     Layers,
-    Loader2,
-    Percent,
-    Play,
+    RefreshCw,
     Settings,
     Trash2,
     Zap,
@@ -29,12 +23,9 @@ import {
 
 interface DatasetSidebarProps {
     dataset: DatasetRecord;
-    enrichmentStatus?: EnrichmentJob | null;
-    onStartEnrichment?: () => void;
-    onDownload?: () => void;
     onEditConfig?: () => void;
     onDelete?: () => void;
-    isEnrichmentLoading?: boolean;
+    onRefresh?: () => void;
 }
 
 function formatFileSize(bytes: number): string {
@@ -47,38 +38,22 @@ function formatFileSize(bytes: number): string {
 
 export function DatasetSidebar({
     dataset,
-    enrichmentStatus,
-    onStartEnrichment,
-    onDownload,
     onEditConfig,
     onDelete,
-    isEnrichmentLoading,
+    onRefresh,
 }: DatasetSidebarProps) {
-    const hasMapping = Boolean(
-        dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name
-    );
-    const enrichmentsCount = dataset.enrichment_jobs_count || 0;
     const languagesCount = dataset.source_languages?.length || 0;
+    const frameworksCount = dataset.test_frameworks?.length || 0;
 
-    // Count unique repos from preview data
-    const uniqueRepos = new Set(
-        dataset.preview?.map(row => row[dataset.mapped_fields?.repo_name || ""] as string).filter(Boolean)
-    ).size;
-
-    const isRunning = enrichmentStatus?.status === "running";
-    const isCompleted = enrichmentStatus?.status === "completed";
-
-    // Calculate success rate from enrichment status
-    const successRate = enrichmentStatus && enrichmentStatus.total_rows > 0
-        ? ((enrichmentStatus.enriched_rows / enrichmentStatus.total_rows) * 100).toFixed(1)
-        : null;
+    // Count unique repos from validation stats
+    const reposCount = dataset.validation_stats?.repos_total || 0;
 
     return (
         <div className="w-80 flex-shrink-0 space-y-4">
             {/* Quick Stats */}
             <Card>
                 <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium">Quick Stats</CardTitle>
+                    <CardTitle className="text-sm font-medium">Dataset Info</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                     <div className="flex items-center justify-between text-sm">
@@ -97,20 +72,11 @@ export function DatasetSidebar({
                     </div>
                     <div className="flex items-center justify-between text-sm">
                         <span className="flex items-center gap-2 text-muted-foreground">
-                            <Zap className="h-4 w-4" />
-                            Enrichments
+                            <GitBranch className="h-4 w-4" />
+                            Repositories
                         </span>
-                        <span className="font-medium">{enrichmentsCount}</span>
+                        <span className="font-medium">{reposCount}</span>
                     </div>
-                    {uniqueRepos > 0 && (
-                        <div className="flex items-center justify-between text-sm">
-                            <span className="flex items-center gap-2 text-muted-foreground">
-                                <Settings className="h-4 w-4" />
-                                Repositories
-                            </span>
-                            <span className="font-medium">{uniqueRepos}</span>
-                        </div>
-                    )}
                     <div className="flex items-center justify-between text-sm">
                         <span className="flex items-center gap-2 text-muted-foreground">
                             <HardDrive className="h-4 w-4" />
@@ -118,49 +84,52 @@ export function DatasetSidebar({
                         </span>
                         <span className="font-medium">{formatFileSize(dataset.size_bytes || 0)}</span>
                     </div>
-                    {successRate && (
-                        <div className="flex items-center justify-between text-sm">
-                            <span className="flex items-center gap-2 text-muted-foreground">
-                                <Percent className="h-4 w-4" />
-                                Success Rate
-                            </span>
-                            <span className="font-medium text-green-600">{successRate}%</span>
-                        </div>
-                    )}
                 </CardContent>
             </Card>
 
-            {/* Enrichment Status */}
+            {/* Configuration Summary */}
             <Card>
                 <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium">Enrichment Status</CardTitle>
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Settings className="h-4 w-4" />
+                        Configuration
+                    </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                    {isRunning ? (
-                        <>
-                            <div className="flex items-center gap-2">
-                                <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                                <span className="text-sm font-medium text-blue-600">Running</span>
+                <CardContent className="space-y-3 text-sm">
+                    <div className="space-y-1">
+                        <p className="text-muted-foreground text-xs">Column Mapping</p>
+                        <div className="flex gap-1 flex-wrap">
+                            {dataset.mapped_fields?.build_id ? (
+                                <Badge variant="secondary" className="font-mono text-xs">
+                                    build: {dataset.mapped_fields.build_id}
+                                </Badge>
+                            ) : (
+                                <span className="text-amber-600 text-xs">Not mapped</span>
+                            )}
+                        </div>
+                        <div className="flex gap-1 flex-wrap">
+                            {dataset.mapped_fields?.repo_name ? (
+                                <Badge variant="secondary" className="font-mono text-xs">
+                                    repo: {dataset.mapped_fields.repo_name}
+                                </Badge>
+                            ) : null}
+                        </div>
+                    </div>
+                    {(languagesCount > 0 || frameworksCount > 0) && (
+                        <div className="space-y-1">
+                            <p className="text-muted-foreground text-xs">Stack</p>
+                            <div className="flex flex-wrap gap-1">
+                                {dataset.source_languages?.slice(0, 3).map((lang) => (
+                                    <Badge key={lang} variant="outline" className="text-xs">
+                                        {lang}
+                                    </Badge>
+                                ))}
+                                {languagesCount > 3 && (
+                                    <Badge variant="outline" className="text-xs">
+                                        +{languagesCount - 3}
+                                    </Badge>
+                                )}
                             </div>
-                            <Progress value={enrichmentStatus?.progress_percent || 0} className="h-2" />
-                            <p className="text-xs text-muted-foreground">
-                                {enrichmentStatus?.processed_rows?.toLocaleString() || 0} / {enrichmentStatus?.total_rows?.toLocaleString() || 0} rows
-                            </p>
-                        </>
-                    ) : isCompleted ? (
-                        <div className="flex items-center gap-2">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                            <span className="text-sm font-medium text-green-600">Completed</span>
-                        </div>
-                    ) : enrichmentStatus?.status === "failed" ? (
-                        <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-red-500" />
-                            <span className="text-sm font-medium text-red-600">Failed</span>
-                        </div>
-                    ) : (
-                        <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm text-muted-foreground">Not started</span>
                         </div>
                     )}
                 </CardContent>
@@ -169,43 +138,21 @@ export function DatasetSidebar({
             {/* Quick Actions */}
             <Card>
                 <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
+                    <CardTitle className="text-sm font-medium">Actions</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
                     <Button
-                        className="w-full justify-start gap-2"
-                        size="sm"
-                        onClick={onStartEnrichment}
-                        disabled={!hasMapping || isRunning || isEnrichmentLoading}
-                    >
-                        {isEnrichmentLoading ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                            <Play className="h-4 w-4" />
-                        )}
-                        Start Enrichment
-                    </Button>
-                    <Button
                         variant="outline"
                         className="w-full justify-start gap-2"
                         size="sm"
-                        onClick={onDownload}
+                        onClick={onRefresh}
                     >
-                        <Download className="h-4 w-4" />
-                        Download CSV
-                    </Button>
-                    <Button
-                        variant="outline"
-                        className="w-full justify-start gap-2"
-                        size="sm"
-                        onClick={onEditConfig}
-                    >
-                        <Edit className="h-4 w-4" />
-                        Edit Configuration
+                        <RefreshCw className="h-4 w-4" />
+                        Refresh Data
                     </Button>
                     <Button
                         variant="ghost"
-                        className="w-full justify-start gap-2 text-red-600 hover:bg-red-50 hover:text-red-700"
+                        className="w-full justify-start gap-2 text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20"
                         size="sm"
                         onClick={onDelete}
                     >
@@ -215,44 +162,27 @@ export function DatasetSidebar({
                 </CardContent>
             </Card>
 
-            {/* Configuration Summary */}
+            {/* Enrichment Info */}
             <Card>
                 <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium">Configuration</CardTitle>
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Zap className="h-4 w-4" />
+                        Enrichment
+                    </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                    <div className="space-y-1">
-                        <p className="text-muted-foreground">Build ID</p>
-                        {dataset.mapped_fields?.build_id ? (
-                            <Badge variant="secondary" className="font-mono text-xs">
-                                {dataset.mapped_fields.build_id}
-                            </Badge>
-                        ) : (
-                            <span className="text-amber-600 text-xs">Not mapped</span>
-                        )}
-                    </div>
-                    <div className="space-y-1">
-                        <p className="text-muted-foreground">Repo Name</p>
-                        {dataset.mapped_fields?.repo_name ? (
-                            <Badge variant="secondary" className="font-mono text-xs">
-                                {dataset.mapped_fields.repo_name}
-                            </Badge>
-                        ) : (
-                            <span className="text-amber-600 text-xs">Not mapped</span>
-                        )}
-                    </div>
-                    <div className="space-y-1">
-                        <p className="text-muted-foreground">Languages</p>
-                        <div className="flex flex-wrap gap-1">
-                            {languagesCount > 0 ? (
-                                <Badge variant="outline" className="text-xs">
-                                    {languagesCount} languages
-                                </Badge>
-                            ) : (
-                                <span className="text-xs text-muted-foreground">Not configured</span>
-                            )}
-                        </div>
-                    </div>
+                <CardContent>
+                    <p className="text-xs text-muted-foreground mb-3">
+                        Create enriched versions with extracted features from the Enrichment tab.
+                    </p>
+                    <Button
+                        variant="secondary"
+                        className="w-full gap-2"
+                        size="sm"
+                        onClick={onEditConfig}
+                    >
+                        <Zap className="h-4 w-4" />
+                        Go to Enrichment
+                    </Button>
                 </CardContent>
             </Card>
         </div>

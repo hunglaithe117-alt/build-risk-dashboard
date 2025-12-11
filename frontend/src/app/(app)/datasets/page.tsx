@@ -200,11 +200,16 @@ export default function DatasetsPage() {
     }
 
     // Use setup_step for pending/not-started states
-    if (setupStep >= 2) {
+    // Step 3: Ready for validation (Step 2 completed, repos configured)
+    if (setupStep >= 3) {
       return <Badge variant="outline" className="border-blue-400 text-blue-500">Ready for Validation</Badge>;
     }
+    // Step 2: Configuring repos (Step 1 completed, need to configure repos)
+    if (setupStep === 2) {
+      return <Badge variant="outline" className="border-amber-400 text-amber-500">Configuring Repos</Badge>;
+    }
 
-    // Step 1 complete but Step 2 not done
+    // Step 1: Pending config (just uploaded, need to map columns)
     return <Badge variant="outline" className="border-slate-400 text-slate-500">Pending Config</Badge>;
   };
 

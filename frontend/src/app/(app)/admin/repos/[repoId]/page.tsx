@@ -15,7 +15,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { reposApi } from "@/lib/api";
 import { RepoDetail } from "@/types";
 import { SonarConfigEditor } from "@/components/sonar/sonar-config-editor";
-import { ScanJobsTable } from "@/components/sonar/scan-jobs-table";
 import { FailedScansTable } from "@/components/sonar/failed-scans-table";
 import { ScanMetricsTable } from "@/components/sonar/scan-metrics-table";
 
@@ -108,18 +107,6 @@ export default function RepoDetailPage() {
                         </CardHeader>
                         <CardContent>
                             <SonarConfigEditor repoId={repoId} />
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Scan Jobs</CardTitle>
-                            <CardDescription>
-                                View and manage scan job history.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <ScanJobsTable repoId={repoId} />
                         </CardContent>
                     </Card>
 

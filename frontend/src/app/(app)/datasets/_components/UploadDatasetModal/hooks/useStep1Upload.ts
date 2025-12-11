@@ -21,6 +21,7 @@ interface UseStep1UploadReturn {
     handleMappingChange: (field: MappingKey, value: string) => void;
     handleClearFile: () => void;
     resetStep1: () => void;
+    resetMappings: () => void;
     loadFromExistingDataset: (dataset: {
         name?: string;
         description?: string | null;
@@ -56,6 +57,10 @@ export function useStep1Upload(): UseStep1UploadReturn {
         setError(null);
         setName("");
         setDescription("");
+        setMappings({ build_id: "", repo_name: "" });
+    }, []);
+
+    const resetMappings = useCallback(() => {
         setMappings({ build_id: "", repo_name: "" });
     }, []);
 
@@ -212,6 +217,7 @@ export function useStep1Upload(): UseStep1UploadReturn {
         handleMappingChange,
         handleClearFile,
         resetStep1,
+        resetMappings,
         loadFromExistingDataset,
     };
 }

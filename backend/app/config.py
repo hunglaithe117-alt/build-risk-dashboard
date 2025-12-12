@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     # Repository mirrors / schedulers
     REPO_MIRROR_ROOT: str = "../repo-data/repo-mirrors"
     ARTIFACTS_ROOT: str = "../repo-data/artifacts"
+    DATA_DIR: str = "../repo-data/data"
     WORKFLOW_POLL_INTERVAL_MINUTES: int = 15
 
     # Security

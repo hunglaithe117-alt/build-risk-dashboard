@@ -20,7 +20,6 @@ from git import Repo
 from app.pipeline.resources import ResourceProvider, ResourceNames
 from app.utils.locking import repo_lock
 from app.services.commit_replay import ensure_commit_exists
-from app.services.github.github_app import get_installation_token
 from app.pipeline.core.context import ExecutionContext
 
 logger = logging.getLogger(__name__)
@@ -74,26 +73,17 @@ class GitRepoProvider(ResourceProvider):
         repo_path = REPOS_DIR / str(repo.id)
 
         with repo_lock(str(repo.id)):
-            # Ensure repo exists
             if not repo_path.exists():
                 self._clone_repo(repo, repo_path)
 
-            # Fetch latest
             self._run_git(repo_path, ["fetch", "origin"])
 
-            # Ensure commit exists (handle forks)
-            token = self._get_token(repo, context)
-
-            # Get GitHubClient if available for better API handling
-            github_client = None
-            if context.has_resource(ResourceNames.GITHUB_CLIENT):
-                github_client = context.get_resource(ResourceNames.GITHUB_CLIENT)
+            github_client = self._get_github_client(repo, context)
 
             effective_sha = ensure_commit_exists(
                 repo_path=repo_path,
                 commit_sha=commit_sha,
                 repo_slug=repo.full_name,
-                token=token,
                 github_client=github_client,
             )
 
@@ -268,11 +258,18 @@ class GitRepoProvider(ResourceProvider):
             # Not critical - git will lazy fetch when needed
             logger.debug(f"Blob pre-fetch failed for {sha[:8]}: {e}")
 
-    def _get_token(self, repo, context: "ExecutionContext") -> Optional[str]:
-        """Get GitHub token for API access."""
+    def _get_github_client(self, repo, context: ExecutionContext):
+        from app.services.github.github_client import (
+            get_app_github_client,
+            get_public_github_client,
+        )
+
         if repo.installation_id:
-            return get_installation_token(repo.installation_id)
-        return None
+            logger.debug(f"Using App GitHub client for repo {repo.full_name}")
+            return get_app_github_client(context.db, str(repo.installation_id))
+        else:
+            logger.debug(f"Using Public GitHub client for repo {repo.full_name}")
+            return get_public_github_client()
 
     def _create_shared_worktree(
         self, repo_path: Path, commit_sha: str

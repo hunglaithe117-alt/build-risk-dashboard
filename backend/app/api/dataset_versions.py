@@ -1,15 +1,12 @@
 import logging
-import os
-from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.database.mongo import get_db
 from app.middleware.auth import get_current_user
 from app.entities.dataset_version import DatasetVersion, VersionStatus
-from app.repositories.dataset_version import DatasetVersionRepository
-from app.services.dataset_service import DatasetService
+from app.services.dataset_version_service import DatasetVersionService
 from app.dtos.dataset_version import (
     CreateVersionRequest,
     VersionResponse,
@@ -21,30 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/datasets/{dataset_id}/versions", tags=["Dataset Versions"])
 
 
-# --- Helper Functions ---
-
-
-def _get_sources_from_features(features: List[str]) -> List[str]:
-    """Extract unique data sources from feature names."""
-    sources = set()
-    for feature in features:
-        if feature.startswith("git_"):
-            sources.add("git")
-        elif feature.startswith("gh_"):
-            sources.add("github")
-        elif feature.startswith("tr_log_"):
-            sources.add("build_log")
-        elif feature.startswith("tr_"):
-            sources.add("repo")
-        elif feature.startswith("sonar_"):
-            sources.add("sonarqube")
-        elif feature.startswith("trivy_"):
-            sources.add("trivy")
-    return sorted(sources)
-
-
-def _version_to_response(version: DatasetVersion) -> VersionResponse:
-    """Convert entity to response model."""
+def _to_response(version: DatasetVersion) -> VersionResponse:
     return VersionResponse(
         id=str(version.id),
         dataset_id=version.dataset_id,
@@ -52,7 +26,6 @@ def _version_to_response(version: DatasetVersion) -> VersionResponse:
         name=version.name,
         description=version.description,
         selected_features=version.selected_features,
-        selected_sources=version.selected_sources,
         status=(
             version.status.value
             if isinstance(version.status, VersionStatus)
@@ -73,9 +46,6 @@ def _version_to_response(version: DatasetVersion) -> VersionResponse:
     )
 
 
-# --- Endpoints ---
-
-
 @router.get("", response_model=VersionListResponse)
 async def list_versions(
     dataset_id: str,
@@ -83,18 +53,10 @@ async def list_versions(
     db=Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """List all versions for a dataset."""
-    # Verify dataset access
-    dataset_service = DatasetService(db)
-    dataset = dataset_service.get_dataset(dataset_id, str(current_user["_id"]))
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    repo = DatasetVersionRepository(db)
-    versions = repo.find_by_dataset(dataset_id, limit=limit)
-
+    service = DatasetVersionService(db)
+    versions = service.list_versions(dataset_id, str(current_user["_id"]), limit)
     return VersionListResponse(
-        versions=[_version_to_response(v) for v in versions],
+        versions=[_to_response(v) for v in versions],
         total=len(versions),
     )
 
@@ -106,70 +68,15 @@ async def create_version(
     db=Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Create a new version and start enrichment."""
-    user_id = str(current_user["_id"])
-
-    # Verify dataset access and get metadata
-    dataset_service = DatasetService(db)
-    dataset = dataset_service.get_dataset(dataset_id, user_id)
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    # Check if validation is completed
-    if dataset.validation_status != "completed":
-        raise HTTPException(
-            status_code=400,
-            detail="Dataset validation must be completed before creating versions",
-        )
-
-    repo = DatasetVersionRepository(db)
-
-    # Check for active version
-    active_version = repo.find_active_by_dataset(dataset_id)
-    if active_version:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Version v{active_version.version_number} is still processing. Wait for it to complete or cancel it.",
-        )
-
-    # Get next version number
-    version_number = repo.get_next_version_number(dataset_id)
-
-    # Extract sources from features
-    selected_sources = _get_sources_from_features(request.selected_features)
-
-    # Create version entity
-    version = DatasetVersion(
+    service = DatasetVersionService(db)
+    version = service.create_version(
         dataset_id=dataset_id,
-        user_id=user_id,
-        version_number=version_number,
-        name=request.name or "",
-        description=request.description,
+        user_id=str(current_user["_id"]),
         selected_features=request.selected_features,
-        selected_sources=selected_sources,
-        total_rows=dataset.rows or 0,
-        status=VersionStatus.PENDING,
+        name=request.name,
+        description=request.description,
     )
-
-    # Generate default name if not provided
-    if not version.name:
-        version.name = version.generate_default_name()
-
-    # Save to database
-    version = repo.create(version)
-
-    # Start enrichment task
-    from app.tasks.version_enrichment import enrich_version_task
-
-    task = enrich_version_task.delay(str(version.id))
-    repo.update_one(str(version.id), {"task_id": task.id})
-
-    logger.info(
-        f"Created version {version_number} for dataset {dataset_id} "
-        f"with {len(request.selected_features)} features"
-    )
-
-    return _version_to_response(version)
+    return _to_response(version)
 
 
 @router.get("/{version_id}", response_model=VersionResponse)
@@ -179,20 +86,9 @@ async def get_version(
     db=Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Get a specific version."""
-    # Verify dataset access
-    dataset_service = DatasetService(db)
-    dataset = dataset_service.get_dataset(dataset_id, str(current_user["_id"]))
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    repo = DatasetVersionRepository(db)
-    version = repo.find_by_id(version_id)
-
-    if not version or version.dataset_id != dataset_id:
-        raise HTTPException(status_code=404, detail="Version not found")
-
-    return _version_to_response(version)
+    service = DatasetVersionService(db)
+    version = service.get_version(dataset_id, version_id, str(current_user["_id"]))
+    return _to_response(version)
 
 
 @router.get("/{version_id}/download")
@@ -202,36 +98,12 @@ async def download_version(
     db=Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Download the enriched CSV for a version."""
-    # Verify dataset access
-    dataset_service = DatasetService(db)
-    dataset = dataset_service.get_dataset(dataset_id, str(current_user["_id"]))
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    repo = DatasetVersionRepository(db)
-    version = repo.find_by_id(version_id)
-
-    if not version or version.dataset_id != dataset_id:
-        raise HTTPException(status_code=404, detail="Version not found")
-
-    if version.status != VersionStatus.COMPLETED:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Version is not completed. Status: {version.status}",
-        )
-
-    if not version.file_path or not os.path.exists(version.file_path):
-        raise HTTPException(status_code=404, detail="Output file not found")
-
-    filename = (
-        version.file_name or f"enriched_{dataset.name}_v{version.version_number}.csv"
-    )
-
-    return FileResponse(
-        path=version.file_path,
-        filename=filename,
+    service = DatasetVersionService(db)
+    result = service.download_as_csv(dataset_id, version_id, str(current_user["_id"]))
+    return StreamingResponse(
+        iter([result.content]),
         media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{result.filename}"'},
     )
 
 
@@ -242,37 +114,8 @@ async def delete_version(
     db=Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Delete a version and its output file."""
-    # Verify dataset access
-    dataset_service = DatasetService(db)
-    dataset = dataset_service.get_dataset(dataset_id, str(current_user["_id"]))
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    repo = DatasetVersionRepository(db)
-    version = repo.find_by_id(version_id)
-
-    if not version or version.dataset_id != dataset_id:
-        raise HTTPException(status_code=404, detail="Version not found")
-
-    # Cancel if still processing
-    if version.status in (VersionStatus.PENDING, VersionStatus.PROCESSING):
-        if version.task_id:
-            from app.celery_app import celery_app
-
-            celery_app.control.revoke(version.task_id, terminate=True)
-
-    # Delete output file if exists
-    if version.file_path and os.path.exists(version.file_path):
-        try:
-            os.remove(version.file_path)
-        except OSError as e:
-            logger.warning(f"Failed to delete file {version.file_path}: {e}")
-
-    # Delete from database
-    repo.delete(version_id)
-
-    logger.info(f"Deleted version {version_id} for dataset {dataset_id}")
+    service = DatasetVersionService(db)
+    service.delete_version(dataset_id, version_id, str(current_user["_id"]))
 
 
 @router.post("/{version_id}/cancel", response_model=VersionResponse)
@@ -282,35 +125,6 @@ async def cancel_version(
     db=Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """Cancel a processing version."""
-    # Verify dataset access
-    dataset_service = DatasetService(db)
-    dataset = dataset_service.get_dataset(dataset_id, str(current_user["_id"]))
-    if not dataset:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    repo = DatasetVersionRepository(db)
-    version = repo.find_by_id(version_id)
-
-    if not version or version.dataset_id != dataset_id:
-        raise HTTPException(status_code=404, detail="Version not found")
-
-    if version.status not in (VersionStatus.PENDING, VersionStatus.PROCESSING):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot cancel version with status: {version.status}",
-        )
-
-    # Revoke Celery task
-    if version.task_id:
-        from app.celery_app import celery_app
-
-        celery_app.control.revoke(version.task_id, terminate=True)
-
-    # Mark as cancelled
-    repo.mark_cancelled(version_id)
-    version.status = VersionStatus.CANCELLED
-
-    logger.info(f"Cancelled version {version_id}")
-
-    return _version_to_response(version)
+    service = DatasetVersionService(db)
+    version = service.cancel_version(dataset_id, version_id, str(current_user["_id"]))
+    return _to_response(version)

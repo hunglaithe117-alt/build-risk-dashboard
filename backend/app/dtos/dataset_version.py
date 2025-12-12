@@ -22,7 +22,6 @@ class VersionResponse(BaseModel):
     name: str
     description: Optional[str]
     selected_features: List[str]
-    selected_sources: List[str]
     status: str
     total_rows: int
     processed_rows: int

@@ -1,17 +1,8 @@
-"""
-Feature Definitions API.
-
-Endpoints for querying features from the code registry.
-No database dependency - features are defined in code via @register_feature decorator.
-"""
-
 from typing import List, Optional
-from collections import defaultdict, deque
 
 from fastapi import APIRouter, Query
 
-from app.pipeline.core.registry import feature_registry
-from app.pipeline.constants import DEFAULT_FEATURES
+from app.services.feature_service import FeatureService
 from app.dtos.feature import (
     FeatureDefinitionResponse,
     FeatureListResponse,
@@ -25,6 +16,7 @@ from app.dtos.feature import (
 
 
 router = APIRouter(prefix="/features", tags=["Feature Definitions"])
+service = FeatureService()
 
 
 @router.get("/dag", response_model=DAGResponse)
@@ -33,300 +25,21 @@ def get_feature_dag(
         None, description="Filter to specific features"
     ),
 ):
-    """
-    Get the Feature DAG structure for visualization.
-
-    Builds the DAG from code registry (no DB dependency).
-    Returns nodes (extractors + resources), edges, and execution levels.
-    """
-    # Get all nodes from code registry
-    all_nodes = feature_registry.get_all(enabled_only=True)
-
-    # Build feature -> node mapping
-    feature_to_node: dict[str, str] = {}
-    node_features: dict[str, list] = defaultdict(list)
-    node_resources: dict[str, set] = defaultdict(set)
-    node_feature_deps: dict[str, set] = defaultdict(set)
-
-    for node_name, meta in all_nodes.items():
-        for feature in meta.provides:
-            # Skip default features
-            if feature in DEFAULT_FEATURES:
-                continue
-            feature_to_node[feature] = node_name
-            node_features[node_name].append(feature)
-
-        for resource in meta.requires_resources:
-            node_resources[node_name].add(resource)
-
-        for req_feat in meta.requires_features:
-            if req_feat not in DEFAULT_FEATURES:
-                node_feature_deps[node_name].add(req_feat)
-
-    # Filter if specific features requested
-    if selected_features:
-        to_include_features = set()
-        to_include_nodes = set()
-        queue = deque(selected_features)
-
-        while queue:
-            feat_name = queue.popleft()
-            if feat_name in to_include_features or feat_name not in feature_to_node:
-                continue
-            to_include_features.add(feat_name)
-            node_name = feature_to_node[feat_name]
-            to_include_nodes.add(node_name)
-
-            # Add required features from this node's meta
-            meta = all_nodes.get(node_name)
-            if meta:
-                for req_feat in meta.requires_features:
-                    if (
-                        req_feat not in to_include_features
-                        and req_feat in feature_to_node
-                    ):
-                        queue.append(req_feat)
-
-        # Filter to only needed nodes
-        node_features = {
-            k: [f for f in v if f in to_include_features]
-            for k, v in node_features.items()
-            if k in to_include_nodes
-        }
-
-    # Build node dependency graph
-    node_deps: dict[str, set] = defaultdict(set)
-    for node_name, deps in node_feature_deps.items():
-        if node_name not in node_features:
-            continue
-        for dep_feat in deps:
-            dep_node = feature_to_node.get(dep_feat)
-            if dep_node and dep_node != node_name and dep_node in node_features:
-                node_deps[node_name].add(dep_node)
-
-    # Calculate levels (longest path from any root)
-    levels_map: dict[str, int] = {}
-
-    def calc_level(node: str) -> int:
-        if node in levels_map:
-            return levels_map[node]
-        deps = node_deps[node]
-        if not deps:
-            levels_map[node] = 0
-        else:
-            levels_map[node] = 1 + max(
-                calc_level(d) for d in deps if d in node_features
-            )
-        return levels_map[node]
-
-    for node in node_features:
-        calc_level(node)
-
-    # Group nodes by level
-    level_nodes: dict[int, list] = defaultdict(list)
-    for node, level in levels_map.items():
-        level_nodes[level].append(node)
-
-    execution_levels = [
-        ExecutionLevelResponse(level=lvl, nodes=sorted(nodes))
-        for lvl, nodes in sorted(level_nodes.items())
-    ]
-
-    # Collect all unique resources
-    all_resources = set()
-    for node_name in node_features:
-        all_resources.update(node_resources.get(node_name, set()))
-
-    # Build response nodes
-    dag_nodes = []
-
-    # Add resource nodes (level -1)
-    for res in sorted(all_resources):
-        dag_nodes.append(
-            DAGNodeResponse(
-                id=res,
-                type="resource",
-                label=res.replace("_", " ").title(),
-                features=[],
-                feature_count=0,
-                requires_resources=[],
-                requires_features=[],
-                level=-1,
-            )
-        )
-
-    # Add extractor nodes
-    for node_name, features in node_features.items():
-        dag_nodes.append(
-            DAGNodeResponse(
-                id=node_name,
-                type="extractor",
-                label=node_name.replace("_", " ").title(),
-                features=sorted(features),
-                feature_count=len(features),
-                requires_resources=sorted(node_resources.get(node_name, set())),
-                requires_features=sorted(node_feature_deps.get(node_name, set())),
-                level=levels_map.get(node_name, 0),
-            )
-        )
-
-    # Build edges
-    edges = []
-    edge_id = 0
-
-    # Resource -> Node edges
-    for node_name in node_features:
-        for res in node_resources.get(node_name, set()):
-            edges.append(
-                DAGEdgeResponse(
-                    id=f"edge_{edge_id}",
-                    source=res,
-                    target=node_name,
-                    type="resource_dependency",
-                )
-            )
-            edge_id += 1
-
-    # Node -> Node edges (feature dependencies)
-    for node_name, deps in node_deps.items():
-        for dep_node in deps:
-            edges.append(
-                DAGEdgeResponse(
-                    id=f"edge_{edge_id}",
-                    source=dep_node,
-                    target=node_name,
-                    type="feature_dependency",
-                )
-            )
-            edge_id += 1
-
+    result = service.get_feature_dag(selected_features)
     return DAGResponse(
-        nodes=dag_nodes,
-        edges=edges,
-        execution_levels=execution_levels,
-        total_features=sum(len(f) for f in node_features.values()),
-        total_nodes=len(node_features),
+        nodes=[DAGNodeResponse(**n) for n in result["nodes"]],
+        edges=[DAGEdgeResponse(**e) for e in result["edges"]],
+        execution_levels=[
+            ExecutionLevelResponse(**l) for l in result["execution_levels"]
+        ],
+        total_features=result["total_features"],
+        total_nodes=result["total_nodes"],
     )
 
 
 @router.get("/by-source")
 def get_features_by_source():
-    """
-    Get features grouped by data source for the list view.
-    Returns features with full metadata including descriptions,
-    organized by source -> extractor -> features.
-    """
-    all_features = feature_registry.get_features_with_metadata()
-
-    # Filter out default features
-    features = [f for f in all_features if f["name"] not in DEFAULT_FEATURES]
-
-    # Group by source -> extractor
-    by_source: dict = defaultdict(lambda: {"extractors": defaultdict(list), "total": 0})
-
-    for f in features:
-        source = f["source"]
-        extractor = f["extractor_node"]
-        by_source[source]["extractors"][extractor].append(
-            {
-                "name": f["name"],
-                "display_name": f["display_name"],
-                "description": f["description"],
-                "data_type": f["data_type"],
-                "is_active": f["is_active"],
-                "depends_on_features": f["depends_on_features"],
-                "depends_on_resources": f["depends_on_resources"],
-            }
-        )
-        by_source[source]["total"] += 1
-
-    # Build result with source metadata
-    result = {}
-    for source, data in by_source.items():
-        # Check if source is configured (for SonarQube, Trivy, etc.)
-        is_configured = _check_source_configured(source)
-
-        result[source] = {
-            "source": source,
-            "display_name": _get_source_display_name(source),
-            "description": _get_source_description(source),
-            "icon": _get_source_icon(source),
-            "is_configured": is_configured,
-            "extractors": {
-                ext_name: {
-                    "name": ext_name,
-                    "display_name": ext_name.replace("_", " ").title(),
-                    "features": sorted(ext_features, key=lambda x: x["name"]),
-                    "feature_count": len(ext_features),
-                }
-                for ext_name, ext_features in data["extractors"].items()
-            },
-            "total_features": data["total"],
-        }
-
-    return {"sources": result}
-
-
-def _check_source_configured(source: str) -> bool:
-    """Check if a data source is configured/available."""
-    # Git and build_log are always available
-    if source in ("git", "build_log", "repo"):
-        return True
-    # GitHub requires tokens
-    if source == "github":
-        from app.config import settings
-
-        return bool(settings.GITHUB_TOKENS)
-    # SonarQube requires server config
-    if source == "sonarqube":
-        from app.config import settings
-
-        return bool(getattr(settings, "SONARQUBE_URL", None))
-    # Trivy requires CLI to be installed
-    if source == "trivy":
-        import shutil
-
-        return shutil.which("trivy") is not None
-    return True
-
-
-def _get_source_display_name(source: str) -> str:
-    """Get display name for a data source."""
-    names = {
-        "git": "Git Repository",
-        "github": "GitHub API",
-        "build_log": "Build Logs",
-        "sonarqube": "SonarQube",
-        "trivy": "Trivy Scanner",
-        "repo": "Repository Metadata",
-    }
-    return names.get(source, source.replace("_", " ").title())
-
-
-def _get_source_description(source: str) -> str:
-    """Get description for a data source."""
-    descriptions = {
-        "git": "Commit info, diff changes, and team contributions",
-        "github": "Pull requests, issues, and GitHub-specific metadata",
-        "build_log": "Test results and CI job information",
-        "sonarqube": "Code quality metrics and security analysis",
-        "trivy": "Container and dependency vulnerability scanning",
-        "repo": "Repository metadata and configuration",
-    }
-    return descriptions.get(source, "")
-
-
-def _get_source_icon(source: str) -> str:
-    """Get icon name for a data source."""
-    icons = {
-        "git": "git-branch",
-        "github": "github",
-        "build_log": "file-text",
-        "sonarqube": "shield-check",
-        "trivy": "shield-alert",
-        "repo": "database",
-    }
-    return icons.get(source, "box")
+    return service.get_features_by_source()
 
 
 @router.get("/", response_model=FeatureListResponse)
@@ -336,28 +49,12 @@ def list_features(
     extractor_node: Optional[str] = Query(None, description="Filter by extractor node"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
 ):
-    """List all feature definitions with optional filters."""
-    # Get features from code registry
-    all_features = feature_registry.get_features_with_metadata()
-
-    # Filter out default features
-    features = [f for f in all_features if f["name"] not in DEFAULT_FEATURES]
-
-    # Apply filters
-    if category:
-        features = [f for f in features if f["category"] == category]
-    if source:
-        features = [f for f in features if f["source"] == source]
-    if extractor_node:
-        features = [f for f in features if f["extractor_node"] == extractor_node]
-    if is_active is not None:
-        features = [f for f in features if f["is_active"] == is_active]
-
+    features = service.list_features(category, source, extractor_node, is_active)
     return FeatureListResponse(
         total=len(features),
         items=[
             FeatureDefinitionResponse(
-                id=f["name"],  # Use name as ID since no DB
+                id=f["name"],
                 name=f["name"],
                 display_name=f["display_name"],
                 description=f["description"],
@@ -380,40 +77,12 @@ def list_features(
 
 @router.get("/languages")
 def get_supported_languages():
-    """
-    Get list of languages supported by the feature extraction pipeline.
-    """
-    from app.pipeline.log_parsers import LogParserRegistry
-    from app.pipeline.languages import LanguageRegistry
-
-    log_parser_registry = LogParserRegistry()
-
-    # Get unique languages from both registries
-    log_parser_langs = set(log_parser_registry.get_languages())
-    language_strategy_langs = set(LanguageRegistry.get_supported_languages())
-
-    # Union of all supported languages
-    all_supported = log_parser_langs | language_strategy_langs
-
-    return {
-        "languages": sorted(all_supported),
-        "log_parser_languages": sorted(log_parser_langs),
-        "language_strategy_languages": sorted(language_strategy_langs),
-    }
+    return service.get_supported_languages()
 
 
 @router.get("/{feature_name}", response_model=FeatureDefinitionResponse)
 def get_feature(feature_name: str):
-    """Get a specific feature by name."""
-    metadata = feature_registry.get_feature_metadata(feature_name)
-
-    if not metadata:
-        from fastapi import HTTPException
-
-        raise HTTPException(
-            status_code=404, detail=f"Feature '{feature_name}' not found"
-        )
-
+    metadata = service.get_feature(feature_name)
     return FeatureDefinitionResponse(
         id=metadata["name"],
         name=metadata["name"],
@@ -435,42 +104,11 @@ def get_feature(feature_name: str):
 
 @router.get("/summary/stats", response_model=FeatureSummaryResponse)
 def get_feature_summary():
-    """Get summary statistics about available features."""
-    all_features = feature_registry.get_features_with_metadata()
-
-    # Filter out default features for stats
-    features = [f for f in all_features if f["name"] not in DEFAULT_FEATURES]
-
-    by_category: dict = {}
-    by_source: dict = {}
-    by_node: dict = {}
-
-    for f in features:
-        cat = f["category"]
-        src = f["source"]
-        node = f["extractor_node"]
-
-        by_category[cat] = by_category.get(cat, 0) + 1
-        by_source[src] = by_source.get(src, 0) + 1
-        by_node[node] = by_node.get(node, 0) + 1
-
-    return FeatureSummaryResponse(
-        total_features=len(features),
-        active_features=sum(1 for f in features if f["is_active"]),
-        deprecated_features=0,  # No deprecation in code-only mode
-        by_category=by_category,
-        by_source=by_source,
-        by_node=by_node,
-    )
+    result = service.get_feature_summary()
+    return FeatureSummaryResponse(**result)
 
 
 @router.get("/validate/all", response_model=ValidationResponse)
 def validate_features():
-    """Validate feature definitions in code registry."""
-    errors = feature_registry.validate()
-
-    return ValidationResponse(
-        valid=len(errors) == 0,
-        errors=errors,
-        warnings=[],
-    )
+    result = service.validate_features()
+    return ValidationResponse(**result)

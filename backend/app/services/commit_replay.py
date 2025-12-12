@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.services.github.github_client import GitHubClient
 
 import logging
 import subprocess
@@ -37,6 +38,7 @@ def ensure_commit_exists(
     repo_path: Path,
     commit_sha: str,
     repo_slug: str,
+    github_client: GitHubClient,
 ) -> Optional[str]:
     """
     Ensures that the given commit SHA exists in the local repository.
@@ -46,6 +48,7 @@ def ensure_commit_exists(
         repo_path: Path to bare git repo
         commit_sha: Target commit SHA
         repo_slug: Repo full name (owner/repo)
+        github_client: GitHubClient to use for API calls.
 
     Returns:
         SHA to use (original or synthetic), or None if failed
@@ -72,6 +75,7 @@ def ensure_commit_exists(
             repo_slug=repo_slug,
             target_sha=commit_sha,
             commit_exists=lambda sha: _commit_exists(repo_path, sha),
+            github_client=github_client,
         )
         synthetic_sha = apply_replay_plan(repo_path, plan, target_sha=commit_sha)
         return synthetic_sha
@@ -87,6 +91,7 @@ def build_replay_plan(
     repo_slug: str,
     target_sha: str,
     commit_exists: callable,
+    github_client: GitHubClient,
     max_depth: int = 50,
 ) -> ReplayPlan:
     """
@@ -95,8 +100,6 @@ def build_replay_plan(
     """
     if commit_exists(target_sha):
         raise ValueError(f"Commit {target_sha} already exists")
-
-    github_client = get_public_github_client()
 
     missing_commits: List[ReplayCommit] = []
     current = target_sha

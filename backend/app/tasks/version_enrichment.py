@@ -227,16 +227,30 @@ def _extract_features_for_build(
         logger.warning(f"EnrichmentRepo {build.repo_id} not found")
         return {name: None for name in selected_features}
 
-    enrichment_build = EnrichmentBuild(
-        repo_id=build.repo_id,
-        workflow_run_id=workflow_run.workflow_run_id,
-        head_sha=workflow_run.head_sha,
-        build_number=workflow_run.run_number,
-        build_created_at=workflow_run.ci_created_at,
-        enrichment_repo_id=enrichment_repo.id,
-        dataset_id=build.dataset_id,
-        build_id_from_csv=build.build_id_from_csv,
+    # Create EnrichmentBuild and save to DB first to get ObjectId
+    enrichment_build_repo = EnrichmentBuildRepository(db)
+
+    # Check if already exists
+    existing_build = enrichment_build_repo.find_by_build_id_and_dataset(
+        build.build_id_from_csv, str(build.dataset_id)
     )
+
+    if existing_build:
+        enrichment_build = existing_build
+    else:
+        enrichment_build = EnrichmentBuild(
+            repo_id=build.repo_id,
+            workflow_run_id=workflow_run.workflow_run_id,
+            head_sha=workflow_run.head_sha,
+            build_number=workflow_run.run_number,
+            build_created_at=workflow_run.ci_created_at,
+            enrichment_repo_id=enrichment_repo.id,
+            dataset_id=build.dataset_id,
+            build_id_from_csv=build.build_id_from_csv,
+            extraction_status=ExtractionStatus.PENDING,
+        )
+        # Save to DB to get ObjectId
+        enrichment_build = enrichment_build_repo.insert_one(enrichment_build)
 
     try:
         pipeline = FeaturePipeline(

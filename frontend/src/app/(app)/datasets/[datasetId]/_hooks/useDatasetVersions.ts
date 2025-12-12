@@ -10,7 +10,6 @@ export interface DatasetVersion {
     name: string;
     description: string | null;
     selected_features: string[];
-    selected_sources: string[];
     status: "pending" | "processing" | "completed" | "failed" | "cancelled";
     total_rows: number;
     processed_rows: number;
@@ -158,9 +157,37 @@ export function useDatasetVersions(datasetId: string): UseDatasetVersionsReturn 
 
     // Download a version
     const downloadVersion = useCallback(
-        (versionId: string) => {
-            const url = `/api/datasets/${datasetId}/versions/${versionId}/download`;
-            window.open(url, "_blank");
+        async (versionId: string) => {
+            try {
+                const response = await api.get(
+                    `/datasets/${datasetId}/versions/${versionId}/download`,
+                    { responseType: "blob" }
+                );
+
+                // Get filename from Content-Disposition header or use default
+                const contentDisposition = response.headers["content-disposition"];
+                let filename = `enriched_v${versionId}.csv`;
+                if (contentDisposition) {
+                    const match = contentDisposition.match(/filename="?(.+?)"?$/);
+                    if (match) {
+                        filename = match[1];
+                    }
+                }
+
+                // Create download link
+                const blob = new Blob([response.data]);
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+            } catch (err) {
+                console.error("Failed to download version:", err);
+                setError(err instanceof Error ? err.message : "Download failed");
+            }
         },
         [datasetId]
     );

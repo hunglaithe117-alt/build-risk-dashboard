@@ -72,6 +72,12 @@ from .dataset_version import (
     VersionResponse,
     VersionListResponse,
 )
+from .data_source import (
+    DataSourceResponse,
+    DataSourceListResponse,
+    DataSourceDetailResponse,
+    DataSourceFeaturesResponse,
+)
 
 __all__ = [
     # Auth
@@ -135,4 +141,9 @@ __all__ = [
     "CreateVersionRequest",
     "VersionResponse",
     "VersionListResponse",
+    # Data Source
+    "DataSourceResponse",
+    "DataSourceListResponse",
+    "DataSourceDetailResponse",
+    "DataSourceFeaturesResponse",
 ]

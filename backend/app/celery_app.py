@@ -71,6 +71,11 @@ celery_app.conf.update(
             Exchange("buildguard"),
             routing_key="pipeline.trivy_scan",
         ),
+        Queue(
+            "enrichment",
+            Exchange("buildguard"),
+            routing_key="pipeline.enrichment",
+        ),
     ],
     broker_connection_retry_on_startup=True,
     # Celery Beat Schedule for periodic tasks

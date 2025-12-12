@@ -1,5 +1,7 @@
+from app.services.github.github_client import public_github_client
 from app.ci_providers.models import BuildStatus, BuildConclusion
-from app.entities.model_build import ExtractionStatus, ModelBuildConclusion
+from app.entities.model_build import ModelBuildConclusion
+from app.entities.base_build import ExtractionStatus
 from app.entities.model_repository import ImportStatus
 import logging
 from datetime import datetime, timezone, timedelta
@@ -125,7 +127,7 @@ def import_repo(
         if installation_id:
             client_context = get_app_github_client(self.db, installation_id)
         else:
-            client_context = get_public_github_client()
+            client_context = public_github_client()
 
         with client_context as gh:
             repo_data = gh.get_repository(full_name)
@@ -165,21 +167,21 @@ def import_repo(
             ci_provider_enum = CIProvider(ci_provider)
             provider_config = get_provider_config(ci_provider_enum)
 
-            if ci_provider_enum == CIProvider.GITHUB_ACTIONS and installation_id:
-                provider_config.token = gh._get_token()
-
             ci_provider_instance = get_ci_provider(
                 ci_provider_enum, provider_config, db=self.db
             )
 
+            fetch_kwargs = {
+                "since": since_dt,
+                "limit": max_builds,
+                "only_with_logs": (max_builds is None),
+                "exclude_bots": True,
+            }
+            if ci_provider_enum == CIProvider.GITHUB_ACTIONS and installation_id:
+                fetch_kwargs["installation_id"] = installation_id
+
             builds = asyncio.get_event_loop().run_until_complete(
-                ci_provider_instance.fetch_builds(
-                    full_name,
-                    since=since_dt,
-                    limit=max_builds,
-                    only_with_logs=(max_builds is None),
-                    exclude_bots=True,
-                )
+                ci_provider_instance.fetch_builds(full_name, **fetch_kwargs)
             )
 
             logger.info(
@@ -190,16 +192,12 @@ def import_repo(
                 run_id = build.build_id
                 run_created_at = build.created_at
 
-                # Skip builds that are not completed
                 if build.status != BuildStatus.COMPLETED:
                     continue
 
-                # Filter by since_days
                 if since_dt and run_created_at and run_created_at < since_dt:
                     continue
 
-                # Create WorkflowRunRaw from BuildData
-                # build.status and build.conclusion are already proper enums from CI provider
                 workflow_run = WorkflowRunRaw(
                     repo_id=ObjectId(repo_id),
                     workflow_run_id=int(run_id) if run_id.isdigit() else hash(run_id),

@@ -32,7 +32,7 @@ export interface FailedScan {
 export interface Build {
   id: string;
   build_number: number;
-  status: string; // GitHub workflow status: "success", "failure", etc.
+  build_conclusion: string; // GitHub workflow conclusion: "success", "failure", etc.
   extraction_status: string; // Feature extraction process status: "pending", "completed", "failed"
   commit_sha: string;
   created_at?: string;

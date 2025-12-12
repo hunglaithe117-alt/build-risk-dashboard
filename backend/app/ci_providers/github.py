@@ -79,23 +79,31 @@ class GitHubActionsProvider(CIProviderInterface):
                     "GitHub token not provided and no DB for pool - API rate limits will apply"
                 )
 
-    def _get_github_client(self):
-        """Get GitHubClient using token pool for rate limit tracking."""
+    def _get_github_client(self, installation_id: Optional[str] = None):
+        """
+        Get GitHubClient for API calls.
+
+        Priority:
+        1. GitHub App installation (if installation_id provided)
+        2. Direct config token (if configured)
+        3. Public token pool
+        """
         from app.services.github.github_client import (
             GitHubClient,
-            get_public_github_client,
+            public_github_client,
+            get_app_github_client,
         )
 
-        # If we have a DB, use the token pool for rate limit tracking
-        if self._db is not None:
-            return get_public_github_client(self._db)
+        # If installation_id provided, use GitHub App auth
+        if installation_id and self._db is not None:
+            return get_app_github_client(self._db, installation_id)
 
-        # Otherwise use the config token directly
+        # If direct token configured, use it
         if self._has_direct_token():
             return GitHubClient(token=self.config.token)
 
-        # Try to get from pool without DB (uses env vars fallback)
-        return get_public_github_client(None)
+        # Otherwise use public client singleton
+        return public_github_client()
 
     async def fetch_builds(
         self,
@@ -106,6 +114,7 @@ class GitHubActionsProvider(CIProviderInterface):
         only_with_logs: bool = False,
         exclude_bots: bool = False,
         only_completed: bool = True,
+        installation_id: Optional[str] = None,
     ) -> List[BuildData]:
         """Fetch workflow runs from GitHub Actions."""
         builds = []
@@ -119,7 +128,7 @@ class GitHubActionsProvider(CIProviderInterface):
         if only_completed:
             params["status"] = "completed"
 
-        with self._get_github_client() as client:
+        with self._get_github_client(installation_id) as client:
             for run in client.paginate_workflow_runs(repo_name, params):
                 build_data = self._parse_workflow_run(run, repo_name)
 
@@ -151,28 +160,32 @@ class GitHubActionsProvider(CIProviderInterface):
 
         return builds[:limit] if limit else builds
 
-    async def fetch_build_details(self, build_id: str) -> Optional[BuildData]:
+    async def fetch_build_details(
+        self, build_id: str, installation_id: Optional[str] = None
+    ) -> Optional[BuildData]:
         """Fetch detailed information for a specific workflow run."""
         if ":" in build_id:
             repo_name, run_id = build_id.rsplit(":", 1)
         else:
             return None
 
-        with self._get_github_client() as client:
+        with self._get_github_client(installation_id) as client:
             try:
                 run = client.get_workflow_run(repo_name, int(run_id))
                 return self._parse_workflow_run(run, repo_name)
             except Exception:
                 return None
 
-    async def fetch_build_jobs(self, build_id: str) -> List[JobData]:
+    async def fetch_build_jobs(
+        self, build_id: str, installation_id: Optional[str] = None
+    ) -> List[JobData]:
         """Fetch jobs within a workflow run."""
         if ":" in build_id:
             repo_name, run_id = build_id.rsplit(":", 1)
         else:
             return []
 
-        with self._get_github_client() as client:
+        with self._get_github_client(installation_id) as client:
             jobs_data = client.list_workflow_jobs(repo_name, int(run_id))
             return [self._parse_job(job) for job in jobs_data]
 
@@ -180,6 +193,7 @@ class GitHubActionsProvider(CIProviderInterface):
         self,
         build_id: str,
         job_id: Optional[str] = None,
+        installation_id: Optional[str] = None,
     ) -> List[LogFile]:
         """Fetch logs for a workflow run or specific job."""
         from app.services.github.exceptions import GithubLogsUnavailableError
@@ -191,7 +205,7 @@ class GitHubActionsProvider(CIProviderInterface):
 
         logs = []
 
-        with self._get_github_client() as client:
+        with self._get_github_client(installation_id) as client:
             if job_id:
                 try:
                     content = client.download_job_logs(repo_name, int(job_id))
@@ -352,9 +366,11 @@ class GitHubActionsProvider(CIProviderInterface):
     def get_build_url(self, repo_name: str, build_id: str) -> str:
         return f"https://github.com/{repo_name}/actions/runs/{build_id}"
 
-    async def get_workflow_run(self, repo_name: str, run_id: int) -> Optional[dict]:
+    async def get_workflow_run(
+        self, repo_name: str, run_id: int, installation_id: Optional[str] = None
+    ) -> Optional[dict]:
         """Get a specific workflow run from GitHub API."""
-        with self._get_github_client() as client:
+        with self._get_github_client(installation_id) as client:
             try:
                 run = client.get_workflow_run(repo_name, run_id)
                 if run:

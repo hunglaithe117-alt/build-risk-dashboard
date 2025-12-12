@@ -30,3 +30,10 @@ class DatasetBuildRepository(BaseRepository[DatasetBuild]):
         if not oid:
             return 0
         return self.delete_many({"dataset_id": oid})
+
+    def find_validated_builds(self, dataset_id) -> list[DatasetBuild]:
+        """Find all validated builds (status=FOUND) for a dataset."""
+        oid = self._to_object_id(dataset_id)
+        if not oid:
+            return []
+        return self.find_many({"dataset_id": oid, "status": "found"})

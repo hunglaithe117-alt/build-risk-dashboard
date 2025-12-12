@@ -8,7 +8,7 @@ from app.entities.base import PyObjectId
 class BuildSummary(BaseModel):
     id: str = Field(..., alias="_id")
     build_number: int
-    status: str  # GitHub workflow status: "success", "failure", etc.
+    build_conclusion: str  # GitHub workflow conclusion: "success", "failure", etc.
     extraction_status: (
         str  # Feature extraction process status: "pending", "completed", "failed"
     )

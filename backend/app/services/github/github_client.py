@@ -1,5 +1,3 @@
-"""GitHub API helpers shared by ingestion workers."""
-
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -10,6 +8,8 @@ from bson import ObjectId
 import httpx
 from pymongo.database import Database
 
+from app.services.github.redis_token_pool import RedisTokenPool
+from app.database.mongo import get_database
 from app.config import settings
 from app.services.github.exceptions import (
     GithubConfigurationError,
@@ -26,7 +26,6 @@ from app.services.github.github_token_manager import (
     hash_token,
     update_token_rate_limit,
     mark_token_rate_limited,
-    mark_token_invalid,
     PublicTokenStatus,
     get_raw_token_from_cache,
 )
@@ -247,7 +246,7 @@ class GitHubClient:
         token: str | None = None,
         token_pool: GitHubTokenPool | None = None,
         api_url: str | None = None,
-        redis_pool: "RedisTokenPool | None" = None,
+        redis_pool: RedisTokenPool | None = None,
         current_token_hash: str | None = None,
     ) -> None:
         self._token_pool = token_pool
@@ -674,6 +673,20 @@ class GitHubClient:
     def get_commit(self, full_name: str, sha: str) -> Dict[str, Any]:
         return self._rest_request("GET", f"/repos/{full_name}/commits/{sha}")
 
+    def get_commit_patch(self, full_name: str, sha: str) -> str:
+        """Download commit as a patch file."""
+
+        def _do_request():
+            headers = self._headers()
+            headers["Accept"] = "application/vnd.github.v3.patch"
+            return self._rest.get(
+                f"/repos/{full_name}/commits/{sha}",
+                headers=headers,
+            )
+
+        response = self._retry_on_rate_limit(_do_request)
+        return response.text
+
     def list_commit_comments(self, full_name: str, sha: str) -> List[Dict[str, Any]]:
         comments = self._rest_request(
             "GET", f"/repos/{full_name}/commits/{sha}/comments"
@@ -824,6 +837,16 @@ class GitHubClient:
 # Module-level token pool cache
 _token_pool: GitHubTokenPool | None = None
 _db_token_pool: GitHubTokenPool | None = None
+_public_client: GitHubClient | None = None
+
+
+def public_github_client() -> GitHubClient:
+    global _public_client
+
+    if _public_client is None:
+        _public_client = get_public_github_client(db=get_database(), use_redis=False)
+
+    return _public_client
 
 
 def get_user_github_client(db: Database, user_id: str) -> GitHubClient:

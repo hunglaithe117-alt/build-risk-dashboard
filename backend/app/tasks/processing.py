@@ -4,7 +4,8 @@ Build Processing Tasks using the new DAG-based Feature Pipeline.
 This module replaces the old chord/chain pattern with the unified FeaturePipeline.
 """
 
-from app.entities.model_build import ExtractionStatus, ModelBuildConclusion
+from app.entities.model_build import ModelBuildConclusion
+from app.entities.base_build import ExtractionStatus
 import logging
 from typing import Any, Dict
 
@@ -88,7 +89,7 @@ def process_workflow_run(
         model_build = ModelBuild(
             repo_id=ObjectId(repo_id),
             workflow_run_id=workflow_run_id,
-            status=build_status,
+            build_conclusion=build_status,
             extraction_status=ExtractionStatus.PENDING,
         )
         model_build = model_build_repo.insert_one(model_build)
@@ -139,12 +140,9 @@ def process_workflow_run(
             updates["error_message"] = "; ".join(result["errors"])
         elif result.get("warnings"):
             updates["error_message"] = "Warning: " + "; ".join(result["warnings"])
-            # Check for orphan/fork commits
-            if any(
-                "Commit not found" in w or "orphan" in w.lower()
-                for w in result["warnings"]
-            ):
-                updates["is_missing_commit"] = True
+
+        if result.get("is_missing_commit"):
+            updates["is_missing_commit"] = True
 
         model_build_repo.update_one(build_id, updates)
 

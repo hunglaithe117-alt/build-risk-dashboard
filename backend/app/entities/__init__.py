@@ -10,7 +10,7 @@ from .model_repository import (
     ImportStatus,
     SyncStatus,
 )
-from .model_build import ModelBuild, ModelBuildConclusion, ExtractionStatus
+from .model_build import ModelBuild, ModelBuildConclusion
 
 # Enrichment flow entities (Dataset enrichment)
 from .enrichment_repository import (
@@ -18,8 +18,9 @@ from .enrichment_repository import (
     EnrichmentImportStatus,
     RepoValidationStatus,
 )
-from .enrichment_build import EnrichmentBuild, EnrichmentExtractionStatus
+from .enrichment_build import EnrichmentBuild
 from .dataset_build import DatasetBuild, DatasetBuildStatus
+from .base_build import BaseBuildSample, ExtractionStatus
 
 # Other entities
 from .github_installation import GithubInstallation
@@ -57,8 +58,7 @@ __all__ = [
     # Enrichment flow
     "EnrichmentRepository",
     "EnrichmentBuild",
-    "EnrichmentImportStatus",
-    "EnrichmentExtractionStatus",
+    "ExtractionStatus",
     "RepoValidationStatus",
     "DatasetBuild",
     "DatasetBuildStatus",

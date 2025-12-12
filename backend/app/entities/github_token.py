@@ -1,5 +1,3 @@
-"""GitHub Token entity model for database storage."""
-
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -10,8 +8,6 @@ from app.entities.base import BaseEntity
 
 
 class GitHubTokenStatus(str, Enum):
-    """Token status."""
-
     ACTIVE = "active"
     DISABLED = "disabled"
     RATE_LIMITED = "rate_limited"
@@ -19,26 +15,15 @@ class GitHubTokenStatus(str, Enum):
 
 
 class GithubToken(BaseEntity):
-    """
-    GitHub personal access token stored in MongoDB.
-
-    Tokens are hashed for security - we never store the plaintext token.
-    The masked_token field shows only the last 4 characters for identification.
-    """
-
-    # Token identification (stored securely)
     token_hash: str = Field(..., description="SHA-256 hash of the token for lookup")
     masked_token: str = Field(
         ..., description="Masked token showing last 4 chars (e.g., ****abc1)"
     )
 
-    # User-friendly label
     label: str = Field(default="", description="User-defined label for this token")
 
-    # Status tracking
     status: GitHubTokenStatus = GitHubTokenStatus.ACTIVE
 
-    # Rate limit information (updated from GitHub API response headers)
     rate_limit_remaining: Optional[int] = Field(
         default=None, description="Remaining API requests for this token"
     )
@@ -49,7 +34,6 @@ class GithubToken(BaseEntity):
         default=None, description="When the rate limit resets"
     )
 
-    # Usage statistics
     last_used_at: Optional[datetime] = Field(
         default=None, description="Last time this token was used for an API call"
     )
@@ -57,7 +41,6 @@ class GithubToken(BaseEntity):
         default=0, description="Total number of requests made with this token"
     )
 
-    # Validation result
     last_validated_at: Optional[datetime] = Field(
         default=None,
         description="Last time this token was validated against GitHub API",

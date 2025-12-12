@@ -34,10 +34,11 @@ class GitRepoHandle:
     """Handle to an initialized git repository with shared worktree."""
 
     repo: Repo
-    path: Path  # bare repo path
-    worktree_path: Optional[Path]  # checkout at commit (shared across nodes)
+    path: Path
+    worktree_path: Optional[Path]
     effective_sha: Optional[str]
-    original_sha: str  # The originally requested SHA
+    original_sha: str
+    is_missing_commit: bool = False
 
     @property
     def is_commit_available(self) -> bool:
@@ -82,9 +83,26 @@ class GitRepoProvider(ResourceProvider):
 
             # Ensure commit exists (handle forks)
             token = self._get_token(repo, context)
+
+            # Get GitHubClient if available for better API handling
+            github_client = None
+            if context.has_resource(ResourceNames.GITHUB_CLIENT):
+                github_client = context.get_resource(ResourceNames.GITHUB_CLIENT)
+
             effective_sha = ensure_commit_exists(
-                repo_path, commit_sha, repo.full_name, token
+                repo_path=repo_path,
+                commit_sha=commit_sha,
+                repo_slug=repo.full_name,
+                token=token,
+                github_client=github_client,
             )
+
+            is_missing_commit = effective_sha is None
+            if is_missing_commit:
+                logger.warning(
+                    f"Commit {commit_sha} not found and could not be replayed "
+                    f"(likely a fork commit that exceeded max traversal depth)"
+                )
 
             # Pre-fetch blobs for the commit (important for partial clones)
             # This avoids slow lazy fetch when running `git worktree add` later
@@ -102,6 +120,7 @@ class GitRepoProvider(ResourceProvider):
             worktree_path=worktree_path,
             effective_sha=effective_sha,
             original_sha=commit_sha,
+            is_missing_commit=is_missing_commit,
         )
 
     def _clone_repo(self, repo, repo_path: Path, max_retries: int = 2) -> None:

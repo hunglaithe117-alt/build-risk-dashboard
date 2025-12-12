@@ -1,5 +1,3 @@
-"""GitHub installation entity - tracks GitHub App installations"""
-
 from datetime import datetime
 
 from .base import BaseEntity

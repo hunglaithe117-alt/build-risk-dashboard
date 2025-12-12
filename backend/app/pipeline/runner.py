@@ -455,12 +455,27 @@ class FeaturePipeline:
                     context=context,
                 )
 
+            # Check if commit was missing (fork commit that couldn't be replayed)
+            is_missing_commit = False
+            if context.has_resource(ResourceNames.GIT_REPO):
+                git_handle = context.get_resource(ResourceNames.GIT_REPO)
+                if (
+                    hasattr(git_handle, "is_missing_commit")
+                    and git_handle.is_missing_commit
+                ):
+                    is_missing_commit = True
+                    context.add_warning(
+                        f"Commit not found: {git_handle.original_sha} "
+                        f"(fork commit that exceeded max traversal depth)"
+                    )
+
             return {
                 "status": final_status,
                 "features": extracted_features,
-                "all_features": context.get_merged_features(),  # Unfiltered
+                "all_features": context.get_merged_features(),
                 "errors": context.errors,
                 "warnings": context.warnings,
+                "is_missing_commit": is_missing_commit,
                 "results": [
                     {
                         "node": r.node_name,

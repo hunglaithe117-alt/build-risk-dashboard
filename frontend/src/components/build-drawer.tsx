@@ -299,7 +299,7 @@ export function BuildDrawer({ repoId, buildId, onClose }: BuildDrawerProps) {
                                                     <span className="font-mono">{build.commit_sha.substring(0, 7)}</span>
                                                 </div>
                                             </div>
-                                            <StatusBadge status={build.status} />
+                                            <StatusBadge status={build.build_conclusion} />
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-4 rounded-lg border p-4 sm:grid-cols-4">

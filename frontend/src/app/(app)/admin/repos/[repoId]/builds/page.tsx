@@ -410,7 +410,7 @@ export default function RepoBuildsPage() {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-2">
-                                                    <StatusBadge status={build.status} />
+                                                    <StatusBadge status={build.build_conclusion} />
                                                     {(build.is_missing_commit || (build.error_message && build.error_message.startsWith("Warning:"))) && (
                                                         <div title={build.error_message || "Missing commit"} className="text-yellow-500">
                                                             <AlertCircle className="h-4 w-4" />

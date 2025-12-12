@@ -87,11 +87,11 @@ class GitHubActionsProvider(CIProviderInterface):
         Priority:
         1. GitHub App installation (if installation_id provided)
         2. Direct config token (if configured)
-        3. Public token pool
+        3. Public token pool (new instance each time to avoid closing singleton)
         """
         from app.services.github.github_client import (
             GitHubClient,
-            public_github_client,
+            get_public_github_client,
             get_app_github_client,
         )
 
@@ -103,8 +103,7 @@ class GitHubActionsProvider(CIProviderInterface):
         if self._has_direct_token():
             return GitHubClient(token=self.config.token)
 
-        # Otherwise use public client singleton
-        return public_github_client()
+        return get_public_github_client()
 
     async def fetch_builds(
         self,

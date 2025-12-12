@@ -1,6 +1,4 @@
-from app.services.github.github_client import public_github_client
 from app.ci_providers.models import BuildStatus, BuildConclusion
-from app.entities.model_build import ModelBuildConclusion
 from app.entities.base_build import ExtractionStatus
 from app.entities.model_repository import ImportStatus
 import logging
@@ -8,7 +6,6 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 from bson import ObjectId
 from pathlib import Path
-import time
 import asyncio
 
 from app.celery_app import celery_app
@@ -16,7 +13,6 @@ from app.services.github.github_client import get_app_github_client
 from app.tasks.base import PipelineTask
 from app.services.github.exceptions import (
     GithubRateLimitError,
-    GithubLogsUnavailableError,
 )
 from app.repositories.model_repository import ModelRepositoryRepository
 from app.repositories.workflow_run import WorkflowRunRepository
@@ -127,7 +123,7 @@ def import_repo(
         if installation_id:
             client_context = get_app_github_client(self.db, installation_id)
         else:
-            client_context = public_github_client()
+            client_context = get_public_github_client()
 
         with client_context as gh:
             repo_data = gh.get_repository(full_name)

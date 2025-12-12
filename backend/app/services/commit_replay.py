@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-from app.services.github.github_client import public_github_client
+from app.services.github.github_client import get_public_github_client
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ def build_replay_plan(
     if commit_exists(target_sha):
         raise ValueError(f"Commit {target_sha} already exists")
 
-    github_client = public_github_client()
+    github_client = get_public_github_client()
 
     missing_commits: List[ReplayCommit] = []
     current = target_sha

@@ -601,20 +601,6 @@ class GitHubClient:
         self.close()
 
 
-# Module-level cached client
-_public_client: GitHubClient | None = None
-
-
-def public_github_client() -> GitHubClient:
-    """Get or create a cached public GitHub client."""
-    global _public_client
-
-    if _public_client is None:
-        _public_client = get_public_github_client()
-
-    return _public_client
-
-
 def get_user_github_client(db: Database, user_id: str) -> GitHubClient:
     """
     Get a GitHub client using the user's OAuth token.

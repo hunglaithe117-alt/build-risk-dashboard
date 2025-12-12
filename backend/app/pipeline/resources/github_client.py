@@ -14,6 +14,7 @@ from typing import Any, Optional, TYPE_CHECKING
 from app.pipeline.resources import ResourceProvider, ResourceNames
 from app.services.github.github_client import (
     get_app_github_client,
+    get_public_github_client,
     GitHubClient,
 )
 
@@ -57,8 +58,8 @@ class GitHubClientProvider(ResourceProvider):
             self._client_context = client_ctx
             is_app_client = True
         else:
-            # Use public client
-            client_ctx = public_github_client()
+            # Use public client (new instance each time)
+            client_ctx = get_public_github_client()
             client = client_ctx.__enter__()
             self._client_context = client_ctx
             is_app_client = False

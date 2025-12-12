@@ -11,27 +11,22 @@ interface FeatureDefinition {
     is_active: boolean;
     depends_on_features: string[];
     depends_on_resources: string[];
+    node: string;
 }
 
-interface ExtractorInfo {
+export interface NodeInfo {
     name: string;
     display_name: string;
+    description: string;
+    group: string;
+    is_configured: boolean;
+    requires_resources: string[];
     features: FeatureDefinition[];
     feature_count: number;
 }
 
-interface SourceInfo {
-    source: string;
-    display_name: string;
-    description: string;
-    icon: string;
-    is_configured: boolean;
-    extractors: Record<string, ExtractorInfo>;
-    total_features: number;
-}
-
-interface FeaturesBySourceResponse {
-    sources: Record<string, SourceInfo>;
+interface FeaturesByNodeResponse {
+    nodes: Record<string, NodeInfo>;
 }
 
 interface DAGNode {
@@ -67,7 +62,7 @@ export interface FeatureDAGData {
 
 export interface UseFeatureSelectorReturn {
     // Data
-    dataSources: SourceInfo[];
+    extractorNodes: NodeInfo[];
     dagData: FeatureDAGData | null;
     allFeatures: FeatureDefinition[];
     loading: boolean;
@@ -75,16 +70,13 @@ export interface UseFeatureSelectorReturn {
 
     // Selection state
     selectedFeatures: Set<string>;
-    expandedSources: Set<string>;
-    expandedExtractors: Set<string>;
+    expandedNodes: Set<string>;
     searchQuery: string;
 
     // Actions
     toggleFeature: (featureName: string) => void;
-    toggleExtractor: (extractorName: string, features: string[]) => void;
-    toggleSource: (sourceName: string) => void;
-    toggleSourceExpand: (sourceName: string) => void;
-    toggleExtractorExpand: (extractorName: string) => void;
+    toggleNode: (nodeName: string, features: string[]) => void;
+    toggleNodeExpand: (nodeName: string) => void;
     selectAllAvailable: () => void;
     clearSelection: () => void;
     setSearchQuery: (query: string) => void;
@@ -92,21 +84,22 @@ export interface UseFeatureSelectorReturn {
 
     // Computed
     selectedCount: number;
-    selectedSources: string[];
-    filteredSources: SourceInfo[];
+    selectedNodes: string[];
+    filteredNodes: NodeInfo[];
     getFeatureDescription: (featureName: string) => string;
 }
 
 export function useFeatureSelector(): UseFeatureSelectorReturn {
     // State
-    const [dataSources, setDataSources] = useState<SourceInfo[]>([]);
+    const [extractorNodes, setExtractorNodes] = useState<NodeInfo[]>([]);
     const [dagData, setDagData] = useState<FeatureDAGData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set());
-    const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set(["git", "build_log"]));
-    const [expandedExtractors, setExpandedExtractors] = useState<Set<string>>(new Set());
+    const [expandedNodes, setExpandedNodes] = useState<Set<string>>(
+        new Set(["git_commit_info", "git_diff_features", "job_metadata", "test_log_parser"])
+    );
     const [searchQuery, setSearchQuery] = useState("");
 
     // Load features on mount
@@ -114,13 +107,13 @@ export function useFeatureSelector(): UseFeatureSelectorReturn {
         async function loadData() {
             try {
                 setLoading(true);
-                const [sourcesRes, dagRes] = await Promise.all([
-                    api.get<FeaturesBySourceResponse>("/features/by-source"),
+                const [nodesRes, dagRes] = await Promise.all([
+                    api.get<FeaturesByNodeResponse>("/features/by-node"),
                     api.get<FeatureDAGData>("/features/dag"),
                 ]);
 
-                const sources = Object.values(sourcesRes.data.sources);
-                setDataSources(sources);
+                const nodes = Object.values(nodesRes.data.nodes);
+                setExtractorNodes(nodes);
                 setDagData(dagRes.data);
                 setError(null);
             } catch (err) {
@@ -133,16 +126,19 @@ export function useFeatureSelector(): UseFeatureSelectorReturn {
         loadData();
     }, []);
 
-    // All features flattened
+    // All features flattened (with node info)
     const allFeatures = useMemo(() => {
         const features: FeatureDefinition[] = [];
-        dataSources.forEach((source) => {
-            Object.values(source.extractors).forEach((extractor) => {
-                features.push(...extractor.features);
+        extractorNodes.forEach((nodeInfo) => {
+            nodeInfo.features.forEach((f) => {
+                features.push({
+                    ...f,
+                    node: nodeInfo.name,
+                });
             });
         });
         return features;
-    }, [dataSources]);
+    }, [extractorNodes]);
 
     // Toggle single feature
     const toggleFeature = useCallback((featureName: string) => {
@@ -157,8 +153,8 @@ export function useFeatureSelector(): UseFeatureSelectorReturn {
         });
     }, []);
 
-    // Toggle all features in an extractor
-    const toggleExtractor = useCallback((extractorName: string, features: string[]) => {
+    // Toggle all features in a node
+    const toggleNode = useCallback((nodeName: string, features: string[]) => {
         setSelectedFeatures((prev) => {
             const next = new Set(prev);
             const allSelected = features.every((f) => prev.has(f));
@@ -174,52 +170,14 @@ export function useFeatureSelector(): UseFeatureSelectorReturn {
         });
     }, []);
 
-    // Toggle all features in a source
-    const toggleSource = useCallback(
-        (sourceName: string) => {
-            const source = dataSources.find((s) => s.source === sourceName);
-            if (!source || !source.is_configured) return;
-
-            const allSourceFeatures: string[] = [];
-            Object.values(source.extractors).forEach((ext) => {
-                ext.features.forEach((f) => allSourceFeatures.push(f.name));
-            });
-
-            setSelectedFeatures((prev) => {
-                const next = new Set(prev);
-                const allSelected = allSourceFeatures.every((f) => prev.has(f));
-
-                if (allSelected) {
-                    allSourceFeatures.forEach((f) => next.delete(f));
-                } else {
-                    allSourceFeatures.forEach((f) => next.add(f));
-                }
-                return next;
-            });
-        },
-        [dataSources]
-    );
-
     // Expand/collapse helpers
-    const toggleSourceExpand = useCallback((sourceName: string) => {
-        setExpandedSources((prev) => {
+    const toggleNodeExpand = useCallback((nodeName: string) => {
+        setExpandedNodes((prev) => {
             const next = new Set(prev);
-            if (next.has(sourceName)) {
-                next.delete(sourceName);
+            if (next.has(nodeName)) {
+                next.delete(nodeName);
             } else {
-                next.add(sourceName);
-            }
-            return next;
-        });
-    }, []);
-
-    const toggleExtractorExpand = useCallback((extractorName: string) => {
-        setExpandedExtractors((prev) => {
-            const next = new Set(prev);
-            if (next.has(extractorName)) {
-                next.delete(extractorName);
-            } else {
-                next.add(extractorName);
+                next.add(nodeName);
             }
             return next;
         });
@@ -228,15 +186,13 @@ export function useFeatureSelector(): UseFeatureSelectorReturn {
     // Select all available (configured) features
     const selectAllAvailable = useCallback(() => {
         const allAvailable: string[] = [];
-        dataSources.forEach((source) => {
-            if (source.is_configured) {
-                Object.values(source.extractors).forEach((ext) => {
-                    ext.features.forEach((f) => allAvailable.push(f.name));
-                });
+        extractorNodes.forEach((node) => {
+            if (node.is_configured) {
+                node.features.forEach((f) => allAvailable.push(f.name));
             }
         });
         setSelectedFeatures(new Set(allAvailable));
-    }, [dataSources]);
+    }, [extractorNodes]);
 
     // Clear all selections
     const clearSelection = useCallback(() => {
@@ -265,62 +221,45 @@ export function useFeatureSelector(): UseFeatureSelectorReturn {
     // Computed values
     const selectedCount = selectedFeatures.size;
 
-    const selectedSources = useMemo(() => {
-        const sources = new Set<string>();
-        selectedFeatures.forEach((f) => {
-            if (f.startsWith("git_")) sources.add("git");
-            else if (f.startsWith("gh_")) sources.add("github");
-            else if (f.startsWith("tr_log_")) sources.add("build_log");
-            else if (f.startsWith("tr_")) sources.add("repo");
-            else if (f.startsWith("sonar_")) sources.add("sonarqube");
-            else if (f.startsWith("trivy_")) sources.add("trivy");
+    const selectedNodes = useMemo(() => {
+        const nodes = new Set<string>();
+        selectedFeatures.forEach((featureName) => {
+            const feature = allFeatures.find((f) => f.name === featureName);
+            if (feature?.node) {
+                nodes.add(feature.node);
+            }
         });
-        return Array.from(sources);
-    }, [selectedFeatures]);
+        return Array.from(nodes);
+    }, [selectedFeatures, allFeatures]);
 
-    // Filter sources by search
-    const filteredSources = useMemo(() => {
-        if (!searchQuery.trim()) return dataSources;
+    // Filter nodes by search
+    const filteredNodes = useMemo(() => {
+        if (!searchQuery.trim()) return extractorNodes;
 
         const query = searchQuery.toLowerCase();
-        return dataSources
-            .map((source) => {
-                // Filter extractors and features
-                const filteredExtractors: Record<string, ExtractorInfo> = {};
-                let totalFiltered = 0;
+        return extractorNodes
+            .map((node) => {
+                const filteredFeatures = node.features.filter(
+                    (f) =>
+                        f.name.toLowerCase().includes(query) ||
+                        f.display_name.toLowerCase().includes(query) ||
+                        f.description.toLowerCase().includes(query)
+                );
 
-                Object.entries(source.extractors).forEach(([name, ext]) => {
-                    const filteredFeatures = ext.features.filter(
-                        (f) =>
-                            f.name.toLowerCase().includes(query) ||
-                            f.display_name.toLowerCase().includes(query) ||
-                            f.description.toLowerCase().includes(query)
-                    );
-
-                    if (filteredFeatures.length > 0) {
-                        filteredExtractors[name] = {
-                            ...ext,
-                            features: filteredFeatures,
-                            feature_count: filteredFeatures.length,
-                        };
-                        totalFiltered += filteredFeatures.length;
-                    }
-                });
-
-                if (totalFiltered === 0) return null;
+                if (filteredFeatures.length === 0) return null;
 
                 return {
-                    ...source,
-                    extractors: filteredExtractors,
-                    total_features: totalFiltered,
+                    ...node,
+                    features: filteredFeatures,
+                    feature_count: filteredFeatures.length,
                 };
             })
-            .filter((s): s is SourceInfo => s !== null);
-    }, [dataSources, searchQuery]);
+            .filter((n): n is NodeInfo => n !== null);
+    }, [extractorNodes, searchQuery]);
 
     return {
         // Data
-        dataSources,
+        extractorNodes,
         dagData,
         allFeatures,
         loading,
@@ -328,16 +267,13 @@ export function useFeatureSelector(): UseFeatureSelectorReturn {
 
         // Selection state
         selectedFeatures,
-        expandedSources,
-        expandedExtractors,
+        expandedNodes,
         searchQuery,
 
         // Actions
         toggleFeature,
-        toggleExtractor,
-        toggleSource,
-        toggleSourceExpand,
-        toggleExtractorExpand,
+        toggleNode,
+        toggleNodeExpand,
         selectAllAvailable,
         clearSelection,
         setSearchQuery,
@@ -345,8 +281,8 @@ export function useFeatureSelector(): UseFeatureSelectorReturn {
 
         // Computed
         selectedCount,
-        selectedSources,
-        filteredSources,
+        selectedNodes,
+        filteredNodes,
         getFeatureDescription,
     };
 }

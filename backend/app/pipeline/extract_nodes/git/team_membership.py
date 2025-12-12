@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
         "gh_by_core_team_member",
     },
     group="git",
+    description="Team size and core contributor info",
     priority=5,
     feature_metadata=TEAM_MEMBERSHIP,
 )

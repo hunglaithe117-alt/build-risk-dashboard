@@ -37,9 +37,9 @@ def get_feature_dag(
     )
 
 
-@router.get("/by-source")
-def get_features_by_source():
-    return service.get_features_by_source()
+@router.get("/by-node")
+def get_features_by_node():
+    return service.get_features_by_node()
 
 
 @router.get("/", response_model=FeatureListResponse)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowLeft, FileSpreadsheet, RefreshCw } from "lucide-react";
+import { ArrowLeft, FileSpreadsheet, RefreshCw, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import type { DatasetRecord } from "@/types";
 interface DatasetHeaderProps {
     dataset: DatasetRecord;
     onRefresh: () => void;
+    onDelete: () => void;
 }
 
 function formatDate(value?: string | null) {
@@ -24,7 +25,7 @@ function formatDate(value?: string | null) {
     }
 }
 
-export function DatasetHeader({ dataset, onRefresh }: DatasetHeaderProps) {
+export function DatasetHeader({ dataset, onRefresh, onDelete }: DatasetHeaderProps) {
     const router = useRouter();
 
     const hasMapping = Boolean(
@@ -76,7 +77,16 @@ export function DatasetHeader({ dataset, onRefresh }: DatasetHeaderProps) {
                 <Button variant="outline" size="sm" onClick={onRefresh}>
                     <RefreshCw className="mr-2 h-4 w-4" /> Refresh
                 </Button>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20"
+                    onClick={onDelete}
+                >
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete
+                </Button>
             </div>
         </div>
     );
 }
+

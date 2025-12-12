@@ -1,8 +1,8 @@
+from app.pipeline.extract_nodes import FeatureNode
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Type, Union
 from dataclasses import dataclass, field
 import logging
-from app.pipeline.features import FeatureNode
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +82,7 @@ class FeatureNodeMeta:
     requires_resources: Set[str] = field(default_factory=set)
     provides: Set[str] = field(default_factory=set)
     group: Optional[str] = None
+    description: Optional[str] = None  # Node-level description
     enabled: bool = True
     priority: int = 0  # Higher priority = executed first when possible
     output_formats: Dict[str, OutputFormat] = field(default_factory=dict)
@@ -106,6 +107,7 @@ class FeatureRegistry:
         requires_resources: Optional[Set[str]] = None,
         provides: Optional[Set[str]] = None,
         group: Optional[str] = None,
+        description: Optional[str] = None,
         enabled: bool = True,
         priority: int = 0,
         output_formats: Optional[Dict[str, OutputFormat]] = None,
@@ -122,6 +124,7 @@ class FeatureRegistry:
             requires_resources=requires_resources or set(),
             provides=provides or set(),
             group=group,
+            description=description,
             enabled=enabled,
             priority=priority,
             output_formats=output_formats or {},
@@ -484,6 +487,7 @@ def register_feature(
     requires_resources: Optional[Set[str]] = None,
     provides: Optional[Set[str]] = None,
     group: Optional[str] = None,
+    description: Optional[str] = None,
     enabled: bool = True,
     priority: int = 0,
     output_formats: Optional[Dict[str, OutputFormat]] = None,
@@ -498,6 +502,7 @@ def register_feature(
         requires_resources: Resources this node needs
         provides: Features this node provides
         group: Optional grouping
+        description: Human-readable description of what this node does
         enabled: Whether node is active
         priority: Execution priority (higher = first)
         output_formats: Dict mapping feature names to OutputFormat
@@ -512,6 +517,7 @@ def register_feature(
             requires_resources=requires_resources,
             provides=provides,
             group=group,
+            description=description,
             enabled=enabled,
             priority=priority,
             output_formats=output_formats,

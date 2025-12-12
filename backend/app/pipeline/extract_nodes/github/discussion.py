@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
         "gh_description_complexity",
     },
     group="github",
+    description="PR/Issue comments and discussions",
     feature_metadata=DISCUSSION,
 )
 class GitHubDiscussionNode(FeatureNode):

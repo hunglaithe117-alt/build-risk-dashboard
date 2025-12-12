@@ -8,7 +8,7 @@ Extracts job-level metadata from CI logs:
 
 from typing import Any, Dict, List
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
@@ -24,6 +24,7 @@ from app.pipeline.feature_metadata.build_log import JOB_METADATA
         "tr_log_num_jobs",
     },
     group="build_log",
+    description="CI job IDs and counts",
     priority=8,
     feature_metadata=JOB_METADATA,
 )

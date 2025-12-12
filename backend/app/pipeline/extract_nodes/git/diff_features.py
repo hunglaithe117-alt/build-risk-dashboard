@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
         "gh_diff_other_files",
     },
     group="git",
+    description="Source and test code changes",
     feature_metadata=DIFF_FEATURES,
 )
 class GitDiffFeaturesNode(FeatureNode):

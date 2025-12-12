@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Set
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
         "gh_num_commits_on_files_touched",
     },
     group="git",
+    description="File modification history",
     priority=3,
     feature_metadata=FILE_TOUCH_HISTORY,
 )

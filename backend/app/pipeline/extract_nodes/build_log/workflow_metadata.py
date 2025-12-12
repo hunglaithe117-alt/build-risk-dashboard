@@ -10,7 +10,7 @@ Extracts cheap metadata from workflow run without parsing logs:
 from app.pipeline.core.registry import OutputFormat
 from typing import Any, Dict
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
@@ -29,6 +29,7 @@ from app.pipeline.feature_metadata.build_log import WORKFLOW_METADATA
         "tr_log_lan_all",
     },
     group="build_log",
+    description="Workflow run information",
     priority=10,
     feature_metadata=WORKFLOW_METADATA,
     output_formats={

@@ -10,7 +10,7 @@ Extracts commit-related features:
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.registry import register_feature, OutputFormat
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
         "tr_prev_build",
     },
     group="git",
+    description="Commit history and previous build resolution",
     priority=10,
     output_formats={
         "git_all_built_commits": OutputFormat.HASH_SEPARATED,

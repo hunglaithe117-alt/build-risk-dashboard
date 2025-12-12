@@ -25,19 +25,19 @@ from app.pipeline.resources.git_repo import GitRepoProvider
 from app.pipeline.resources.github_client import GitHubClientProvider
 from app.pipeline.resources.log_storage import LogStorageProvider
 from app.pipeline.constants import DEFAULT_FEATURES
-from app.pipeline.features.build_log import (
+from app.pipeline.extract_nodes.build_log import (
     job_metadata,
     workflow_metadata,
     test_log_parser,
 )
-from app.pipeline.features.git import (
+from app.pipeline.extract_nodes.git import (
     commit_info,
     diff_features,
     file_touch_history,
     team_membership,
 )
-from app.pipeline.features.github import discussion
-from app.pipeline.features.repo import snapshot
+from app.pipeline.extract_nodes.github import discussion
+from app.pipeline.extract_nodes.repo import snapshot
 
 from typing import Any
 from app.entities.workflow_run import WorkflowRunRaw

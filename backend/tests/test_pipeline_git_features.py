@@ -17,7 +17,7 @@ from app.pipeline.resources import ResourceNames
 from app.pipeline.resources.git_repo import GitRepoHandle
 
 # Import the nodes under test
-from app.pipeline.features.git.commit_info import GitCommitInfoNode
+from app.pipeline.extract_nodes.git.commit_info import GitCommitInfoNode
 from app.pipeline.core.context import ExecutionContext
 
 

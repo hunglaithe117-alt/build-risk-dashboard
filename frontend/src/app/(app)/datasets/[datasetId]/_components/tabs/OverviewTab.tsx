@@ -22,6 +22,13 @@ import {
     TrendingUp,
     TrendingDown,
     Calendar,
+    FileSpreadsheet,
+    Layers,
+    HardDrive,
+    MapPin,
+    Github,
+    ExternalLink,
+    Settings,
 } from "lucide-react";
 
 interface OverviewTabProps {
@@ -39,6 +46,14 @@ function formatDate(value?: string | null) {
     } catch {
         return value;
     }
+}
+
+function formatFileSize(bytes: number): string {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
 function QualityMeter({
@@ -125,13 +140,134 @@ function ValidationStatCard({
 
 export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
     const [previewExpanded, setPreviewExpanded] = useState(true);
+    const [reposExpanded, setReposExpanded] = useState(true);
 
     const stats = dataset.stats || { missing_rate: 0, duplicate_rate: 0, build_coverage: 0 };
     const validationStats = dataset.validation_stats;
 
+    // Get unique repos from preview data
+    const repoField = dataset.mapped_fields?.repo_name || "";
+    const uniqueRepos = Array.from(
+        new Set(
+            dataset.preview
+                ?.map(row => row[repoField] as string)
+                .filter(Boolean) || []
+        )
+    ).slice(0, 10);
+
+    const reposCount = dataset.validation_stats?.repos_total || uniqueRepos.length;
+    const languages = dataset.source_languages || [];
+    const frameworks = dataset.test_frameworks || [];
+
     return (
         <div className="space-y-6">
-            {/* Data Quality Metrics - Main Feature */}
+            {/* Dataset Info Card */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <Database className="h-5 w-5" />
+                        Dataset Info
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
+                            <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
+                            <div>
+                                <p className="text-2xl font-bold">{dataset.rows.toLocaleString()}</p>
+                                <p className="text-xs text-muted-foreground">Rows</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
+                            <Layers className="h-5 w-5 text-muted-foreground" />
+                            <div>
+                                <p className="text-2xl font-bold">{dataset.columns?.length || 0}</p>
+                                <p className="text-xs text-muted-foreground">Columns</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
+                            <GitBranch className="h-5 w-5 text-muted-foreground" />
+                            <div>
+                                <p className="text-2xl font-bold">{reposCount}</p>
+                                <p className="text-xs text-muted-foreground">Repositories</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
+                            <HardDrive className="h-5 w-5 text-muted-foreground" />
+                            <div>
+                                <p className="text-2xl font-bold">{formatFileSize(dataset.size_bytes || 0)}</p>
+                                <p className="text-xs text-muted-foreground">File Size</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Column Mapping */}
+                    <div className="mt-4 pt-4 border-t">
+                        <div className="flex items-center gap-2 mb-3">
+                            <MapPin className="h-4 w-4 text-muted-foreground" />
+                            <span className="text-sm font-medium">Column Mapping</span>
+                        </div>
+                        <div className="grid gap-2 md:grid-cols-2">
+                            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
+                                <span className="text-sm text-muted-foreground">Build ID</span>
+                                <div className="flex items-center gap-2">
+                                    {dataset.mapped_fields?.build_id ? (
+                                        <>
+                                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                            <Badge variant="secondary" className="font-mono text-xs">
+                                                {dataset.mapped_fields.build_id}
+                                            </Badge>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <XCircle className="h-4 w-4 text-amber-500" />
+                                            <span className="text-amber-600 text-sm">Not mapped</span>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
+                                <span className="text-sm text-muted-foreground">Repo Name</span>
+                                <div className="flex items-center gap-2">
+                                    {dataset.mapped_fields?.repo_name ? (
+                                        <>
+                                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                            <Badge variant="secondary" className="font-mono text-xs">
+                                                {dataset.mapped_fields.repo_name}
+                                            </Badge>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <XCircle className="h-4 w-4 text-amber-500" />
+                                            <span className="text-amber-600 text-sm">Not mapped</span>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Languages & Frameworks */}
+                    {(languages.length > 0 || frameworks.length > 0) && (
+                        <div className="mt-4 pt-4 border-t">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Settings className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm font-medium">Languages & Frameworks</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {languages.map((lang: string) => (
+                                    <Badge key={lang} variant="secondary">{lang}</Badge>
+                                ))}
+                                {frameworks.map((fw: string) => (
+                                    <Badge key={fw} variant="outline">{fw}</Badge>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* Data Quality Metrics */}
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -208,7 +344,6 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                             />
                         </div>
 
-                        {/* Visual Summary */}
                         {validationStats.builds_total > 0 && (
                             <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
                                 {validationStats.builds_found > validationStats.builds_not_found ? (
@@ -229,6 +364,58 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                             </div>
                         )}
                     </CardContent>
+                </Card>
+            )}
+
+            {/* Repositories (Collapsible) */}
+            {uniqueRepos.length > 0 && (
+                <Card>
+                    <CardHeader
+                        className="cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors rounded-t-lg"
+                        onClick={() => setReposExpanded(!reposExpanded)}
+                    >
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="flex items-center gap-2">
+                                    <Github className="h-5 w-5" />
+                                    Repositories ({uniqueRepos.length})
+                                </CardTitle>
+                                <CardDescription>
+                                    Unique repositories from this dataset
+                                </CardDescription>
+                            </div>
+                            {reposExpanded ? (
+                                <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                            ) : (
+                                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                            )}
+                        </div>
+                    </CardHeader>
+                    {reposExpanded && (
+                        <CardContent>
+                            <div className="space-y-2">
+                                {uniqueRepos.map(repo => (
+                                    <div
+                                        key={repo}
+                                        className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2 dark:bg-slate-800"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Github className="h-4 w-4 text-muted-foreground" />
+                                            <span className="font-mono text-sm">{repo}</span>
+                                        </div>
+                                        <a
+                                            href={`https://github.com/${repo}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-muted-foreground hover:text-foreground"
+                                        >
+                                            <ExternalLink className="h-4 w-4" />
+                                        </a>
+                                    </div>
+                                ))}
+                            </div>
+                        </CardContent>
+                    )}
                 </Card>
             )}
 

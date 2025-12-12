@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
-    CardFooter,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
@@ -27,75 +26,81 @@ import {
     Settings,
     Shield,
     X,
+    Box,
 } from "lucide-react";
+import type { NodeInfo } from "../../_hooks/useFeatureSelector";
 
 interface FeatureDefinition {
     name: string;
     display_name: string;
     description: string;
+    node: string;
 }
 
 interface SelectedFeaturesPanelProps {
     selectedFeatures: Set<string>;
     allFeatures: FeatureDefinition[];
+    nodes: NodeInfo[];
     onRemoveFeature: (featureName: string) => void;
     onClearAll: () => void;
     rowCount: number;
 }
 
-const sourceIcons: Record<string, typeof GitBranch> = {
+const groupIcons: Record<string, typeof GitBranch> = {
     git: GitBranch,
     github: Github,
     build_log: FileText,
-    sonarqube: Settings,
-    trivy: Shield,
+    sonar: Settings,
+    security: Shield,
     repo: Database,
 };
-
-const sourceDisplayNames: Record<string, string> = {
-    git: "Git Repository",
-    github: "GitHub API",
-    build_log: "Build Logs",
-    sonarqube: "SonarQube",
-    trivy: "Trivy Scanner",
-    repo: "Repository Metadata",
-};
-
-function getSourceFromFeature(featureName: string): string {
-    if (featureName.startsWith("git_")) return "git";
-    if (featureName.startsWith("gh_")) return "github";
-    if (featureName.startsWith("tr_log_")) return "build_log";
-    if (featureName.startsWith("tr_")) return "repo";
-    if (featureName.startsWith("sonar_")) return "sonarqube";
-    if (featureName.startsWith("trivy_")) return "trivy";
-    return "other";
-}
 
 export const SelectedFeaturesPanel = memo(function SelectedFeaturesPanel({
     selectedFeatures,
     allFeatures,
+    nodes,
     onRemoveFeature,
     onClearAll,
     rowCount,
 }: SelectedFeaturesPanelProps) {
-    const [expandedSources, setExpandedSources] = useState<Set<string>>(
-        new Set(["git", "build_log"])
+    const [expandedNodes, setExpandedNodes] = useState<Set<string>>(
+        new Set(["git_commit_info", "git_diff_features", "job_metadata"])
     );
 
-    // Group selected features by source
+    // Build node display name map from API data
+    const nodeDisplayNames = useMemo(() => {
+        const map: Record<string, string> = {};
+        nodes.forEach((n) => {
+            map[n.name] = n.display_name;
+        });
+        return map;
+    }, [nodes]);
+
+    // Build node to group map
+    const nodeGroups = useMemo(() => {
+        const map: Record<string, string> = {};
+        nodes.forEach((n) => {
+            map[n.name] = n.group;
+        });
+        return map;
+    }, [nodes]);
+
+    // Group selected features by node (using node from feature data)
     const groupedFeatures = useMemo(() => {
         const groups: Record<string, FeatureDefinition[]> = {};
 
         selectedFeatures.forEach((featureName) => {
-            const source = getSourceFromFeature(featureName);
-            if (!groups[source]) groups[source] = [];
-
             const featureDef = allFeatures.find((f) => f.name === featureName);
-            groups[source].push(
+            const node = featureDef?.node || "other";
+
+            if (!groups[node]) groups[node] = [];
+
+            groups[node].push(
                 featureDef || {
                     name: featureName,
                     display_name: featureName,
                     description: "",
+                    node: "other",
                 }
             );
         });
@@ -114,14 +119,14 @@ export const SelectedFeaturesPanel = memo(function SelectedFeaturesPanel({
         navigator.clipboard.writeText(featureNames);
     };
 
-    // Toggle source expansion
-    const toggleSource = (source: string) => {
-        setExpandedSources((prev) => {
+    // Toggle node expansion
+    const toggleNode = (nodeName: string) => {
+        setExpandedNodes((prev) => {
             const next = new Set(prev);
-            if (next.has(source)) {
-                next.delete(source);
+            if (next.has(nodeName)) {
+                next.delete(nodeName);
             } else {
-                next.add(source);
+                next.add(nodeName);
             }
             return next;
         });
@@ -168,21 +173,22 @@ export const SelectedFeaturesPanel = memo(function SelectedFeaturesPanel({
             </CardHeader>
 
             <CardContent className="max-h-[200px] space-y-2 overflow-y-auto pb-2">
-                {Object.entries(groupedFeatures).map(([source, features]) => {
-                    const Icon = sourceIcons[source] || Database;
-                    const isExpanded = expandedSources.has(source);
+                {Object.entries(groupedFeatures).map(([nodeName, features]) => {
+                    const group = nodeGroups[nodeName] || "other";
+                    const Icon = groupIcons[group] || Box;
+                    const isExpanded = expandedNodes.has(nodeName);
 
                     return (
                         <Collapsible
-                            key={source}
+                            key={nodeName}
                             open={isExpanded}
-                            onOpenChange={() => toggleSource(source)}
+                            onOpenChange={() => toggleNode(nodeName)}
                         >
                             <CollapsibleTrigger asChild>
                                 <div className="flex cursor-pointer items-center gap-2 rounded-md bg-slate-50 px-3 py-2 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700">
                                     <Icon className="h-4 w-4 text-muted-foreground" />
                                     <span className="flex-1 text-sm font-medium">
-                                        {sourceDisplayNames[source] || source}
+                                        {nodeDisplayNames[nodeName] || nodeName}
                                     </span>
                                     <Badge variant="secondary" className="text-xs">
                                         {features.length}

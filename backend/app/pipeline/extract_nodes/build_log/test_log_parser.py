@@ -10,7 +10,7 @@ Extracts test results from CI build logs:
 
 from typing import Any, Dict, Set
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.registry import register_feature, OutputFormat
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
@@ -32,6 +32,7 @@ from app.pipeline.feature_metadata.build_log import TEST_LOG_PARSER
         "tr_log_testduration_sum",
     },
     group="build_log",
+    description="Test results from build logs",
     priority=5,
     output_formats={
         "tr_log_frameworks_all": OutputFormat.COMMA_SEPARATED,

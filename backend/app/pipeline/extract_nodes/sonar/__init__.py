@@ -9,7 +9,7 @@ Extracts SonarQube quality metrics as pipeline features:
 - Size metrics
 """
 
-from app.pipeline.features.sonar.sonar import SonarMeasuresNode
+from app.pipeline.extract_nodes.sonar.sonar import SonarMeasuresNode
 
 __all__ = [
     "SonarMeasuresNode",

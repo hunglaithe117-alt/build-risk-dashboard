@@ -15,7 +15,7 @@ from typing import Any, Dict
 
 from bson import ObjectId
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.core.registry import register_feature
 from app.services.sonar.exporter import MetricsExporter
@@ -33,6 +33,7 @@ SONAR_FEATURE_NAMES = {f"sonar_{metric}" for metric in SONAR_METRICS}
 @register_feature(
     name="sonar_measures",
     group="sonar",
+    description="SonarQube code quality metrics",
     requires_resources={"sonar_client", "git_repo"},
     provides=SONAR_FEATURE_NAMES,
     feature_metadata=SONAR_METADATA,

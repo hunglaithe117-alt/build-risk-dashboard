@@ -6,6 +6,6 @@ Extracts features from GitHub API:
 - PR information
 """
 
-from app.pipeline.features.github.discussion import GitHubDiscussionNode
+from app.pipeline.extract_nodes.github.discussion import GitHubDiscussionNode
 
 __all__ = ["GitHubDiscussionNode"]

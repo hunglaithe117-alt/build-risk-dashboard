@@ -21,7 +21,6 @@ from app.api import (
     tokens,
     pipeline,
     export,
-    data_sources,
     dataset_validation,
     dataset_versions,
     templates,
@@ -64,7 +63,6 @@ app.include_router(datasets.router, prefix="/api", tags=["Datasets"])
 app.include_router(tokens.router, prefix="/api", tags=["GitHub Tokens"])
 app.include_router(pipeline.router, prefix="/api", tags=["Pipeline"])
 app.include_router(export.router, prefix="/api", tags=["Export"])
-app.include_router(data_sources.router, prefix="/api", tags=["Data Sources"])
 app.include_router(
     dataset_validation.router, prefix="/api", tags=["Dataset Validation"]
 )

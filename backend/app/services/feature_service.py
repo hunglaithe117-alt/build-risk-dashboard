@@ -176,19 +176,16 @@ class FeatureService:
             "total_nodes": len(node_features),
         }
 
-    def get_features_by_source(self) -> Dict:
-        """Get features grouped by data source."""
+    def get_features_by_node(self) -> Dict:
+        """Get features grouped by extractor node."""
         all_features = feature_registry.get_features_with_metadata()
         features = [f for f in all_features if f["name"] not in DEFAULT_FEATURES]
 
-        by_source: dict = defaultdict(
-            lambda: {"extractors": defaultdict(list), "total": 0}
-        )
+        by_node: dict = defaultdict(list)
 
         for f in features:
-            source = f["source"]
-            extractor = f["extractor_node"]
-            by_source[source]["extractors"][extractor].append(
+            node = f["extractor_node"]
+            by_node[node].append(
                 {
                     "name": f["name"],
                     "display_name": f["display_name"],
@@ -199,30 +196,51 @@ class FeatureService:
                     "depends_on_resources": f["depends_on_resources"],
                 }
             )
-            by_source[source]["total"] += 1
+
+        # Get node metadata from registry
+        all_nodes = feature_registry.get_all(enabled_only=True)
 
         result = {}
-        for source, data in by_source.items():
-            is_configured = self._check_source_configured(source)
-            result[source] = {
-                "source": source,
-                "display_name": self._get_source_display_name(source),
-                "description": self._get_source_description(source),
-                "icon": self._get_source_icon(source),
-                "is_configured": is_configured,
-                "extractors": {
-                    ext_name: {
-                        "name": ext_name,
-                        "display_name": ext_name.replace("_", " ").title(),
-                        "features": sorted(ext_features, key=lambda x: x["name"]),
-                        "feature_count": len(ext_features),
-                    }
-                    for ext_name, ext_features in data["extractors"].items()
-                },
-                "total_features": data["total"],
+        for node_name, features_list in by_node.items():
+            node_meta = all_nodes.get(node_name)
+            group = node_meta.group if node_meta else "other"
+            requires_resources = list(node_meta.requires_resources) if node_meta else []
+
+            result[node_name] = {
+                "name": node_name,
+                "display_name": node_name.replace("_", " ").title(),
+                "description": self._get_node_description(node_name),
+                "group": group,
+                "is_configured": self._check_group_configured(group),
+                "requires_resources": requires_resources,
+                "features": sorted(features_list, key=lambda x: x["name"]),
+                "feature_count": len(features_list),
             }
 
-        return {"sources": result}
+        return {"nodes": result}
+
+    def _get_node_description(self, node_name: str) -> str:
+        """Get description for a node from registry or fallback."""
+        # First try to get from registry
+        node_meta = feature_registry.get(node_name)
+        if node_meta and node_meta.description:
+            return node_meta.description
+
+        # Fallback to hardcoded (will be removed once all nodes updated)
+        fallback = {
+            "git_commit_info": "Commit history and previous build resolution",
+            "git_diff_features": "Source and test code changes",
+            "file_touch_history": "File modification history",
+            "team_membership": "Team size and core contributor info",
+            "repo_snapshot_features": "Repository metrics and metadata",
+            "job_metadata": "CI job IDs and counts",
+            "test_log_parser": "Test results from build logs",
+            "workflow_metadata": "Workflow run information",
+            "github_discussion_features": "PR/Issue comments and discussions",
+            "sonar_measures": "SonarQube code quality metrics",
+            "trivy_vulnerability_scan": "Security vulnerability scanning",
+        }
+        return fallback.get(node_name, "")
 
     def list_features(
         self,
@@ -307,19 +325,19 @@ class FeatureService:
             "warnings": [],
         }
 
-    def _check_source_configured(self, source: str) -> bool:
-        """Check if a data source is configured/available."""
-        if source in ("git", "build_log", "repo"):
+    def _check_group_configured(self, group: str) -> bool:
+        """Check if a feature group is configured/available."""
+        if group in ("git", "build_log", "repo"):
             return True
-        if source == "github":
+        if group == "github":
             from app.config import settings
 
             return bool(settings.GITHUB_TOKENS)
-        if source == "sonarqube":
+        if group == "sonar":
             from app.config import settings
 
-            return bool(getattr(settings, "SONARQUBE_URL", None))
-        if source == "trivy":
+            return bool(getattr(settings, "SONAR_HOST_URL", None))
+        if group == "security":
             import shutil
 
             return shutil.which("trivy") is not None

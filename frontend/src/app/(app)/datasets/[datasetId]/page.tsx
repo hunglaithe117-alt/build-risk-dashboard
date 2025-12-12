@@ -2,13 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import {
-    Database,
-    Loader2,
-    Plug,
-    Settings,
-    Zap,
-} from "lucide-react";
+import { Database, Loader2, Plug, Zap } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,8 +10,7 @@ import { datasetsApi } from "@/lib/api";
 import type { DatasetRecord } from "@/types";
 
 import { DatasetHeader } from "./_components/DatasetHeader";
-import { DatasetSidebar } from "./_components/DatasetSidebar";
-import { OverviewTab, EnrichmentTab, ConfigurationTab, IntegrationsTab } from "./_components/tabs";
+import { OverviewTab, EnrichmentTab, IntegrationsTab } from "./_components/tabs";
 import {
     Card,
     CardDescription,
@@ -100,80 +93,55 @@ export default function DatasetDetailPage() {
 
     return (
         <div className="space-y-6">
-            {/* Header */}
+            {/* Header with Actions */}
             <DatasetHeader
                 dataset={dataset}
                 onRefresh={loadDataset}
+                onDelete={handleDelete}
             />
 
-            {/* Main Content with Sidebar */}
-            <div className="flex gap-6">
-                {/* Main Content Area */}
-                <div className="flex-1 min-w-0">
-                    <Tabs value={activeTab} onValueChange={setActiveTab}>
-                        <TabsList className="grid w-full grid-cols-4">
-                            <TabsTrigger value="overview" className="gap-2">
-                                <Database className="h-4 w-4" />
-                                Overview
-                            </TabsTrigger>
-                            <TabsTrigger value="enrichment" className="gap-2">
-                                <Zap className="h-4 w-4" />
-                                Enrichment
-                                {hasActiveEnrichment && (
-                                    <Badge variant="secondary" className="ml-1 text-xs animate-pulse">
-                                        Active
-                                    </Badge>
-                                )}
-                            </TabsTrigger>
-                            <TabsTrigger value="configuration" className="gap-2">
-                                <Settings className="h-4 w-4" />
-                                Configuration
-                            </TabsTrigger>
-                            <TabsTrigger value="integrations" className="gap-2">
-                                <Plug className="h-4 w-4" />
-                                Integrations
-                            </TabsTrigger>
-                        </TabsList>
+            {/* Tabs - Full Width */}
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="overview" className="gap-2">
+                        <Database className="h-4 w-4" />
+                        Overview
+                    </TabsTrigger>
+                    <TabsTrigger value="enrichment" className="gap-2">
+                        <Zap className="h-4 w-4" />
+                        Enrichment
+                        {hasActiveEnrichment && (
+                            <Badge variant="secondary" className="ml-1 text-xs animate-pulse">
+                                Active
+                            </Badge>
+                        )}
+                    </TabsTrigger>
+                    <TabsTrigger value="integrations" className="gap-2">
+                        <Plug className="h-4 w-4" />
+                        Integrations
+                    </TabsTrigger>
+                </TabsList>
 
-                        <TabsContent value="overview" className="mt-6">
-                            <OverviewTab dataset={dataset} onRefresh={loadDataset} />
-                        </TabsContent>
+                <TabsContent value="overview" className="mt-6">
+                    <OverviewTab dataset={dataset} onRefresh={loadDataset} />
+                </TabsContent>
 
-                        <TabsContent value="enrichment" className="mt-6">
-                            <EnrichmentTab
-                                datasetId={datasetId}
-                                dataset={dataset}
-                                onEnrichmentStatusChange={setHasActiveEnrichment}
-                            />
-                        </TabsContent>
+                <TabsContent value="enrichment" className="mt-6">
+                    <EnrichmentTab
+                        datasetId={datasetId}
+                        dataset={dataset}
+                        onEnrichmentStatusChange={setHasActiveEnrichment}
+                    />
+                </TabsContent>
 
-                        <TabsContent value="configuration" className="mt-6">
-                            <ConfigurationTab
-                                dataset={dataset}
-                                onEditMapping={() => router.push(`/datasets?configure=${datasetId}`)}
-                                onEditFeatures={() => router.push(`/datasets?configure=${datasetId}`)}
-                                onEditSources={() => router.push(`/datasets?configure=${datasetId}`)}
-                            />
-                        </TabsContent>
-
-                        <TabsContent value="integrations" className="mt-6">
-                            <IntegrationsTab
-                                datasetId={datasetId}
-                                sonarFeatures={[]}
-                                trivyFeatures={[]}
-                            />
-                        </TabsContent>
-                    </Tabs>
-                </div>
-
-                {/* Sidebar */}
-                <DatasetSidebar
-                    dataset={dataset}
-                    onEditConfig={() => setActiveTab("enrichment")}
-                    onDelete={handleDelete}
-                    onRefresh={loadDataset}
-                />
-            </div>
+                <TabsContent value="integrations" className="mt-6">
+                    <IntegrationsTab
+                        datasetId={datasetId}
+                        sonarFeatures={[]}
+                        trivyFeatures={[]}
+                    />
+                </TabsContent>
+            </Tabs>
         </div>
     );
 }

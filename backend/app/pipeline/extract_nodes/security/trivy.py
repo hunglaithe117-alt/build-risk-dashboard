@@ -12,7 +12,7 @@ import logging
 import time
 from typing import Any, Dict, Set
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.core.registry import register_feature
 from app.pipeline.resources import ResourceNames
@@ -51,6 +51,7 @@ from app.pipeline.feature_metadata.trivy import TRIVY_METADATA
 @register_feature(
     name="trivy_vulnerability_scan",
     group="security",
+    description="Security vulnerability scanning",
     requires_resources={ResourceNames.GIT_REPO, "trivy_client"},
     provides=TRIVY_FEATURE_NAMES,
     feature_metadata=TRIVY_METADATA,

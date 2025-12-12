@@ -37,22 +37,19 @@ export function FeatureSelectionCard({
     const [versionName, setVersionName] = useState("");
 
     const {
-        dataSources,
+        extractorNodes,
         dagData,
         allFeatures,
         loading,
         selectedFeatures,
-        expandedSources,
-        expandedExtractors,
+        expandedNodes,
         searchQuery,
         toggleFeature,
-        toggleExtractor,
-        toggleSource,
-        toggleSourceExpand,
-        toggleExtractorExpand,
+        toggleNode,
+        toggleNodeExpand,
         clearSelection,
         setSearchQuery,
-        filteredSources,
+        filteredNodes,
         applyTemplate,
     } = useFeatureSelector();
 
@@ -116,15 +113,12 @@ export function FeatureSelectionCard({
                     />
                 ) : (
                     <ListView
-                        sources={filteredSources}
+                        nodes={filteredNodes}
                         selectedFeatures={selectedFeatures}
-                        expandedSources={expandedSources}
-                        expandedExtractors={expandedExtractors}
+                        expandedNodes={expandedNodes}
                         onToggleFeature={toggleFeature}
-                        onToggleExtractor={toggleExtractor}
-                        onToggleSource={toggleSource}
-                        onToggleSourceExpand={toggleSourceExpand}
-                        onToggleExtractorExpand={toggleExtractorExpand}
+                        onToggleNode={toggleNode}
+                        onToggleNodeExpand={toggleNodeExpand}
                         searchQuery={searchQuery}
                         onSearchChange={setSearchQuery}
                         isLoading={loading}
@@ -135,6 +129,7 @@ export function FeatureSelectionCard({
                 <SelectedFeaturesPanel
                     selectedFeatures={selectedFeatures}
                     allFeatures={allFeatures}
+                    nodes={extractorNodes}
                     onRemoveFeature={toggleFeature}
                     onClearAll={clearSelection}
                     rowCount={rowCount}

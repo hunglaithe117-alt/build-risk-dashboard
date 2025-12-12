@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
-from app.pipeline.features import FeatureNode
+from app.pipeline.extract_nodes import FeatureNode
 from app.pipeline.core.registry import register_feature
 from app.pipeline.core.context import ExecutionContext
 from app.pipeline.resources import ResourceNames
@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
         "gh_build_started_at",
     },
     group="repo",
+    description="Repository metrics and metadata",
     feature_metadata=REPO_METADATA,
 )
 class RepoSnapshotNode(FeatureNode):

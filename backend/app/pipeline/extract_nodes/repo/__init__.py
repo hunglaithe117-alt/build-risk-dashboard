@@ -7,6 +7,6 @@ Extracts repository-level metrics at a point in time:
 - Metadata
 """
 
-from app.pipeline.features.repo.snapshot import RepoSnapshotNode
+from app.pipeline.extract_nodes.repo.snapshot import RepoSnapshotNode
 
 __all__ = ["RepoSnapshotNode"]

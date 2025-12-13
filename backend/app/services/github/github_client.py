@@ -9,7 +9,6 @@ import httpx
 from pymongo.database import Database
 
 from app.services.github.redis_token_pool import RedisTokenPool
-from app.database.mongo import get_database
 from app.config import settings
 from app.services.github.exceptions import (
     GithubConfigurationError,
@@ -22,7 +21,6 @@ from app.services.github.github_app import (
     github_app_configured,
     get_installation_token,
 )
-from app.services.github.github_token_manager import hash_token
 
 
 API_PREVIEW_HEADERS = {

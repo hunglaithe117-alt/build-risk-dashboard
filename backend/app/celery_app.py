@@ -90,10 +90,6 @@ celery_app.conf.update(
             "schedule": crontab(hour=4, minute=0, day_of_week=0),  # Sunday 4 AM
             "args": (90,),  # Keep 90 days of resolved failed scans
         },
-        "refresh-token-pool-hourly": {
-            "task": "app.tasks.maintenance.refresh_token_pool",
-            "schedule": crontab(minute=0),  # Every hour at :00
-        },
         "cleanup-old-exports-weekly": {
             "task": "app.tasks.export.cleanup_old_exports",
             "schedule": crontab(hour=5, minute=0, day_of_week=0),  # Sunday 5 AM

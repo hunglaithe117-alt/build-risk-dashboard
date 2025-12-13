@@ -1,6 +1,6 @@
 from app.ci_providers.models import BuildStatus, BuildConclusion
 from app.entities.base_build import ExtractionStatus
-from app.entities.model_repository import ImportStatus
+from app.entities import ImportStatus
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any

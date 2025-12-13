@@ -1,23 +1,22 @@
 """Database entity models - represents the actual structure stored in MongoDB"""
 
 from .base import BaseEntity, PyObjectId
-
-# Model flow entities (Bayesian model training)
-from .model_repository import (
-    ModelRepository,
+from .base_repository import (
+    BaseRepositoryEntity,
     Provider,
     TestFramework,
     ImportStatus,
     SyncStatus,
-)
-from .model_build import ModelBuild, ModelBuildConclusion
-
-# Enrichment flow entities (Dataset enrichment)
-from .enrichment_repository import (
-    EnrichmentRepository,
     EnrichmentImportStatus,
     RepoValidationStatus,
 )
+
+# Model flow entities (Bayesian model training)
+from .model_repository import ModelRepository
+from .model_build import ModelBuild, ModelBuildConclusion
+
+# Enrichment flow entities (Dataset enrichment)
+from .enrichment_repository import EnrichmentRepository
 from .enrichment_build import EnrichmentBuild
 from .dataset_build import DatasetBuild, DatasetBuildStatus
 from .base_build import BaseBuildSample, ExtractionStatus
@@ -48,6 +47,7 @@ from app.ci_providers.models import CIProvider
 
 __all__ = [
     "BaseEntity",
+    "BaseRepositoryEntity",
     "PyObjectId",
     # Model flow
     "ModelRepository",
@@ -59,6 +59,7 @@ __all__ = [
     "EnrichmentBuild",
     "ExtractionStatus",
     "RepoValidationStatus",
+    "EnrichmentImportStatus",
     "DatasetBuild",
     "DatasetBuildStatus",
     # Other

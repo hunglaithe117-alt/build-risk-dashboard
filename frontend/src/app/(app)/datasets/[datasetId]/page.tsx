@@ -135,11 +135,7 @@ export default function DatasetDetailPage() {
                 </TabsContent>
 
                 <TabsContent value="integrations" className="mt-6">
-                    <IntegrationsTab
-                        datasetId={datasetId}
-                        sonarFeatures={[]}
-                        trivyFeatures={[]}
-                    />
+                    <IntegrationsTab datasetId={datasetId} />
                 </TabsContent>
             </Tabs>
         </div>

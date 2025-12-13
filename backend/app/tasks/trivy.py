@@ -16,7 +16,7 @@ from app.config import settings
 from app.database.mongo import get_database
 from app.repositories.enrichment_build import EnrichmentBuildRepository
 from app.repositories.model_build import ModelBuildRepository
-from app.pipeline.resources.trivy import TrivyClient
+from app.integrations.tools.trivy import TrivyTool
 
 logger = logging.getLogger(__name__)
 
@@ -50,41 +50,46 @@ def start_trivy_scan(
     start_time = time.time()
 
     try:
-        # Initialize Trivy client
-        trivy_client = TrivyClient()
+        # Initialize Trivy tool
+        trivy_tool = TrivyTool()
 
         # Run scan
-        scan_results = trivy_client.scan_filesystem(
+        scan_result = trivy_tool.scan(
             target_path=worktree_path,
             scan_types=["vuln", "config", "secret"],
         )
 
-        scan_duration_ms = int((time.time() - start_time) * 1000)
+        scan_duration_ms = scan_result.get(
+            "scan_duration_ms", int((time.time() - start_time) * 1000)
+        )
 
-        if "error" in scan_results and scan_results["error"]:
-            error_msg = scan_results["error"]
+        if scan_result.get("status") == "failed":
+            error_msg = scan_result.get("error", "Unknown error")
             logger.error(f"Trivy scan failed for {commit_sha[:8]}: {error_msg}")
             return {"status": "error", "error": error_msg}
 
+        # Get metrics from scan result
+        scan_metrics = scan_result.get("metrics", {})
+
         # Format features
         trivy_features = {
-            "trivy_vuln_critical": scan_results.get("vuln_critical", 0),
-            "trivy_vuln_high": scan_results.get("vuln_high", 0),
-            "trivy_vuln_medium": scan_results.get("vuln_medium", 0),
-            "trivy_vuln_low": scan_results.get("vuln_low", 0),
-            "trivy_vuln_total": scan_results.get("vuln_total", 0),
-            "trivy_misconfig_critical": scan_results.get("misconfig_critical", 0),
-            "trivy_misconfig_high": scan_results.get("misconfig_high", 0),
-            "trivy_misconfig_medium": scan_results.get("misconfig_medium", 0),
-            "trivy_misconfig_low": scan_results.get("misconfig_low", 0),
-            "trivy_misconfig_total": scan_results.get("misconfig_total", 0),
-            "trivy_secrets_count": scan_results.get("secrets_count", 0),
+            "trivy_vuln_critical": scan_metrics.get("vuln_critical", 0),
+            "trivy_vuln_high": scan_metrics.get("vuln_high", 0),
+            "trivy_vuln_medium": scan_metrics.get("vuln_medium", 0),
+            "trivy_vuln_low": scan_metrics.get("vuln_low", 0),
+            "trivy_vuln_total": scan_metrics.get("vuln_total", 0),
+            "trivy_misconfig_critical": scan_metrics.get("misconfig_critical", 0),
+            "trivy_misconfig_high": scan_metrics.get("misconfig_high", 0),
+            "trivy_misconfig_medium": scan_metrics.get("misconfig_medium", 0),
+            "trivy_misconfig_low": scan_metrics.get("misconfig_low", 0),
+            "trivy_misconfig_total": scan_metrics.get("misconfig_total", 0),
+            "trivy_secrets_count": scan_metrics.get("secrets_count", 0),
             "trivy_scan_duration_ms": scan_duration_ms,
-            "trivy_packages_scanned": scan_results.get("packages_scanned", 0),
-            "trivy_files_scanned": scan_results.get("files_scanned", 0),
-            "trivy_has_critical": scan_results.get("has_critical", False),
-            "trivy_has_high": scan_results.get("has_high", False),
-            "trivy_top_vulnerable_packages": scan_results.get(
+            "trivy_packages_scanned": scan_metrics.get("packages_scanned", 0),
+            "trivy_files_scanned": scan_metrics.get("files_scanned", 0),
+            "trivy_has_critical": scan_metrics.get("has_critical", False),
+            "trivy_has_high": scan_metrics.get("has_high", False),
+            "trivy_top_vulnerable_packages": scan_metrics.get(
                 "top_vulnerable_packages", []
             ),
         }

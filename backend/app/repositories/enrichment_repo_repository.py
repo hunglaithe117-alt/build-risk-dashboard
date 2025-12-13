@@ -7,11 +7,7 @@ from bson import ObjectId
 from pymongo.database import Database
 
 from app.repositories.base import BaseRepository
-from app.entities.enrichment_repository import (
-    EnrichmentRepository,
-    RepoValidationStatus,
-)
-from app.entities import CIProvider
+from app.entities import EnrichmentRepository, RepoValidationStatus, CIProvider
 from app.utils.datetime import utc_now
 
 

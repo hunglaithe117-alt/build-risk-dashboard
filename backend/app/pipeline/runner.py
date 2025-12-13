@@ -94,21 +94,12 @@ class FeaturePipeline:
             skip_on_dependency_failure=True,
         )
 
-        # Setup resource manager
         self.resource_manager = ResourceManager()
         self.resource_manager.register(GitRepoProvider())
         self.resource_manager.register(GitHubClientProvider())
         self.resource_manager.register(LogStorageProvider())
 
-        # Register SonarQube resource provider
-        from app.pipeline.resources.sonar import SonarClientProvider
-
-        self.resource_manager.register(SonarClientProvider())
-
-        # Register Trivy resource provider
-        from app.pipeline.resources.trivy import TrivyResourceProvider
-
-        self.resource_manager.register(TrivyResourceProvider())
+        # NOTE: SonarQube and Trivy tools moved to app.integrations module
 
         # Repository for history tracking
         self.pipeline_run_repo = PipelineRunRepository(db) if track_history else None

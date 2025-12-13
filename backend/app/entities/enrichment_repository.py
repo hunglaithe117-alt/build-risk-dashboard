@@ -1,45 +1,18 @@
 from datetime import datetime
-from enum import Enum
-from typing import List, Optional
+from typing import Optional
 
-from pydantic import Field
-
-from .base import BaseEntity, PyObjectId
-from app.ci_providers.models import CIProvider
+from .base import PyObjectId
+from .base_repository import BaseRepositoryEntity, RepoValidationStatus
 
 
-class EnrichmentImportStatus(str, Enum):
-    PENDING = "pending"
-    IMPORTED = "imported"
-    FAILED = "failed"
-
-
-class RepoValidationStatus(str, Enum):
-    PENDING = "pending"
-    VALID = "valid"
-    INVALID = "invalid"
-    NOT_FOUND = "not_found"
-    ERROR = "error"
-
-
-class EnrichmentRepository(BaseEntity):
+class EnrichmentRepository(BaseRepositoryEntity):
     dataset_id: PyObjectId
-    full_name: str  # e.g., "owner/repo"
-    ci_provider: CIProvider = CIProvider.GITHUB_ACTIONS
     validation_status: RepoValidationStatus = RepoValidationStatus.PENDING
     validation_error: Optional[str] = None
     validated_at: Optional[datetime] = None
-    github_repo_id: Optional[int] = None
-    default_branch: Optional[str] = "main"
-    is_private: bool = False
     builds_total: int = 0
     builds_found: int = 0
     builds_not_found: int = 0
-    source_languages: List[str] = Field(default_factory=list)
-    test_frameworks: List[str] = Field(default_factory=list)
-    main_lang: Optional[str] = None
-    metadata: dict = Field(default_factory=dict)
-    installation_id: Optional[str] = None
 
     class Config:
         collection = "enrichment_repositories"

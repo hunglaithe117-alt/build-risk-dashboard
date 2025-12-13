@@ -7,8 +7,7 @@ from bson import ObjectId
 from fastapi import HTTPException
 from pymongo.database import Database
 
-from app.entities import ValidationStats
-from app.entities.enrichment_repository import RepoValidationStatus
+from app.entities import ValidationStats, RepoValidationStatus
 from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.enrichment_repo_repository import EnrichmentRepoRepository
 from app.repositories.dataset_build_repository import DatasetBuildRepository

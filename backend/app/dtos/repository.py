@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.entities.model_repository import TestFramework
+from app.entities import TestFramework
 from app.ci_providers.models import CIProvider
 from app.entities.base import PyObjectIdStr
 

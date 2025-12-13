@@ -17,8 +17,8 @@ from app.pipeline.extract_nodes.git import team_membership  # noqa: F401
 from app.pipeline.extract_nodes.git import file_touch_history  # noqa: F401
 from app.pipeline.extract_nodes.repo import snapshot  # noqa: F401
 from app.pipeline.extract_nodes.github import discussion  # noqa: F401
-from app.pipeline.extract_nodes.sonar import sonar  # noqa: F401
-from app.pipeline.extract_nodes.security import trivy  # noqa: F401
+
+# NOTE: SonarQube and Trivy tools moved to app.integrations module
 
 __all__ = [
     "ExecutionContext",

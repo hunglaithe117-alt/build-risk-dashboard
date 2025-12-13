@@ -1,6 +1,6 @@
 import logging
-from app.entities.model_repository import ImportStatus
 from typing import List, Optional
+from app.entities import ImportStatus
 
 from bson import ObjectId
 from fastapi import HTTPException, status

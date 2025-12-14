@@ -23,15 +23,15 @@ from app.entities import (
     DatasetBuildStatus,
     ValidationStats,
 )
-from backend.app.entities.raw_build_run import RawWorkflowRun
+from app.entities.raw_build_run import RawBuildRun
 from app.ci_providers.factory import get_ci_provider
 from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.repositories.dataset_repo_config import DatasetRepoConfigRepository
-from backend.app.repositories.raw_build_run import RawWorkflowRunRepository
+from app.repositories.raw_build_run import RawBuildRunRepository
 from app.utils.datetime import utc_now
-from backend.app.ci_providers.models import CIProvider
-from backend.app.entities.enums import DatasetRepoValidationStatus
+from app.ci_providers.models import CIProvider
+from app.entities.enums import DatasetRepoValidationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +241,7 @@ def validate_repo_builds(
         redis = get_redis()
         dataset_build_repo = DatasetBuildRepository(db)
         enrichment_repo_repo = DatasetRepoConfigRepository(db)
-        workflow_run_repo = RawWorkflowRunRepository(db)
+        build_run_repo = RawBuildRunRepository(db)
 
         # Check for cancellation
         cancelled = redis.get(f"dataset_validation:{dataset_id}:cancelled")
@@ -294,23 +294,33 @@ def validate_repo_builds(
                 workflow_data = await ci.get_workflow_run(repo_name, int(build_id))
 
                 if workflow_data and ci.is_run_completed(workflow_data):
-                    workflow_run = RawWorkflowRun(
+                    build_run = RawBuildRun(
                         _id=None,
                         raw_repo_id=ObjectId(repo_id),
-                        workflow_run_id=int(build_id),
-                        ci_provider=ci_provider,
-                        head_sha=workflow_data.get("head_sha", ""),
-                        run_number=workflow_data.get("run_number", 0),
+                        build_id=str(build_id),
+                        build_number=workflow_data.get("run_number"),
+                        repo_name=repo_name,
+                        branch=workflow_data.get("head_branch", ""),
+                        commit_sha=workflow_data.get("head_sha", ""),
+                        commit_message=None,
+                        commit_author=None,
                         status=workflow_data.get("status", "unknown"),
                         conclusion=workflow_data.get("conclusion", ""),
-                        branch=workflow_data.get("head_branch", ""),
-                        ci_created_at=workflow_data.get("created_at") or utc_now(),
-                        ci_updated_at=workflow_data.get("updated_at") or utc_now(),
-                        raw_payload=workflow_data,
+                        created_at=workflow_data.get("created_at") or utc_now(),
+                        started_at=None,
+                        completed_at=workflow_data.get("updated_at") or utc_now(),
+                        duration_seconds=None,
+                        web_url=workflow_data.get("html_url"),
+                        logs_url=None,
+                        logs_available=False,
+                        logs_path=None,
+                        provider=ci_provider,
+                        raw_data=workflow_data,
+                        is_bot_commit=workflow_data.get("is_bot", False),
                     )
-                    workflow_run = workflow_run_repo.insert_one(workflow_run)
+                    build_run = build_run_repo.create(build_run)
                     dataset_build.status = DatasetBuildStatus.FOUND
-                    dataset_build.workflow_run_id = workflow_run.id
+                    dataset_build.workflow_run_id = build_run.id
                     dataset_build.validated_at = utc_now()
                     builds_found += 1
                 else:
@@ -334,7 +344,7 @@ def validate_repo_builds(
                 dataset_build.validated_at = utc_now()
                 builds_not_found += 1
 
-            dataset_build_repo.insert_one(dataset_build)
+            build_run_repo = RawBuildRunRepository(db)
 
         # Update repo build statistics
         enrichment_repo_repo.update_one(

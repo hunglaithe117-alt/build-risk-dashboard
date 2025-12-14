@@ -16,21 +16,20 @@ from celery import chord, group
 
 from app.celery_app import celery_app
 from app.config import settings
-from app.database.mongo import get_database
+from app.paths import REPOS_DIR
 from app.entities.dataset_build import DatasetBuild
-from app.entities.dataset_version import VersionStatus
 from app.entities.enums import ExtractionStatus
 from app.entities.dataset_enrichment_build import DatasetEnrichmentBuild
 from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
-from backend.app.repositories.raw_build_run import RawWorkflowRunRepository
+from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.dataset_repo_config import DatasetRepoConfigRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.pipeline.hamilton_runner import HamiltonPipeline
-from app.pipeline.hamilton_features._inputs import build_hamilton_inputs
-from app.pipeline.core.registry import feature_registry
+from app.pipeline.feature_dag._inputs import build_hamilton_inputs
+from app.pipeline.feature_dag._metadata import format_features_for_storage
 from app.tasks.base import PipelineTask
 
 logger = logging.getLogger(__name__)
@@ -105,9 +104,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
 
         # Use chord to run all batches in parallel,
         # then finalize when all complete
-        workflow = chord(group(batch_tasks))(
-            finalize_enrichment.s(version_id=version_id)
-        )
+        chord(group(batch_tasks))(finalize_enrichment.s(version_id=version_id))
 
         return {
             "status": "dispatched",
@@ -151,7 +148,7 @@ def process_enrichment_batch(
     version_repo = DatasetVersionRepository(self.db)
     dataset_build_repo = DatasetBuildRepository(self.db)
     enrichment_build_repo = DatasetEnrichmentBuildRepository(self.db)
-    workflow_run_repo = RawWorkflowRunRepository(self.db)
+    build_run_repo = RawBuildRunRepository(self.db)
     enrichment_repo_repo = DatasetRepoConfigRepository(self.db)
     raw_repo_repo = RawRepositoryRepository(self.db)
 
@@ -175,34 +172,40 @@ def process_enrichment_batch(
                 build=build,
                 version_id=version_id,
                 selected_features=selected_features,
-                workflow_run_repo=workflow_run_repo,
+                build_run_repo=build_run_repo,
                 enrichment_repo_repo=enrichment_repo_repo,
                 enrichment_build_repo=enrichment_build_repo,
                 raw_repo_repo=raw_repo_repo,
             )
 
             # Update or create enrichment_build
-            existing = enrichment_build_repo.find_by_build_id_and_dataset(
-                build.build_id_from_csv, version.dataset_id
+            existing = enrichment_build_repo.find_by_csv_build_id(
+                ObjectId(version.dataset_id), build.build_id_from_csv
             )
-            if existing:
-                enrichment_build_repo.update_one(
-                    str(existing.id),
-                    {
-                        "features": features,
-                        "extraction_status": ExtractionStatus.COMPLETED,
-                        "version_id": ObjectId(version_id),
-                    },
+            if existing and existing.id:
+                enrichment_build_repo.save_features(
+                    existing.id,
+                    features,
                 )
             else:
                 enrichment_build = DatasetEnrichmentBuild(
-                    repo_id=build.repo_id,
-                    enrichment_repo_id=build.repo_id,
+                    _id=None,
+                    raw_repo_id=ObjectId(build.repo_id),
+                    raw_workflow_run_id=ObjectId(build.workflow_run_id),
                     dataset_id=ObjectId(version.dataset_id),
-                    version_id=ObjectId(version_id),
+                    dataset_version_id=ObjectId(version_id),
+                    dataset_repo_config_id=None,
                     build_id_from_csv=build.build_id_from_csv,
+                    csv_row_index=0,
+                    csv_row_data=None,
+                    head_sha=None,
+                    build_number=None,
+                    build_conclusion=None,
+                    build_created_at=None,
                     extraction_status=ExtractionStatus.COMPLETED,
+                    extraction_error=None,
                     features=features,
+                    enriched_at=None,
                 )
                 enrichment_build_repo.insert_one(enrichment_build)
 
@@ -211,21 +214,36 @@ def process_enrichment_batch(
         except Exception as e:
             logger.warning(f"Failed to enrich build {build.build_id_from_csv}: {e}")
 
-            existing = enrichment_build_repo.find_by_build_id_and_dataset(
-                build.build_id_from_csv, version.dataset_id
+            existing = enrichment_build_repo.find_by_csv_build_id(
+                ObjectId(version.dataset_id), build.build_id_from_csv
             )
             if not existing:
                 enrichment_build = DatasetEnrichmentBuild(
-                    repo_id=build.repo_id,
-                    enrichment_repo_id=build.repo_id,
+                    _id=None,
+                    raw_repo_id=ObjectId(build.repo_id),
+                    raw_workflow_run_id=ObjectId(build.workflow_run_id),
                     dataset_id=ObjectId(version.dataset_id),
-                    version_id=ObjectId(version_id),
+                    dataset_version_id=ObjectId(version_id),
+                    dataset_repo_config_id=None,
                     build_id_from_csv=build.build_id_from_csv,
-                    extraction_status=ExtractionStatus.FAILED,
-                    error_message=str(e),
+                    csv_row_index=0,
+                    csv_row_data=None,
+                    head_sha=None,
+                    build_number=None,
+                    build_conclusion=None,
+                    build_created_at=None,
+                    extraction_status=ExtractionStatus.PENDING,
+                    extraction_error=str(e),
+                    enriched_at=None,
                     features={},
                 )
                 enrichment_build_repo.insert_one(enrichment_build)
+            elif existing.id:
+                enrichment_build_repo.update_extraction_status(
+                    existing.id,
+                    ExtractionStatus.PENDING,
+                    error=str(e),
+                )
 
             failed += 1
 
@@ -300,7 +318,7 @@ def _extract_features_for_build(
     build: DatasetBuild,
     version_id: str,
     selected_features: List[str],
-    workflow_run_repo: RawWorkflowRunRepository,
+    build_run_repo: RawBuildRunRepository,
     enrichment_repo_repo: DatasetRepoConfigRepository,
     enrichment_build_repo: DatasetEnrichmentBuildRepository,
     raw_repo_repo: RawRepositoryRepository,
@@ -310,10 +328,10 @@ def _extract_features_for_build(
         logger.warning(f"Build {build.build_id_from_csv} has no workflow_run_id")
         return {name: None for name in selected_features}
 
-    workflow_run = workflow_run_repo.find_by_id(str(build.workflow_run_id))
+    build_run = build_run_repo.find_by_id(str(build.workflow_run_id))
 
-    if not workflow_run:
-        logger.warning(f"WorkflowRun {build.workflow_run_id} not found")
+    if not build_run:
+        logger.warning(f"BuildRun {build.workflow_run_id} not found")
         return {name: None for name in selected_features}
 
     enrichment_repo = enrichment_repo_repo.find_by_id(str(build.repo_id))
@@ -329,37 +347,42 @@ def _extract_features_for_build(
         return {name: None for name in selected_features}
 
     # Check if already exists
-    existing_build = enrichment_build_repo.find_by_build_id_and_dataset(
-        build.build_id_from_csv, str(build.dataset_id)
+    existing_build = enrichment_build_repo.find_by_csv_build_id(
+        ObjectId(build.dataset_id), build.build_id_from_csv
     )
 
     if existing_build:
         enrichment_build = existing_build
     else:
         enrichment_build = DatasetEnrichmentBuild(
-            repo_id=build.repo_id,
-            workflow_run_id=workflow_run.workflow_run_id,
-            head_sha=workflow_run.head_sha,
-            build_number=workflow_run.run_number,
-            build_created_at=workflow_run.ci_created_at,
-            enrichment_repo_id=enrichment_repo.id,
-            dataset_id=build.dataset_id,
-            version_id=ObjectId(version_id),
+            _id=None,
+            raw_repo_id=ObjectId(build.repo_id),
+            raw_workflow_run_id=ObjectId(build.workflow_run_id),
+            dataset_id=ObjectId(build.dataset_id),
+            dataset_version_id=ObjectId(version_id),
+            dataset_repo_config_id=None,
+            head_sha=build_run.commit_sha,
+            build_number=build_run.build_number,
+            build_created_at=build_run.created_at,
             build_id_from_csv=build.build_id_from_csv,
+            csv_row_index=0,
+            csv_row_data=None,
+            build_conclusion=None,
             extraction_status=ExtractionStatus.PENDING,
+            extraction_error=None,
+            enriched_at=None,
         )
         enrichment_build = enrichment_build_repo.insert_one(enrichment_build)
 
     try:
         # Build paths for git operations
-        repos_dir = Path(settings.REPO_MIRROR_ROOT) / "repos"
-        repo_path = repos_dir / str(build.repo_id)
+        repo_path = REPOS_DIR / str(build.repo_id)
 
         # Build all Hamilton inputs using helper function
         inputs = build_hamilton_inputs(
             raw_repo=raw_repo,
             repo_config=enrichment_repo,
-            workflow_run=workflow_run,
+            build_run=build_run,
             repo_path=repo_path,
         )
 
@@ -370,13 +393,13 @@ def _extract_features_for_build(
             git_history=inputs.git_history,
             git_worktree=inputs.git_worktree,
             repo=inputs.repo,
-            workflow_run=inputs.workflow_run,
+            build_run=inputs.build_run,
             repo_config=inputs.repo_config,
             github_client=None,
             features_filter=set(selected_features) if selected_features else None,
         )
 
-        formatted_features = feature_registry.format_features_for_storage(features)
+        formatted_features = format_features_for_storage(features)
 
         logger.debug(
             f"Extracted {len(formatted_features)} features for build {build.build_id_from_csv}"

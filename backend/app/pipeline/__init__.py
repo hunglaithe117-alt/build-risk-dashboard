@@ -1,27 +1,25 @@
-# Feature Pipeline - Hamilton-based Feature Extraction
-# Uses Hamilton DAG framework for feature extraction
-
-from app.pipeline.core.registry import feature_registry, OutputFormat
+from app.pipeline.feature_dag._metadata import (
+    OutputFormat,
+    format_features_for_storage,
+)
 
 # Hamilton pipeline
 from app.pipeline.hamilton_runner import HamiltonPipeline
-from app.pipeline.hamilton_features._inputs import (
+from app.pipeline.feature_dag._inputs import (
     GitHistoryInput,
     GitWorktreeInput,
     RepoInput,
-    WorkflowRunInput,
+    BuildRunInput,
     GitHubClientInput,
 )
 
 __all__ = [
-    # Core
-    "feature_registry",
     "OutputFormat",
-    # Hamilton
+    "format_features_for_storage",
     "HamiltonPipeline",
     "GitHistoryInput",
     "GitWorktreeInput",
     "RepoInput",
-    "WorkflowRunInput",
+    "BuildRunInput",
     "GitHubClientInput",
 ]

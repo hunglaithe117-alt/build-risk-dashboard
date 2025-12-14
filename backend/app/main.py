@@ -25,7 +25,7 @@ from app.api import (
     templates,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
-from backend.app.api import model_repos
+from app.api import model_repos
 
 logger = logging.getLogger(__name__)
 
@@ -95,13 +95,16 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Failed to initialize GitHub token pool: {e}")
 
-    # Import pipeline to trigger @register_feature decorator execution
+    # Import pipeline to trigger feature module loading
     try:
-        import app.pipeline  # noqa: F401
-        from app.pipeline.core.registry import feature_registry
+        from app.pipeline.hamilton_runner import HamiltonPipeline
+        from app.database.mongo import get_database
 
+        db = get_database()
+        pipeline = HamiltonPipeline(db)
+        feature_count = len(pipeline.get_active_features())
         logger.info(
-            f"Loaded {len(feature_registry.get_all_features())} feature definitions from code"
+            f"Loaded {feature_count} feature definitions from Hamilton pipeline"
         )
     except Exception as e:
         logger.warning(f"Failed to load feature definitions: {e}")

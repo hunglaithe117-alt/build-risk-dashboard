@@ -7,7 +7,7 @@ Features extracted from git history and repository operations:
 - File touch history
 - Team membership
 """
-
+import re
 import logging
 import subprocess
 from datetime import datetime, timedelta, timezone
@@ -16,21 +16,23 @@ from typing import Any, Dict, List, Optional, Set
 
 from hamilton.function_modifiers import extract_fields, tag
 
-from app.pipeline.analyzers import (
+from app.pipeline.feature_dag.analyzers import (
     _count_test_cases,
     _is_doc_file,
     _is_source_file,
     _is_test_file,
 )
-from app.pipeline.hamilton_features._inputs import (
+from app.pipeline.feature_dag._inputs import (
     GitHistoryInput,
     RepoInput,
-    WorkflowRunInput,
+    BuildRunInput,
 )
-from app.pipeline.hamilton_features._metadata import (
+from app.pipeline.feature_dag._metadata import (
     feature_metadata,
     FeatureCategory,
     FeatureDataType,
+    FeatureResource,
+    OutputFormat,
 )
 from app.pipeline.utils.git_utils import (
     get_author_name,
@@ -61,11 +63,25 @@ logger = logging.getLogger(__name__)
     }
 )
 @tag(group="git")
+@feature_metadata(
+    display_name="Git Commit Info",
+    description="Commits included in build and previous build reference",
+    category=FeatureCategory.GIT_HISTORY,
+    data_type=FeatureDataType.JSON,
+    required_resources=[
+        FeatureResource.GIT_HISTORY,
+        FeatureResource.RAW_BUILD_RUNS,
+        FeatureResource.BUILD_RUN,
+    ],
+    output_formats={
+        "git_all_built_commits": OutputFormat.HASH_SEPARATED,
+    },
+)
 def git_commit_info(
     git_history: GitHistoryInput,
     repo: RepoInput,
-    workflow_run: WorkflowRunInput,
-    db: Any,
+    build_run: BuildRunInput,
+    raw_build_runs: Any,
 ) -> Dict[str, Any]:
     """
     Determine commits included in this build and find previous build.
@@ -115,8 +131,7 @@ def git_commit_info(
         last_commit_sha = hexsha
 
         # Check if this commit has a build in DB
-        workflow_runs_coll = db.get_collection("raw_github_build_runs")
-        existing_build = workflow_runs_coll.find_one(
+        existing_build = raw_build_runs.find_one(
             {"head_sha": hexsha, "repo_id": repo.id}
         )
 
@@ -296,10 +311,17 @@ LOOKBACK_DAYS = 90
 CHUNK_SIZE = 50
 
 
+@feature_metadata(
+    display_name="Commits on Files Touched",
+    description="Number of commits that touched files modified in this build (last 90 days)",
+    category=FeatureCategory.GIT_HISTORY,
+    data_type=FeatureDataType.INTEGER,
+    required_resources=[FeatureResource.GIT_HISTORY, FeatureResource.BUILD_RUN],
+)
 @tag(group="git")
 def gh_num_commits_on_files_touched(
     git_history: GitHistoryInput,
-    workflow_run: WorkflowRunInput,
+    build_run: BuildRunInput,
     git_all_built_commits: List[str],
 ) -> int:
     """Count commits that touched files modified in this build (last 90 days)."""
@@ -313,7 +335,7 @@ def gh_num_commits_on_files_touched(
     effective_sha = git_history.effective_sha
 
     # Get reference date
-    ref_date = workflow_run.ci_created_at
+    ref_date = build_run.created_at
     if not ref_date:
         committed_date = get_committed_date(repo_path, effective_sha)
         if committed_date:
@@ -356,15 +378,22 @@ def gh_num_commits_on_files_touched(
         logger.warning(f"Failed to count commits on files: {e}")
         return 0
 
-
-import re
-
-
+@feature_metadata(
+    display_name="Team Size",
+    description="Number of unique contributors in last 90 days",
+    category=FeatureCategory.TEAM,
+    data_type=FeatureDataType.INTEGER,
+    required_resources=[
+        FeatureResource.GIT_HISTORY,
+        FeatureResource.RAW_BUILD_RUNS,
+        FeatureResource.BUILD_RUN,
+    ],
+)
 @tag(group="git")
 def gh_team_size(
     git_history: GitHistoryInput,
-    workflow_run: WorkflowRunInput,
-    db: Any,
+    build_run: BuildRunInput,
+    raw_build_runs: Any,
     repo: RepoInput,
 ) -> int:
     """Number of unique contributors in last 90 days."""
@@ -383,7 +412,7 @@ def gh_team_size(
     if not committed_date:
         return 0
 
-    ref_date = workflow_run.ci_created_at
+    ref_date = build_run.created_at
     if not ref_date:
         ref_date = datetime.fromtimestamp(committed_date, tz=timezone.utc)
     if ref_date.tzinfo is None:
@@ -395,18 +424,29 @@ def gh_team_size(
     committer_names = _get_direct_committers(repo_path, start_date, ref_date)
 
     # Get PR mergers from workflow runs
-    merger_logins = _get_pr_mergers(db, repo.id, start_date, ref_date)
+    merger_logins = _get_pr_mergers(raw_build_runs, repo.id, start_date, ref_date)
 
     core_team = committer_names | merger_logins
     return len(core_team)
 
 
+@feature_metadata(
+    display_name="By Core Team Member",
+    description="Whether build author is a core team member",
+    category=FeatureCategory.TEAM,
+    data_type=FeatureDataType.BOOLEAN,
+    required_resources=[
+        FeatureResource.GIT_HISTORY,
+        FeatureResource.RAW_BUILD_RUNS,
+        FeatureResource.BUILD_RUN,
+    ],
+)
 @tag(group="git")
 def gh_by_core_team_member(
     git_history: GitHistoryInput,
     gh_team_size: int,
-    workflow_run: WorkflowRunInput,
-    db: Any,
+    build_run: BuildRunInput,
+    raw_build_runs: Any,
     repo: RepoInput,
 ) -> bool:
     """Whether build author is a core team member."""
@@ -425,7 +465,7 @@ def gh_by_core_team_member(
     if not committed_date:
         return False
 
-    ref_date = workflow_run.ci_created_at
+    ref_date = build_run.created_at
     if not ref_date:
         ref_date = datetime.fromtimestamp(committed_date, tz=timezone.utc)
     if ref_date.tzinfo is None:
@@ -435,7 +475,7 @@ def gh_by_core_team_member(
 
     # Get core team
     committer_names = _get_direct_committers(repo_path, start_date, ref_date)
-    merger_logins = _get_pr_mergers(db, repo.id, start_date, ref_date)
+    merger_logins = _get_pr_mergers(raw_build_runs, repo.id, start_date, ref_date)
     core_team = committer_names | merger_logins
 
     # Check if build author is in core team
@@ -489,7 +529,7 @@ def _get_direct_committers(
 
 
 def _get_pr_mergers(
-    db: Any,
+    raw_build_runs: Any,
     repo_id: str,
     start_date: datetime,
     end_date: datetime,
@@ -497,8 +537,7 @@ def _get_pr_mergers(
     """Get logins of users who triggered PR workflow runs."""
     mergers: Set[str] = set()
     try:
-        workflow_runs_coll = db.get_collection("raw_github_build_runs")
-        cursor = workflow_runs_coll.find(
+        cursor = raw_build_runs.find(
             {
                 "repo_id": repo_id,
                 "created_at": {"$gte": start_date, "$lte": end_date},

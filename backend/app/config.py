@@ -32,10 +32,6 @@ class Settings(BaseSettings):
     ]
     FRONTEND_BASE_URL: str = "http://localhost:3000"
 
-    # GitLab CI
-    GITLAB_TOKEN: Optional[str] = None
-    GITLAB_BASE_URL: str = "https://gitlab.com/api/v4"
-
     # Jenkins
     JENKINS_URL: Optional[str] = None
     JENKINS_USERNAME: Optional[str] = None
@@ -66,6 +62,9 @@ class Settings(BaseSettings):
     ENRICHMENT_BATCH_SIZE: int = 50  # Builds per enrichment batch
     VALIDATION_MAX_RETRIES: int = 3  # Auto-retry count for validation
     ENRICHMENT_MAX_RETRIES: int = 3  # Auto-retry count for enrichment
+    MAX_LOG_SIZE_MB: int = 10  # Skip logs larger than this size
+    DOWNLOAD_LOGS_BATCH_SIZE: int = 100  # Number of logs to download per batch
+    PROCESSING_BATCH_SIZE: int = 50
 
     # Repository mirrors / schedulers
     REPO_MIRROR_ROOT: str = "../repo-data/repo-mirrors"

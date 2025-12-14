@@ -13,7 +13,7 @@ from app.services.github.github_client import get_public_github_client
 from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.tasks.dataset_validation import start_validation
 from app.core.redis import get_async_redis
-from backend.app.entities.dataset import DatasetProject, DatasetValidationStatus
+from app.entities.dataset import DatasetProject, DatasetValidationStatus
 
 
 class RepoConfig:

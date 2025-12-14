@@ -7,7 +7,7 @@ import logging
 
 from fastapi import HTTPException
 
-from app.pipeline.hamilton_features import (
+from app.pipeline.feature_dag import (
     build_features,
     git_features,
     github_features,

@@ -1,0 +1,56 @@
+@startuml flow2_dataset_enrichment_use_case
+!theme plain
+left to right direction
+
+actor "Data Scientist / Developer" as user
+actor "System" as system
+
+rectangle "Dataset Enrichment System" {
+  usecase "Upload CSV Dataset" as UC1
+  usecase "Map Columns" as UC2
+  usecase "Configure Repositories" as UC3
+  usecase "Validate Repos" as UC4
+  usecase "Validate Builds" as UC5
+  usecase "Start Enrichment" as UC6
+  usecase "Create Version" as UC10
+  usecase "Monitor Enrichment Progress" as UC7
+  usecase "Download Enriched Dataset" as UC8
+  usecase "View Dataset Versions" as UC9
+}
+
+user --> UC1
+UC1 --> UC2
+UC2 --> UC3
+UC3 --> UC4
+UC4 --> UC5
+UC5 --> UC6
+UC2 --> UC10
+user --> UC10
+UC10 --> UC6
+UC6 --> UC7
+UC7 --> UC8
+UC7 --> UC9
+
+system --> UC4
+system --> UC5
+system --> UC6
+system --> UC7
+
+note right of UC2
+  Map required fields:
+  - Build ID
+  - Repo Name
+  - (Optional) Dates/Other columns
+end note
+
+note right of UC4
+  Verify repository existence on GitHub
+  Skip invalid formats
+end note
+
+note right of UC5
+  Validate build IDs against CI provider
+  Show progress & stats
+end note
+
+@enduml

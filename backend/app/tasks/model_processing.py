@@ -18,16 +18,19 @@ from app.celery_app import celery_app
 from app.entities.model_training_build import ModelTrainingBuild
 from app.repositories.model_training_build import ModelTrainingBuildRepository
 from app.repositories.model_repo_config import ModelRepoConfigRepository
-from backend.app.repositories.raw_build_run import RawWorkflowRunRepository
+from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.tasks.base import PipelineTask
 from app.pipeline.hamilton_runner import HamiltonPipeline
-from app.pipeline.hamilton_features._inputs import (
+from app.pipeline.feature_dag._inputs import (
     build_hamilton_inputs,
     HamiltonInputs,
 )
 from app.config import settings
-from app.pipeline.core.registry import feature_registry
+from app.paths import REPOS_DIR
+from app.pipeline.feature_dag._metadata import (
+    format_features_for_storage,
+)
 from app.repositories.dataset_template_repository import DatasetTemplateRepository
 
 logger = logging.getLogger(__name__)
@@ -62,15 +65,15 @@ def publish_build_update(repo_id: str, build_id: str, status: str):
 def process_workflow_run(
     self: PipelineTask, repo_id: str, workflow_run_id: int
 ) -> Dict[str, Any]:
-    workflow_run_repo = RawWorkflowRunRepository(self.db)
+    build_run_repo = RawBuildRunRepository(self.db)
     model_build_repo = ModelTrainingBuildRepository(self.db)
     model_repo_repo = ModelRepoConfigRepository(self.db)
 
-    # Validate workflow run exists
-    workflow_run = workflow_run_repo.find_by_repo_and_run_id(repo_id, workflow_run_id)
-    if not workflow_run:
-        logger.error(f"WorkflowRunRaw not found for {repo_id} / {workflow_run_id}")
-        return {"status": "error", "message": "WorkflowRunRaw not found"}
+    # Validate build run exists
+    build_run = build_run_repo.find_by_repo_and_build_id(repo_id, str(workflow_run_id))
+    if not build_run:
+        logger.error(f"RawBuildRun not found for {repo_id} / {workflow_run_id}")
+        return {"status": "error", "message": "RawBuildRun not found"}
 
     # Validate repository exists
     repo = model_repo_repo.find_by_id(repo_id)
@@ -81,7 +84,7 @@ def process_workflow_run(
     model_build = model_build_repo.find_by_repo_and_run_id(repo_id, workflow_run_id)
     if not model_build:
         logger.info(f"Creating ModelBuild during processing (not pre-created)")
-        conclusion = workflow_run.conclusion
+        conclusion = build_run.conclusion
         status_map = {
             "success": ModelBuildConclusion.SUCCESS,
             "failure": ModelBuildConclusion.FAILURE,
@@ -90,15 +93,17 @@ def process_workflow_run(
             "timed_out": ModelBuildConclusion.TIMED_OUT,
             "neutral": ModelBuildConclusion.NEUTRAL,
         }
-        build_status = status_map.get(conclusion, ModelBuildConclusion.UNKNOWN)
+        build_status = status_map.get(
+            str(conclusion.value) if conclusion else "", ModelBuildConclusion.UNKNOWN
+        )
 
         model_build = ModelTrainingBuild(
             raw_repo_id=ObjectId(repo_id),
-            raw_workflow_run_id=workflow_run.id,
+            raw_workflow_run_id=build_run.id,
             model_repo_config_id=ObjectId(repo_id),
-            head_sha=workflow_run.head_sha,
-            build_number=workflow_run.build_number,
-            build_created_at=workflow_run.build_created_at,
+            head_sha=build_run.commit_sha,
+            build_number=build_run.build_number,
+            build_created_at=build_run.created_at,
             build_conclusion=build_status,
             extraction_status=ExtractionStatus.PENDING,
         )
@@ -118,14 +123,13 @@ def process_workflow_run(
             return {"status": "error", "message": "RawRepository not found"}
 
         # Build paths for git operations
-        repos_dir = Path(settings.REPO_MIRROR_ROOT) / "repos"
-        repo_path = repos_dir / repo_id
+        repo_path = REPOS_DIR / repo_id
 
         # Build all Hamilton inputs using helper function
         inputs = build_hamilton_inputs(
             raw_repo=raw_repo,
             repo_config=repo,
-            workflow_run=workflow_run,
+            build_run=build_run,
             repo_path=repo_path,
         )
 
@@ -171,7 +175,7 @@ def process_workflow_run(
 
         updates = {}
         raw_features = result.get("features", {})
-        updates["features"] = feature_registry.format_features_for_storage(raw_features)
+        updates["features"] = format_features_for_storage(raw_features)
 
         if result["status"] == "completed":
             updates["extraction_status"] = ExtractionStatus.COMPLETED

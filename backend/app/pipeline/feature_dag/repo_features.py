@@ -15,28 +15,34 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from hamilton.function_modifiers import extract_fields, tag
 
-from app.pipeline.hamilton_features._inputs import (
+from app.pipeline.feature_dag._inputs import (
     GitHistoryInput,
     GitWorktreeInput,
     RepoInput,
-    WorkflowRunInput,
 )
-from app.pipeline.languages import LanguageRegistry
+from app.pipeline.feature_dag._metadata import (
+    feature_metadata,
+    FeatureCategory,
+    FeatureDataType,
+    FeatureResource,
+)
+from app.pipeline.feature_dag.languages import LanguageRegistry
 
 logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# Repository History Metrics
-# =============================================================================
-
-
+@feature_metadata(
+    display_name="Repository Age",
+    description="Repository age in days (from first commit to build commit)",
+    category=FeatureCategory.REPO_SNAPSHOT,
+    data_type=FeatureDataType.FLOAT,
+    required_resources=[FeatureResource.GIT_HISTORY],
+    unit="days",
+)
 @tag(group="repo")
 def gh_repo_age(git_history: GitHistoryInput) -> Optional[float]:
     """
     Repository age in days.
-
-    Calculated from the first commit date to now.
     """
     if not git_history.is_commit_available or not git_history.effective_sha:
         return None
@@ -45,6 +51,16 @@ def gh_repo_age(git_history: GitHistoryInput) -> Optional[float]:
     sha = git_history.effective_sha
 
     try:
+        # Get timestamp of the build trigger commit
+        latest_commit_ts = subprocess.run(
+            ["git", "log", "-1", "--format=%ct", sha],
+            cwd=str(repo_path),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+        # Get timestamp of the first commit in the repo (reachable from sha)
         first_commit_ts = (
             subprocess.run(
                 ["git", "log", "--reverse", "--format=%ct", sha],
@@ -57,16 +73,28 @@ def gh_repo_age(git_history: GitHistoryInput) -> Optional[float]:
             .split("\n")[0]
         )
 
+        latest_commit_date = datetime.fromtimestamp(
+            int(latest_commit_ts), tz=timezone.utc
+        )
         first_commit_date = datetime.fromtimestamp(
             int(first_commit_ts), tz=timezone.utc
         )
-        age_days = (datetime.now(timezone.utc) - first_commit_date).days
+
+        # Age = time from first commit to build commit
+        age_days = (latest_commit_date - first_commit_date).days
         return float(age_days)
     except Exception as e:
         logger.warning(f"Failed to get repo age: {e}")
         return None
 
 
+@feature_metadata(
+    display_name="Total Commits",
+    description="Total number of commits in repository history",
+    category=FeatureCategory.REPO_SNAPSHOT,
+    data_type=FeatureDataType.INTEGER,
+    required_resources=[FeatureResource.GIT_HISTORY],
+)
 @tag(group="repo")
 def gh_repo_num_commits(git_history: GitHistoryInput) -> Optional[int]:
     """Total number of commits in repository history."""
@@ -91,11 +119,6 @@ def gh_repo_num_commits(git_history: GitHistoryInput) -> Optional[int]:
         return None
 
 
-# =============================================================================
-# Code Metrics (requires worktree)
-# =============================================================================
-
-
 @extract_fields(
     {
         "gh_sloc": Optional[int],
@@ -103,6 +126,13 @@ def gh_repo_num_commits(git_history: GitHistoryInput) -> Optional[int]:
         "gh_test_cases_per_kloc": Optional[float],
         "gh_asserts_case_per_kloc": Optional[float],
     }
+)
+@feature_metadata(
+    display_name="Code Metrics",
+    description="SLOC and test density metrics",
+    category=FeatureCategory.REPO_SNAPSHOT,
+    data_type=FeatureDataType.JSON,
+    required_resources=[FeatureResource.GIT_WORKTREE, FeatureResource.REPO],
 )
 @tag(group="repo")
 def repo_code_metrics(

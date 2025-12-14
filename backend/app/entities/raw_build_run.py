@@ -1,13 +1,14 @@
 """
-RawWorkflowRun Entity - Immutable GitHub Actions workflow run data.
+RawBuildRun Entity - Immutable CI/CD build run data from any provider.
 
-This entity stores raw workflow run information fetched from GitHub Actions.
-It serves as the single source of truth for build/CI run data.
+This entity stores raw build run information fetched from multiple CI providers (GitHub Actions, Jenkins, CircleCI, etc.).
+It serves as the single source of truth for build/CI run data across all providers.
 
 Key design principles:
-- Immutable: Raw data from GitHub, should not be modified
-- Shared: Multiple flows can process the same workflow run
-- Complete: Contains all relevant GitHub Actions metadata
+- Immutable: Raw data from CI providers, should not be modified
+- Provider-agnostic: Supports multiple CI/CD providers
+- Shared: Multiple flows can process the same build run
+- Complete: Contains normalized and raw provider metadata
 """
 
 from datetime import datetime
@@ -16,18 +17,20 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from app.entities.base import BaseEntity, PyObjectId
+from app.ci_providers.models import CIProvider, BuildStatus, BuildConclusion
 
 
-class RawWorkflowRun(BaseEntity):
+class RawBuildRun(BaseEntity):
     """
-    Raw workflow run data from GitHub Actions.
+    Raw build run data from any CI/CD provider.
 
-    This represents a single CI/CD run (build) from GitHub Actions.
+    This represents a single normalized CI/CD run (build) from any supported provider
+    (GitHub Actions, Jenkins, CircleCI, Travis CI, etc.).
     Multiple flows can reference and process this data.
     """
 
     class Config:
-        collection = "raw_workflow_runs"
+        collection = "raw_build_runs"
 
     # Reference to repository
     raw_repo_id: PyObjectId = Field(
@@ -36,51 +39,93 @@ class RawWorkflowRun(BaseEntity):
     )
 
     # Core identifiers
-    workflow_run_id: int = Field(
+    build_id: str = Field(
         ...,
-        description="GitHub Actions workflow run ID. Unique within a repository.",
+        description="Unique build identifier from CI provider",
     )
 
-    # Build information
-    build_number: int = Field(
-        ...,
-        description="Sequential build number (run_number from GitHub)",
-    )
-
-    # Git information
-    head_sha: str = Field(
-        ...,
-        description="Git commit SHA that triggered this run",
-    )
-    head_branch: Optional[str] = Field(
+    build_number: Optional[int] = Field(
         None,
+        description="Sequential build number if available from provider",
+    )
+
+    # Repository info
+    repo_name: str = Field(
+        ...,
+        description="Full repository name (owner/repo)",
+    )
+
+    branch: str = Field(
+        ...,
         description="Branch name",
     )
 
-    # Status and conclusion
-    status: str = Field(
+    # Commit info
+    commit_sha: str = Field(
         ...,
-        description="Run status: queued, in_progress, completed",
+        description="Git commit SHA that triggered this run",
     )
-    conclusion: str = Field(
-        ...,
-        description="Run conclusion: success, failure, cancelled, skipped, timed_out, action_required, neutral",
+
+    commit_message: Optional[str] = Field(
+        None,
+        description="Commit message",
+    )
+
+    commit_author: Optional[str] = Field(
+        None,
+        description="Commit author name/email",
+    )
+
+    # Effective SHA (for fork commits that need replay)
+    effective_sha: Optional[str] = Field(
+        None,
+        description="Effective commit SHA for local git operations. "
+        "Set when original commit is replayed (fork commits). "
+        "If None, use commit_sha.",
+    )
+
+    # Status and Conclusion (separate concepts)
+    status: BuildStatus = Field(
+        default=BuildStatus.UNKNOWN,
+        description="Current state: pending/queued/running/completed/unknown",
+    )
+
+    conclusion: BuildConclusion = Field(
+        default=BuildConclusion.NONE,
+        description="Final result when completed: success/failure/cancelled/skipped/timed_out/action_required/neutral/unknown",
     )
 
     # Timestamps
-    build_created_at: datetime = Field(
-        ...,
-        description="When the workflow run was created",
+    created_at: Optional[datetime] = Field(
+        default=None,
+        description="When the build was created",
     )
-    build_updated_at: datetime = Field(
-        ...,
-        description="Last update time",
+
+    started_at: Optional[datetime] = Field(
+        default=None,
+        description="When the build started running",
+    )
+
+    completed_at: Optional[datetime] = Field(
+        default=None,
+        description="When the build completed",
     )
 
     # Duration
-    duration_seconds: float = Field(
-        ...,
+    duration_seconds: Optional[float] = Field(
+        None,
         description="Total duration in seconds",
+    )
+
+    # URLs
+    web_url: Optional[str] = Field(
+        None,
+        description="URL to view the build in CI provider UI",
+    )
+
+    logs_url: Optional[str] = Field(
+        None,
+        description="URL to build logs",
     )
 
     # Jobs information
@@ -88,23 +133,41 @@ class RawWorkflowRun(BaseEntity):
         default=0,
         description="Number of jobs in this run",
     )
+
     jobs_metadata: List[Dict[str, Any]] = Field(
         default_factory=list,
         description="List of jobs with their status/conclusion",
     )
 
-    # Full GitHub metadata
-    github_metadata: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Complete GitHub API response for this workflow run",
+    # Log storage
+    logs_available: Optional[bool] = Field(
+        default=None,
+        description="Whether logs have been downloaded and stored",
     )
 
-    # Log storage
-    has_logs: bool = Field(
-        default=False,
-        description="Whether we have downloaded and stored the logs",
-    )
     logs_path: Optional[str] = Field(
         None,
         description="Path to stored log files (if downloaded)",
+    )
+
+    logs_expired: bool = Field(
+        default=False,
+        description="Whether logs have expired and are no longer available from CI provider",
+    )
+
+    # CI Provider information
+    provider: CIProvider = Field(
+        ...,
+        description="CI/CD provider type",
+    )
+
+    # Full provider metadata
+    raw_data: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Complete raw API response from CI provider",
+    )
+
+    is_bot_commit: Optional[bool] = Field(
+        None,
+        description="Whether this build was triggered by a bot (Dependabot, etc.)",
     )

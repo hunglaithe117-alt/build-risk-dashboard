@@ -4,7 +4,7 @@ from .base import BaseRepository
 
 # Raw data repositories (shared across flows)
 from .raw_repository import RawRepositoryRepository
-from .raw_build_run import RawWorkflowRunRepository
+from .raw_build_run import RawBuildRunRepository
 
 # Model training flow repositories
 from .model_repo_config import ModelRepoConfigRepository
@@ -29,7 +29,7 @@ __all__ = [
     "BaseRepository",
     # Raw data (shared)
     "RawRepositoryRepository",
-    "RawWorkflowRunRepository",
+    "RawBuildRunRepository",
     # Model training flow
     "ModelRepoConfigRepository",
     "ModelTrainingBuildRepository",

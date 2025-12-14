@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import re
 from typing import Dict, List, Tuple
-from app.pipeline.languages import LanguageRegistry
+from app.pipeline.feature_dag.languages import LanguageRegistry
 
 
 DOC_PREFIXES = ("docs/", "doc/", "documentation/")

@@ -10,11 +10,17 @@ from typing import List, Optional
 
 from hamilton.function_modifiers import tag
 
-from app.pipeline.hamilton_features._inputs import RepoInput, WorkflowRunInput
-from app.pipeline.hamilton_features._metadata import (
+from app.pipeline.feature_dag._inputs import (
+    RepoInput,
+    BuildRunInput,
+    RepoConfigInput,
+)
+from app.pipeline.feature_dag._metadata import (
     feature_metadata,
     FeatureCategory,
     FeatureDataType,
+    FeatureResource,
+    OutputFormat,
 )
 
 
@@ -23,11 +29,12 @@ from app.pipeline.hamilton_features._metadata import (
     description="Unique identifier for the CI/CD workflow run",
     category=FeatureCategory.WORKFLOW,
     data_type=FeatureDataType.INTEGER,
+    required_resources=[FeatureResource.BUILD_RUN],
 )
 @tag(group="build_log")
-def tr_build_id(workflow_run: WorkflowRunInput) -> int:
+def tr_build_id(build_run: BuildRunInput) -> int:
     """Workflow run ID."""
-    return workflow_run.workflow_run_id
+    return int(build_run.build_id)
 
 
 @feature_metadata(
@@ -35,11 +42,12 @@ def tr_build_id(workflow_run: WorkflowRunInput) -> int:
     description="Sequential run number within the workflow",
     category=FeatureCategory.WORKFLOW,
     data_type=FeatureDataType.INTEGER,
+    required_resources=[FeatureResource.BUILD_RUN],
 )
 @tag(group="build_log")
-def tr_build_number(workflow_run: WorkflowRunInput) -> int:
+def tr_build_number(build_run: BuildRunInput) -> int:
     """Workflow run number."""
-    return workflow_run.run_number
+    return build_run.build_number or 0
 
 
 @feature_metadata(
@@ -47,11 +55,12 @@ def tr_build_number(workflow_run: WorkflowRunInput) -> int:
     description="Git commit hash that triggered this build",
     category=FeatureCategory.WORKFLOW,
     data_type=FeatureDataType.STRING,
+    required_resources=[FeatureResource.BUILD_RUN],
 )
 @tag(group="build_log")
-def tr_original_commit(workflow_run: WorkflowRunInput) -> str:
+def tr_original_commit(build_run: BuildRunInput) -> str:
     """Original commit SHA that triggered the build."""
-    return workflow_run.head_sha
+    return build_run.commit_sha
 
 
 @feature_metadata(
@@ -59,10 +68,11 @@ def tr_original_commit(workflow_run: WorkflowRunInput) -> str:
     description="Final status of the build (passed, failed, cancelled, unknown)",
     category=FeatureCategory.WORKFLOW,
     data_type=FeatureDataType.STRING,
+    required_resources=[FeatureResource.BUILD_RUN],
     nullable=False,
 )
 @tag(group="build_log")
-def tr_status(workflow_run: WorkflowRunInput) -> str:
+def tr_status(build_run: BuildRunInput) -> str:
     """
     Normalized build status.
 
@@ -70,18 +80,22 @@ def tr_status(workflow_run: WorkflowRunInput) -> str:
     - failure -> failed
     - success -> passed
     - cancelled -> cancelled
+    - errored -> errored
     - other -> as-is or unknown
     """
-    conclusion = workflow_run.conclusion
+    conclusion = build_run.conclusion
     if not conclusion:
         return "unknown"
-    if conclusion == "failure":
-        return "failed"
-    if conclusion == "success":
-        return "passed"
-    if conclusion == "cancelled":
-        return "cancelled"
-    return conclusion
+
+    status_map = {
+        "failure": "failed",
+        "success": "passed",
+        "cancelled": "cancelled",
+        "errored": "errored",
+        "timed_out": "errored",
+        "action_required": "errored",
+    }
+    return status_map.get(conclusion, conclusion)
 
 
 @feature_metadata(
@@ -89,18 +103,25 @@ def tr_status(workflow_run: WorkflowRunInput) -> str:
     description="Total time taken for the build to complete",
     category=FeatureCategory.WORKFLOW,
     data_type=FeatureDataType.FLOAT,
+    required_resources=[FeatureResource.BUILD_RUN],
     unit="seconds",
     nullable=False,
 )
 @tag(group="build_log")
-def tr_duration(workflow_run: WorkflowRunInput) -> float:
+def tr_duration(build_run: BuildRunInput) -> float:
     """
     Build duration in seconds.
 
-    Calculated from workflow created_at to updated_at timestamps.
+    Uses duration_seconds from CI API if available (preferred),
+    otherwise calculates from created_at to completed_at timestamps.
     """
-    if workflow_run.ci_created_at and workflow_run.ci_updated_at:
-        delta = workflow_run.ci_updated_at - workflow_run.ci_created_at
+    # Prefer API-provided duration (matches TravisTorrent behavior)
+    if build_run.duration_seconds is not None:
+        return build_run.duration_seconds
+
+    # Fallback: calculate from timestamps
+    if build_run.created_at and build_run.completed_at:
+        delta = build_run.completed_at - build_run.created_at
         return delta.total_seconds()
     return 0.0
 
@@ -110,6 +131,8 @@ def tr_duration(workflow_run: WorkflowRunInput) -> float:
     description="Programming languages used in the repository",
     category=FeatureCategory.REPO_SNAPSHOT,
     data_type=FeatureDataType.LIST_STRING,
+    required_resources=[FeatureResource.REPO],
+    output_format=OutputFormat.COMMA_SEPARATED,
 )
 @tag(group="build_log")
 def tr_log_lan_all(repo: RepoInput) -> List[str]:
@@ -122,6 +145,7 @@ def tr_log_lan_all(repo: RepoInput) -> List[str]:
     description="Full repository name (owner/repo)",
     category=FeatureCategory.METADATA,
     data_type=FeatureDataType.STRING,
+    required_resources=[FeatureResource.REPO],
     nullable=False,
 )
 @tag(group="metadata")
@@ -135,6 +159,7 @@ def gh_project_name(repo: RepoInput) -> str:
     description="Primary programming language of the repository",
     category=FeatureCategory.REPO_SNAPSHOT,
     data_type=FeatureDataType.STRING,
+    required_resources=[FeatureResource.REPO],
 )
 @tag(group="metadata")
 def gh_lang(repo: RepoInput) -> Optional[str]:
@@ -147,11 +172,12 @@ def gh_lang(repo: RepoInput) -> Optional[str]:
     description="CI/CD provider name (e.g., GitHub Actions, Travis CI)",
     category=FeatureCategory.METADATA,
     data_type=FeatureDataType.STRING,
+    required_resources=[FeatureResource.REPO_CONFIG],
 )
 @tag(group="metadata")
-def ci_provider(repo: RepoInput) -> str:
+def ci_provider(repo_config: RepoConfigInput) -> str:
     """CI/CD provider name."""
-    return repo.ci_provider
+    return repo_config.ci_provider
 
 
 @feature_metadata(
@@ -159,11 +185,12 @@ def ci_provider(repo: RepoInput) -> str:
     description="Commit SHA that triggered the build",
     category=FeatureCategory.METADATA,
     data_type=FeatureDataType.STRING,
+    required_resources=[FeatureResource.BUILD_RUN],
 )
 @tag(group="metadata")
-def git_trigger_commit(workflow_run: WorkflowRunInput) -> str:
+def git_trigger_commit(build_run: BuildRunInput) -> str:
     """Commit SHA that triggered the build."""
-    return workflow_run.head_sha
+    return build_run.commit_sha
 
 
 @feature_metadata(
@@ -171,12 +198,13 @@ def git_trigger_commit(workflow_run: WorkflowRunInput) -> str:
     description="Build start timestamp in ISO format",
     category=FeatureCategory.WORKFLOW,
     data_type=FeatureDataType.DATETIME,
+    required_resources=[FeatureResource.BUILD_RUN],
 )
 @tag(group="metadata")
-def gh_build_started_at(workflow_run: WorkflowRunInput) -> Optional[str]:
+def gh_build_started_at(build_run: BuildRunInput) -> Optional[str]:
     """Build start timestamp in ISO format."""
-    if workflow_run.ci_created_at:
-        return workflow_run.ci_created_at.isoformat()
+    if build_run.created_at:
+        return build_run.created_at.isoformat()
     return None
 
 
@@ -185,11 +213,12 @@ def gh_build_started_at(workflow_run: WorkflowRunInput) -> Optional[str]:
     description="Branch name from workflow run payload",
     category=FeatureCategory.GIT_HISTORY,
     data_type=FeatureDataType.STRING,
+    required_resources=[FeatureResource.BUILD_RUN],
 )
 @tag(group="metadata")
-def git_branch(workflow_run: WorkflowRunInput) -> Optional[str]:
+def git_branch(build_run: BuildRunInput) -> Optional[str]:
     """Branch name from workflow run payload."""
-    return workflow_run.raw_payload.get("head_branch")
+    return build_run.raw_data.get("head_branch")
 
 
 @feature_metadata(
@@ -197,12 +226,13 @@ def git_branch(workflow_run: WorkflowRunInput) -> Optional[str]:
     description="Whether this build was triggered by a pull request",
     category=FeatureCategory.PR_INFO,
     data_type=FeatureDataType.BOOLEAN,
+    required_resources=[FeatureResource.BUILD_RUN],
     nullable=False,
 )
 @tag(group="metadata")
-def gh_is_pr(workflow_run: WorkflowRunInput) -> bool:
+def gh_is_pr(build_run: BuildRunInput) -> bool:
     """Whether this build is triggered by a pull request."""
-    payload = workflow_run.raw_payload
+    payload = build_run.raw_data
     pull_requests = payload.get("pull_requests", [])
     return len(pull_requests) > 0 or payload.get("event") == "pull_request"
 
@@ -212,11 +242,12 @@ def gh_is_pr(workflow_run: WorkflowRunInput) -> bool:
     description="Pull request number if applicable",
     category=FeatureCategory.PR_INFO,
     data_type=FeatureDataType.INTEGER,
+    required_resources=[FeatureResource.BUILD_RUN],
 )
 @tag(group="metadata")
-def gh_pull_req_num(workflow_run: WorkflowRunInput) -> Optional[int]:
+def gh_pull_req_num(build_run: BuildRunInput) -> Optional[int]:
     """Pull request number if this build is PR-triggered."""
-    payload = workflow_run.raw_payload
+    payload = build_run.raw_data
     pull_requests = payload.get("pull_requests", [])
     if pull_requests:
         return pull_requests[0].get("number")
@@ -228,11 +259,12 @@ def gh_pull_req_num(workflow_run: WorkflowRunInput) -> Optional[int]:
     description="Timestamp when the pull request was created",
     category=FeatureCategory.PR_INFO,
     data_type=FeatureDataType.DATETIME,
+    required_resources=[FeatureResource.BUILD_RUN],
 )
 @tag(group="metadata")
-def gh_pr_created_at(workflow_run: WorkflowRunInput) -> Optional[str]:
+def gh_pr_created_at(build_run: BuildRunInput) -> Optional[str]:
     """Pull request creation timestamp if available."""
-    payload = workflow_run.raw_payload
+    payload = build_run.raw_data
     pull_requests = payload.get("pull_requests", [])
     if pull_requests:
         return pull_requests[0].get("created_at")

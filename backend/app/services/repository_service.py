@@ -298,7 +298,7 @@ class RepositoryService:
         this method reprocesses existing builds to re-extract features.
         Useful when feature extractors have been updated.
         """
-        from backend.app.tasks.model_processing import reprocess_repo_builds
+        from app.tasks.model_processing import reprocess_repo_builds
 
         repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
         if not repo_doc:
@@ -359,7 +359,7 @@ class RepositoryService:
             - by_language: Frameworks grouped by language
             - languages: List of languages with test framework support
         """
-        from app.pipeline.log_parsers import LogParserRegistry
+        from app.pipeline.feature_dag.log_parsers import LogParserRegistry
 
         registry = LogParserRegistry()
 
@@ -377,7 +377,7 @@ class RepositoryService:
         - Retrying failed builds
         - Re-extracting features after pipeline updates
         """
-        from backend.app.tasks.model_processing import (
+        from app.tasks.model_processing import (
             reprocess_build as reprocess_build_task,
         )
         from app.entities.enums import ExtractionStatus

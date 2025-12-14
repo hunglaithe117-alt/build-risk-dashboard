@@ -9,9 +9,9 @@ from fastapi import HTTPException, status
 from pymongo.database import Database
 
 from app.config import settings
-from backend.app.repositories.raw_build_run import RawWorkflowRunRepository
-from backend.app.entities.raw_build_run import RawWorkflowRun
-from app.entities.enums import WorkflowRunStatus, WorkflowConclusion
+from app.repositories.raw_build_run import RawBuildRunRepository
+from app.entities.raw_build_run import RawBuildRun
+from app.ci_providers.models import BuildStatus, BuildConclusion, CIProvider
 from app.celery_app import celery_app
 from bson import ObjectId
 from app.services.github.github_app import clear_installation_token
@@ -150,102 +150,105 @@ def _handle_workflow_run_event(
     # Filter out bot-triggered workflow runs (e.g., Dependabot, github-actions[bot])
     triggering_actor = workflow_run.get("triggering_actor", {})
     actor_type = triggering_actor.get("type")
-    if actor_type == "Bot":
-        return {"status": "ignored", "reason": "bot_triggered"}
-
+    is_bot = actor_type == "Bot"
+    
     # Check if we are tracking this repo
     repo = db.repositories.find_one({"full_name": full_name})
     if not repo:
         return {"status": "ignored", "reason": "repo_not_imported"}
 
     repo_id = str(repo["_id"])
-    run_id = workflow_run.get("id")
+    build_id = str(workflow_run.get("id"))
 
-    # Save/Update WorkflowRunRaw
-    workflow_run_repo = RawWorkflowRunRepository(db)
+    # Save/Update RawBuildRun
+    build_run_repo = RawBuildRunRepository(db)
 
-    existing_run = workflow_run_repo.find_by_repo_and_run_id(repo_id, run_id)
+    existing_run = build_run_repo.find_by_repo_and_build_id(repo_id, build_id)
 
     if existing_run:
         # Update existing run but don't reprocess (avoid duplicate processing)
-        updated_at = workflow_run.get("updated_at")
-        workflow_run_repo.update_one(
+        completed_at = workflow_run.get("updated_at")
+        build_run_repo.update_one(
             str(existing_run.id),
             {
-                "status": workflow_run.get("status"),
+                "status": BuildStatus.COMPLETED,
                 "conclusion": workflow_run.get("conclusion"),
-                "updated_at": (
-                    datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
-                    if updated_at
+                "completed_at": (
+                    datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                    if completed_at
                     else datetime.now(timezone.utc)
                 ),
-                "raw_payload": workflow_run,
+                "raw_data": workflow_run,
             },
         )
         return {
             "status": "updated",
-            "action": "workflow_run_updated",
+            "action": "build_run_updated",
             "repo_id": repo_id,
-            "run_id": run_id,
+            "build_id": build_id,
         }
     else:
-        # New workflow run - insert and trigger processing
+        # New build run - insert and trigger processing
         created_at = workflow_run.get("created_at")
-        updated_at = workflow_run.get("updated_at")
+        completed_at = workflow_run.get("updated_at")
 
-        status = workflow_run.get("status")
+        # Map GitHub status to normalized status
+        gh_status = workflow_run.get("status", "").lower()
+        status = BuildStatus.COMPLETED
+
+        # Map GitHub conclusion to normalized conclusion
+        gh_conclusion = workflow_run.get("conclusion", "").lower()
         try:
-            status_enum = (
-                WorkflowRunStatus(status) if status else WorkflowRunStatus.UNKNOWN
-            )
-        except Exception:
-            status_enum = WorkflowRunStatus.UNKNOWN
+            conclusion = BuildConclusion(gh_conclusion) if gh_conclusion else BuildConclusion.NONE
+        except (ValueError, KeyError):
+            conclusion = BuildConclusion.UNKNOWN
 
-        conclusion = workflow_run.get("conclusion")
-        try:
-            conclusion_enum = (
-                WorkflowConclusion(conclusion)
-                if conclusion
-                else WorkflowConclusion.UNKNOWN
-            )
-        except Exception:
-            conclusion_enum = WorkflowConclusion.UNKNOWN
-
-        new_run = RawWorkflowRun(
-            repo_id=ObjectId(repo_id),
-            workflow_run_id=run_id,
-            head_sha=workflow_run.get("head_sha"),
-            run_number=workflow_run.get("run_number"),
-            status=status_enum,
-            conclusion=conclusion_enum,
-            ci_created_at=(
+        new_run = RawBuildRun(
+            raw_repo_id=ObjectId(repo_id),
+            build_id=build_id,
+            build_number=workflow_run.get("run_number"),
+            repo_name=full_name,
+            branch=workflow_run.get("head_branch", ""),
+            commit_sha=workflow_run.get("head_sha", ""),
+            commit_message=None,
+            commit_author=None,
+            status=status,
+            conclusion=conclusion,
+            created_at=(
                 datetime.fromisoformat(created_at.replace("Z", "+00:00"))
                 if created_at
                 else datetime.now(timezone.utc)
             ),
-            ci_updated_at=(
-                datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
-                if updated_at
+            started_at=None,
+            completed_at=(
+                datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                if completed_at
                 else datetime.now(timezone.utc)
             ),
-            raw_payload=workflow_run,
-            branch=workflow_run.get("head_branch"),
+            duration_seconds=None,
+            web_url=workflow_run.get("html_url"),
+            logs_url=None,
+            logs_available=False,
+            logs_path=None,
+            provider=CIProvider.GITHUB_ACTIONS,
+            raw_data=workflow_run,
+            is_bot_commit=is_bot,
         )
-        workflow_run_repo.insert_one(new_run)
+        build_run_repo.create(new_run)
 
         db.repositories.update_one(
             {"_id": ObjectId(repo_id)}, {"$inc": {"total_builds_imported": 1}}
         )
 
     celery_app.send_task(
-        "app.tasks.processing.process_workflow_run", args=[repo_id, run_id]
+        "app.tasks.processing.process_workflow_run", args=[repo_id, build_id]
     )
 
     return {
         "status": "processed",
-        "action": "workflow_run_queued",
+        "action": "build_run_queued",
         "repo_id": repo_id,
-        "run_id": run_id,
+        "build_id": build_id,
     }
 
 

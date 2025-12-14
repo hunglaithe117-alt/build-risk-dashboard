@@ -1,0 +1,30 @@
+@startuml flow1_import_repos_activity_swimlanes
+!theme plain
+
+skinparam activity {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+}
+
+|Admin / Developer|
+start
+:Open Import modal;
+:Select repositories and configure settings;
+:Click Import;
+
+|System|
+:Receive import request;
+if (Valid?) then (no)
+  :Return validation error;
+  -> Admin: Show error and request correction
+  stop
+else (yes)
+  :Create records (RawRepository, ModelRepoConfig = QUEUED);
+  :Queue import workflow (async);
+  :Run import workflow (Clone → Fetch → Extract);
+  :Update status = IMPORTED;
+  -> Admin: Notify import completed
+endif
+
+stop
+@enduml

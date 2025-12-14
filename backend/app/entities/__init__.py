@@ -13,7 +13,7 @@ from .enums import (
 
 # Raw data entities (shared across flows)
 from .raw_repository import RawRepository
-from .raw_build_run import RawWorkflowRun
+from .raw_build_run import RawBuildRun
 
 # Model training flow entities
 from .model_repo_config import ModelRepoConfig
@@ -62,7 +62,7 @@ __all__ = [
     "CIProvider",
     # Raw data (shared)
     "RawRepository",
-    "RawWorkflowRun",
+    "RawBuildRun",
     # Model training flow
     "ModelRepoConfig",
     "ModelTrainingBuild",

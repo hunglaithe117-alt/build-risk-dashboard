@@ -16,7 +16,10 @@ from pymongo.database import Database
 from app.database.mongo import get_db
 from app.middleware.auth import get_current_user
 from app.repositories.pipeline_run import PipelineRunRepository
-from app.pipeline.core.registry import feature_registry
+from app.pipeline.feature_dag._metadata import (
+    build_metadata_registry,
+    HAMILTON_MODULES,
+)
 from app.dtos.pipeline import (
     NodeResultDTO,
     PipelineRunDTO,
@@ -167,8 +170,24 @@ async def get_dag_info(
     Returns information about the feature extraction DAG including
     version hash, nodes, and groups.
     """
-    info = feature_registry.get_dag_info()
-    return DAGInfoDTO(**info)
+    # Build metadata registry from Hamilton modules
+    registry = build_metadata_registry(HAMILTON_MODULES)
+
+    # Extract feature names and categories
+    nodes = list(registry.keys())
+    groups = {}
+    for name, meta in registry.items():
+        category = meta.get("category", "uncategorized")
+        if category not in groups:
+            groups[category] = []
+        groups[category].append(name)
+
+    return DAGInfoDTO(
+        version="hamilton-1.0",
+        node_count=len(nodes),
+        nodes=nodes,
+        groups=groups,
+    )
 
 
 @router.get("/dag/visualize")

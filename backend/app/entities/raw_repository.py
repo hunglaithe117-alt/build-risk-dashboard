@@ -32,7 +32,6 @@ class RawRepository(BaseEntity):
     full_name: str = Field(
         ...,
         description="Repository full name (owner/repo). Unique across GitHub.",
-        example="facebook/react",
     )
     github_repo_id: Optional[int] = Field(
         None,
@@ -53,17 +52,14 @@ class RawRepository(BaseEntity):
     main_lang: Optional[str] = Field(
         None,
         description="Primary programming language (lowercase)",
-        example="python",
     )
     source_languages: List[str] = Field(
         default_factory=list,
         description="All detected programming languages (lowercase, sorted by usage)",
-        example=["python", "javascript", "shell"],
     )
     language_stats: Dict[str, int] = Field(
         default_factory=dict,
         description="Language distribution in bytes from GitHub API",
-        example={"Python": 45620, "JavaScript": 12340, "Shell": 890},
     )
 
     # Full GitHub metadata (for future use)

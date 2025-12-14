@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.entities.raw_repository import RawRepository
-from backend.app.entities.raw_build_run import RawWorkflowRun
+from app.entities.raw_build_run import RawBuildRun
 from app.entities.repo_config_base import RepoConfigBase
 
 
@@ -107,28 +107,32 @@ class RepoConfigInput:
 
 
 @dataclass
-class WorkflowRunInput:
-    """Workflow run data."""
+class BuildRunInput:
+    """Build run data from any CI provider."""
 
-    workflow_run_id: int
-    run_number: int
-    head_sha: str
+    build_id: str
+    build_number: Optional[int]
+    commit_sha: str
     conclusion: Optional[str]
-    ci_created_at: Optional[datetime]
-    ci_updated_at: Optional[datetime]
-    raw_payload: Dict[str, Any]
+    created_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    duration_seconds: Optional[float]
+    raw_data: Dict[str, Any]
 
     @classmethod
-    def from_entity(cls, workflow_run: RawWorkflowRun) -> WorkflowRunInput:
-        """Create from WorkflowRunRaw entity."""
+    def from_entity(cls, build_run: RawBuildRun) -> BuildRunInput:
+        """Create from RawBuildRun entity."""
         return cls(
-            workflow_run_id=workflow_run.workflow_run_id,
-            run_number=workflow_run.build_number,
-            head_sha=workflow_run.head_sha,
-            conclusion=workflow_run.conclusion,
-            ci_created_at=workflow_run.build_created_at,
-            ci_updated_at=workflow_run.build_updated_at,
-            raw_payload=workflow_run.github_metadata or {},
+            build_id=build_run.build_id,
+            build_number=build_run.build_number,
+            commit_sha=build_run.commit_sha,
+            conclusion=(
+                str(build_run.conclusion.value) if build_run.conclusion else None
+            ),
+            created_at=build_run.created_at,
+            completed_at=build_run.completed_at,
+            duration_seconds=build_run.duration_seconds,
+            raw_data=build_run.raw_data or {},
         )
 
 
@@ -146,13 +150,34 @@ class GitHubClientInput:
 
 
 @dataclass
+class BuildLogsInput:
+    """Build job logs from CI provider."""
+
+    logs_dir: Optional[Path]  # Directory containing log files
+    log_files: List[str]  # List of log file paths
+    is_available: bool  # Whether logs were downloaded successfully
+
+    @classmethod
+    def from_path(cls, logs_dir: Optional[Path]) -> BuildLogsInput:
+        """Create from logs directory path."""
+        if logs_dir and logs_dir.exists():
+            log_files = [str(f) for f in logs_dir.glob("*.log")]
+            return cls(
+                logs_dir=logs_dir,
+                log_files=log_files,
+                is_available=len(log_files) > 0,
+            )
+        return cls(logs_dir=None, log_files=[], is_available=False)
+
+
+@dataclass
 class HamiltonInputs:
     """Container for all Hamilton pipeline inputs."""
 
     git_history: GitHistoryInput
     git_worktree: GitWorktreeInput
     repo: RepoInput
-    workflow_run: WorkflowRunInput
+    build_run: BuildRunInput
     repo_config: RepoConfigInput
     is_commit_available: bool
     effective_sha: Optional[str] = None
@@ -161,25 +186,21 @@ class HamiltonInputs:
 def build_hamilton_inputs(
     raw_repo: RawRepository,
     repo_config: RepoConfigBase,
-    workflow_run: RawWorkflowRun,
+    build_run: RawBuildRun,
     repo_path: Path,
-    github_client: Optional[Any] = None,
     worktrees_base: Optional[Path] = None,
 ) -> HamiltonInputs:
     """
     Build all Hamilton input objects from entities.
 
-    Always handles missing fork commits by attempting to replay them using
-    the commit_replay service. If github_client is not provided, uses
-    public GitHub client.
+    Uses effective_sha from DB if available (set during ingestion for fork commits).
 
     Args:
         raw_repo: RawRepository entity from DB
         repo_config: ModelRepoConfig or DatasetRepoConfig entity
-        workflow_run: RawWorkflowRun entity
+        build_run: RawBuildRun entity (with effective_sha if fork was replayed)
         repo_path: Path to the git repository (bare repo)
-        github_client: Optional GitHubClient (uses public client if not provided)
-        worktrees_base: Optional base path for worktrees (default: repo_path/../worktrees)
+        worktrees_base: Optional base path for worktrees
 
     Returns:
         HamiltonInputs containing all input objects
@@ -189,97 +210,36 @@ def build_hamilton_inputs(
 
     logger = logging.getLogger(__name__)
 
-    original_sha = workflow_run.head_sha
-    effective_sha: Optional[str] = None
+    original_sha = build_run.commit_sha
+    # Use effective_sha from DB if set (fork commits replayed during ingestion)
+    effective_sha = build_run.effective_sha or original_sha
     is_commit_available = False
     worktree_path: Optional[Path] = None
 
-    # Check commit availability
+    # Check commit availability using effective_sha
     if repo_path.exists():
         try:
             subprocess.run(
-                ["git", "cat-file", "-e", original_sha],
+                ["git", "cat-file", "-e", effective_sha],
                 cwd=str(repo_path),
                 check=True,
                 capture_output=True,
                 timeout=10,
             )
             is_commit_available = True
-            effective_sha = original_sha
         except subprocess.CalledProcessError:
-            # Commit not found locally - attempt to replay
-            logger.info(
-                f"Commit {original_sha[:8]} not found locally. "
-                f"Attempting to replay fork commit..."
-            )
+            logger.warning(f"Commit {effective_sha[:8]} not found in repo")
 
-            # Get github client if not provided
-            client = github_client
-            if not client:
-                try:
-                    from app.services.github.github_client import (
-                        get_public_github_client,
-                    )
-
-                    client = get_public_github_client()
-                except Exception as e:
-                    logger.warning(f"Failed to get public GitHub client: {e}")
-
-            if client:
-                try:
-                    from app.services.commit_replay import ensure_commit_exists
-
-                    synthetic_sha = ensure_commit_exists(
-                        repo_path=repo_path,
-                        commit_sha=original_sha,
-                        repo_slug=raw_repo.full_name,
-                        github_client=client,
-                    )
-                    if synthetic_sha:
-                        effective_sha = synthetic_sha
-                        is_commit_available = True
-                        logger.info(
-                            f"Replayed fork commit. Using synthetic SHA: {synthetic_sha[:8]}"
-                        )
-                except Exception as e:
-                    logger.warning(f"Failed to replay fork commit: {e}")
-
-    # Setup worktree if commit is available and worktrees_base is provided
-    if is_commit_available and effective_sha and worktrees_base:
+    # Use pre-created worktree from ingestion
+    if is_commit_available and worktrees_base:
         worktree_path = worktrees_base / effective_sha[:12]
         if not worktree_path.exists():
-            try:
-                # Prune stale worktrees first
-                subprocess.run(
-                    ["git", "worktree", "prune"],
-                    cwd=str(repo_path),
-                    capture_output=True,
-                    check=False,
-                )
-                # Create worktree
-                subprocess.run(
-                    [
-                        "git",
-                        "worktree",
-                        "add",
-                        "--detach",
-                        str(worktree_path),
-                        effective_sha,
-                    ],
-                    cwd=str(repo_path),
-                    check=True,
-                    capture_output=True,
-                    timeout=60,
-                )
-                logger.info(f"Created worktree at {worktree_path}")
-            except subprocess.CalledProcessError as e:
-                logger.warning(f"Failed to create worktree: {e}")
-                worktree_path = None
+            worktree_path = None
 
     # Create GitHistoryInput
     git_history = GitHistoryInput(
         path=repo_path,
-        effective_sha=effective_sha,
+        effective_sha=effective_sha if is_commit_available else None,
         original_sha=original_sha,
         is_commit_available=is_commit_available,
     )
@@ -287,21 +247,21 @@ def build_hamilton_inputs(
     # Create GitWorktreeInput
     git_worktree = GitWorktreeInput(
         worktree_path=worktree_path,
-        effective_sha=effective_sha,
+        effective_sha=effective_sha if is_commit_available else None,
         is_ready=worktree_path is not None and worktree_path.exists(),
     )
 
     # Create input objects from entities
     repo_input = RepoInput.from_entity(raw_repo)
     config_input = RepoConfigInput.from_entity(repo_config)
-    workflow_input = WorkflowRunInput.from_entity(workflow_run)
+    build_run_input = BuildRunInput.from_entity(build_run)
 
     return HamiltonInputs(
         git_history=git_history,
         git_worktree=git_worktree,
         repo=repo_input,
-        workflow_run=workflow_input,
+        build_run=build_run_input,
         repo_config=config_input,
         is_commit_available=is_commit_available,
-        effective_sha=effective_sha,
+        effective_sha=effective_sha if is_commit_available else None,
     )

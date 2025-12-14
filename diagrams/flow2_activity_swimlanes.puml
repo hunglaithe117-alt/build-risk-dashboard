@@ -1,0 +1,60 @@
+@startuml
+!theme plain
+skinparam activity {
+  BackgroundColor #FFFFFF
+  BorderColor #333333
+|System|
+:Receive dataset upload;
+:Parse CSV and extract unique repos;
+:Create Dataset record (status=Pending Config);
+:Validate repository formats and existence on GitHub;
+if (Invalid repo formats?) then (yes)
+  :Mark invalid rows; notify user to fix;
+  -> Data Scientist / Developer: Show invalid format warning
+  stop
+else (no)
+  :Allow repo configuration (CI provider, languages, frameworks);
+  :User clicks "Validate Builds";
+  :Start build validation job (async);
+  -> Data Scientist / Developer: Show validation progress
+  if (Builds missing?) then (yes)
+    :Show counts: valid / missing / total builds;
+    :User may choose to import repos automatically or fix dataset;
+  endif
+  :User selects features and clicks "Create Version";
+  :Create DatasetVersion (status=PENDING) with selected features;
+  :Start enrichment task (start_enrichment) for version_id (async);
+  :Queue and run enrichment (batches → finalize);
+  :Publish progress updates (WebSocket) and finalize enriched dataset;
+  -> Data Scientist / Developer: Notify when enrichment completes
+endif
+
+  |System|
+  :Start build validation job (async);
+
+  |Data Scientist / Developer|
+  :Show validation progress;
+
+  |System|
+  if (Builds missing?) then (yes)
+    :Compute stats (valid / missing / total);
+    |Data Scientist / Developer|
+    :Display stats & options:\n- Import repos automatically\n- Fix dataset and retry;
+    |System|
+  endif
+
+  |Data Scientist / Developer|
+  :Click "Start Enrichment";
+
+  |System|
+  :Queue enrichment job (async);
+  :Run enrichment\n(process rows, import repos if needed,\nenrich features);
+  :Publish progress updates (WebSocket);
+  :Finalize enriched dataset;
+
+  |Data Scientist / Developer|
+  :Notify completion & enable download;
+endif
+
+stop
+@enduml

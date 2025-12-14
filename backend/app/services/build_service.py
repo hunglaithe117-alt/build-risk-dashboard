@@ -5,14 +5,14 @@ from pymongo.database import Database
 
 from app.dtos.build import BuildDetail, BuildListResponse, BuildSummary
 from app.entities.model_training_build import ModelTrainingBuild
-from backend.app.entities.raw_build_run import RawWorkflowRun
+from app.entities.raw_build_run import RawBuildRun
 
 
 class BuildService:
     def __init__(self, db: Database):
         self.db = db
         self.build_collection = db["model_training_builds"]
-        self.workflow_collection = db["raw_workflow_runs"]
+        self.build_runs_collection = db["raw_build_runs"]
 
     def _get_feature(self, sample: Any, key: str, default=None):
         """Helper to get feature value from sample.features dict."""
@@ -51,15 +51,15 @@ class BuildService:
                 items=[], total=total, page=skip // limit + 1, size=limit
             )
 
-        workflow_run_ids = [b.raw_workflow_run_id for b in build_samples]
-        workflow_runs_cursor = self.workflow_collection.find(
-            {"_id": {"$in": workflow_run_ids}}
+        build_run_ids = [b.raw_workflow_run_id for b in build_samples]
+        build_runs_cursor = self.build_runs_collection.find(
+            {"_id": {"$in": build_run_ids}}
         )
-        workflow_runs = {w["_id"]: RawWorkflowRun(**w) for w in workflow_runs_cursor}
+        build_runs = {w["_id"]: RawBuildRun(**w) for w in build_runs_cursor}
 
         items = []
         for sample in build_samples:
-            workflow = workflow_runs.get(sample.raw_workflow_run_id)
+            build_run = build_runs.get(sample.raw_workflow_run_id)
 
             items.append(
                 BuildSummary(
@@ -68,8 +68,8 @@ class BuildService:
                     status=sample.build_conclusion or "unknown",
                     extraction_status=sample.extraction_status,
                     commit_sha=sample.head_sha,
-                    created_at=workflow.build_created_at if workflow else None,
-                    workflow_run_id=workflow.workflow_run_id if workflow else None,
+                    created_at=build_run.created_at if build_run else None,
+                    workflow_run_id=build_run.build_id if build_run else None,
                     duration=self._get_feature(sample, "tr_duration"),
                     num_jobs=self._get_feature(sample, "tr_log_num_jobs"),
                     num_tests=self._get_feature(sample, "tr_log_tests_run_sum"),
@@ -89,10 +89,10 @@ class BuildService:
             return None
 
         sample = ModelTrainingBuild(**doc)
-        workflow_doc = self.workflow_collection.find_one(
+        build_run_doc = self.build_runs_collection.find_one(
             {"_id": sample.raw_workflow_run_id}
         )
-        workflow = RawWorkflowRun(**workflow_doc) if workflow_doc else None
+        build_run = RawBuildRun(**build_run_doc) if build_run_doc else None
 
         return BuildDetail(
             _id=str(sample.id),
@@ -104,11 +104,11 @@ class BuildService:
             commit_sha=sample.head_sha
             or self._get_feature(sample, "tr_original_commit")
             or "",
-            created_at=workflow.build_created_at if workflow else None,
+            created_at=build_run.created_at if build_run else None,
             duration=self._get_feature(sample, "tr_duration"),
             num_jobs=self._get_feature(sample, "tr_log_num_jobs"),
             num_tests=self._get_feature(sample, "tr_log_tests_run_sum"),
-            workflow_run_id=workflow.workflow_run_id if workflow else None,
+            workflow_run_id=build_run.build_id if build_run else None,
             features=sample.features,
             error_message=sample.extraction_error,
         )
@@ -120,16 +120,16 @@ class BuildService:
         if not build_samples:
             return []
 
-        # Fetch workflow runs
-        workflow_run_ids = [b.raw_workflow_run_id for b in build_samples]
-        workflow_runs_cursor = self.workflow_collection.find(
-            {"_id": {"$in": workflow_run_ids}}
+        # Fetch build runs
+        build_run_ids = [b.raw_workflow_run_id for b in build_samples]
+        build_runs_cursor = self.build_runs_collection.find(
+            {"_id": {"$in": build_run_ids}}
         )
-        workflow_runs = {w["_id"]: RawWorkflowRun(**w) for w in workflow_runs_cursor}
+        build_runs = {w["_id"]: RawBuildRun(**w) for w in build_runs_cursor}
 
         items = []
         for sample in build_samples:
-            workflow = workflow_runs.get(sample.raw_workflow_run_id)
+            build_run = build_runs.get(sample.raw_workflow_run_id)
 
             items.append(
                 BuildSummary(
@@ -142,11 +142,11 @@ class BuildService:
                     commit_sha=sample.head_sha
                     or self._get_feature(sample, "tr_original_commit")
                     or "",
-                    created_at=workflow.build_created_at if workflow else None,
+                    created_at=build_run.created_at if build_run else None,
                     duration=self._get_feature(sample, "tr_duration"),
                     num_jobs=self._get_feature(sample, "tr_log_num_jobs"),
                     num_tests=self._get_feature(sample, "tr_log_tests_run_sum"),
-                    workflow_run_id=workflow.workflow_run_id if workflow else None,
+                    workflow_run_id=build_run.build_id if build_run else None,
                 )
             )
         return items

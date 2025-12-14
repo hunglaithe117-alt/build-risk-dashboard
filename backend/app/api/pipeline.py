@@ -180,61 +180,10 @@ async def get_dag_visualization(
 
     Returns nodes and edges in a format suitable for React Flow.
     """
-    from app.pipeline.core.dag import FeatureDAG
+    from app.services.feature_service import FeatureService
 
-    dag = FeatureDAG(feature_registry)
-    dag.build()
-    levels = dag.get_execution_levels()
-
-    nodes = []
-    edges = []
-    all_nodes = feature_registry.get_all(enabled_only=True)
-
-    for node_name, meta in all_nodes.items():
-        # Find level for this node
-        node_level = 0
-        for level in levels:
-            if node_name in level.node_names:
-                node_level = level.level
-                break
-
-        nodes.append(
-            {
-                "id": node_name,
-                "type": "extractor",
-                "label": node_name.replace("_", " ").title(),
-                "features": list(meta.provides),
-                "feature_count": len(meta.provides),
-                "requires_resources": list(meta.requires_resources),
-                "requires_features": list(meta.requires_features),
-                "level": node_level,
-                "group": meta.group,
-            }
-        )
-
-        # Create edges for feature dependencies
-        for req_feature in meta.requires_features:
-            provider = feature_registry.get_provider(req_feature)
-            if provider:
-                edges.append(
-                    {
-                        "id": f"{provider}->{node_name}",
-                        "source": provider,
-                        "target": node_name,
-                        "type": "feature_dependency",
-                    }
-                )
-
-    return {
-        "nodes": nodes,
-        "edges": edges,
-        "execution_levels": [
-            {"level": level.level, "nodes": level.node_names} for level in levels
-        ],
-        "total_features": len(feature_registry.get_all_features()),
-        "total_nodes": len(all_nodes),
-        "dag_version": feature_registry.get_dag_version(),
-    }
+    service = FeatureService()
+    return service.get_feature_dag()
 
 
 @router.delete("/runs/cleanup")

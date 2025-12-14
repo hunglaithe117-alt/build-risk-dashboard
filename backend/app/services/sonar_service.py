@@ -15,9 +15,8 @@ from pymongo.database import Database
 from app.entities.failed_scan import FailedScan, ScanStatus
 from app.repositories.scan_result import ScanResultRepository
 from app.repositories.failed_scan import FailedScanRepository
-from app.repositories.model_repository import ModelRepositoryRepository
+from app.repositories.model_repo_config import ModelRepoConfigRepository
 from app.utils.datetime import utc_now
-
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ class SonarService:
         self.db = db
         self.scan_result_repo = ScanResultRepository(db)
         self.failed_scan_repo = FailedScanRepository(db)
-        self.repo_repo = ModelRepositoryRepository(db)
+        self.repo_repo = ModelRepoConfigRepository(db)
 
     def update_config(self, repo_id: str, config_content: str) -> bool:
         """Update sonar-project.properties content for a repository."""

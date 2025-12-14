@@ -17,7 +17,7 @@ from app.database.mongo import get_database
 from app.entities.dataset_scan import DatasetScanStatus
 from app.repositories.dataset_scan import DatasetScanRepository
 from app.repositories.dataset_scan_result import DatasetScanResultRepository
-from app.repositories.enrichment_repository import EnrichmentRepositoryRepository
+from app.repositories.dataset_repo_config import DatasetRepoConfigRepository
 from app.integrations import get_tool, ToolType, ScanMode
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ def run_dataset_scan(self, scan_id: str):
     db = get_database()
     scan_repo = DatasetScanRepository(db)
     result_repo = DatasetScanResultRepository(db)
-    repo_repo = EnrichmentRepositoryRepository(db)
+    repo_repo = DatasetRepoConfigRepository(db)
 
     # Load scan
     scan = scan_repo.find_by_id(scan_id)
@@ -142,7 +142,7 @@ def _run_trivy_scan(
     result,
     tool,
     result_repo: DatasetScanResultRepository,
-    repo_repo: EnrichmentRepositoryRepository,
+    repo_repo: DatasetRepoConfigRepository,
 ):
     """Run Trivy scan on a commit (sync)."""
     from app.integrations.tools.trivy import TrivyTool
@@ -191,7 +191,7 @@ def _start_sonar_scan(
     result,
     tool,
     result_repo: DatasetScanResultRepository,
-    repo_repo: EnrichmentRepositoryRepository,
+    repo_repo: DatasetRepoConfigRepository,
 ):
     """Start SonarQube scan on a commit (async)."""
     logger.info(
@@ -235,7 +235,7 @@ def _ensure_worktree(
     dataset_id: str,
     repo_full_name: str,
     commit_sha: str,
-    repo_repo: EnrichmentRepositoryRepository,
+    repo_repo: DatasetRepoConfigRepository,
 ) -> tuple[Optional[Path], bool]:
     """
     Ensure a git worktree exists for the commit.

@@ -9,8 +9,9 @@ from fastapi import HTTPException, status
 from pymongo.database import Database
 
 from app.config import settings
-from app.repositories.workflow_run import WorkflowRunRepository
-from app.entities.workflow_run import WorkflowRunRaw
+from backend.app.repositories.raw_build_run import RawWorkflowRunRepository
+from backend.app.entities.raw_build_run import RawWorkflowRun
+from app.entities.enums import WorkflowRunStatus, WorkflowConclusion
 from app.celery_app import celery_app
 from bson import ObjectId
 from app.services.github.github_app import clear_installation_token
@@ -146,7 +147,6 @@ def _handle_workflow_run_event(
     if conclusion_val != "completed":
         return {"status": "ignored", "reason": f"conclusion_{conclusion_val}_ignored"}
 
-
     # Filter out bot-triggered workflow runs (e.g., Dependabot, github-actions[bot])
     triggering_actor = workflow_run.get("triggering_actor", {})
     actor_type = triggering_actor.get("type")
@@ -162,7 +162,7 @@ def _handle_workflow_run_event(
     run_id = workflow_run.get("id")
 
     # Save/Update WorkflowRunRaw
-    workflow_run_repo = WorkflowRunRepository(db)
+    workflow_run_repo = RawWorkflowRunRepository(db)
 
     existing_run = workflow_run_repo.find_by_repo_and_run_id(repo_id, run_id)
 
@@ -192,14 +192,11 @@ def _handle_workflow_run_event(
         # New workflow run - insert and trigger processing
         created_at = workflow_run.get("created_at")
         updated_at = workflow_run.get("updated_at")
-        from app.entities.workflow_run import WorkflowRunStatus, WorkflowConclusion
 
         status = workflow_run.get("status")
         try:
             status_enum = (
-                WorkflowRunStatus(status)
-                if status
-                else WorkflowRunStatus.UNKNOWN
+                WorkflowRunStatus(status) if status else WorkflowRunStatus.UNKNOWN
             )
         except Exception:
             status_enum = WorkflowRunStatus.UNKNOWN
@@ -214,7 +211,7 @@ def _handle_workflow_run_event(
         except Exception:
             conclusion_enum = WorkflowConclusion.UNKNOWN
 
-        new_run = WorkflowRunRaw(
+        new_run = RawWorkflowRun(
             repo_id=ObjectId(repo_id),
             workflow_run_id=run_id,
             head_sha=workflow_run.get("head_sha"),

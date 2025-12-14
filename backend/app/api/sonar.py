@@ -22,7 +22,7 @@ from bson import ObjectId
 from app.config import settings
 from app.database.mongo import get_db, get_database
 from app.repositories.sonar_scan_pending import SonarScanPendingRepository
-from app.repositories.enrichment_build import EnrichmentBuildRepository
+from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

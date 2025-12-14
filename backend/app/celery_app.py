@@ -15,6 +15,7 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
         "app.tasks.ingestion",
+        "app.tasks.model_ingestion",  # New chain-based ingestion
         "app.tasks.processing",
         "app.tasks.maintenance",
         "app.tasks.version_enrichment",
@@ -70,6 +71,11 @@ celery_app.conf.update(
             "trivy_scan",
             Exchange("buildguard"),
             routing_key="pipeline.trivy_scan",
+        ),
+        Queue(
+            "validation",
+            Exchange("buildguard"),
+            routing_key="pipeline.validation",
         ),
         Queue(
             "enrichment",

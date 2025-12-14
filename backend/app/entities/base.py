@@ -46,6 +46,7 @@ class BaseEntity(BaseModel):
         arbitrary_types_allowed=True,
         json_encoders={ObjectId: str},
         exclude_none=True,  # avoid persisting fields with None (e.g., _id)
+        protected_namespaces=(),  # Allow model_ prefix in field names
     )
 
     id: Optional[PyObjectId] = Field(None, alias="_id")

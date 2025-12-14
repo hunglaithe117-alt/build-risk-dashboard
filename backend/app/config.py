@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     CELERY_TASK_TIME_LIMIT: int = 900
     CELERY_BROKER_HEARTBEAT: int = 30
 
+    # Dataset Enrichment Pipeline
+    VALIDATION_BATCH_SIZE: int = 50  # Builds per validation batch
+    ENRICHMENT_BATCH_SIZE: int = 50  # Builds per enrichment batch
+    VALIDATION_MAX_RETRIES: int = 3  # Auto-retry count for validation
+    ENRICHMENT_MAX_RETRIES: int = 3  # Auto-retry count for enrichment
+
     # Repository mirrors / schedulers
     REPO_MIRROR_ROOT: str = "../repo-data/repo-mirrors"
     ARTIFACTS_ROOT: str = "../repo-data/artifacts"

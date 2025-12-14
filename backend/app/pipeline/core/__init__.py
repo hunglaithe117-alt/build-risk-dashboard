@@ -1,13 +1,12 @@
+# Pipeline Core - Simplified for Hamilton
 from app.pipeline.core.context import ExecutionContext, FeatureResult
-from app.pipeline.core.dag import FeatureDAG
-from app.pipeline.core.executor import PipelineExecutor
-from app.pipeline.core.registry import feature_registry, register_feature
+from app.pipeline.core.registry import feature_registry, OutputFormat
 
 __all__ = [
+    # Context (backward compatibility)
     "ExecutionContext",
     "FeatureResult",
-    "FeatureDAG",
-    "PipelineExecutor",
+    # Registry (formatting utility)
     "feature_registry",
-    "register_feature",
+    "OutputFormat",
 ]

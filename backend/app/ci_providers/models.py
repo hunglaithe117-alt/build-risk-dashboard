@@ -50,10 +50,10 @@ class BuildData(BaseModel):
 
     # Repository info
     repo_name: str = Field(..., description="Full repository name (owner/repo)")
-    branch: Optional[str] = None
+    branch: str
 
     # Commit info
-    commit_sha: Optional[str] = None
+    commit_sha: str
     commit_message: Optional[str] = None
     commit_author: Optional[str] = None
 

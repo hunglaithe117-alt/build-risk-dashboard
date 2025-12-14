@@ -9,7 +9,6 @@ from app.dtos.dataset_validation import (
     StartValidationResponse,
     RepoValidationResult,
     ValidationSummaryResponse,
-    RepoConfigRequest,
     SaveReposRequest,
     SaveReposResponse,
 )

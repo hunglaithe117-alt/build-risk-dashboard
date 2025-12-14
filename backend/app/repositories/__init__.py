@@ -2,37 +2,47 @@
 
 from .base import BaseRepository
 
-# Model flow repositories
-from .model_repository import ModelRepositoryRepository
-from .model_build import ModelBuildRepository
+# Raw data repositories (shared across flows)
+from .raw_repository import RawRepositoryRepository
+from .raw_build_run import RawWorkflowRunRepository
 
-# Enrichment flow repositories
-from .enrichment_repository import EnrichmentRepositoryRepository
-from .enrichment_build import EnrichmentBuildRepository
+# Model training flow repositories
+from .model_repo_config import ModelRepoConfigRepository
+from .model_training_build import ModelTrainingBuildRepository
+
+# Dataset enrichment flow repositories
+from .dataset_repo_config import DatasetRepoConfigRepository
+from .dataset_enrichment_build import DatasetEnrichmentBuildRepository
+
+# Dataset repositories
+from .dataset_repository import DatasetRepository
+from .dataset_build_repository import DatasetBuildRepository
 
 # Other repositories
 from .github_installation import GithubInstallationRepository
 from .oauth_identity import OAuthIdentityRepository
 from .user import UserRepository
-from .workflow_run import WorkflowRunRepository
 from .dataset_template_repository import DatasetTemplateRepository
 from .pipeline_run import PipelineRunRepository
-from .dataset_repository import DatasetRepository
 
 __all__ = [
     "BaseRepository",
-    # Model flow
-    "ModelRepositoryRepository",
-    "ModelBuildRepository",
-    # Enrichment flow
-    "EnrichmentRepositoryRepository",
-    "EnrichmentBuildRepository",
+    # Raw data (shared)
+    "RawRepositoryRepository",
+    "RawWorkflowRunRepository",
+    # Model training flow
+    "ModelRepoConfigRepository",
+    "ModelTrainingBuildRepository",
+    # Dataset enrichment flow
+    "DatasetRepoConfigRepository",
+    "DatasetEnrichmentBuildRepository",
+    # Dataset
+    "DatasetRepository",
+    "DatasetBuildRepository",
     # Other
     "GithubInstallationRepository",
     "OAuthIdentityRepository",
     "UserRepository",
-    "WorkflowRunRepository",
     "DatasetTemplateRepository",
     "PipelineRunRepository",
-    "DatasetRepository",
 ]

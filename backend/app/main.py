@@ -10,7 +10,6 @@ from app.api import (
     health,
     integrations,
     auth,
-    repos,
     users,
     webhook,
     websocket,
@@ -26,6 +25,7 @@ from app.api import (
     templates,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
+from backend.app.api import model_repos
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ app.include_router(health.router, prefix="/api", tags=["Health"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(integrations.router, prefix="/api", tags=["Integrations"])
 app.include_router(auth.router, prefix="/api", tags=["Auth"])
-app.include_router(repos.router, prefix="/api", tags=["Repositories"])
+app.include_router(model_repos.router, prefix="/api", tags=["Repositories"])
 app.include_router(users.router, prefix="/api", tags=["Users"])
 app.include_router(webhook.router, prefix="/api", tags=["Webhooks"])
 app.include_router(websocket.router, prefix="/api", tags=["WebSocket"])

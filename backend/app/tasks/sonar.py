@@ -16,8 +16,8 @@ from app.config import settings
 from app.database.mongo import get_database
 from app.entities.sonar_scan_pending import SonarScanPending, ScanPendingStatus
 from app.repositories.sonar_scan_pending import SonarScanPendingRepository
-from app.repositories.enrichment_build import EnrichmentBuildRepository
-from app.repositories.model_build import ModelBuildRepository
+from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
+from app.repositories.model_training_build import ModelTrainingBuildRepository
 from app.services.sonar.exporter import MetricsExporter
 from app.services.sonar.runner import SonarCommitRunner
 
@@ -154,9 +154,9 @@ def export_metrics_from_webhook(self, component_key: str, build_id: str = None):
         # Update build features if pending record exists
         if pending:
             if pending.build_type == "enrichment":
-                build_repo = EnrichmentBuildRepository(db)
+                build_repo = DatasetEnrichmentBuildRepository(db)
             else:
-                build_repo = ModelBuildRepository(db)
+                build_repo = ModelTrainingBuildRepository(db)
 
             # Update build with sonar features
             build_repo.update_one(

@@ -14,8 +14,8 @@ from bson import ObjectId
 from app.celery_app import celery_app
 from app.config import settings
 from app.database.mongo import get_database
-from app.repositories.enrichment_build import EnrichmentBuildRepository
-from app.repositories.model_build import ModelBuildRepository
+from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
+from app.repositories.model_training_build import ModelTrainingBuildRepository
 from app.integrations.tools.trivy import TrivyTool
 
 logger = logging.getLogger(__name__)
@@ -96,9 +96,9 @@ def start_trivy_scan(
 
         # Update build with features
         if build_type == "enrichment":
-            build_repo = EnrichmentBuildRepository(db)
+            build_repo = DatasetEnrichmentBuildRepository(db)
         else:
-            build_repo = ModelBuildRepository(db)
+            build_repo = ModelTrainingBuildRepository(db)
 
         # Merge trivy features into existing features
         build = build_repo.find_by_id(build_id)

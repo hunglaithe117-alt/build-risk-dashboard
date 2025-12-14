@@ -75,5 +75,9 @@ class DatasetProject(BaseEntity):
     # Setup progress tracking (1=uploaded, 2=configured, 3=validated)
     setup_step: int = 1
 
+    # Enrichment tracking
+    total_versions: int = 0
+    last_enriched_at: Optional[datetime] = None
+
     class Config:
         use_enum_values = True

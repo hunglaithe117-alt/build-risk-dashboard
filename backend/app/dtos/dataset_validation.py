@@ -61,8 +61,6 @@ class RepoValidationResult(BaseModel):
     full_name: str
     validation_status: str
     validation_error: Optional[str] = None
-    default_branch: Optional[str] = None
-    is_private: bool = False
     builds_found: Optional[int] = None
     builds_not_found: Optional[int] = None
 

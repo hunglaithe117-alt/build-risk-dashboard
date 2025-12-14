@@ -1,31 +1,29 @@
 """Database entity models - represents the actual structure stored in MongoDB"""
 
 from .base import BaseEntity, PyObjectId
-from .base_repository import (
-    BaseRepositoryEntity,
-    Provider,
+
+# Shared enums
+from .enums import (
     TestFramework,
-    ImportStatus,
-    SyncStatus,
-    EnrichmentImportStatus,
-    RepoValidationStatus,
+    ExtractionStatus,
+    ModelImportStatus,
+    ModelSyncStatus,
+    DatasetRepoValidationStatus,
 )
 
-# Model flow entities (Bayesian model training)
-from .model_repository import ModelRepository
-from .model_build import ModelBuild, ModelBuildConclusion
+# Raw data entities (shared across flows)
+from .raw_repository import RawRepository
+from .raw_build_run import RawWorkflowRun
 
-# Enrichment flow entities (Dataset enrichment)
-from .enrichment_repository import EnrichmentRepository
-from .enrichment_build import EnrichmentBuild
-from .dataset_build import DatasetBuild, DatasetBuildStatus
-from .base_build import BaseBuildSample, ExtractionStatus
+# Model training flow entities
+from .model_repo_config import ModelRepoConfig
+from .model_training_build import ModelTrainingBuild
 
-# Other entities
-from .github_installation import GithubInstallation
-from .oauth_identity import OAuthIdentity
-from .user import User
-from .dataset_template import DatasetTemplate
+# Dataset enrichment flow entities
+from .dataset_repo_config import DatasetRepoConfig
+from .dataset_enrichment_build import DatasetEnrichmentBuild
+
+# Dataset entities
 from .dataset import (
     DatasetProject,
     DatasetMapping,
@@ -33,6 +31,13 @@ from .dataset import (
     ValidationStats,
     DatasetValidationStatus,
 )
+from .dataset_build import DatasetBuild, DatasetBuildStatus
+
+# Other entities
+from .github_installation import GithubInstallation
+from .oauth_identity import OAuthIdentity
+from .user import User
+from .dataset_template import DatasetTemplate
 from .pipeline_run import (
     PipelineRun,
     NodeExecutionResult,
@@ -40,37 +45,42 @@ from .pipeline_run import (
     NodeExecutionStatus,
 )
 from .export_job import ExportJob, ExportStatus, ExportFormat
-from .workflow_run import WorkflowRunRaw
 
 # CI Provider
 from app.ci_providers.models import CIProvider
 
 __all__ = [
+    # Base
     "BaseEntity",
-    "BaseRepositoryEntity",
     "PyObjectId",
-    # Model flow
-    "ModelRepository",
-    "ModelBuild",
-    "ModelBuildConclusion",
+    # Enums
+    "TestFramework",
     "ExtractionStatus",
-    # Enrichment flow
-    "EnrichmentRepository",
-    "EnrichmentBuild",
-    "ExtractionStatus",
-    "RepoValidationStatus",
-    "EnrichmentImportStatus",
+    "ModelImportStatus",
+    "ModelSyncStatus",
+    "DatasetRepoValidationStatus",
+    "CIProvider",
+    # Raw data (shared)
+    "RawRepository",
+    "RawWorkflowRun",
+    # Model training flow
+    "ModelRepoConfig",
+    "ModelTrainingBuild",
+    # Dataset enrichment flow
+    "DatasetRepoConfig",
+    "DatasetEnrichmentBuild",
+    # Dataset
+    "DatasetProject",
+    "DatasetMapping",
+    "DatasetStats",
+    "ValidationStats",
+    "DatasetValidationStatus",
     "DatasetBuild",
     "DatasetBuildStatus",
     # Other
     "GithubInstallation",
     "OAuthIdentity",
     "User",
-    "DatasetProject",
-    "DatasetMapping",
-    "DatasetStats",
-    "ValidationStats",
-    "DatasetValidationStatus",
     "DatasetTemplate",
     "PipelineRun",
     "NodeExecutionResult",
@@ -79,11 +89,4 @@ __all__ = [
     "ExportJob",
     "ExportStatus",
     "ExportFormat",
-    "WorkflowRunRaw",
-    # Enums
-    "Provider",
-    "TestFramework",
-    "CIProvider",
-    "ImportStatus",
-    "SyncStatus",
 ]

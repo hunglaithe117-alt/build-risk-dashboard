@@ -1,6 +1,6 @@
 import logging
 from typing import List, Optional
-from app.entities import ImportStatus
+from app.entities.enums import ModelImportStatus
 
 from bson import ObjectId
 from fastapi import HTTPException, status
@@ -16,11 +16,12 @@ from app.dtos import (
     RepoSearchResponse,
 )
 from datetime import datetime, timezone
-from app.repositories.model_repository import ModelRepositoryRepository
+from app.repositories.model_repo_config import ModelRepoConfigRepository
+from app.repositories.raw_repository import RawRepositoryRepository
 from app.services.github.github_client import (
     get_user_github_client,
 )
-from app.tasks.ingestion import import_repo
+from app.tasks.model_ingestion import import_repo
 
 
 logger = logging.getLogger(__name__)
@@ -37,44 +38,67 @@ def _serialize_repo_detail(repo_doc) -> RepoDetailResponse:
 class RepositoryService:
     def __init__(self, db: Database):
         self.db = db
-        self.repo_repo = ModelRepositoryRepository(db)
+        self.repo_config = ModelRepoConfigRepository(db)
+        self.raw_repo = RawRepositoryRepository(db)
 
     def bulk_import_repositories(
         self, user_id: str, payloads: List[RepoImportRequest]
     ) -> List[RepoResponse]:
+        """
+        Import repositories by:
+        1. Verify repo exists on GitHub (synchronous)
+        2. Create/update RawRepository
+        3. Create/update ModelRepoConfig with raw_repo_id
+        4. Queue async import task
+        """
+        from app.services.github.github_client import get_app_github_client
+
         results = []
 
         for payload in payloads:
             target_user_id = user_id
             installation_id = payload.installation_id
 
-            # We allow re-importing to retry failed imports or update settings.
-            # The upsert_repository below will handle updates.
-
             try:
-                repo_doc = self.repo_repo.upsert_repository(
+                with get_app_github_client(self.db, installation_id) as gh:
+                    repo_data = gh.get_repository(payload.full_name)
+
+                if not repo_data:
+                    logger.warning(
+                        f"Repository {payload.full_name} not found on GitHub"
+                    )
+                    continue
+
+                raw_repo = self.raw_repo.upsert_by_full_name(
+                    full_name=payload.full_name,
+                    github_repo_id=repo_data.get("id"),
+                    default_branch=repo_data.get("default_branch", "main"),
+                    is_private=bool(repo_data.get("private")),
+                    main_lang=repo_data.get("language"),
+                    github_metadata=repo_data,
+                )
+
+                repo_doc = self.repo_config.upsert_repository(
                     user_id=target_user_id,
                     full_name=payload.full_name,
                     data={
                         "provider": "github",
+                        "raw_repo_id": raw_repo.id,  # Link to RawRepository
                         "installation_id": installation_id,
                         "test_frameworks": payload.test_frameworks,
                         "source_languages": payload.source_languages,
                         "ci_provider": payload.ci_provider,
-                        "import_status": ImportStatus.QUEUED.value,
+                        "import_status": ModelImportStatus.QUEUED.value,
                         "max_builds_to_ingest": payload.max_builds,
                         "since_days": payload.since_days,
                         "only_with_logs": payload.only_with_logs,
                     },
                 )
 
-                # Trigger async import
                 import_repo.delay(
                     user_id=target_user_id,
                     full_name=payload.full_name,
                     installation_id=installation_id,
-                    test_frameworks=payload.test_frameworks,
-                    source_languages=payload.source_languages,
                     ci_provider=payload.ci_provider.value,
                     max_builds=payload.max_builds,
                     since_days=payload.since_days,
@@ -84,7 +108,6 @@ class RepositoryService:
                 results.append(repo_doc)
 
             except Exception as e:
-                # Log error and continue
                 logger.error(f"Failed to import {payload.full_name}: {e}")
                 continue
 
@@ -131,7 +154,7 @@ class RepositoryService:
         if q:
             query["full_name"] = {"$regex": q, "$options": "i"}
 
-        repos, total = self.repo_repo.list_by_user(
+        repos, total = self.repo_config.list_by_user(
             user_id, skip=skip, limit=limit, query=query
         )
         return RepoListResponse(
@@ -183,7 +206,7 @@ class RepositoryService:
     def get_repository_detail(
         self, repo_id: str, current_user: dict
     ) -> RepoDetailResponse:
-        repo_doc = self.repo_repo.find_by_id(ObjectId(repo_id))
+        repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
         if not repo_doc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
@@ -203,7 +226,7 @@ class RepositoryService:
     def update_repository_settings(
         self, repo_id: str, payload: RepoUpdateRequest, current_user: dict
     ) -> RepoDetailResponse:
-        repo_doc = self.repo_repo.get_repository(repo_id)
+        repo_doc = self.repo_config.get_repository(repo_id)
         if not repo_doc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
@@ -227,7 +250,7 @@ class RepositoryService:
         if not updates:
             updated = repo_doc
         else:
-            updated = self.repo_repo.update_repository(repo_id, updates)
+            updated = self.repo_config.update_repository(repo_id, updates)
             if not updated:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
@@ -237,15 +260,15 @@ class RepositoryService:
 
     def trigger_sync(self, repo_id: str, user_id: str):
         """Trigger a full sync for a specific repository."""
-        repo_doc = self.repo_repo.find_by_id(ObjectId(repo_id))
+        repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
         if not repo_doc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
             )
 
         # Update status to queued/importing
-        self.repo_repo.update_repository(
-            repo_id, {"import_status": ImportStatus.QUEUED.value}
+        self.repo_config.update_repository(
+            repo_id, {"import_status": ModelImportStatus.QUEUED.value}
         )
 
         # Trigger import task
@@ -275,9 +298,9 @@ class RepositoryService:
         this method reprocesses existing builds to re-extract features.
         Useful when feature extractors have been updated.
         """
-        from app.tasks.processing import reprocess_repo_builds
+        from backend.app.tasks.model_processing import reprocess_repo_builds
 
-        repo_doc = self.repo_repo.find_by_id(ObjectId(repo_id))
+        repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
         if not repo_doc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
@@ -302,7 +325,7 @@ class RepositoryService:
 
         # Check if repo is already imported with installation
         installation_id = None
-        imported = self.repo_repo.find_by_full_name(full_name)
+        imported = self.repo_config.find_by_full_name(full_name)
         if imported and imported.installation_id:
             installation_id = imported.installation_id
 
@@ -354,9 +377,11 @@ class RepositoryService:
         - Retrying failed builds
         - Re-extracting features after pipeline updates
         """
-        from app.tasks.processing import reprocess_build as reprocess_build_task
-        from app.entities.model_build import ExtractionStatus
-        from app.repositories.model_build import ModelBuildRepository
+        from backend.app.tasks.model_processing import (
+            reprocess_build as reprocess_build_task,
+        )
+        from app.entities.enums import ExtractionStatus
+        from app.repositories.model_training_build import ModelTrainingBuildRepository
         from app.services.build_service import BuildService
 
         build_service = BuildService(self.db)
@@ -365,7 +390,7 @@ class RepositoryService:
             raise HTTPException(status_code=404, detail="Build not found")
 
         # Reset extraction status to pending before reprocessing
-        build_repo = ModelBuildRepository(self.db)
+        build_repo = ModelTrainingBuildRepository(self.db)
         build_repo.update_one(
             build_id,
             {

@@ -8,7 +8,7 @@ from pymongo.database import Database
 from app.entities.dataset_version import DatasetVersion, VersionStatus
 from app.entities.dataset import DatasetProject
 from app.repositories.dataset_version import DatasetVersionRepository
-from app.repositories.enrichment_build import EnrichmentBuildRepository
+from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.services.dataset_service import DatasetService
 from app.services.export_service import ExportService, ExportSource
 
@@ -33,7 +33,7 @@ class DatasetVersionService:
         self._repo = DatasetVersionRepository(db)
         self._dataset_service = DatasetService(db)
         self._export_service = ExportService(db)
-        self._enrichment_build_repo = EnrichmentBuildRepository(db)
+        self._enrichment_build_repo = DatasetEnrichmentBuildRepository(db)
 
     def _verify_dataset_access(self, dataset_id: str, user_id: str) -> DatasetProject:
         """Verify user has access to dataset. Raises HTTPException if not found."""
@@ -106,9 +106,9 @@ class DatasetVersionService:
 
         version = self._repo.create(version)
 
-        from app.tasks.version_enrichment import enrich_version_task
+        from app.tasks.version_enrichment import start_enrichment
 
-        task = enrich_version_task.delay(str(version.id))
+        task = start_enrichment.delay(str(version.id))
         self._repo.update_one(str(version.id), {"task_id": task.id})
 
         logger.info(

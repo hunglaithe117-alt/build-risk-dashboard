@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 from celery import chain, group, Signature
 
-from app.tasks.shared import clone_repo, create_worktrees_batch, download_build_logs
+from app.tasks.shared import clone_repo, create_worktrees, download_build_logs
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ def _create_task_signature(
     Create a Celery task signature for a given task name.
 
     Returns None for unknown tasks or tasks that can't be created
-    (e.g., create_worktrees_batch without commit_shas).
+    (e.g., create_worktrees without commit_shas).
     """
     if task_name == "clone_repo":
         return clone_repo.s(
@@ -127,15 +127,15 @@ def _create_task_signature(
             publish_status=publish_status,
         )
 
-    elif task_name == "create_worktrees_batch":
+    elif task_name == "create_worktrees":
         if not commit_shas:
             # Will get commit_shas from prev_result["build_ids"]
-            return create_worktrees_batch.s(
+            return create_worktrees.s(
                 repo_id=repo_id,
                 enable_fork_replay=enable_fork_replay,
                 publish_status=publish_status,
             )
-        return create_worktrees_batch.s(
+        return create_worktrees.s(
             repo_id=repo_id,
             commit_shas=commit_shas,
             enable_fork_replay=enable_fork_replay,

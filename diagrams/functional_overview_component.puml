@@ -1,0 +1,29 @@
+@startuml functional_overview_component
+skinparam componentStyle rectangle
+
+package "Frontend" {
+  [Next.js App] as Frontend
+}
+
+package "Backend" {
+  component "FastAPI REST API" as API
+  component "Enrichment Pipeline\n(Celery workers)" as Enr
+  component "Model Inference\n(Bayesian service)" as Model
+  component "WebSocket Gateway" as WS
+  database "MongoDB" as DB
+}
+
+cloud "GitHub (Actions)" as GH
+rectangle "SonarQube" as Sonar
+
+Frontend -- API : REST
+API --> Enr : enqueue tasks
+Enr --> GH : fetch workflow runs / commit data
+Enr --> Sonar : request quality metrics
+Enr -> Model : features -> predict
+Model --> DB : save predictions
+API --> DB : queries
+API --> WS : publish updates
+WS --> Frontend : realtime pushes
+
+@enduml

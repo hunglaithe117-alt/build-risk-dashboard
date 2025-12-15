@@ -57,14 +57,15 @@ class Settings(BaseSettings):
     CELERY_TASK_TIME_LIMIT: int = 900
     CELERY_BROKER_HEARTBEAT: int = 30
 
-    # Dataset Enrichment Pipeline
-    VALIDATION_BATCH_SIZE: int = 50  # Builds per validation batch
+    # Pipeline Configurations
+    VALIDATION_BATCH_SIZE: int = 50  # Builds per validation chunk
     ENRICHMENT_BATCH_SIZE: int = 50  # Builds per enrichment batch
-    VALIDATION_MAX_RETRIES: int = 3  # Auto-retry count for validation
     ENRICHMENT_MAX_RETRIES: int = 3  # Auto-retry count for enrichment
     MAX_LOG_SIZE_MB: int = 10  # Skip logs larger than this size
     DOWNLOAD_LOGS_BATCH_SIZE: int = 100  # Number of logs to download per batch
     PROCESSING_BATCH_SIZE: int = 50
+    WORKTREE_BATCH_SIZE: int = 50  # Worktrees to create per chunk
+    API_RATE_LIMIT_PER_SECOND: float = 5.0  # GitHub API calls per second
 
     # Repository mirrors / schedulers
     REPO_MIRROR_ROOT: str = "../repo-data/repo-mirrors"

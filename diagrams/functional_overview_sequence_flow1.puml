@@ -1,0 +1,25 @@
+@startuml functional_overview_sequence_flow1
+autonumber
+actor Admin
+participant Frontend as "Next.js"
+participant API as "FastAPI"
+participant Queue as "Task Queue (Celery)"
+participant Enr as "Enrichment Worker"
+participant Sonar
+participant Model
+database MongoDB
+participant WS as "WebSocket"
+
+Admin -> Frontend: Add repository
+Frontend -> API: POST /api/integrations
+API -> Queue: enqueue register_repo
+Queue -> Enr: sync repositories / fetch builds
+Enr -> GH: fetch workflow runs
+Enr -> Sonar: request metrics
+Enr -> Model: run inference
+Model -> MongoDB: store build + risk
+Enr -> API: notify new build
+API -> WS: push build update
+WS -> Frontend: update dashboard (real-time)
+
+@enduml

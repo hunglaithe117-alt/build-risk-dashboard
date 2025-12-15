@@ -1,0 +1,22 @@
+@startuml functional_overview_sequence_flow2
+autonumber
+actor "Authenticated User"
+participant Frontend as "Next.js"
+participant API as "FastAPI"
+participant DS as "Dataset Service"
+participant Enr as "Enrichment Worker"
+participant Model
+database MongoDB
+
+User -> Frontend: Upload CSV dataset
+Frontend -> API: POST /api/datasets
+API -> DS: create dataset record
+DS -> API: validate & map columns
+API -> Enr: enqueue dataset_enrich
+Enr -> DS: run enrichment; call Sonar if needed
+Enr -> Model: run inference (optional)
+Enr -> MongoDB: store enriched versions
+API -> Frontend: return dataset ready
+Frontend -> User: show enriched versions
+
+@enduml

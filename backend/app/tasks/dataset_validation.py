@@ -68,6 +68,8 @@ def parse_csv_with_pandas(
     bind=True,
     name="app.tasks.dataset_validation.start_validation",
     queue="validation",
+    soft_time_limit=300,  # 5 min
+    time_limit=360,
 )
 def start_validation(self, dataset_id: str) -> Dict[str, Any]:
     """
@@ -211,15 +213,13 @@ def start_validation(self, dataset_id: str) -> Dict[str, Any]:
         raise
 
 
-# Task 2: Per-repo validation
+# Task 2: Per-repo validation orchestrator
 @celery_app.task(
     bind=True,
     name="app.tasks.dataset_validation.validate_repo_builds",
     queue="validation",
-    autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": settings.VALIDATION_MAX_RETRIES},
-    retry_backoff=True,
-    retry_backoff_max=600,
+    soft_time_limit=300,  # 5 min (just dispatches chunks)
+    time_limit=360,
 )
 def validate_repo_builds(
     self,
@@ -230,11 +230,92 @@ def validate_repo_builds(
     ci_provider: str,
 ) -> Dict[str, Any]:
     """
-    Validate all builds for a single repository.
+    Orchestrator: Dispatch build validation in chunks.
 
-    Returns stats for this repo to be aggregated by finalize_validation.
+    Each chunk runs as a separate task for better fault tolerance.
+    """
+    redis = get_redis()
+
+    # Check for cancellation
+    if redis.get(f"dataset_validation:{dataset_id}:cancelled"):
+        return {
+            "repo_name": repo_name,
+            "status": "cancelled",
+            "builds_found": 0,
+            "builds_not_found": 0,
+        }
+
+    db = get_database()
+    enrichment_repo_repo = DatasetRepoConfigRepository(db)
+
+    # Update repo with total builds count
+    enrichment_repo_repo.update_one(repo_id, {"builds_total": len(build_ids)})
+
+    # Initialize Redis state for this repo's validation
+    session_key = f"validate_repo:{dataset_id}:{repo_id}"
+    redis.delete(f"{session_key}:found")
+    redis.delete(f"{session_key}:not_found")
+    redis.set(f"{session_key}:found", 0, ex=3600)
+    redis.set(f"{session_key}:not_found", 0, ex=3600)
+
+    # Dispatch chunks
+    chunk_size = getattr(settings, "VALIDATION_BATCH_SIZE", 50)
+    chunks_dispatched = 0
+
+    for i in range(0, len(build_ids), chunk_size):
+        chunk = build_ids[i : i + chunk_size]
+        validate_builds_chunk.delay(
+            dataset_id=dataset_id,
+            repo_id=repo_id,
+            repo_name=repo_name,
+            build_ids=chunk,
+            ci_provider=ci_provider,
+            chunk_index=i // chunk_size,
+            total_chunks=(len(build_ids) + chunk_size - 1) // chunk_size,
+        )
+        chunks_dispatched += 1
+
+    logger.info(
+        f"Dispatched {chunks_dispatched} validation chunks for repo {repo_name}"
+    )
+
+    return {
+        "repo_name": repo_name,
+        "repo_id": repo_id,
+        "status": "dispatched",
+        "chunks_dispatched": chunks_dispatched,
+        "builds_total": len(build_ids),
+    }
+
+
+# Task 2b: Per-chunk validation worker
+@celery_app.task(
+    bind=True,
+    name="app.tasks.dataset_validation.validate_builds_chunk",
+    queue="validation",
+    soft_time_limit=300,  # 5 min per chunk
+    time_limit=360,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 2, "countdown": 30},
+    retry_backoff=True,
+)
+def validate_builds_chunk(
+    self,
+    dataset_id: str,
+    repo_id: str,
+    repo_name: str,
+    build_ids: List[str],
+    ci_provider: str,
+    chunk_index: int = 0,
+    total_chunks: int = 1,
+) -> Dict[str, Any]:
+    """
+    Worker: Validate a chunk of builds for a repository.
+
+    Uses Redis to aggregate results across chunks.
     """
     import asyncio
+    import time
 
     async def _do_validate():
         db = get_database()
@@ -244,10 +325,9 @@ def validate_repo_builds(
         build_run_repo = RawBuildRunRepository(db)
 
         # Check for cancellation
-        cancelled = redis.get(f"dataset_validation:{dataset_id}:cancelled")
-        if cancelled:
+        if redis.get(f"dataset_validation:{dataset_id}:cancelled"):
             return {
-                "repo_name": repo_name,
+                "chunk_index": chunk_index,
                 "status": "cancelled",
                 "builds_found": 0,
                 "builds_not_found": 0,
@@ -255,27 +335,24 @@ def validate_repo_builds(
 
         ci = get_ci_provider(CIProvider(ci_provider), db=db)
 
-        # Update repo with total builds count
-        enrichment_repo_repo.update_one(repo_id, {"builds_total": len(build_ids)})
+        rate_limit = getattr(settings, "API_RATE_LIMIT_PER_SECOND", 5.0)
+        min_interval = 1.0 / rate_limit
+        session_key = f"validate_repo:{dataset_id}:{repo_id}"
 
         builds_found = 0
         builds_not_found = 0
 
         for build_id in build_ids:
-            # Check for cancellation periodically
-            cancelled = redis.get(f"dataset_validation:{dataset_id}:cancelled")
-            if cancelled:
+            # Check for cancellation
+            if redis.get(f"dataset_validation:{dataset_id}:cancelled"):
                 break
 
-            # Check if build already validated
+            # Check if build already validated (idempotency)
             existing_build = dataset_build_repo.find_existing(
                 dataset_id, build_id, repo_id
             )
 
-            if existing_build and existing_build.status in [
-                "found",
-                "not_found",
-            ]:
+            if existing_build and existing_build.status in ["found", "not_found"]:
                 if existing_build.status == "found":
                     builds_found += 1
                 else:
@@ -291,6 +368,7 @@ def validate_repo_builds(
             )
 
             try:
+                time.sleep(min_interval)
                 workflow_data = await ci.get_workflow_run(repo_name, int(build_id))
 
                 if workflow_data and ci.is_run_completed(workflow_data):
@@ -335,8 +413,7 @@ def validate_repo_builds(
 
             except Exception as e:
                 logger.error(
-                    f"Build validation error for repo={repo_name}, "
-                    f"build_id={build_id}: {e}",
+                    f"Build validation error for repo={repo_name}, build_id={build_id}: {e}",
                     exc_info=True,
                 )
                 dataset_build.status = DatasetBuildStatus.ERROR
@@ -344,20 +421,27 @@ def validate_repo_builds(
                 dataset_build.validated_at = utc_now()
                 builds_not_found += 1
 
-            build_run_repo = RawBuildRunRepository(db)
+            dataset_build_repo.create(dataset_build)
 
-        # Update repo build statistics
+        # Update Redis counters (for aggregation across chunks)
+        redis.incrby(f"{session_key}:found", builds_found)
+        redis.incrby(f"{session_key}:not_found", builds_not_found)
+
+        # Update repo stats from Redis
+        total_found = int(redis.get(f"{session_key}:found") or 0)
+        total_not_found = int(redis.get(f"{session_key}:not_found") or 0)
+
         enrichment_repo_repo.update_one(
             repo_id,
             {
-                "builds_found": builds_found,
-                "builds_not_found": builds_not_found,
+                "builds_found": total_found,
+                "builds_not_found": total_not_found,
             },
         )
 
         return {
+            "chunk_index": chunk_index,
             "repo_name": repo_name,
-            "repo_id": repo_id,
             "status": "completed",
             "builds_found": builds_found,
             "builds_not_found": builds_not_found,
@@ -372,6 +456,8 @@ def validate_repo_builds(
     bind=True,
     name="app.tasks.dataset_validation.finalize_validation",
     queue="validation",
+    soft_time_limit=120,  # 2 min
+    time_limit=180,
 )
 def finalize_validation(
     self,

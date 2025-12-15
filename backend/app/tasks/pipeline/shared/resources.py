@@ -19,7 +19,7 @@ class FeatureResource(str, Enum):
 
     # Git resources (require ingestion)
     GIT_HISTORY = "git_history"  # Git bare repo (clone_repo task)
-    GIT_WORKTREE = "git_worktree"  # Git worktree (create_worktrees_batch task)
+    GIT_WORKTREE = "git_worktree"  # Git worktree (create_worktrees task)
 
     # External resources
     GITHUB_API = "github_api"  # GitHub API client (on-demand, no ingestion)
@@ -31,7 +31,7 @@ class FeatureResource(str, Enum):
 TASK_DEPENDENCIES: Dict[str, List[str]] = {
     "clone_repo": [],
     "fetch_and_save_builds": [],
-    "create_worktrees_batch": ["clone_repo"],
+    "create_worktrees": ["clone_repo"],
     "download_build_logs": ["fetch_and_save_builds"],
 }
 
@@ -42,7 +42,7 @@ RESOURCE_LEAF_TASKS: Dict[FeatureResource, List[str]] = {
     FeatureResource.BUILD_RUN: ["fetch_and_save_builds"],
     FeatureResource.RAW_BUILD_RUNS: [],
     FeatureResource.GIT_HISTORY: ["clone_repo"],
-    FeatureResource.GIT_WORKTREE: ["create_worktrees_batch"],
+    FeatureResource.GIT_WORKTREE: ["create_worktrees"],
     FeatureResource.GITHUB_API: [],
     FeatureResource.BUILD_LOGS: ["download_build_logs"],
 }
@@ -51,7 +51,6 @@ RESOURCE_LEAF_TASKS: Dict[FeatureResource, List[str]] = {
 # Maps logical task names to their fully qualified Celery task names
 INGESTION_TASK_TO_CELERY: Dict[str, str] = {
     "clone_repo": "app.tasks.shared.clone_repo",
-    "fetch_and_save_builds": "app.tasks.model_ingestion.fetch_and_save_builds",
     "download_build_logs": "app.tasks.shared.download_build_logs",
-    "create_worktrees_batch": "app.tasks.shared.create_worktrees_batch",
+    "create_worktrees": "app.tasks.shared.create_worktrees",
 }

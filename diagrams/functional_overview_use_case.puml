@@ -1,0 +1,46 @@
+@startuml functional_overview_use_case
+left to right direction
+actor "System Administrator" as Admin
+actor "Authenticated User\n(Repository Member)" as User
+
+rectangle "Risk Evaluation System" {
+  usecase "Manage Repositories\n(add / remove / config)" as UC1
+  usecase "Manage Users & Roles" as UC2
+  usecase "Configure Sonar & Model" as UC3
+  usecase "Monitor System & View Logs" as UC8
+  usecase "Trigger Rescan / Re-evaluate Build" as UC9
+
+  usecase "View Dashboard\n(repository builds, risk)" as UC4
+  usecase "View Build Details\n(logs, annotations)" as UC5
+  usecase "Filter & Search Builds / Analytics" as UC10
+  usecase "Upload Dataset & Create\nEnriched Versions" as UC11
+  usecase "Download Enriched Dataset" as UC6
+  usecase "Receive Alerts / Notifications" as UC7
+}
+
+Admin --> UC1
+Admin --> UC2
+Admin --> UC3
+Admin --> UC8
+Admin --> UC9
+Admin --> UC11
+User --> UC4
+User --> UC5
+User --> UC6
+User --> UC7
+User --> UC10
+
+note right of UC1 : <<admin-only>>
+note right of UC2 : <<admin-only>>
+note right of UC3 : <<admin-only>>
+note right of UC8 : <<admin-only>>
+note right of UC9 : <<admin-only>>
+note right of UC11 : <<admin-only>>
+
+note bottom
+  Status legend:
+  * Admin features: Implemented (backend + admin UI)
+  * Authenticated User features: Designed; frontend UI partial/planned
+  * Enrichment/model pipeline: Implemented as backend services (Celery, Sonar, inference)
+end note
+@enduml

@@ -6,7 +6,7 @@ This module implements a clean, chain-based Celery workflow:
 2. clone_repo (from shared) - Clone/update the git repository
 3. fetch_and_save_builds - Fetch builds from CI provider and save to DB
 4. download_build_logs (from shared) - Download build logs
-5. create_worktrees_batch (from shared) - Create git worktrees
+5. create_worktrees (from shared) - Create git worktrees
 6. dispatch_processing - Schedule feature extraction in batches
 """
 
@@ -151,7 +151,7 @@ def import_repo(
         if "fetch_and_save_builds" not in tasks_by_level.get(0, []):
             tasks_by_level[0].append("fetch_and_save_builds")
 
-        # Build workflow using shared helper
+        # Build workflow
         workflow = build_ingestion_workflow(
             tasks_by_level=tasks_by_level,
             repo_id=repo_id,
@@ -161,7 +161,6 @@ def import_repo(
             publish_status=True,
             enable_fork_replay=True,
             final_task=dispatch_processing.s(repo_id=repo_id),
-            # Custom task factory for fetch_and_save_builds
             custom_tasks={
                 "fetch_and_save_builds": fetch_and_save_builds.s(
                     repo_id=repo_id,
@@ -386,7 +385,6 @@ def dispatch_processing(
 ) -> Dict[str, Any]:
     """
     Dispatch feature extraction tasks in batches.
-    This prevents flooding the queue with thousands of tasks at once.
     """
     import time
 
@@ -435,8 +433,10 @@ def dispatch_processing(
         dispatched += len(batch)
         logger.info(f"Dispatched batch {i // batch_size + 1}: {len(batch)} tasks")
 
+        # Delay between batches to prevent queue flooding
+        # This gives workers time to pick up tasks before more are added
         if i + batch_size < len(build_ids):
-            time.sleep(0.05)
+            time.sleep(1.0)
 
     # Mark import as complete
     model_repo_repo = ModelRepoConfigRepository(self.db)

@@ -4,13 +4,13 @@ title Activity Diagram - Flow 2: Dataset Enrichment with Feature Selection
 
 start
 
-:User uploads CSV dataset;
+:Admin uploads CSV dataset;
 
 :System parses file and detects columns;
 
 :System displays column summary;
 
-:User maps required fields;
+:Admin maps required fields;
 note right
   Map dataset columns to:
   - build_id (required)
@@ -25,14 +25,14 @@ else (no)
     stop
 endif
 
-:User provides dataset metadata;
+:Admin provides dataset metadata;
 note right
   Programming languages
   Test frameworks used
   Repository characteristics
 end note
 
-:User selects features for enrichment;
+:Admin selects features for enrichment;
 note right
   Choose from registry:
   - Git features
@@ -96,9 +96,9 @@ endwhile (all rows processed)
 
 :Store enriched dataset in DB;
 
-:Notify user of completion;
+:Notify administrator of completion;
 
-:User downloads enriched CSV;
+:Administrator downloads enriched CSV;
 
 :End enrichment process;
 

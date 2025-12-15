@@ -2,7 +2,7 @@
 
 from app.tasks.shared.ingestion_tasks import (
     clone_repo,
-    create_worktrees_batch,
+    create_worktrees,
     download_build_logs,
 )
 from app.tasks.shared.processing_helpers import (
@@ -14,7 +14,7 @@ from app.tasks.shared.workflow_builder import (
 
 __all__ = [
     "clone_repo",
-    "create_worktrees_batch",
+    "create_worktrees",
     "download_build_logs",
     "extract_features_for_build",
     "build_ingestion_workflow",

@@ -14,13 +14,13 @@ Usage:
 
     # Get flat list of tasks
     tasks = get_ingestion_tasks(["git_worktree", "build_logs"])
-    # Returns: ["clone_repo", "create_worktrees_batch",
+    # Returns: ["clone_repo", "create_worktrees",
     #           "fetch_and_save_builds", "download_build_logs"]
 
     # Get tasks grouped by level (for parallel execution)
     levels = get_ingestion_tasks_by_level(["git_worktree", "build_logs"])
     # Returns: {0: ["clone_repo", "fetch_and_save_builds"],
-    #           1: ["create_worktrees_batch", "download_build_logs"]}
+    #           1: ["create_worktrees", "download_build_logs"]}
 """
 
 import logging

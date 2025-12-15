@@ -20,6 +20,8 @@ Usage:
 from typing import Any, Callable, Dict, List, Optional, Set, TypeVar
 from enum import Enum
 
+from app.tasks.pipeline.shared.resources import FeatureResource
+
 F = TypeVar("F", bound=Callable)
 
 
@@ -48,31 +50,6 @@ class FeatureDataType(str, Enum):
     LIST_STRING = "list_string"
     LIST_INTEGER = "list_integer"
     JSON = "json"
-
-
-class FeatureResource(str, Enum):
-    """
-    Resources required by features.
-
-    Resources form a DAG with dependencies.
-    Use RESOURCE_DAG to define the full dependency graph.
-    """
-
-    # Core inputs (always available from DB, no ingestion needed)
-    BUILD_RUN = "build_run"  # Single RawBuildRun entity (current build)
-    REPO = "repo"  # RawRepository metadata
-    REPO_CONFIG = "repo_config"  # User-configured repo settings
-
-    # Collection access (for querying other builds)
-    RAW_BUILD_RUNS = "raw_build_runs"  # Query raw_build_runs collection
-
-    # Git resources (require ingestion)
-    GIT_HISTORY = "git_history"  # Git bare repo (clone_repo task)
-    GIT_WORKTREE = "git_worktree"  # Git worktree (create_worktrees_batch task)
-
-    # External resources
-    GITHUB_API = "github_api"  # GitHub API client (on-demand, no ingestion)
-    BUILD_LOGS = "build_logs"  # CI job logs (download_build_logs task)
 
 
 class OutputFormat(str, Enum):

@@ -223,3 +223,83 @@ def reprocess_build(
     """
     service = RepositoryService(db)
     return service.reprocess_build(repo_id, build_id, current_user)
+
+
+@router.get("/{repo_id}/builds/{build_id}/logs")
+def get_build_logs(
+    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
+    build_id: str = Path(..., description="Build id (Mongo ObjectId)"),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Get build log files content."""
+    from pathlib import Path as FilePath
+    from bson import ObjectId
+
+    # Find ModelTrainingBuild
+    build_doc = db.model_training_builds.find_one({"_id": ObjectId(build_id)})
+    if not build_doc:
+        raise HTTPException(status_code=404, detail="Build not found")
+
+    # Get workflow_run_id -> raw_build_run
+    workflow_run_id = build_doc.get("workflow_run_id")
+    if not workflow_run_id:
+        return {"logs": [], "logs_available": False, "logs_expired": False}
+
+    raw_build = db.raw_build_runs.find_one({"build_id": str(workflow_run_id)})
+    if not raw_build:
+        return {"logs": [], "logs_available": False, "logs_expired": False}
+
+    logs_available = raw_build.get("logs_available", False)
+    logs_expired = raw_build.get("logs_expired", False)
+    logs_path = raw_build.get("logs_path")
+
+    if not logs_available or not logs_path:
+        return {
+            "logs": [],
+            "logs_available": logs_available,
+            "logs_expired": logs_expired,
+        }
+
+    logs_dir = FilePath(logs_path)
+    if not logs_dir.exists():
+        return {
+            "logs": [],
+            "logs_available": False,
+            "logs_expired": True,
+            "error": "Log directory not found",
+        }
+
+    log_files = []
+    for log_file in sorted(logs_dir.glob("*.log")):
+        try:
+            content = log_file.read_text(errors="replace")
+            max_size = 500000
+            if len(content) > max_size:
+                content = (
+                    content[:max_size]
+                    + f"\n\n... (truncated, {len(content) - max_size} more characters)"
+                )
+            log_files.append(
+                {
+                    "job_name": log_file.stem,
+                    "filename": log_file.name,
+                    "content": content,
+                    "size_bytes": log_file.stat().st_size,
+                }
+            )
+        except Exception as e:
+            log_files.append(
+                {
+                    "job_name": log_file.stem,
+                    "filename": log_file.name,
+                    "error": str(e),
+                }
+            )
+
+    return {
+        "logs": log_files,
+        "logs_available": True,
+        "logs_expired": False,
+        "build_number": build_doc.get("build_number"),
+    }

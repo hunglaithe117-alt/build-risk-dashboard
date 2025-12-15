@@ -147,7 +147,7 @@ export default function DatasetsPage() {
 
   const handleUploadSuccess = (dataset: DatasetRecord) => {
     // Navigate directly to dataset detail page
-    router.push(`/datasets/${dataset.id}`);
+    router.push(`/admin/datasets/${dataset.id}`);
   };
 
   const openPanel = async (datasetId: string) => {
@@ -335,7 +335,7 @@ export default function DatasetsPage() {
                       className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-900/40"
                       onClick={async () => {
                         if (dataset.validation_status === "completed") {
-                          router.push(`/datasets/${dataset.id}`);
+                          router.push(`/admin/datasets/${dataset.id}`);
                         } else {
                           // Open upload modal to continue setup
                           try {

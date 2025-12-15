@@ -53,7 +53,7 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
   const displayRole = user?.role === 'admin' ? 'admin' : 'user'
 
   const pageTitle = useMemo(() => {
-    if (pathname?.startsWith('/datasets')) return 'Projects / Datasets'
+    if (pathname?.startsWith('/admin/datasets')) return 'Projects / Datasets'
     if (pathname?.startsWith('/admin/repos')) return 'Repositories'
     if (pathname?.startsWith('/dashboard')) return 'Overview'
     if (pathname?.startsWith('/admin/pipeline')) return 'Pipeline'

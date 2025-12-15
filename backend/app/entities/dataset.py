@@ -18,6 +18,15 @@ class DatasetValidationStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class DatasetIngestionStatus(str, Enum):
+    """Dataset ingestion status (resource collection)."""
+
+    PENDING = "pending"
+    INGESTING = "ingesting"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class DatasetMapping(BaseModel):
     """Mappings from dataset columns to required build identifiers."""
 
@@ -43,6 +52,17 @@ class ValidationStats(BaseModel):
     builds_total: int = 0
     builds_found: int = 0
     builds_not_found: int = 0
+
+
+class IngestionStats(BaseModel):
+    """Statistics from dataset ingestion process."""
+
+    repos_total: int = 0
+    repos_ingested: int = 0
+    repos_failed: int = 0
+    builds_total: int = 0
+    worktrees_created: int = 0
+    logs_downloaded: int = 0
 
 
 class DatasetProject(BaseEntity):
@@ -72,7 +92,16 @@ class DatasetProject(BaseEntity):
     validation_stats: ValidationStats = Field(default_factory=ValidationStats)
     validation_error: Optional[str] = None
 
-    # Setup progress tracking (1=uploaded, 2=configured, 3=validated)
+    # Ingestion status (resource collection after validation)
+    ingestion_status: DatasetIngestionStatus = DatasetIngestionStatus.PENDING
+    ingestion_task_id: Optional[str] = None
+    ingestion_started_at: Optional[datetime] = None
+    ingestion_completed_at: Optional[datetime] = None
+    ingestion_progress: int = 0  # 0-100
+    ingestion_stats: IngestionStats = Field(default_factory=IngestionStats)
+    ingestion_error: Optional[str] = None
+
+    # Setup progress tracking (1=uploaded, 2=configured, 3=validated, 4=ingested)
     setup_step: int = 1
 
     # Enrichment tracking

@@ -42,6 +42,10 @@ export interface Build {
   workflow_run_id: number;
   error_message?: string;
   is_missing_commit?: boolean;
+  // Logs fields
+  logs_available?: boolean;
+  logs_expired?: boolean;
+  logs_path?: string;
 }
 
 export interface BuildDetail extends Build {
@@ -88,7 +92,15 @@ export interface DatasetRecord {
   validation_progress?: number;
   validation_error?: string;
   validation_stats?: ValidationStats;
-  // Setup progress tracking (1=uploaded, 2=configured, 3=validated)
+  // Ingestion fields (resource collection)
+  ingestion_status?: "pending" | "ingesting" | "completed" | "failed";
+  ingestion_task_id?: string;
+  ingestion_started_at?: string;
+  ingestion_completed_at?: string;
+  ingestion_progress?: number;
+  ingestion_error?: string;
+  ingestion_stats?: IngestionStats;
+  // Setup progress tracking (1=uploaded, 2=configured, 3=validated, 4=ingested)
   setup_step?: number;
   // Aggregated enrichment info (computed from enrichment_jobs)
   enrichment_jobs_count?: number;
@@ -695,6 +707,15 @@ export interface ValidationStats {
   builds_total: number;
   builds_found: number;
   builds_not_found: number;
+}
+
+export interface IngestionStats {
+  repos_total: number;
+  repos_ingested: number;
+  repos_failed: number;
+  builds_total: number;
+  worktrees_created: number;
+  logs_downloaded: number;
 }
 
 export interface DatasetValidationStatus {

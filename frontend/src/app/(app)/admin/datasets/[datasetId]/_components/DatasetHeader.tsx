@@ -57,7 +57,7 @@ export function DatasetHeader({ dataset, onRefresh, onDelete }: DatasetHeaderPro
                 <Button
                     variant="ghost"
                     size="icon"
-                    onClick={() => router.push("/datasets")}
+                    onClick={() => router.push("/admin/datasets")}
                 >
                     <ArrowLeft className="h-4 w-4" />
                 </Button>

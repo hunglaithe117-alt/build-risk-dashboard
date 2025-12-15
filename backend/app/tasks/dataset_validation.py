@@ -507,6 +507,7 @@ def finalize_validation(
             "validation_progress": 100,
             "validation_stats": stats.model_dump(),
             "stats.build_coverage": build_coverage,
+            "setup_step": 3,  # Mark validation complete
         },
     )
 
@@ -514,6 +515,13 @@ def finalize_validation(
         f"Dataset validation {final_status}: {dataset_id}, "
         f"{total_builds_found}/{total_builds} builds found"
     )
+
+    # Auto-trigger ingestion if validation completed successfully
+    if final_status == "completed" and total_builds_found > 0:
+        from app.tasks.dataset_ingestion import start_ingestion
+
+        start_ingestion.delay(dataset_id)
+        logger.info(f"Auto-triggered ingestion for dataset {dataset_id}")
 
     return {
         "status": final_status,

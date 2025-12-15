@@ -14,19 +14,13 @@ All materials are ready for:
 
 ## 📁 What's Inside
 
-### 📊 PlantUML Diagrams (7 files)
+### 📊 PlantUML Diagrams (3 files)
 
 | File | Diagram Type | Purpose | Key Elements |
 |------|-------------|---------|--------------|
 | `flow1_use_case.puml` | Use Case Diagram | High-level system overview | 2 Actors, 9 Use Cases |
 | `flow1_activity_swimlanes.puml` | Activity Diagram | Detailed workflow with swimlanes | 5 Swimlanes, 3 Phases |
 | `flow1_sequence_diagram.puml` | Sequence Diagram | Temporal interactions | 6 Participants, 6 Sequences |
-| `functional_overview_use_case.puml` | Use Case Diagram | Functional overview: Admin vs Authenticated User | Actors: Admin, Repository Member |
-| `functional_overview_component.puml` | Component Diagram | High-level system components & integrations | Frontend, Backend, DB, SonarQube, GitHub, Token Pool (Redis) |
-| `functional_overview_sequence_flow1.puml` | Sequence Diagram | Live repo integration flow (register → enrich → infer → notify) | 8 Participants, async tasks |
-| `functional_overview_sequence_flow2.puml` | Sequence Diagram | Dataset enrichment flow (upload → enrich → versions) | 6 Participants, batch processing |
-
-Note: The architecture includes an admin-only Token Management API (`/tokens`) backed by a Redis-based GitHub Token Pool used by enrichment workers to rotate tokens under rate limits.
 
 ### 📚 Documentation (5 files)
 

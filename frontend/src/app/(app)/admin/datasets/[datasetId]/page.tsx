@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Database, Loader2, Plug, Zap } from "lucide-react";
+import { Database, FolderGit2, Loader2, Plug, Zap } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,7 +10,7 @@ import { datasetsApi } from "@/lib/api";
 import type { DatasetRecord } from "@/types";
 
 import { DatasetHeader } from "./_components/DatasetHeader";
-import { OverviewTab, EnrichmentTab, IntegrationsTab } from "./_components/tabs";
+import { OverviewTab, DataTab, EnrichmentTab, IntegrationsTab } from "./_components/tabs";
 import {
     Card,
     CardDescription,
@@ -37,7 +37,7 @@ export default function DatasetDetailPage() {
 
             // Redirect to datasets page if validation not completed
             if (data.validation_status !== "completed") {
-                router.replace("/datasets");
+                router.replace("/admin/datasets");
                 return;
             }
 
@@ -61,7 +61,7 @@ export default function DatasetDetailPage() {
         }
         try {
             await datasetsApi.delete(datasetId);
-            router.push("/datasets");
+            router.push("/admin/datasets");
         } catch (err) {
             console.error("Failed to delete dataset:", err);
         }
@@ -102,10 +102,19 @@ export default function DatasetDetailPage() {
 
             {/* Tabs - Full Width */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-3">
+                <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="overview" className="gap-2">
                         <Database className="h-4 w-4" />
                         Overview
+                    </TabsTrigger>
+                    <TabsTrigger value="data" className="gap-2">
+                        <FolderGit2 className="h-4 w-4" />
+                        Data
+                        {dataset.ingestion_status === "ingesting" && (
+                            <Badge variant="secondary" className="ml-1 text-xs animate-pulse">
+                                Collecting
+                            </Badge>
+                        )}
                     </TabsTrigger>
                     <TabsTrigger value="enrichment" className="gap-2">
                         <Zap className="h-4 w-4" />
@@ -126,6 +135,14 @@ export default function DatasetDetailPage() {
                     <OverviewTab dataset={dataset} onRefresh={loadDataset} />
                 </TabsContent>
 
+                <TabsContent value="data" className="mt-6">
+                    <DataTab
+                        datasetId={datasetId}
+                        dataset={dataset}
+                        onRefresh={loadDataset}
+                    />
+                </TabsContent>
+
                 <TabsContent value="enrichment" className="mt-6">
                     <EnrichmentTab
                         datasetId={datasetId}
@@ -141,3 +158,4 @@ export default function DatasetDetailPage() {
         </div>
     );
 }
+

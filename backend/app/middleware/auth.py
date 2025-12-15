@@ -66,14 +66,3 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Could not validate user: {str(e)}",
         )
-
-
-async def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    """Dependency that ensures the current user has admin privileges."""
-    role = user.get("role", "user")
-    if role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Administrator privileges required",
-        )
-    return user

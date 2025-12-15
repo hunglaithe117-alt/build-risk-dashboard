@@ -23,6 +23,10 @@ class BuildSummary(BaseModel):
     # Workflow info
     workflow_run_id: int
 
+    # Logs fields
+    logs_available: Optional[bool] = None
+    logs_expired: Optional[bool] = None
+
     class Config:
         populate_by_name = True
 

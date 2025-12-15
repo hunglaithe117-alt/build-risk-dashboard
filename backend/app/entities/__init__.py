@@ -30,6 +30,8 @@ from .dataset import (
     DatasetStats,
     ValidationStats,
     DatasetValidationStatus,
+    DatasetIngestionStatus,
+    IngestionStats,
 )
 from .dataset_build import DatasetBuild, DatasetBuildStatus
 

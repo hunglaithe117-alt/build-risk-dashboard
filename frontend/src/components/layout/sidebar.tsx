@@ -12,7 +12,7 @@ const navigation = [
   },
   {
     label: "Projects",
-    href: "/datasets",
+    href: "/admin/datasets",
     icon: Database,
   },
   {

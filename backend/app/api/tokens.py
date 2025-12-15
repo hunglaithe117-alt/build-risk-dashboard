@@ -3,7 +3,7 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Path, status, Body
 
-from app.middleware.auth import get_current_user, require_admin
+from app.middleware.auth import get_current_user
 from app.dtos.token import (
     TokenCreateRequest,
     TokenUpdateRequest,
@@ -26,7 +26,7 @@ def get_token_service() -> TokenService:
 
 @router.post("/refresh-all", response_model=RefreshAllResponse)
 async def refresh_all_tokens(
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
     service: TokenService = Depends(get_token_service),
 ):
     """
@@ -41,7 +41,7 @@ async def refresh_all_tokens(
 @router.get("/", response_model=TokenListResponse)
 async def list_tokens(
     include_disabled: bool = False,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
     service: TokenService = Depends(get_token_service),
 ):
     """List all GitHub tokens (masked, without actual token values)."""
@@ -54,7 +54,7 @@ async def list_tokens(
 
 @router.get("/status", response_model=TokenPoolStatusResponse)
 async def get_pool_status(
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
     service: TokenService = Depends(get_token_service),
 ):
     """Get overall status of the token pool."""
@@ -65,7 +65,7 @@ async def get_pool_status(
 @router.post("/", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def create_token(
     request: TokenCreateRequest,
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
     service: TokenService = Depends(get_token_service),
 ):
     """
@@ -83,7 +83,7 @@ async def create_token(
 @router.get("/{token_id}", response_model=TokenResponse)
 async def get_token(
     token_id: str = Path(..., description="Token ID"),
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
     service: TokenService = Depends(get_token_service),
 ):
     """Get details of a specific token."""
@@ -95,7 +95,7 @@ async def get_token(
 async def update_token(
     token_id: str = Path(..., description="Token ID"),
     request: TokenUpdateRequest = Body(...),
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
     service: TokenService = Depends(get_token_service),
 ):
     """Update a token's label or status."""
@@ -110,7 +110,7 @@ async def update_token(
 @router.delete("/{token_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_token(
     token_id: str = Path(..., description="Token ID"),
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
     service: TokenService = Depends(get_token_service),
 ):
     """Remove a token from the pool."""
@@ -124,7 +124,7 @@ async def verify_token(
     raw_token: Optional[str] = Body(
         None, embed=True, description="Raw token for verification"
     ),
-    current_user: dict = Depends(require_admin),
+    current_user: dict = Depends(get_current_user),
     service: TokenService = Depends(get_token_service),
 ):
     """

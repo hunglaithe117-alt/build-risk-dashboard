@@ -73,6 +73,8 @@ class BuildService:
                     duration=self._get_feature(sample, "tr_duration"),
                     num_jobs=self._get_feature(sample, "tr_log_num_jobs"),
                     num_tests=self._get_feature(sample, "tr_log_tests_run_sum"),
+                    logs_available=build_run.logs_available if build_run else None,
+                    logs_expired=build_run.logs_expired if build_run else None,
                 )
             )
 

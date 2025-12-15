@@ -32,6 +32,7 @@ import { formatDurationFromSeconds, formatTimestamp } from "@/lib/utils";
 import type { Build, RepoDetail } from "@/types";
 import { BuildStatus, ExtractionStatus } from "@/components/build-drawer";
 import { ExportPanel } from "./_components/ExportPanel";
+import { BuildLogsDialog, LogsCell } from "./_components/BuildLogsDialog";
 
 const PAGE_SIZE = 20;
 
@@ -190,6 +191,7 @@ export default function RepoBuildsPage() {
     const [syncing, setSyncing] = useState(false);
 
     const [reprocessingBuilds, setReprocessingBuilds] = useState<Record<string, boolean>>({});
+    const [logsDialogBuild, setLogsDialogBuild] = useState<Build | null>(null);
 
     const { subscribe } = useWebSocket();
 
@@ -382,6 +384,9 @@ export default function RepoBuildsPage() {
                                     <th className="px-6 py-3 text-left font-semibold text-slate-500">
                                         Extraction
                                     </th>
+                                    <th className="px-6 py-3 text-left font-semibold text-slate-500">
+                                        Logs
+                                    </th>
                                     <th className="px-6 py-3" />
                                 </tr>
                             </thead>
@@ -435,6 +440,9 @@ export default function RepoBuildsPage() {
                                             </td>
                                             <td className="px-6 py-4">
                                                 <ExtractionStatusBadge status={build.extraction_status} />
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <LogsCell build={build} onViewLogs={(b) => setLogsDialogBuild(b)} />
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-1">
@@ -524,6 +532,13 @@ export default function RepoBuildsPage() {
                 repoId={repoId}
                 buildId={selectedBuildId}
                 onClose={() => setSelectedBuildId(null)}
+            />
+
+            <BuildLogsDialog
+                repoId={repoId}
+                build={logsDialogBuild}
+                open={!!logsDialogBuild}
+                onOpenChange={(open) => !open && setLogsDialogBuild(null)}
             />
         </div >
     );

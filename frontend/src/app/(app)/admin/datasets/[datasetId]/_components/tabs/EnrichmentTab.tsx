@@ -41,6 +41,7 @@ export function EnrichmentTab({
 
     // Check if dataset is validated
     const isValidated = dataset.validation_status === "completed";
+    const isIngested = dataset.ingestion_status === "completed";
     const mappingReady = Boolean(
         dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name
     );
@@ -78,6 +79,19 @@ export function EnrichmentTab({
                 <AlertDescription>
                     Dataset validation must be completed before creating enriched
                     versions. Please go to the Configuration tab to validate.
+                </AlertDescription>
+            </Alert>
+        );
+    }
+
+    // Show warning if ingestion not complete
+    if (!isIngested) {
+        return (
+            <Alert className="my-4 border-blue-200 bg-blue-50 dark:bg-blue-900/20">
+                <AlertCircle className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-blue-600">
+                    Data collection is in progress. Please wait for it to complete
+                    before creating enriched versions. Check the <strong>Data</strong> tab for progress.
                 </AlertDescription>
             </Alert>
         );

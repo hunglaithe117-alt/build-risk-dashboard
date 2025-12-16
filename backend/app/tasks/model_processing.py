@@ -185,7 +185,7 @@ def dispatch_build_processing(
 
     model_build_repo = ModelTrainingBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
-    build_run_repo = RawBuildRunRepository(self.db)
+    raw_build_run_repo = RawBuildRunRepository(self.db)
 
     if not raw_build_run_ids:
         logger.info(f"No builds to process for repo config {repo_config_id}")
@@ -204,8 +204,8 @@ def dispatch_build_processing(
         run_id = ObjectId(run_id_str)
 
         # Get the build run details
-        build_run = build_run_repo.find_by_id(run_id)
-        if not build_run:
+        raw_build_run = raw_build_run_repo.find_by_id(run_id)
+        if not raw_build_run:
             logger.warning(f"RawBuildRun {run_id_str} not found, skipping")
             continue
 
@@ -221,9 +221,9 @@ def dispatch_build_processing(
             raw_repo_id=ObjectId(raw_repo_id),
             raw_build_run_id=run_id,
             model_repo_config_id=ObjectId(repo_config_id),
-            head_sha=build_run.commit_sha,
-            build_number=build_run.build_number,
-            build_created_at=build_run.created_at,
+            head_sha=raw_build_run.commit_sha,
+            build_number=raw_build_run.build_number,
+            build_created_at=raw_build_run.created_at,
             extraction_status=ExtractionStatus.PENDING,
         )
         inserted = model_build_repo.insert_one(model_build)
@@ -304,7 +304,7 @@ def process_workflow_run(
     """
     model_build_repo = ModelTrainingBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
-    build_run_repo = RawBuildRunRepository(self.db)
+    raw_build_run_repo = RawBuildRunRepository(self.db)
 
     # Find the ModelTrainingBuild (already created with PENDING status)
     model_build = model_build_repo.find_one(
@@ -318,8 +318,8 @@ def process_workflow_run(
         return {"status": "error", "message": "ModelTrainingBuild not found"}
 
     # Get the RawBuildRun
-    build_run = build_run_repo.find_by_id(model_build.raw_build_run_id)
-    if not build_run:
+    raw_build_run = raw_build_run_repo.find_by_id(model_build.raw_build_run_id)
+    if not raw_build_run:
         logger.error(f"RawBuildRun not found for id {model_build.raw_build_run_id}")
         model_build_repo.update_one(
             model_build_id,
@@ -359,7 +359,7 @@ def process_workflow_run(
             db=self.db,
             raw_repo=raw_repo,
             repo_config=repo_config,
-            build_run=build_run,
+            build_run=raw_build_run,
             selected_features=feature_names,
         )
 

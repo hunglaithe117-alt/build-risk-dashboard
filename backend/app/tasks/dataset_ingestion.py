@@ -94,7 +94,7 @@ def ingest_dataset_builds(
 
     return {
         "status": "dispatched",
-        "repo_id": repo_id,
+        "repo_config_id": repo_config_id,
         "build_csv_ids": len(build_csv_ids),
         "resources": list(required_resources),
         "tasks_by_level": {str(k): v for k, v in tasks_by_level.items()},

@@ -17,6 +17,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from bson import ObjectId
 from celery import chain, group
 
 from app.celery_app import celery_app

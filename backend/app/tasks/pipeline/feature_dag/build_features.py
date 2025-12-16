@@ -135,7 +135,7 @@ def tr_duration(build_run: BuildRunInput) -> float:
     output_format=OutputFormat.COMMA_SEPARATED,
 )
 @tag(group="build_log")
-def tr_log_lan_all(repo: RepoInput) -> List[str]:
+def tr_log_lan_all(repo: RepoConfigInput) -> List[str]:
     """All source languages for the repository."""
     return repo.source_languages
 

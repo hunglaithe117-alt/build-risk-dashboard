@@ -1,0 +1,57 @@
+@startuml build_risk_dashboard_use_cases
+left to right direction
+skinparam packageStyle rectangle
+skinparam wrapWidth 220
+skinparam maxMessageSize 220
+
+actor "DevOps Engineer\n/Data Analyst" as User
+actor "Platform Admin" as Admin
+actor "GitHub" as GH
+actor "SonarQube" as Sonar
+actor "Trivy Scanner" as Trivy
+actor "CI Services\n(CircleCI, Travis)" as CI
+
+rectangle "Build Risk Dashboard" {
+  usecase "GitHub OAuth login" as UC_Login
+  usecase "Configure integrations\n(GitHub App endpoints)" as UC_Integrations
+  usecase "Manage GitHub token pool" as UC_Tokens
+  usecase "Discover & import repositories" as UC_ImportRepos
+  usecase "Sync builds\nor reprocess features" as UC_SyncBuilds
+  usecase "Browse builds, logs,\nsearch/filter/export" as UC_Builds
+  usecase "Configure repo SonarQube scans\nand retry failed scans" as UC_SonarRepo
+  usecase "Upload & validate datasets\n(map to builds)" as UC_Datasets
+  usecase "Create dataset versions,\nfeature enrichment, export" as UC_Versions
+  usecase "Scan dataset commits\nwith SonarQube/Trivy" as UC_DataScans
+  usecase "Monitor feature pipeline runs\nand DAG definitions" as UC_Pipeline
+  usecase "View dashboard metrics\n(repos, builds, success rate)" as UC_Dashboard
+  usecase "Configure notifications\nand global settings" as UC_Settings
+}
+
+User --> UC_Login
+User --> UC_ImportRepos
+User --> UC_SyncBuilds
+User --> UC_Builds
+User --> UC_SonarRepo
+User --> UC_Datasets
+User --> UC_Versions
+User --> UC_DataScans
+User --> UC_Pipeline
+User --> UC_Dashboard
+User --> UC_Settings
+
+Admin --> UC_Integrations
+Admin --> UC_Tokens
+Admin --> UC_Settings
+
+GH --> UC_Login : OAuth
+GH --> UC_ImportRepos : Installations\nrepo metadata
+GH --> UC_SyncBuilds : Webhooks\nworkflow runs
+GH --> UC_Builds : Logs & commits
+
+Sonar --> UC_SonarRepo : Scan jobs
+Sonar --> UC_DataScans : Code quality metrics
+
+Trivy --> UC_DataScans : Security scan results
+
+CI --> UC_Settings : Enable providers
+@enduml

@@ -165,7 +165,16 @@ export const datasetApi = {
 | Hook | `use-{name}.ts` |
 | Context | `{name}-context.tsx` |
 
----
+### Variable Naming Rules (Class-bound variables)
+
+- Variables instantiated from a class MUST be named as a concise,
+  lowercase, snake_case derivative of the class name.
+- The variable name MUST preserve the domain context of the class.
+- The role suffix MUST match the layer or responsibility:
+  - Repository → *_repo
+  - Service → *_service
+  - Task → *_task
+  - Client / Adapter → *_client
 
 ## 4. New Feature Checklist
 

@@ -58,6 +58,7 @@ class DatasetValidationService:
         raw_repo_repo = RawRepositoryRepository(self.db)
         saved_count = 0
         not_found = 0
+        validated_raw_repo_ids = []  # Collect IDs for dataset
 
         # Use public GitHub client to verify and fetch metadata
         with get_public_github_client() as gh:
@@ -100,13 +101,13 @@ class DatasetValidationService:
                     default_branch=repo_data.get("default_branch", "main"),
                     is_private=bool(repo_data.get("private", False)),
                     main_lang=main_lang,
-                    source_languages=source_languages,
-                    language_stats=language_stats,
                     github_metadata=repo_data,
                 )
 
+                # Collect raw_repo_id for dataset
+                validated_raw_repo_ids.append(raw_repo.id)
+
                 # Persist dataset repo config linked to RawRepository
-                # Note: assumes repository has an upsert method that accepts raw_repo_id
                 self.enrichment_repo.upsert_repo(
                     dataset_id=dataset_id,
                     full_name=repo_config.full_name,
@@ -119,6 +120,12 @@ class DatasetValidationService:
                     is_private=bool(repo_data.get("private", False)),
                 )
                 saved_count += 1
+
+        if validated_raw_repo_ids:
+            self.dataset_repo.update_one(
+                dataset_id,
+                {"validated_raw_repo_ids": validated_raw_repo_ids},
+            )
 
         return {
             "saved": saved_count,

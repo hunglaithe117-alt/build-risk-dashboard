@@ -1,0 +1,59 @@
+@startuml use_case_datasets_scans
+!theme plain
+left to right direction
+
+actor "Data Scientist /\nAnalyst" as User
+actor "Platform Admin" as Admin
+actor "GitHub" as GH
+actor "SonarQube" as Sonar
+actor "Trivy" as Trivy
+
+rectangle "Dataset Enrichment & Scanning" {
+  usecase "Upload CSV dataset" as UC_Upload
+  usecase "Map columns to repo/build ids" as UC_Map
+  usecase "Configure dataset repositories" as UC_ConfigRepos
+  usecase "Validate repositories & builds" as UC_Validate
+  usecase "Start enrichment run" as UC_Enrich
+  usecase "Monitor enrichment progress" as UC_Monitor
+  usecase "Create dataset version\n(select features)" as UC_Version
+  usecase "Preview / export version data" as UC_Export
+  usecase "Scan dataset commits\n(SonarQube / Trivy)" as UC_Scan
+  usecase "Review scan results & metrics" as UC_ScanResults
+}
+
+User --> UC_Upload
+User --> UC_Map
+User --> UC_ConfigRepos
+User --> UC_Validate
+User --> UC_Enrich
+User --> UC_Monitor
+User --> UC_Version
+User --> UC_Export
+User --> UC_Scan
+User --> UC_ScanResults
+
+Admin --> UC_Version
+Admin --> UC_Scan
+
+UC_Upload --> UC_Map
+UC_Map --> UC_ConfigRepos
+UC_ConfigRepos --> UC_Validate
+UC_Validate --> UC_Enrich
+UC_Enrich --> UC_Monitor
+UC_Version --> UC_Export
+UC_Scan --> UC_ScanResults
+
+GH --> UC_Validate : Check repo/build ids
+Sonar --> UC_Scan : Code quality metrics
+Trivy --> UC_Scan : Security scan results
+
+note right of UC_Validate
+  Cross-check repo names and build IDs
+  against provider data; report failures
+end note
+
+note right of UC_Monitor
+  Track progress, retry failed rows,
+  view validation/enrichment status
+end note
+@enduml

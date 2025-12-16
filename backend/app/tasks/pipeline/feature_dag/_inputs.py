@@ -61,11 +61,9 @@ class RepoInput:
     id: str
     full_name: str
     main_lang: Optional[str]
-    source_languages: List[str]
     is_private: bool
     github_repo_id: Optional[int]
     default_branch: str
-    language_stats: Dict[str, int]
 
     @classmethod
     def from_entity(cls, repo: RawRepository) -> RepoInput:
@@ -74,11 +72,9 @@ class RepoInput:
             id=str(repo.id),
             full_name=repo.full_name,
             main_lang=repo.main_lang,
-            source_languages=repo.source_languages or [],
             is_private=repo.is_private,
             github_repo_id=repo.github_repo_id,
             default_branch=repo.default_branch,
-            language_stats=repo.language_stats or {},
         )
 
 

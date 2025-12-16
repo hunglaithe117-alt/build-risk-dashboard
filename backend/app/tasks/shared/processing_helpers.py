@@ -32,8 +32,8 @@ def extract_features_for_build(
     db,
     raw_repo: RawRepository,
     repo_config: RepoConfigBase,  # Can be ModelRepoConfig or DatasetRepoConfig
-    build_run: RawBuildRun,
-    selected_features: Optional[List[str]] = None,
+    raw_build_run: RawBuildRun,
+    selected_features: List[str] = [],
     github_client=None,
 ) -> Dict[str, Any]:
     """
@@ -51,7 +51,7 @@ def extract_features_for_build(
         db: Database session
         raw_repo: RawRepository entity
         repo_config: ModelRepoConfig or DatasetRepoConfig entity
-        build_run: RawBuildRun entity
+        raw_build_run: RawBuildRun entity
         selected_features: Optional list of features to extract
         github_client: Optional GitHub client for API calls
 
@@ -65,7 +65,7 @@ def extract_features_for_build(
         inputs = build_hamilton_inputs(
             raw_repo=raw_repo,
             repo_config=repo_config,
-            build_run=build_run,
+            build_run=raw_build_run,
             repo_path=repo_path,
         )
 
@@ -95,14 +95,14 @@ def extract_features_for_build(
 
         if not inputs.is_commit_available:
             result["warnings"].append(
-                f"Commit {build_run.commit_sha} not found in repo"
+                f"Commit {raw_build_run.commit_sha} not found in repo"
             )
 
         return result
 
     except Exception as e:
         logger.error(
-            f"Pipeline failed for build {build_run.build_id}: {e}",
+            f"Pipeline failed for build {raw_build_run.build_id}: {e}",
             exc_info=True,
         )
         return {

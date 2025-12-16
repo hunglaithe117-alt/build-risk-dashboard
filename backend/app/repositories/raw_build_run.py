@@ -8,6 +8,7 @@ from pymongo import ReturnDocument
 
 from app.entities.raw_build_run import RawBuildRun
 from app.repositories.base import BaseRepository
+from backend.app.entities.base import validate_object_id
 
 
 class RawBuildRunRepository(BaseRepository[RawBuildRun]):
@@ -61,13 +62,13 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
 
     def find_by_commit_or_effective_sha(
         self,
-        raw_repo_id: ObjectId,
+        raw_repo_id: str,
         commit_sha: str,
     ) -> Optional[RawBuildRun]:
         """Find a build run by repo and commit SHA or effective SHA."""
         doc = self.collection.find_one(
             {
-                "raw_repo_id": raw_repo_id,
+                "raw_repo_id": validate_object_id(raw_repo_id),
                 "$or": [
                     {"commit_sha": commit_sha},
                     {"effective_sha": commit_sha},

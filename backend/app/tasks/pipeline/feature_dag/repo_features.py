@@ -137,7 +137,7 @@ def gh_repo_num_commits(git_history: GitHistoryInput) -> Optional[int]:
 @tag(group="repo")
 def repo_code_metrics(
     git_worktree: GitWorktreeInput,
-    repo: RepoInput,
+    repo: RepoConfigInput,
 ) -> Dict[str, Any]:
     """
     SLOC and test density metrics.

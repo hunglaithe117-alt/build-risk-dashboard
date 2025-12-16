@@ -92,7 +92,7 @@ def ingest_model_builds(
         batch_size=batch_size,
         page=1,
         total_fetched=0,
-        all_build_ids=[],
+        ci_build_ids=[],
     )
 
     return {
@@ -122,7 +122,7 @@ def fetch_builds_batch(
     ci_provider: str,
     page: int,
     total_fetched: int,
-    all_build_ids: List[str],
+    ci_build_ids: List[str],
     max_builds: Optional[int] = None,
     since_days: Optional[int] = None,
     only_with_logs: bool = False,
@@ -172,12 +172,12 @@ def fetch_builds_batch(
             loop.close()
 
         # Process and save builds
-        batch_build_ids = []
+        batch_ci_build_ids = []
         for build in builds:
             if build.status != BuildStatus.COMPLETED:
                 continue
 
-            build_run = build_run_repo.upsert_by_business_key(
+            raw_build_run = build_run_repo.upsert_by_business_key(
                 raw_repo_id=ObjectId(raw_repo_id),
                 build_id=build.build_id,
                 provider=ci_provider_enum.value,
@@ -200,18 +200,18 @@ def fetch_builds_batch(
                 raw_data=build.raw_data or {},
                 is_bot_commit=build.is_bot_commit or False,
             )
-            batch_build_ids.append(build_run.build_id)
+            batch_ci_build_ids.append(raw_build_run.build_id)
 
             # Check max builds limit
-            if max_builds and (total_fetched + len(batch_build_ids)) >= max_builds:
+            if max_builds and (total_fetched + len(batch_ci_build_ids)) >= max_builds:
                 break
 
         # Accumulate build IDs
-        new_total = total_fetched + len(batch_build_ids)
-        new_all_build_ids = all_build_ids + batch_build_ids
+        new_total = total_fetched + len(batch_ci_build_ids)
+        new_ci_build_ids = ci_build_ids + batch_ci_build_ids
 
         logger.info(
-            f"Page {page}: saved {len(batch_build_ids)} builds for {full_name} "
+            f"Page {page}: saved {len(batch_ci_build_ids)} builds for {full_name} "
             f"(total: {new_total})"
         )
 
@@ -229,7 +229,7 @@ def fetch_builds_batch(
                 ci_provider=ci_provider,
                 page=page + 1,
                 total_fetched=new_total,
-                all_build_ids=new_all_build_ids,
+                ci_build_ids=new_ci_build_ids,
                 max_builds=max_builds,
                 since_days=since_days,
                 only_with_logs=only_with_logs,
@@ -238,24 +238,23 @@ def fetch_builds_batch(
             return {
                 "status": "chained",
                 "page": page,
-                "builds_this_page": len(batch_build_ids),
+                "builds_this_page": len(batch_ci_build_ids),
                 "total_so_far": new_total,
                 "next_page": page + 1,
             }
         else:
-            # No more pages - finalize ingestion
             finalize_ingestion.delay(
                 repo_config_id=repo_config_id,
                 raw_repo_id=raw_repo_id,
                 full_name=full_name,
                 installation_id=installation_id,
                 ci_provider=ci_provider,
-                all_build_ids=new_all_build_ids,
+                ci_build_ids=new_ci_build_ids,
             )
             return {
                 "status": "completed",
                 "page": page,
-                "builds_this_page": len(batch_build_ids),
+                "builds_this_page": len(batch_ci_build_ids),
                 "total_builds": new_total,
             }
 
@@ -282,35 +281,35 @@ def finalize_ingestion(
     full_name: str,
     installation_id: str,
     ci_provider: str,
-    all_build_ids: List[str],
+    ci_build_ids: List[str],
 ) -> Dict[str, Any]:
     """
     Final step: Build ingestion workflow and dispatch processing.
 
     This task:
-    1. Collects raw_build_run ObjectIds
+    1. Collects raw_build_run ObjectIds from ci_build_ids
     2. Gets commit SHAs for worktree creation
     3. Builds and applies ingestion workflow (clone, logs, worktrees)
     4. Dispatches dispatch_build_processing for feature extraction
     """
     from app.tasks.model_processing import dispatch_build_processing
 
-    if not all_build_ids:
+    if not ci_build_ids:
         logger.info(f"No builds to process for {full_name}")
         return {"status": "completed", "builds": 0}
 
-    build_run_repo = RawBuildRunRepository(self.db)
+    raw_build_run_repo = RawBuildRunRepository(self.db)
     ci_provider_enum = CIProvider(ci_provider)
 
-    build_docs = build_run_repo.find_ids_by_build_ids(
-        ObjectId(raw_repo_id), all_build_ids, ci_provider_enum.value
+    raw_build_docs = raw_build_run_repo.find_ids_by_build_ids(
+        ObjectId(raw_repo_id), ci_build_ids, ci_provider_enum.value
     )
 
-    raw_build_run_ids = [str(doc["_id"]) for doc in build_docs]
+    raw_build_run_ids = [str(doc["_id"]) for doc in raw_build_docs]
     commit_shas = list(
         set(
             doc.get("effective_sha") or doc.get("commit_sha")
-            for doc in build_docs
+            for doc in raw_build_docs
             if doc.get("commit_sha")
         )
     )
@@ -329,7 +328,7 @@ def finalize_ingestion(
             tasks_by_level=tasks_by_level,
             raw_repo_id=raw_repo_id,
             full_name=full_name,
-            build_ids=all_build_ids,
+            build_ids=ci_build_ids,
             commit_shas=commit_shas,
             ci_provider=ci_provider_enum,
             installation_id=installation_id,
@@ -346,7 +345,7 @@ def finalize_ingestion(
     return {
         "status": "dispatched",
         "raw_repo_id": raw_repo_id,
-        "builds": len(all_build_ids),
+        "builds": len(ci_build_ids),
         "raw_build_run_ids": len(raw_build_run_ids),
         "resources": list(required_resources) if tasks_by_level else [],
     }

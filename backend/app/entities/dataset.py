@@ -70,6 +70,8 @@ class DatasetProject(BaseEntity):
     validation_stats: ValidationStats = Field(default_factory=ValidationStats)
     validation_error: Optional[str] = None
 
+    validated_raw_repo_ids: List[PyObjectId] = Field(default_factory=list)
+
     # Setup progress tracking (1=uploaded, 2=configured, 3=validated)
     setup_step: int = 1
 

@@ -24,6 +24,7 @@ from app.tasks.pipeline.feature_dag.analyzers import (
 )
 from app.tasks.pipeline.feature_dag._inputs import (
     GitHistoryInput,
+    RepoConfigInput,
     RepoInput,
     BuildRunInput,
 )
@@ -172,7 +173,7 @@ def git_commit_info(
 @tag(group="git")
 def git_diff_features(
     git_history: GitHistoryInput,
-    repo: RepoInput,
+    repo: RepoConfigInput,
     git_all_built_commits: List[str],
     git_prev_built_commit: Optional[str],
 ) -> Dict[str, Any]:

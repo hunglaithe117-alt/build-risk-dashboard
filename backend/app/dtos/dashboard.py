@@ -27,3 +27,42 @@ class DashboardSummaryResponse(BaseModel):
     metrics: DashboardMetrics
     trends: List[DashboardTrendPoint]
     repo_distribution: List[RepoDistributionEntry]
+
+
+# Dashboard Layout DTOs
+
+
+class WidgetConfigDto(BaseModel):
+    """DTO for widget configuration."""
+
+    widget_id: str
+    widget_type: str
+    title: str
+    enabled: bool = True
+    x: int = 0
+    y: int = 0
+    w: int = 1
+    h: int = 1
+
+
+class DashboardLayoutResponse(BaseModel):
+    """Response containing user's dashboard layout."""
+
+    widgets: list[WidgetConfigDto]
+
+
+class DashboardLayoutUpdateRequest(BaseModel):
+    """Request to update dashboard layout."""
+
+    widgets: list[WidgetConfigDto]
+
+
+class WidgetDefinition(BaseModel):
+    """Definition of an available widget."""
+
+    widget_id: str
+    widget_type: str
+    title: str
+    description: str
+    default_w: int = 1
+    default_h: int = 1

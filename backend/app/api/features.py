@@ -75,9 +75,28 @@ def list_features(
     )
 
 
-@router.get("/languages")
-def get_supported_languages():
-    return service.get_supported_languages()
+@router.get("/config")
+def get_feature_config():
+    """
+    Get configuration for feature extraction including supported languages and test frameworks.
+
+    Returns:
+        - languages: List of supported programming languages
+        - frameworks: List of all supported test framework names
+        - frameworks_by_language: Test frameworks grouped by language
+
+    Use this to drive UI selection for source languages and test frameworks.
+    """
+    from app.tasks.pipeline.feature_dag.log_parsers import LogParserRegistry
+    from app.tasks.pipeline.feature_dag.languages.registry import LanguageRegistry
+
+    log_parser_registry = LogParserRegistry()
+
+    return {
+        "languages": LanguageRegistry.get_supported_languages(),
+        "frameworks": log_parser_registry.get_supported_frameworks(),
+        "frameworks_by_language": log_parser_registry.get_frameworks_by_language(),
+    }
 
 
 @router.get("/{feature_name}", response_model=FeatureDefinitionResponse)

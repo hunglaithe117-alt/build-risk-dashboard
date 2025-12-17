@@ -1,25 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
-  CheckCircle2,
-  Database,
-  Download,
   FileSpreadsheet,
   Loader2,
   MoreVertical,
   PlayCircle,
-  Plus,
-  RefreshCw,
   Settings,
-  Sparkles,
   Trash2,
   Upload,
-  Wand2,
-  X,
+  X
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,18 +30,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
-import { datasetsApi, featuresApi } from "@/lib/api";
+import { useDebounce } from "@/hooks/use-debounce";
+import { datasetsApi } from "@/lib/api";
 import type {
   DatasetRecord,
-  DatasetTemplateRecord,
-  DatasetUpdatePayload,
-  FeatureDefinitionSummary,
+  DatasetTemplateRecord
 } from "@/types";
-import { useDebounce } from "@/hooks/use-debounce";
+import { createPortal } from "react-dom";
 import { EnrichmentPanel } from "./_components/EnrichmentPanel";
 import { UploadDatasetModal } from "./_components/UploadDatasetModal/index";
-import { createPortal } from "react-dom";
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
   const [mounted, setMounted] = useState(false);
@@ -131,6 +120,20 @@ export default function DatasetsPage() {
     loadDatasets(1, true);
   }, [loadDatasets]);
 
+  // Auto-refresh if any dataset is validating (repo or build)
+  useEffect(() => {
+    const hasValidating = datasets.some(
+      d => d.repo_validation_status === "validating" || d.validation_status === "validating"
+    );
+    if (!hasValidating) return;
+
+    const interval = setInterval(() => {
+      loadDatasets(page, false);
+    }, 3000); // Refresh every 3 seconds
+
+    return () => clearInterval(interval);
+  }, [datasets, page, loadDatasets]);
+
   const totalPages = total > 0 ? Math.ceil(total / PAGE_SIZE) : 1;
   const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const pageEnd = total === 0 ? 0 : Math.min(page * PAGE_SIZE, total);
@@ -183,11 +186,20 @@ export default function DatasetsPage() {
 
   const getStatusBadge = (dataset: DatasetRecord) => {
     const validationStatus = dataset.validation_status;
+    const repoValidationStatus = dataset.repo_validation_status;
     const setupStep = dataset.setup_step || 1;
 
-    // Check validation status first (takes priority)
+    // Check repo validation status first (during upload phase)
+    if (repoValidationStatus === "validating") {
+      return <Badge variant="outline" className="border-purple-500 text-purple-600">Validating Repos...</Badge>;
+    }
+    if (repoValidationStatus === "failed") {
+      return <Badge variant="destructive">Repo Validation Failed</Badge>;
+    }
+
+    // Check build validation status (takes priority after repos validated)
     if (validationStatus === "validating") {
-      return <Badge variant="outline" className="border-blue-500 text-blue-600">Validating...</Badge>;
+      return <Badge variant="outline" className="border-blue-500 text-blue-600">Validating Builds...</Badge>;
     }
     if (validationStatus === "cancelled") {
       return <Badge variant="outline" className="border-amber-500 text-amber-600">Cancelled</Badge>;

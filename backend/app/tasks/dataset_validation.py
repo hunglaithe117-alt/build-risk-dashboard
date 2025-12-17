@@ -64,6 +64,211 @@ def parse_csv_with_pandas(
     return df
 
 
+def extract_unique_repos(
+    file_path: str,
+    repo_name_column: str,
+) -> tuple[List[str], List[str]]:
+    """Extract unique valid and invalid format repos from CSV."""
+    df = pd.read_csv(file_path, dtype=str)
+
+    if repo_name_column not in df.columns:
+        return [], []
+
+    valid_repos = set()
+    invalid_repos = set()
+
+    for repo_name in df[repo_name_column].dropna().unique():
+        repo_name = str(repo_name).strip()
+        if not repo_name:
+            continue
+        if "/" in repo_name and len(repo_name.split("/")) == 2:
+            owner, name = repo_name.split("/")
+            if owner and name:
+                valid_repos.add(repo_name)
+            else:
+                invalid_repos.add(repo_name)
+        else:
+            invalid_repos.add(repo_name)
+
+    return list(valid_repos), list(invalid_repos)
+
+
+# REPO VALIDATION TASK (During Upload - Before Step 2)
+@celery_app.task(
+    bind=True,
+    name="app.tasks.dataset_validation.validate_repos_task",
+    queue="validation",
+    soft_time_limit=300,  # 5 min
+    time_limit=360,
+)
+def validate_repos_task(self, dataset_id: str) -> Dict[str, Any]:
+    """
+    Validate repositories discovered in CSV during upload.
+
+    Creates RawRepository and DatasetRepoConfig for each valid repo.
+    Called immediately after CSV upload, before Step 2.
+    """
+    from app.entities.dataset import RepoValidationStatus
+    from app.repositories.raw_repository import RawRepositoryRepository
+    from app.services.github.github_client import get_public_github_client
+
+    db = get_database()
+    dataset_repo = DatasetRepository(db)
+    repo_config_repo = DatasetRepoConfigRepository(db)
+    raw_repo_repo = RawRepositoryRepository(db)
+
+    try:
+        dataset = dataset_repo.find_by_id(dataset_id)
+        if not dataset:
+            raise ValueError(f"Dataset {dataset_id} not found")
+
+        # Mark as validating
+        dataset_repo.update_one(
+            dataset_id,
+            {
+                "repo_validation_status": RepoValidationStatus.VALIDATING,
+                "repo_validation_task_id": self.request.id,
+                "repo_validation_error": None,
+            },
+        )
+
+        # Extract repos from CSV
+        file_path = dataset.file_path
+        repo_name_col = dataset.mapped_fields.repo_name
+
+        if not repo_name_col:
+            raise ValueError("repo_name column not mapped")
+
+        valid_names, invalid_names = extract_unique_repos(file_path, repo_name_col)
+
+        logger.info(
+            f"Found {len(valid_names)} valid, {len(invalid_names)} invalid repos in dataset {dataset_id}"
+        )
+
+        # Validate and create repos
+        validated_raw_repo_ids = []
+        repos_valid = 0
+        repos_not_found = 0
+
+        with get_public_github_client() as gh:
+            for full_name in valid_names:
+                try:
+                    repo_data = gh.get_repository(full_name)
+
+                    raw_repo = raw_repo_repo.upsert_by_full_name(
+                        full_name=full_name,
+                        github_repo_id=repo_data.get("id"),
+                        default_branch=repo_data.get("default_branch", "main"),
+                        is_private=repo_data.get("private", False),
+                        main_lang=repo_data.get("language"),
+                        github_metadata=repo_data,
+                    )
+                    if raw_repo.is_private:
+                        logger.info(f"Repo {full_name} is private, skipping validation")
+                        repos_not_found += 1
+
+                        repo_config_repo.upsert_repo(
+                            dataset_id=dataset_id,
+                            full_name=full_name,
+                            ci_provider=CIProvider.GITHUB_ACTIONS,
+                            source_languages=[],
+                            test_frameworks=[],
+                            validation_status=DatasetRepoValidationStatus.NOT_FOUND,
+                            raw_repo_id=raw_repo.id,
+                            default_branch=repo_data.get("default_branch", "main"),
+                            validation_error="Repo is private",
+                        )
+                        continue
+                    validated_raw_repo_ids.append(raw_repo.id)
+
+                    repo_config_repo.upsert_repo(
+                        dataset_id=dataset_id,
+                        full_name=full_name,
+                        ci_provider=CIProvider.GITHUB_ACTIONS,
+                        source_languages=[],
+                        test_frameworks=[],
+                        validation_status=DatasetRepoValidationStatus.VALID,
+                        raw_repo_id=raw_repo.id,
+                        default_branch=repo_data.get("default_branch", "main"),
+                    )
+                    repos_valid += 1
+
+                except Exception as e:
+                    error_msg = str(e)
+                    is_not_found = (
+                        "404" in error_msg or "not found" in error_msg.lower()
+                    )
+                    logger.warning(f"Failed to validate repo {full_name}: {error_msg}")
+
+                    # Create DatasetRepoConfig with error status
+                    repo_config_repo.upsert_repo(
+                        dataset_id=dataset_id,
+                        full_name=full_name,
+                        ci_provider=CIProvider.GITHUB_ACTIONS,
+                        source_languages=[],
+                        test_frameworks=[],
+                        validation_status=(
+                            DatasetRepoValidationStatus.NOT_FOUND
+                            if is_not_found
+                            else DatasetRepoValidationStatus.ERROR
+                        ),
+                        raw_repo_id=None,
+                        default_branch="main",
+                        validation_error=error_msg,
+                    )
+                    repos_not_found += 1
+
+        # Handle invalid format repos
+        for invalid_name in invalid_names:
+            repo_config_repo.upsert_repo(
+                dataset_id=dataset_id,
+                full_name=invalid_name,
+                ci_provider=CIProvider.GITHUB_ACTIONS,
+                source_languages=[],
+                test_frameworks=[],
+                validation_status=DatasetRepoValidationStatus.ERROR,
+                raw_repo_id=None,
+                default_branch="main",
+                validation_error="Invalid format (expected owner/repo)",
+            )
+
+        # Update dataset with results
+        dataset_repo.update_one(
+            dataset_id,
+            {
+                "repo_validation_status": RepoValidationStatus.COMPLETED,
+                "validated_raw_repo_ids": validated_raw_repo_ids,
+                "validation_stats.repos_total": len(valid_names) + len(invalid_names),
+                "validation_stats.repos_valid": repos_valid,
+                "validation_stats.repos_not_found": repos_not_found,
+                "validation_stats.repos_invalid": len(invalid_names),
+            },
+        )
+
+        logger.info(
+            f"Repo validation completed for dataset {dataset_id}: "
+            f"{repos_valid} valid, {repos_not_found} not found, {len(invalid_names)} invalid"
+        )
+
+        return {
+            "status": "completed",
+            "repos_valid": repos_valid,
+            "repos_not_found": repos_not_found,
+            "repos_invalid": len(invalid_names),
+        }
+
+    except Exception as e:
+        logger.exception(f"Repo validation failed for dataset {dataset_id}: {e}")
+        dataset_repo.update_one(
+            dataset_id,
+            {
+                "repo_validation_status": RepoValidationStatus.FAILED,
+                "repo_validation_error": str(e),
+            },
+        )
+        raise
+
+
 # Task 1: Orchestrator
 @celery_app.task(
     bind=True,

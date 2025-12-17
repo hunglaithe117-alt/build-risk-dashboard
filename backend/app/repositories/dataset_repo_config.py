@@ -144,6 +144,25 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
         cursor = self.collection.find({"dataset_id": ds_id}).sort("created_at", -1)
         return [DatasetRepoConfig(**doc) for doc in cursor]
 
+    def find_by_dataset_and_repo(
+        self, dataset_id: str, full_name: str
+    ) -> Optional[DatasetRepoConfig]:
+        """Find a repo config by dataset and normalized full name."""
+        ds_id = ObjectId(dataset_id)
+        doc = self.collection.find_one(
+            {
+                "dataset_id": ds_id,
+                "normalized_full_name": full_name,
+            }
+        )
+        return DatasetRepoConfig(**doc) if doc else None
+
+    def update_config(self, config_id: str, updates: dict) -> None:
+        """Update specific fields on a config."""
+        oid = ObjectId(config_id)
+        updates["updated_at"] = datetime.utcnow()
+        self.collection.update_one({"_id": oid}, {"$set": updates})
+
     def upsert_repo(
         self,
         dataset_id: str,
@@ -154,7 +173,7 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
         validation_status: DatasetRepoValidationStatus,
         raw_repo_id: ObjectId | None = None,
         default_branch: str | None = None,
-        is_private: bool | None = None,
+        validation_error: str | None = None,
     ) -> DatasetRepoConfig:
         """Upsert a dataset repo config by dataset + normalized_full_name.
 
@@ -178,8 +197,8 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
             update_fields["raw_repo_id"] = raw_repo_id
         if default_branch is not None:
             update_fields["default_branch"] = default_branch
-        if is_private is not None:
-            update_fields["is_private"] = is_private
+        if validation_error is not None:
+            update_fields["validation_error"] = validation_error
 
         self.collection.update_one(
             {

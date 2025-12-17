@@ -26,6 +26,14 @@ interface UseStep2ConfigReposReturn {
     extractAndSetRepos: (preview: CSVPreview | null, repoColumn: string) => { valid: string[]; invalid: string[] };
     fetchLanguagesForRepo: (repoName: string) => Promise<void>;
     fetchLanguagesForAllRepos: (repos: string[]) => Promise<void>;
+    initializeFromRepoConfigs: (repoConfigs: Array<{
+        normalized_full_name: string;
+        validation_status: string;
+        validation_error?: string;
+        source_languages: string[];
+        test_frameworks: string[];
+        ci_provider: string;
+    }>) => void;
     resetStep2: () => void;
 }
 
@@ -43,16 +51,11 @@ export function useStep2ConfigRepos(): UseStep2ConfigReposReturn {
 
     // Load frameworks and languages on mount
     useEffect(() => {
-        featuresApi
-            .getSupportedLanguages()
-            .then((data) => setSupportedLanguages(data.languages))
-            .catch(console.error);
-
-        reposApi
-            .getTestFrameworks()
-            .then((res) => {
-                setFrameworks(res.frameworks || []);
-                setFrameworksByLang(res.by_language || {});
+        featuresApi.getConfig()
+            .then((config) => {
+                setSupportedLanguages(config.languages || []);
+                setFrameworks(config.frameworks || []);
+                setFrameworksByLang(config.frameworks_by_language || {});
             })
             .catch(console.error);
     }, []);
@@ -99,6 +102,47 @@ export function useStep2ConfigRepos(): UseStep2ConfigReposReturn {
         setAvailableLanguages({});
         setLanguageLoading({});
         setTransitionLoading(false);
+    }, []);
+
+    const initializeFromRepoConfigs = useCallback((repoConfigs: Array<{
+        normalized_full_name: string;
+        validation_status: string;
+        validation_error?: string;
+        source_languages: string[];
+        test_frameworks: string[];
+        ci_provider: string;
+    }>) => {
+        const valid: string[] = [];
+        const invalid: string[] = [];
+        const configs: Record<string, RepoConfig> = {};
+        const languages: Record<string, string[]> = {};
+
+        repoConfigs.forEach(repo => {
+            const fullName = repo.normalized_full_name;
+            const isValid = repo.validation_status === "valid";
+
+            if (isValid) {
+                valid.push(fullName);
+                languages[fullName] = repo.source_languages || [];
+            } else {
+                invalid.push(fullName);
+            }
+
+            configs[fullName] = {
+                source_languages: repo.source_languages || [],
+                test_frameworks: repo.test_frameworks || [],
+                ci_provider: (repo.ci_provider as CIProvider) || CIProvider.GITHUB_ACTIONS,
+                validation_status: repo.validation_status as RepoConfig["validation_status"],
+                validation_error: repo.validation_error,
+            };
+        });
+
+        setUniqueRepos(valid);
+        setInvalidFormatRepos(invalid);
+        setRepoConfigs(configs);
+        setAvailableLanguages(languages);
+        setTransitionLoading(false);
+        if (valid.length > 0) setActiveRepo(valid[0]);
     }, []);
 
     const extractAndSetRepos = useCallback(
@@ -287,6 +331,7 @@ export function useStep2ConfigRepos(): UseStep2ConfigReposReturn {
         extractAndSetRepos,
         fetchLanguagesForRepo,
         fetchLanguagesForAllRepos,
+        initializeFromRepoConfigs,
         resetStep2,
     };
 }

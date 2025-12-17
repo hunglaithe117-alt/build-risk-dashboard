@@ -43,13 +43,11 @@ class DatasetResponse(BaseModel):
     columns: List[str]
     mapped_fields: DatasetMappingDto = Field(default_factory=DatasetMappingDto)
     stats: DatasetStatsDto = Field(default_factory=DatasetStatsDto)
-    source_languages: List[str] = Field(default_factory=list)
-    test_frameworks: List[str] = Field(default_factory=list)
     preview: List[Dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: Optional[datetime] = None
 
-    # Validation status fields
+    # Validation status fields (build validation - Step 3)
     validation_status: str = "pending"
     validation_task_id: Optional[str] = None
     validation_started_at: Optional[datetime] = None
@@ -57,6 +55,11 @@ class DatasetResponse(BaseModel):
     validation_progress: int = 0
     validation_stats: ValidationStatsDto = Field(default_factory=ValidationStatsDto)
     validation_error: Optional[str] = None
+
+    # Repo validation status (during upload - before Step 2)
+    repo_validation_status: str = "pending"
+    repo_validation_task_id: Optional[str] = None
+    repo_validation_error: Optional[str] = None
 
     # Setup progress tracking (1=uploaded, 2=configured, 3=validated)
     setup_step: int = 1

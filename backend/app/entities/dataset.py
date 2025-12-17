@@ -9,13 +9,22 @@ from app.ci_providers.models import CIProvider
 
 
 class DatasetValidationStatus(str, Enum):
-    """Dataset validation status."""
+    """Dataset validation status (for build validation - Step 3)."""
 
     PENDING = "pending"
     VALIDATING = "validating"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class RepoValidationStatus(str, Enum):
+    """Repository validation status (during upload - before Step 2)."""
+
+    PENDING = "pending"
+    VALIDATING = "validating"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class DatasetMapping(BaseModel):
@@ -71,6 +80,11 @@ class DatasetProject(BaseEntity):
     validation_error: Optional[str] = None
 
     validated_raw_repo_ids: List[PyObjectId] = Field(default_factory=list)
+
+    # Repo validation status (during upload, before Step 2)
+    repo_validation_status: RepoValidationStatus = RepoValidationStatus.PENDING
+    repo_validation_task_id: Optional[str] = None
+    repo_validation_error: Optional[str] = None
 
     # Setup progress tracking (1=uploaded, 2=configured, 3=validated)
     setup_step: int = 1

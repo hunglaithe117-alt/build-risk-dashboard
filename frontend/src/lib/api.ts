@@ -1,47 +1,38 @@
 import type {
+  // Settings types
+  ApplicationSettings,
+  AuthVerifyResponse,
   Build,
   BuildDetail,
   BuildListResponse,
   DashboardSummaryResponse,
+  DatasetCreatePayload,
+  DatasetListResponse,
+  DatasetRecord,
+  DatasetRepoConfigDto,
+  DatasetTemplateListResponse,
+  DatasetTemplateRecord,
+  DatasetUpdatePayload,
+  FeatureDAGResponse,
+  FeatureListResponse,
   GithubAuthorizeResponse,
   GithubInstallation,
   GithubInstallationListResponse,
+  GithubToken,
+  RefreshTokenResponse,
   RepoDetail,
   RepoImportPayload,
   RepoListResponse,
-  RepoSuggestionResponse,
   RepoSearchResponse,
+  RepoSuggestionResponse,
   RepoUpdatePayload,
   RepositoryRecord,
-  UserAccount,
-  AuthVerifyResponse,
-  RefreshTokenResponse,
-  ScanJob,
-  ScanResult,
-  FailedScan,
-  FeatureListResponse,
-  FeatureDAGResponse,
-  DatasetListResponse,
-  DatasetCreatePayload,
-  DatasetRecord,
-  DatasetUpdatePayload,
-  DatasetTemplateListResponse,
-  DatasetTemplateRecord,
-  RepoValidationResponse,
-  GithubToken,
+  TokenCreatePayload,
   TokenListResponse,
   TokenPoolStatus,
-  TokenCreatePayload,
   TokenUpdatePayload,
   TokenVerifyResponse,
-  // Pipeline types
-  PipelineRun,
-  PipelineRunDetail,
-  PipelineRunListResponse,
-  PipelineStats,
-  DAGInfo,
-  // Settings types
-  ApplicationSettings,
+  UserAccount
 } from "@/types";
 import axios from "axios";
 
@@ -216,12 +207,6 @@ export const reposApi = {
     });
     return response.data;
   },
-  getTestFrameworks: async () => {
-    const response = await api.get<{ frameworks: string[]; by_language?: Record<string, string[]> }>(
-      `/repos/test-frameworks`
-    );
-    return response.data;
-  },
   delete: async (repoId: string) => {
     await api.delete(`/repos/${repoId}`);
   },
@@ -266,6 +251,10 @@ export const datasetsApi = {
   delete: async (datasetId: string) => {
     await api.delete(`/datasets/${datasetId}`);
   },
+  listRepoConfigs: async (datasetId: string): Promise<DatasetRepoConfigDto[]> => {
+    const response = await api.get<DatasetRepoConfigDto[]>(`/datasets/${datasetId}/repos`);
+    return response.data;
+  },
 };
 
 export const featuresApi = {
@@ -285,8 +274,12 @@ export const featuresApi = {
     const response = await api.get<FeatureDAGResponse>("/features/dag", { params });
     return response.data;
   },
-  getSupportedLanguages: async () => {
-    const response = await api.get<{ languages: string[] }>("/features/languages");
+  getConfig: async () => {
+    const response = await api.get<{
+      languages: string[];
+      frameworks: string[];
+      frameworks_by_language: Record<string, string[]>;
+    }>("/features/config");
     return response.data;
   },
 };
@@ -311,6 +304,19 @@ export const dashboardApi = {
     const response = await api.get<Build[]>("/dashboard/recent-builds", {
       params: { limit },
     });
+    return response.data;
+  },
+  // Dashboard layout methods
+  getLayout: async (): Promise<DashboardLayoutResponse> => {
+    const response = await api.get<DashboardLayoutResponse>("/dashboard/layout");
+    return response.data;
+  },
+  saveLayout: async (layout: DashboardLayoutUpdateRequest): Promise<DashboardLayoutResponse> => {
+    const response = await api.put<DashboardLayoutResponse>("/dashboard/layout", layout);
+    return response.data;
+  },
+  getAvailableWidgets: async (): Promise<WidgetDefinition[]> => {
+    const response = await api.get<WidgetDefinition[]>("/dashboard/available-widgets");
     return response.data;
   },
 };
@@ -507,11 +513,11 @@ export const tokensApi = {
 };
 
 import type {
-  EnrichmentValidateResponse,
+  EnrichmentJob,
   EnrichmentStartRequest,
   EnrichmentStartResponse,
-  EnrichmentJob,
   EnrichmentStatusResponse,
+  EnrichmentValidateResponse,
 } from "@/types";
 
 export const enrichmentApi = {
@@ -722,8 +728,8 @@ export const exportApi = {
 
 import type {
   DatasetValidationStatus,
-  ValidationSummary,
   StartValidationResponse,
+  ValidationSummary,
 } from "@/types";
 
 export const datasetValidationApi = {
@@ -785,23 +791,6 @@ export const datasetValidationApi = {
     );
     return response.data;
   },
-
-  // Update existing repo configurations
-  updateRepos: async (
-    datasetId: string,
-    repos: Array<{
-      full_name: string;
-      ci_provider: string;
-      source_languages: string[];
-      test_frameworks: string[];
-    }>
-  ): Promise<{ saved: number; message: string }> => {
-    const response = await api.put<{ saved: number; message: string }>(
-      `/datasets/${datasetId}/repos`,
-      { repos }
-    );
-    return response.data;
-  },
 };
 
 import type {
@@ -838,29 +827,13 @@ export const settingsApi = {
     return response.data;
   },
 
-  // Get dashboard layout for current user
-  getDashboardLayout: async (): Promise<DashboardLayoutResponse> => {
-    const response = await api.get<DashboardLayoutResponse>("/settings/dashboard-layout");
-    return response.data;
-  },
-
-  // Save dashboard layout for current user
-  saveDashboardLayout: async (layout: DashboardLayoutUpdateRequest): Promise<DashboardLayoutResponse> => {
-    const response = await api.put<DashboardLayoutResponse>("/settings/dashboard-layout", layout);
-    return response.data;
-  },
-
-  // Get available widgets
-  getAvailableWidgets: async (): Promise<WidgetDefinition[]> => {
-    const response = await api.get<WidgetDefinition[]>("/settings/available-widgets");
-    return response.data;
-  },
+  // Dashboard layout moved to dashboardApi
+  // Use dashboardApi.getLayout(), dashboardApi.saveLayout(), dashboardApi.getAvailableWidgets()
 };
 
 import type {
-  Notification,
   NotificationListResponse,
-  UnreadCountResponse,
+  UnreadCountResponse
 } from "@/types";
 
 export const notificationsApi = {

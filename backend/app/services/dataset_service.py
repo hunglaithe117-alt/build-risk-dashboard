@@ -303,6 +303,19 @@ class DatasetService:
             logger.warning("Failed to move uploaded dataset file: %s", e)
             # file_path already set to temp_path, so just log warning
 
+        # Dispatch repo validation task if repo_name column is mapped
+        if mapping.get("repo_name"):
+            from app.tasks.dataset_validation import validate_repos_task
+
+            task = validate_repos_task.delay(str(dataset.id))
+            self.repo.update_one(
+                str(dataset.id),
+                {"repo_validation_task_id": task.id},
+            )
+            logger.info(
+                f"Dispatched repo validation task {task.id} for dataset {dataset.id}"
+            )
+
         return self._serialize(self.repo.find_by_id(str(dataset.id)))
 
     def delete_dataset(self, dataset_id: str, user_id: str) -> None:

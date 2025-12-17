@@ -101,7 +101,7 @@ export interface DatasetRecord {
   preview: DatasetPreviewRow[];
   created_at?: string;
   updated_at?: string | null;
-  // Validation fields
+  // Build validation fields (Step 3)
   validation_status?: "pending" | "validating" | "completed" | "failed" | "cancelled";
   validation_task_id?: string;
   validation_started_at?: string;
@@ -109,6 +109,10 @@ export interface DatasetRecord {
   validation_progress?: number;
   validation_error?: string;
   validation_stats?: ValidationStats;
+  // Repo validation fields (during upload, before Step 2)
+  repo_validation_status?: "pending" | "validating" | "completed" | "failed";
+  repo_validation_task_id?: string;
+  repo_validation_error?: string;
   // Setup progress tracking (1=uploaded, 2=configured, 3=validated)
   setup_step?: number;
   // Aggregated enrichment info (computed from enrichment_jobs)
@@ -134,6 +138,23 @@ export interface RepoValidationResponse {
   valid_repos: number;
   invalid_repos: number;
   repos: RepoValidationItem[];
+}
+
+export interface DatasetRepoConfigDto {
+  id: string;
+  dataset_id: string;
+  raw_repo_id?: string;
+  normalized_full_name: string;
+  repo_name_from_csv: string;
+  validation_status: "pending" | "valid" | "not_found" | "error";
+  validation_error?: string;
+  source_languages: string[];
+  test_frameworks: string[];
+  ci_provider: string;
+  default_branch?: string;
+  builds_in_csv?: number;
+  builds_found?: number;
+  builds_not_found?: number;
 }
 
 export interface DatasetTemplateRecord {

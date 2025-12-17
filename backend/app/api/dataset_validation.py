@@ -12,10 +12,7 @@ from app.dtos.dataset_validation import (
     SaveReposRequest,
     SaveReposResponse,
 )
-from app.services.dataset_validation_service import (
-    DatasetValidationService,
-    RepoConfig,
-)
+from app.services.dataset_validation_service import DatasetValidationService
 
 
 router = APIRouter(prefix="/datasets", tags=["dataset-validation"])
@@ -27,19 +24,9 @@ async def save_repos(
     request: SaveReposRequest,
     db: Database = Depends(get_db),
 ):
-    """Save repository configs from Step 2."""
+    """Update repository configs from Step 2."""
     service = DatasetValidationService(db)
-    repos = [
-        RepoConfig(
-            full_name=r.full_name,
-            ci_provider=r.ci_provider,
-            source_languages=r.source_languages,
-            test_frameworks=r.test_frameworks,
-            validation_status=r.validation_status,
-        )
-        for r in request.repos
-    ]
-    result = service.save_repos(dataset_id, repos)
+    result = service.save_repos(dataset_id, request.repos)
     return SaveReposResponse(**result)
 
 
@@ -111,25 +98,3 @@ async def reset_step2(
     """Reset Step 2 data - delete repos and build records when going back to Step 1."""
     service = DatasetValidationService(db)
     return await service.reset_step2(dataset_id)
-
-
-@router.put("/{dataset_id}/repos", response_model=SaveReposResponse)
-async def update_repos(
-    dataset_id: str,
-    request: SaveReposRequest,
-    db: Database = Depends(get_db),
-):
-    """Update existing repo configurations. Used when editing Step 2 settings."""
-    service = DatasetValidationService(db)
-    repos = [
-        RepoConfig(
-            full_name=r.full_name,
-            ci_provider=r.ci_provider,
-            source_languages=r.source_languages,
-            test_frameworks=r.test_frameworks,
-            validation_status=r.validation_status,
-        )
-        for r in request.repos
-    ]
-    result = service.update_repos(dataset_id, repos)
-    return SaveReposResponse(**result)

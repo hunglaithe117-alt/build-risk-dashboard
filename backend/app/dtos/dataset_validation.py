@@ -14,17 +14,16 @@ from app.entities import ValidationStats
 
 
 class RepoConfigRequest(BaseModel):
-    """Request model for saving repos from Step 2."""
+    """Request model for updating repos from Step 2."""
 
-    full_name: str
+    id: str  # DatasetRepoConfig id
     ci_provider: str = "github_actions"
     source_languages: List[str] = Field(default_factory=list)
     test_frameworks: List[str] = Field(default_factory=list)
-    validation_status: str = "valid"
 
 
 class SaveReposRequest(BaseModel):
-    """Request to save multiple repo configurations."""
+    """Request to update multiple repo configurations."""
 
     repos: List[RepoConfigRequest]
 

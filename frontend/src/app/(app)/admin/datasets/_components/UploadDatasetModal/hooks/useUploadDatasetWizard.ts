@@ -135,11 +135,10 @@ export function useUploadDatasetWizard({
             }
         } else if (setupStep >= 2) {
             setStep(2);
-            // Fetch languages for repos using the extracted repos (not stale state)
-            if (extractedRepos.length > 0) {
-                step2.fetchLanguagesForAllRepos(extractedRepos);
-                step2.setActiveRepo(extractedRepos[0]);
-            }
+            // Load pre-validated repo configs from backend
+            datasetsApi.listRepoConfigs(existingDataset.id).then(repoConfigs => {
+                step2.initializeFromRepoConfigs(repoConfigs);
+            }).catch(console.error);
         } else {
             setStep(1);
         }
@@ -166,6 +165,7 @@ export function useUploadDatasetWizard({
                 });
                 dataset = { ...createdDataset };
             } else {
+                // Upload triggers validate_repos_task on backend
                 dataset = await datasetsApi.upload(step1.file, {
                     name: step1.name || step1.file.name.replace(/\.csv$/i, ""),
                     description: step1.description || undefined,
@@ -185,15 +185,31 @@ export function useUploadDatasetWizard({
                 onDatasetCreated?.(dataset);
             }
 
-            const { valid: validRepos } = step2.extractAndSetRepos(step1.preview, step1.mappings.repo_name);
+            // Poll for repo validation completion
+            const pollRepoValidation = async (dsId: string, maxAttempts = 60): Promise<DatasetRecord> => {
+                for (let i = 0; i < maxAttempts; i++) {
+                    const refreshed = await datasetsApi.get(dsId);
+                    if (refreshed.repo_validation_status === "completed") {
+                        return refreshed;
+                    }
+                    if (refreshed.repo_validation_status === "failed") {
+                        throw new Error(refreshed.repo_validation_error || "Repo validation failed");
+                    }
+                    // Wait 1 second before next poll
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                throw new Error("Repo validation timed out");
+            };
+
+            // Wait for repo validation to complete
+            const validatedDataset = await pollRepoValidation(dataset.id);
+            setCreatedDataset(validatedDataset);
+
+            // Fetch repo configs and initialize Step 2
+            const repoConfigs = await datasetsApi.listRepoConfigs(dataset.id);
+            step2.initializeFromRepoConfigs(repoConfigs);
 
             setStep(2);
-
-            await step2.fetchLanguagesForAllRepos(validRepos);
-
-            if (validRepos.length > 0) {
-                step2.setActiveRepo(validRepos[0]);
-            }
         } catch (err) {
             console.error("Upload failed:", err);
             step1.setError(err instanceof Error ? err.message : "Failed to upload dataset");

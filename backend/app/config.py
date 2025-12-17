@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     COMMIT_REPLAY_MAX_DEPTH: int = 100  # Max depth to traverse for commit replay
     LOG_UNAVAILABLE_THRESHOLD: int = 10  # Stop after N consecutive unavailable logs
 
+    # Hamilton Pipeline Caching
+    HAMILTON_CACHE_ENABLED: bool = True  # Enable/disable DAG result caching
+    HAMILTON_CACHE_DIR: str = "../repo-data/hamilton_cache"  # Directory for cache files
+    HAMILTON_CACHE_TYPE: str = "file"  # "file" (persistent) or "memory" (dev only)
+
     DATA_DIR: str = "../repo-data/data"
     WORKFLOW_POLL_INTERVAL_MINUTES: int = 15
 

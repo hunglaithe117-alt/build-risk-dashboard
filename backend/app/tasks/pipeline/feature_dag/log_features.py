@@ -82,8 +82,7 @@ def test_log_features(
     tests_ok_sum = 0
     test_duration_sum = 0.0
 
-    # Get language hint and allowed frameworks from repo config
-    language_hint = _get_language_hint(repo_config)
+    language_hints = _get_language_hints(repo_config)
     allowed_frameworks = _get_allowed_frameworks(repo_config)
 
     for log_path_str in build_logs.log_files:
@@ -94,11 +93,24 @@ def test_log_features(
 
             content = log_path.read_text(errors="replace")
 
-            parsed = parser.parse(
-                content,
-                language_hint=language_hint,
-                allowed_frameworks=allowed_frameworks or None,
-            )
+            # Try parsing with each language hint until we get a match
+            parsed = None
+            if language_hints:
+                for lang_hint in language_hints:
+                    parsed = parser.parse(
+                        content,
+                        language_hint=lang_hint,
+                        allowed_frameworks=allowed_frameworks or None,
+                    )
+                    if parsed.framework:
+                        break
+
+            if not parsed or not parsed.framework:
+                parsed = parser.parse(
+                    content,
+                    language_hint=None,
+                    allowed_frameworks=allowed_frameworks or None,
+                )
 
             if parsed.framework:
                 frameworks.add(parsed.framework)
@@ -151,9 +163,11 @@ def _get_allowed_frameworks(repo_config: RepoConfigInput) -> Optional[List[str]]
     ]
 
 
-def _get_language_hint(repo_config: RepoConfigInput) -> Optional[str]:
-    """Get primary language from repo config for parser hint."""
+def _get_language_hints(repo_config: RepoConfigInput) -> Optional[List[str]]:
+    """Get all source languages from repo config for parser hints."""
     if not repo_config.source_languages:
         return None
-    lang = repo_config.source_languages[0]
-    return lang.lower() if isinstance(lang, str) else str(lang).lower()
+    return [
+        lang.lower() if isinstance(lang, str) else str(lang).lower()
+        for lang in repo_config.source_languages
+    ]

@@ -54,25 +54,6 @@ def detect_repository_languages(
     return service.detect_languages(full_name, current_user)
 
 
-@router.get("/test-frameworks")
-def list_test_frameworks(
-    db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    List supported test frameworks for log parsing.
-
-    Returns:
-        - frameworks: List of all supported framework names
-        - by_language: Frameworks grouped by language
-        - languages: List of languages with test framework support
-
-    Use this to drive UI selection when importing repositories.
-    """
-    service = RepositoryService(db)
-    return service.list_test_frameworks()
-
-
 @router.get("/", response_model=RepoListResponse, response_model_by_alias=False)
 def list_repositories(
     skip: int = Query(default=0, ge=0),

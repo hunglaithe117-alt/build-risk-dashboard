@@ -231,9 +231,10 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
         setFrameworksLoading(true);
         setFrameworksError(null);
         try {
-            const res = await reposApi.getTestFrameworks();
-            setFrameworks(res.frameworks || []);
-            setFrameworksByLang(res.by_language || {});
+            const config = await featuresApi.getConfig();
+            setFrameworks(config.frameworks || []);
+            setFrameworksByLang(config.frameworks_by_language || {});
+            setSupportedLanguages(config.languages || []);
         } catch (err) {
             console.error(err);
             setFrameworksError("Failed to load test frameworks.");
@@ -303,14 +304,6 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
     }, [isOpen, performSearch, loadFrameworks]);
 
     const [supportedLanguages, setSupportedLanguages] = useState<string[]>([]);
-
-    useEffect(() => {
-        if (isOpen) {
-            featuresApi.getSupportedLanguages().then((data) => {
-                setSupportedLanguages(data.languages);
-            }).catch(console.error);
-        }
-    }, [isOpen]);
 
     const fetchLanguages = useCallback(
         async (repo: RepoSuggestion) => {

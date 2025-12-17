@@ -51,7 +51,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { dashboardApi, settingsApi } from "@/lib/api";
+import { dashboardApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import type { DashboardSummaryResponse, WidgetConfig, WidgetDefinition } from "@/types";
 import { useAuth } from "@/contexts/auth-context";
@@ -141,8 +141,8 @@ export default function OverviewPage() {
       try {
         const [summaryResult, layoutResult, widgetsResult] = await Promise.all([
           dashboardApi.getSummary(),
-          settingsApi.getDashboardLayout(),
-          settingsApi.getAvailableWidgets(),
+          dashboardApi.getLayout(),
+          dashboardApi.getAvailableWidgets(),
         ]);
 
         if (!isActive) {
@@ -151,7 +151,7 @@ export default function OverviewPage() {
 
         setSummary(summaryResult);
         // Convert from old 4-col to new 12-col if needed
-        const convertedWidgets = layoutResult.widgets.map((w) => ({
+        const convertedWidgets = layoutResult.widgets.map((w: WidgetConfig) => ({
           ...w,
           w: w.w <= 4 ? w.w * 3 : w.w, // Scale up if using old format
           x: w.x <= 4 ? w.x * 3 : w.x,
@@ -200,7 +200,7 @@ export default function OverviewPage() {
   const handleSaveLayout = async () => {
     setIsSaving(true);
     try {
-      await settingsApi.saveDashboardLayout({ widgets });
+      await dashboardApi.saveLayout({ widgets });
       setIsEditing(false);
     } catch (err) {
       console.error("Failed to save layout", err);

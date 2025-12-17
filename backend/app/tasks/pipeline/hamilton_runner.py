@@ -8,12 +8,16 @@ Key behaviors:
 - DEFAULT_FEATURES are always included when features_filter is specified
 - Hamilton automatically computes only the dependencies needed for requested features
 - Output is filtered to only return the explicitly requested features (+ defaults)
+- Caching support for intermediate values to avoid recomputation on errors
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Set
+from pathlib import Path
+from typing import Any, Dict, Optional, Set
 
 from hamilton import driver
+
+from app.config import settings
 
 from app.tasks.pipeline.feature_dag import (
     build_features,
@@ -58,24 +62,58 @@ class HamiltonPipeline:
         - DEFAULT_FEATURES are always included in the output
         - Hamilton only computes dependencies needed for requested features
         - Output contains only the requested features (+ defaults)
+        - Caching stores intermediate values to avoid recomputation
     """
 
-    def __init__(self, db: Any, enable_tracking: bool = True):
+    def __init__(
+        self,
+        db: Any,
+        enable_tracking: bool = True,
+        enable_cache: Optional[bool] = None,
+    ):
         """
         Initialize the Hamilton pipeline.
 
         Args:
             db: MongoDB database instance
             enable_tracking: Whether to enable execution tracking (default: True)
+            enable_cache: Whether to enable caching (default: from settings)
         """
         self.db = db
         self._enable_tracking = enable_tracking
+        self._enable_cache = (
+            enable_cache
+            if enable_cache is not None
+            else settings.HAMILTON_CACHE_ENABLED
+        )
         self._tracker: Optional[ExecutionTracker] = None
+        self._cache_path: Optional[Path] = None
         self._driver = self._build_driver()
         self._all_features = self._get_all_feature_names()
 
+    def _get_cache_path(self) -> Optional[Path]:
+        """
+        Get the cache directory path if caching is enabled.
+
+        Returns:
+            Path to cache directory if file-based caching enabled, None otherwise.
+        """
+        if not self._enable_cache:
+            return None
+
+        cache_type = settings.HAMILTON_CACHE_TYPE.lower()
+
+        if cache_type == "memory":
+            # Return None to signal in-memory cache (handled differently)
+            return None
+        else:
+            # File-based persistent cache (default)
+            cache_dir = Path(settings.HAMILTON_CACHE_DIR)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            return cache_dir
+
     def _build_driver(self) -> driver.Driver:
-        """Build Hamilton driver with all feature modules."""
+        """Build Hamilton driver with all feature modules and optional caching."""
         builder = driver.Builder().with_modules(
             git_features,
             build_features,
@@ -83,6 +121,23 @@ class HamiltonPipeline:
             repo_features,
         )
 
+        # Add caching if enabled
+        if self._enable_cache:
+            cache_type = settings.HAMILTON_CACHE_TYPE.lower()
+            if cache_type == "memory":
+                # In-memory cache - use default with_cache() without path
+                logger.info("Using in-memory Hamilton cache (non-persistent)")
+                builder = builder.with_cache()
+            else:
+                # File-based persistent cache
+                self._cache_path = self._get_cache_path()
+                if self._cache_path:
+                    logger.info(
+                        f"Using file-based Hamilton cache at {self._cache_path}"
+                    )
+                    builder = builder.with_cache(path=str(self._cache_path))
+
+        # Add execution tracker if enabled
         if self._enable_tracking:
             self._tracker = ExecutionTracker()
             builder = builder.with_adapters(self._tracker)
@@ -274,3 +329,45 @@ class HamiltonPipeline:
         """Reset tracker state for reuse with another execution."""
         if self._tracker:
             self._tracker.reset()
+
+    def clear_cache(self) -> bool:
+        """
+        Clear the Hamilton cache directory.
+
+        Useful when:
+        - Feature extractors have been updated
+        - Cache has become stale or corrupted
+        - Need to force recomputation of all features
+
+        Returns:
+            True if cache was cleared, False if no cache to clear.
+        """
+        import shutil
+
+        if not self._enable_cache:
+            logger.info("Caching is disabled, nothing to clear")
+            return False
+
+        cache_type = settings.HAMILTON_CACHE_TYPE.lower()
+        if cache_type == "memory":
+            logger.info("In-memory cache clears automatically on restart")
+            return False
+
+        cache_dir = Path(settings.HAMILTON_CACHE_DIR)
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Cleared Hamilton cache at {cache_dir}")
+            return True
+
+        return False
+
+    @property
+    def is_cache_enabled(self) -> bool:
+        """Check if caching is enabled for this pipeline instance."""
+        return self._enable_cache
+
+    @property
+    def cache_path(self) -> Optional[Path]:
+        """Get the cache directory path if using file-based cache."""
+        return self._cache_path

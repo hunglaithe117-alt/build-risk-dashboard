@@ -648,7 +648,7 @@ class SonarQubeTool(IntegrationTool):
         Returns component_key for tracking the scan.
         Results will be delivered via webhook.
         """
-        from app.services.sonar.runner import SonarCommitRunner
+        from app.integrations.tools.sonarqube.runner import SonarCommitRunner
 
         runner = SonarCommitRunner(project_key)
         component_key = runner.scan_commit(
@@ -665,7 +665,7 @@ class SonarQubeTool(IntegrationTool):
 
         Usually called after webhook notification indicates scan is complete.
         """
-        from app.services.sonar.exporter import MetricsExporter
+        from app.integrations.tools.sonarqube.exporter import MetricsExporter
 
         exporter = MetricsExporter()
         return exporter.collect_metrics(component_key)

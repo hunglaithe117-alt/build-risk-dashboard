@@ -32,6 +32,8 @@ class SonarQubeSettings(BaseEntity):
     # Token stored encrypted in DB
     token_encrypted: Optional[str] = None
     default_project_key: str = "build-risk-ui"
+    # List of enabled metric keys (empty = all metrics enabled)
+    enabled_metrics: list[str] = Field(default_factory=list)
 
 
 class TrivySettings(BaseEntity):
@@ -41,6 +43,8 @@ class TrivySettings(BaseEntity):
     severity: str = "CRITICAL,HIGH,MEDIUM"
     timeout: int = 300  # seconds
     skip_dirs: str = "node_modules,vendor,.git"
+    # List of enabled metric keys (empty = all metrics enabled)
+    enabled_metrics: list[str] = Field(default_factory=list)
 
 
 class NotificationSettings(BaseEntity):

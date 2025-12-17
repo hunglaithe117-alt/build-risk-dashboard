@@ -24,6 +24,9 @@ LOGS_DIR = DATA_DIR / "logs"
 # Artifacts from analysis tools (e.g., SonarQube reports)
 ARTIFACTS_DIR = DATA_DIR / "artifacts"
 
+# SonarQube scanner work directory (repos and worktrees for scans)
+SONAR_WORK_DIR = DATA_DIR / "sonar-work"
+
 
 def ensure_data_dirs() -> None:
     """Create all required data directories if they don't exist."""

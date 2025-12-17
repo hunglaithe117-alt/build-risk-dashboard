@@ -6,7 +6,7 @@ for ML model training purposes (Flow 1: GitHub import → Model training).
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import Field
 
@@ -121,4 +121,14 @@ class ModelRepoConfig(RepoConfigBase):
     deleted_at: Optional[datetime] = Field(
         None,
         description="When this config was deleted",
+    )
+
+    # RBAC Access Control
+    visibility: Literal["public", "private"] = Field(
+        default="public",
+        description="Repository visibility: 'public' = all org users can view, 'private' = only granted users",
+    )
+    granted_user_ids: List[PyObjectId] = Field(
+        default_factory=list,
+        description="List of user IDs granted access to this repository (for private repos)",
     )

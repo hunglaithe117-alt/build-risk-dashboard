@@ -171,15 +171,18 @@ class RepositoryService:
         return RepoSuggestionListResponse(items=items[:limit])
 
     def list_repositories(
-        self, user_id: str, skip: int, limit: int, q: Optional[str] = None
+        self, current_user: dict, skip: int, limit: int, q: Optional[str] = None
     ) -> RepoListResponse:
-        """List tracked repositories with pagination."""
-        query = {}
-        if q:
-            query["full_name"] = {"$regex": q, "$options": "i"}
+        """List tracked repositories with RBAC access control."""
+        user_id = ObjectId(current_user["_id"])
+        user_role = current_user.get("role", "user")
 
-        repos, total = self.repo_config.list_by_user(
-            user_id, skip=skip, limit=limit, query=query
+        repos, total = self.repo_config.list_with_access_control(
+            user_id=user_id,
+            user_role=user_role,
+            skip=skip,
+            limit=limit,
+            search_query=q,
         )
         return RepoListResponse(
             total=total,
@@ -236,10 +239,11 @@ class RepositoryService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
             )
 
-        # Verify user owns this repository
-        repo_user_id = str(repo_doc.user_id)
-        current_user_id = str(current_user["_id"])
-        if repo_user_id != current_user_id:
+        # Check RBAC access
+        user_id = ObjectId(current_user["_id"])
+        user_role = current_user.get("role", "user")
+
+        if not self.repo_config.can_user_access(ObjectId(repo_id), user_id, user_role):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to access this repository",

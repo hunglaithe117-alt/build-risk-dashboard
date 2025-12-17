@@ -48,6 +48,99 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
 
         return self.paginate(query, sort=[("created_at", -1)], skip=skip, limit=limit)
 
+    def list_with_access_control(
+        self,
+        user_id: ObjectId,
+        user_role: str,
+        skip: int = 0,
+        limit: int = 100,
+        search_query: Optional[str] = None,
+        include_deleted: bool = False,
+        github_accessible_repos: Optional[List[str]] = None,
+    ) -> tuple[List[ModelRepoConfig], int]:
+        """
+        List repos with RBAC access control.
+
+        - Admin: Can see all repos
+        - User: Can see public repos + repos where they are in granted_user_ids
+                + repos they have access to on GitHub (if github_accessible_repos provided)
+
+        Args:
+            github_accessible_repos: List of repo full_names user can access on GitHub
+                                    (synced during login, used for auto-access)
+        """
+        base_query: dict = {}
+
+        if not include_deleted:
+            base_query["is_deleted"] = {"$ne": True}
+
+        if search_query:
+            base_query["full_name"] = {"$regex": search_query, "$options": "i"}
+
+        if user_role == "admin":
+            # Admin sees everything
+            pass
+        else:
+            # Regular user sees:
+            # 1. Public repos (visibility = "public" or visibility not set)
+            # 2. Private repos where they are granted access
+            # 3. Repos they have access to on GitHub (via github_accessible_repos)
+            access_conditions = [
+                {"visibility": {"$in": ["public", None]}},
+                {"visibility": {"$exists": False}},  # Backward compatibility
+                {"granted_user_ids": user_id},
+            ]
+
+            # Add GitHub accessible repos condition if provided
+            # NOTE: Currently disabled - uncomment when ready to enforce RBAC
+            # if github_accessible_repos:
+            #     access_conditions.append({"full_name": {"$in": github_accessible_repos}})
+
+            base_query["$or"] = access_conditions
+
+        return self.paginate(
+            base_query, sort=[("created_at", -1)], skip=skip, limit=limit
+        )
+
+    def can_user_access(
+        self,
+        repo_id: ObjectId,
+        user_id: ObjectId,
+        user_role: str,
+        github_accessible_repos: Optional[List[str]] = None,
+    ) -> bool:
+        """
+        Check if a user can access a specific repository.
+
+        - Admin: Can access any repo
+        - User: Can access public repos or repos where granted
+                or repos they have access to on GitHub
+
+        Args:
+            github_accessible_repos: List of repo full_names user can access on GitHub
+        """
+        if user_role == "admin":
+            return True
+
+        repo = self.find_by_id(repo_id)
+        if not repo:
+            return False
+
+        visibility = getattr(repo, "visibility", "public")
+        if visibility == "public":
+            return True
+
+        granted_ids = getattr(repo, "granted_user_ids", [])
+        if user_id in granted_ids:
+            return True
+
+        # Check GitHub accessible repos
+        # NOTE: Currently disabled - uncomment when ready to enforce RBAC
+        # if github_accessible_repos and repo.full_name in github_accessible_repos:
+        #     return True
+
+        return False
+
     def update_repository(
         self,
         repo_id: str,

@@ -47,6 +47,43 @@ def update_settings(
     return service.update_settings(request)
 
 
+@router.get("/available-metrics")
+def get_available_metrics(
+    current_user: dict = Depends(get_current_user),
+):
+    """Get all available metrics for each tool, grouped by category."""
+    from app.integrations.tools.sonarqube import SONARQUBE_METRICS
+    from app.integrations.tools.trivy import TRIVY_METRICS
+
+    def format_metrics(metrics_list):
+        """Group metrics by category."""
+        grouped = {}
+        for m in metrics_list:
+            category = m.category.value
+            if category not in grouped:
+                grouped[category] = []
+            grouped[category].append(
+                {
+                    "key": m.key,
+                    "display_name": m.display_name,
+                    "description": m.description,
+                    "data_type": m.data_type.value,
+                }
+            )
+        return grouped
+
+    return {
+        "sonarqube": {
+            "metrics": format_metrics(SONARQUBE_METRICS),
+            "all_keys": [m.key for m in SONARQUBE_METRICS],
+        },
+        "trivy": {
+            "metrics": format_metrics(TRIVY_METRICS),
+            "all_keys": [m.key for m in TRIVY_METRICS],
+        },
+    }
+
+
 @router.get("/dashboard-layout", response_model=DashboardLayoutResponse)
 def get_dashboard_layout(
     db: Database = Depends(get_db),

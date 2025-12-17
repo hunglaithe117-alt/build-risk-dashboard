@@ -1,6 +1,16 @@
-from typing import List, Optional
+import asyncio
+from typing import List, Optional, Set
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel
 from pymongo.database import Database
 
@@ -12,6 +22,7 @@ from app.dtos.github import (
 from app.middleware.auth import get_current_user
 from app.services.integration_service import IntegrationService
 from app.services.dataset_scan_service import DatasetScanService
+from app.services.sonar_webhook_service import SonarWebhookService
 
 router = APIRouter(prefix="/integrations", tags=["Integrations"])
 
@@ -393,7 +404,7 @@ async def sonarqube_webhook(
     service = DatasetScanService(db)
 
     # Fetch metrics from SonarQube
-    from app.services.sonar.exporter import MetricsExporter
+    from app.integrations.tools.sonarqube.exporter import MetricsExporter
 
     exporter = MetricsExporter()
 
@@ -410,3 +421,98 @@ async def sonarqube_webhook(
     else:
         # Not a dataset scan, might be from old pipeline
         return {"status": "ignored", "reason": "No matching dataset scan result"}
+
+
+# =============================================================================
+# SonarQube Pipeline Webhook (from old sonar.py)
+# =============================================================================
+
+import json
+
+
+@router.post("/webhooks/sonarqube/pipeline")
+async def sonarqube_pipeline_webhook(
+    request: Request,
+    db: Database = Depends(get_db),
+    x_sonar_webhook_hmac_sha256: Optional[str] = Header(default=None),
+    x_sonar_secret: Optional[str] = Header(default=None),
+):
+    """
+    Handle SonarQube webhook callback for pipeline-initiated scans.
+
+    This is called by SonarQube when analysis completes for pipeline scans.
+    """
+    body = await request.body()
+
+    service = SonarWebhookService(db)
+    service.validate_signature(body, x_sonar_webhook_hmac_sha256, x_sonar_secret)
+
+    payload = json.loads(body.decode("utf-8") or "{}")
+
+    component_key = payload.get("project", {}).get("key")
+    if not component_key:
+        raise HTTPException(status_code=400, detail="project key missing")
+
+    task_status = payload.get("status")
+
+    return service.handle_pipeline_webhook(component_key, task_status)
+
+
+@router.get("/sonar/pending/{component_key}")
+async def get_sonar_pending_scan(
+    component_key: str,
+    db: Database = Depends(get_db),
+):
+    """Check status of a pending SonarQube scan."""
+    service = SonarWebhookService(db)
+    return service.get_pending_scan(component_key)
+
+
+@router.get("/sonar/datasets/{dataset_id}/pending")
+async def get_sonar_dataset_pending_scans(
+    dataset_id: str,
+    db: Database = Depends(get_db),
+):
+    """Get all pending scans for a dataset's enrichment builds."""
+    service = SonarWebhookService(db)
+    return service.get_dataset_pending_scans(dataset_id)
+
+
+# WebSocket connections store
+active_dataset_connections: dict[str, Set[WebSocket]] = {}
+
+
+@router.websocket("/ws/dataset/{dataset_id}")
+async def dataset_scan_websocket(websocket: WebSocket, dataset_id: str):
+    """WebSocket for real-time scan updates for a dataset."""
+    await websocket.accept()
+
+    # Add to active connections
+    if dataset_id not in active_dataset_connections:
+        active_dataset_connections[dataset_id] = set()
+    active_dataset_connections[dataset_id].add(websocket)
+
+    try:
+        while True:
+            # Keep connection alive with ping/pong
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                # Send ping
+                await websocket.send_json({"type": "ping"})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        # Remove from active connections
+        if dataset_id in active_dataset_connections:
+            active_dataset_connections[dataset_id].discard(websocket)
+
+
+async def broadcast_scan_update(dataset_id: str, message: dict):
+    """Broadcast scan update to all connected WebSocket clients for a dataset."""
+    if dataset_id in active_dataset_connections:
+        for websocket in active_dataset_connections[dataset_id]:
+            try:
+                await websocket.send_json(message)
+            except Exception:
+                pass

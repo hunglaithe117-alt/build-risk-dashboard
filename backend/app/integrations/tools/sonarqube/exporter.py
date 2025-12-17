@@ -39,7 +39,7 @@ class MetricsExporter:
         ]
 
         try:
-            config_path = Path(__file__).resolve().parents[4] / "sonar_metrics.yml"
+            config_path = Path(__file__).resolve().parents[5] / "sonar_metrics.yml"
 
             if not config_path.exists():
                 logger.warning(

@@ -10,7 +10,8 @@ import requests
 import fcntl
 
 from app.config import settings
-from app.services.sonar.config import get_sonar_runtime_config
+from app.paths import SONAR_WORK_DIR
+from app.integrations.tools.sonarqube.config import get_sonar_runtime_config
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +25,8 @@ class SonarCommitRunner:
         # If token is empty (masked or not set in DB), fall back to ENV
         self.token = cfg.token or settings.SONAR_TOKEN
 
-        # Use a dedicated work directory
-        base_dir = Path(settings.DATA_DIR) / "sonar-work"
-        self.work_dir = base_dir / project_key
+        # Use centralized sonar work directory from paths.py
+        self.work_dir = SONAR_WORK_DIR / project_key
         self.repo_dir = self.work_dir / "repo"
         self.worktrees_dir = self.work_dir / "worktrees"
 

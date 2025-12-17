@@ -18,8 +18,8 @@ from app.entities.sonar_scan_pending import SonarScanPending, ScanPendingStatus
 from app.repositories.sonar_scan_pending import SonarScanPendingRepository
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.model_training_build import ModelTrainingBuildRepository
-from app.services.sonar.exporter import MetricsExporter
-from app.services.sonar.runner import SonarCommitRunner
+from app.integrations.tools.sonarqube.exporter import MetricsExporter
+from app.integrations.tools.sonarqube.runner import SonarCommitRunner
 
 logger = logging.getLogger(__name__)
 

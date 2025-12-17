@@ -17,6 +17,7 @@ from app.services.user_service import upsert_github_identity
 GITHUB_AUTHORIZE_URL = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_USER_URL = "https://api.github.com/user"
+GITHUB_ORG_MEMBERSHIP_URL = "https://api.github.com/orgs/{org}/members/{username}"
 
 
 async def verify_github_token(access_token: str) -> bool:
@@ -36,6 +37,83 @@ async def verify_github_token(access_token: str) -> bool:
             return response.status_code == 200
     except Exception:
         return False
+
+
+async def check_org_membership(access_token: str, username: str) -> bool:
+    """
+    Check if a user is a member of the configured GitHub organization.
+
+    Args:
+        access_token: GitHub OAuth access token
+        username: GitHub username to check
+
+    Returns:
+        True if user is a member, False otherwise
+    """
+    org = settings.GITHUB_ORGANIZATION
+    if not org:
+        # No org configured, skip check
+        return True
+
+    if not settings.REQUIRE_ORG_MEMBERSHIP:
+        # Org membership check disabled
+        return True
+
+    try:
+        url = GITHUB_ORG_MEMBERSHIP_URL.format(org=org, username=username)
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+            # 204 No Content = member, 404 = not a member
+            return response.status_code == 204
+    except Exception:
+        return False
+
+
+async def sync_user_github_repos(access_token: str, max_repos: int = 100) -> list[str]:
+    """
+    Fetch list of repos the user has access to on GitHub.
+
+    This is used for RBAC - users can automatically see repos they have
+    GitHub access to, without needing manual grants.
+
+    Args:
+        access_token: GitHub OAuth access token
+        max_repos: Maximum number of repos to fetch (default 100)
+
+    Returns:
+        List of repo full_names (e.g., ["owner/repo1", "owner/repo2"])
+    """
+    repos = []
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            # Fetch repos user has access to (includes collaborator access)
+            response = await client.get(
+                "https://api.github.com/user/repos",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {access_token}",
+                },
+                params={
+                    "per_page": min(max_repos, 100),
+                    "sort": "updated",
+                    "affiliation": "owner,collaborator,organization_member",
+                },
+            )
+            if response.status_code == 200:
+                data = response.json()
+                repos = [
+                    repo.get("full_name") for repo in data if repo.get("full_name")
+                ]
+    except Exception:
+        pass  # Silently fail - this is optional functionality
+
+    return repos
 
 
 def _require_github_credentials() -> None:
@@ -163,6 +241,16 @@ async def exchange_code_for_token(
             detail="GitHub did not return user id",
         )
 
+    # Check organization membership
+    github_login = user_data.get("login")
+    is_org_member = await check_org_membership(access_token, github_login)
+    if not is_org_member:
+        org_name = settings.GITHUB_ORGANIZATION
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied. You must be a member of the '{org_name}' organization to use this application.",
+        )
+
     user_doc, identity_doc = upsert_github_identity(
         db,
         github_user_id=str(github_user_id),
@@ -177,6 +265,24 @@ async def exchange_code_for_token(
         account_avatar_url=user_data.get("avatar_url"),
         connected_at=datetime.now(timezone.utc),
     )
+
+    # Sync user's GitHub repo access for RBAC (optional, non-blocking)
+    # This caches which repos the user can access on GitHub
+    try:
+        accessible_repos = await sync_user_github_repos(access_token)
+        if accessible_repos:
+            db.users.update_one(
+                {"_id": user_doc["_id"]},
+                {
+                    "$set": {
+                        "github_accessible_repos": accessible_repos,
+                        "github_repos_synced_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+    except Exception:
+        pass  # Non-critical - don't fail login if sync fails
+
     db.github_states.update_one(
         {"state": state},
         {"$set": {"used": True, "used_at": datetime.now(timezone.utc)}},

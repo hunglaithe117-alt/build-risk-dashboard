@@ -33,3 +33,30 @@ class UserRepository(BaseRepository[User]):
             "created_at": now,
         }
         return self.insert_one(user_doc)
+
+    def update_user(self, user_id: str, updates: Dict) -> Optional[User]:
+        """Update a user's profile"""
+        from bson import ObjectId
+
+        updates["updated_at"] = datetime.now(timezone.utc)
+        result = self.collection.find_one_and_update(
+            {"_id": ObjectId(user_id)},
+            {"$set": updates},
+            return_document=True,
+        )
+        return User(**result) if result else None
+
+    def update_role(self, user_id: str, role: str) -> Optional[User]:
+        """Update a user's role"""
+        return self.update_user(user_id, {"role": role})
+
+    def delete_user(self, user_id: str) -> bool:
+        """Delete a user by ID"""
+        from bson import ObjectId
+
+        result = self.collection.delete_one({"_id": ObjectId(user_id)})
+        return result.deleted_count > 0
+
+    def count_admins(self) -> int:
+        """Count total admin users"""
+        return self.collection.count_documents({"role": "admin"})

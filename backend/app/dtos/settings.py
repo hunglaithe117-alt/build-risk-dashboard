@@ -33,6 +33,10 @@ class SonarQubeSettingsDto(BaseModel):
         None, description="Token (write-only, returns masked on read)"
     )
     default_project_key: str = "build-risk-ui"
+    enabled_metrics: list[str] = Field(
+        default_factory=list,
+        description="Enabled metric keys (empty = all metrics)",
+    )
 
 
 class TrivySettingsDto(BaseModel):
@@ -42,6 +46,10 @@ class TrivySettingsDto(BaseModel):
     severity: str = "CRITICAL,HIGH,MEDIUM"
     timeout: int = 300
     skip_dirs: str = "node_modules,vendor,.git"
+    enabled_metrics: list[str] = Field(
+        default_factory=list,
+        description="Enabled metric keys (empty = all metrics)",
+    )
 
 
 class NotificationSettingsDto(BaseModel):

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     ]
     FRONTEND_BASE_URL: str = "http://localhost:3000"
 
+    # RBAC / Organization Access
+    GITHUB_ORGANIZATION: Optional[str] = None  # GitHub org name for membership check
+    REQUIRE_ORG_MEMBERSHIP: bool = False  # Temporarily disabled - all users have access
+
     # CircleCI
     CIRCLECI_TOKEN: Optional[str] = None
     CIRCLECI_BASE_URL: str = "https://circleci.com/api/v2"

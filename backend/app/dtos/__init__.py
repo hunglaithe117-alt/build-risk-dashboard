@@ -85,6 +85,21 @@ from .settings import (
     TrivySettingsDto,
     NotificationSettingsDto,
 )
+from .admin_user import (
+    AdminUserResponse,
+    AdminUserListResponse,
+    AdminUserCreateRequest,
+    AdminUserUpdateRequest,
+    AdminUserRoleUpdateRequest,
+)
+from .admin_repo import (
+    RepoAccessSummary,
+    AdminRepoListResponse,
+    RepoAccessResponse,
+    GrantAccessRequest,
+    RevokeAccessRequest,
+    VisibilityUpdateRequest,
+)
 
 __all__ = [
     # Auth
@@ -159,4 +174,17 @@ __all__ = [
     "SonarQubeSettingsDto",
     "TrivySettingsDto",
     "NotificationSettingsDto",
+    # Admin User
+    "AdminUserResponse",
+    "AdminUserListResponse",
+    "AdminUserCreateRequest",
+    "AdminUserUpdateRequest",
+    "AdminUserRoleUpdateRequest",
+    # Admin Repo
+    "RepoAccessSummary",
+    "AdminRepoListResponse",
+    "RepoAccessResponse",
+    "GrantAccessRequest",
+    "RevokeAccessRequest",
+    "VisibilityUpdateRequest",
 ]

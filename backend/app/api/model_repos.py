@@ -15,6 +15,7 @@ from app.dtos import (
 )
 from app.dtos.build import BuildListResponse, BuildDetail
 from app.middleware.auth import get_current_user
+from app.middleware.require_admin import require_admin
 from app.services.build_service import BuildService
 from app.services.repository_service import RepositoryService
 
@@ -30,10 +31,10 @@ router = APIRouter(prefix="/repos", tags=["Repositories"])
 def bulk_import_repositories(
     payloads: List[RepoImportRequest],
     db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    _admin: dict = Depends(require_admin),  # Admin only
 ):
-    """Register multiple repositories for ingestion."""
-    user_id = str(current_user["_id"])
+    """Register multiple repositories for ingestion (Admin only)."""
+    user_id = str(_admin["_id"])
     service = RepositoryService(db)
     return service.bulk_import_repositories(user_id, payloads)
 
@@ -80,10 +81,9 @@ def list_repositories(
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    """List tracked repositories with pagination."""
-    user_id = str(current_user["_id"])
+    """List tracked repositories with RBAC access control."""
     service = RepositoryService(db)
-    return service.list_repositories(user_id, skip, limit, q)
+    return service.list_repositories(current_user, skip, limit, q)
 
 
 @router.get("/search", response_model=RepoSearchResponse)
@@ -136,20 +136,21 @@ def update_repository_settings(
     repo_id: str,
     payload: RepoUpdateRequest,
     db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    _admin: dict = Depends(require_admin),  # Admin only
 ):
+    """Update repository settings (Admin only)."""
     service = RepositoryService(db)
-    return service.update_repository_settings(repo_id, payload, current_user)
+    return service.update_repository_settings(repo_id, payload, _admin)
 
 
 @router.post("/{repo_id}/sync-run")
 def trigger_sync(
     repo_id: str,
     db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    _admin: dict = Depends(require_admin),  # Admin only
 ):
-    """Trigger a manual sync for the repository."""
-    user_id = str(current_user["_id"])
+    """Trigger a manual sync for the repository (Admin only)."""
+    user_id = str(_admin["_id"])
     service = RepositoryService(db)
     return service.trigger_sync(repo_id, user_id)
 

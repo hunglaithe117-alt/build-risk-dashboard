@@ -14,7 +14,6 @@ from app.api import (
     webhook,
     websocket,
     logs,
-    sonar,
     features,
     datasets,
     tokens,
@@ -25,6 +24,8 @@ from app.api import (
     settings,
     monitoring,
     notifications,
+    admin_users,
+    admin_repos,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.api import model_repos
@@ -59,7 +60,7 @@ app.include_router(users.router, prefix="/api", tags=["Users"])
 app.include_router(webhook.router, prefix="/api", tags=["Webhooks"])
 app.include_router(websocket.router, prefix="/api", tags=["WebSocket"])
 app.include_router(logs.router, prefix="/api", tags=["Logs"])
-app.include_router(sonar.router, prefix="/api/sonar", tags=["SonarQube"])
+# sonar.router removed - merged into integrations.py
 app.include_router(features.router, prefix="/api", tags=["Feature Definitions"])
 app.include_router(datasets.router, prefix="/api", tags=["Datasets"])
 app.include_router(tokens.router, prefix="/api", tags=["GitHub Tokens"])
@@ -72,6 +73,10 @@ app.include_router(templates.router, prefix="/api", tags=["Templates"])
 app.include_router(settings.router, prefix="/api", tags=["Settings"])
 app.include_router(monitoring.router, prefix="/api", tags=["Monitoring"])
 app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
+
+# Admin-only routes
+app.include_router(admin_users.router, prefix="/api", tags=["Admin - Users"])
+app.include_router(admin_repos.router, prefix="/api", tags=["Admin - Repos"])
 
 
 @app.get("/")

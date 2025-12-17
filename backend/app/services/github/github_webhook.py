@@ -241,15 +241,49 @@ def _handle_workflow_run_event(
             raw_data=workflow_run,
             is_bot_commit=is_bot,
         )
-        build_run_repo.create(new_run)
+        inserted_run = build_run_repo.create(new_run)
 
         db.repositories.update_one(
             {"_id": ObjectId(repo_id)}, {"$inc": {"total_builds_imported": 1}}
         )
 
-    celery_app.send_task(
-        "app.tasks.processing.process_workflow_run", args=[repo_id, build_id]
-    )
+        # Find ModelRepoConfig for this raw_repo
+        from app.repositories.model_repo_config import ModelRepoConfigRepository
+
+        model_repo_config_repo = ModelRepoConfigRepository(db)
+        repo_config = model_repo_config_repo.find_active_by_raw_repo_id(
+            ObjectId(repo_id)
+        )
+
+        if not repo_config:
+            return {
+                "status": "processed",
+                "action": "build_run_created_no_config",
+                "repo_id": repo_id,
+                "build_id": build_id,
+                "message": "RawBuildRun created but no ModelRepoConfig found for processing",
+            }
+
+        repo_config_id = str(repo_config.id)
+
+        # Dispatch prepare_and_dispatch_processing to run ingestion workflow (clone, logs, worktrees)
+        # then dispatch_build_processing for feature extraction
+        # This aligns webhook flow with import flow
+        celery_app.send_task(
+            "app.tasks.model_ingestion.prepare_and_dispatch_processing",
+            kwargs={
+                "repo_config_id": repo_config_id,
+                "raw_repo_id": repo_id,
+                "full_name": full_name,
+                "installation_id": repo_config.installation_id,
+                "ci_provider": (
+                    repo_config.ci_provider.value
+                    if hasattr(repo_config.ci_provider, "value")
+                    else repo_config.ci_provider
+                ),
+                "ci_build_ids": [build_id],  # Single build from webhook
+            },
+        )
 
     return {
         "status": "processed",

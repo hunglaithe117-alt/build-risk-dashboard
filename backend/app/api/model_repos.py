@@ -143,6 +143,21 @@ def update_repository_settings(
     return service.update_repository_settings(repo_id, payload, _admin)
 
 
+@router.delete("/{repo_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_repository(
+    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
+    db: Database = Depends(get_db),
+    _admin: dict = Depends(require_admin),  # Admin only
+):
+    """
+    Delete (soft delete) a repository configuration (Admin only).
+
+    This allows re-importing the same repository later.
+    """
+    service = RepositoryService(db)
+    service.delete_repository(repo_id)
+
+
 @router.post("/{repo_id}/sync-run")
 def trigger_sync(
     repo_id: str,

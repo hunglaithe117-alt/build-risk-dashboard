@@ -1,9 +1,8 @@
 """
-Unified Notification Service - In-app, Slack, and Gmail notifications.
+Unified Notification Service - In-app and Gmail notifications.
 
 Channels:
 - In-app: Always sent, stored in MongoDB for UI display
-- Slack: For urgent/critical alerts (failures, rate limits)
 - Gmail: For summary/digest notifications (critical alerts only)
 
 Gmail Setup:
@@ -15,29 +14,28 @@ Gmail Setup:
    - GMAIL_RECIPIENTS: comma-separated list of recipients
 
 Channel Usage Guidelines:
-┌─────────────────────────────────┬─────────┬─────────┬─────────┐
-│ Event Type                      │ In-App  │ Slack   │ Gmail   │
-├─────────────────────────────────┼─────────┼─────────┼─────────┤
-│ Pipeline completed              │ ✓       │         │         │
-│ Pipeline failed                 │ ✓       │ ✓       │         │
-│ Dataset validation completed    │ ✓       │         │         │
-│ Dataset enrichment completed    │ ✓       │         │         │
-│ Scan vulnerabilities found      │ ✓       │ ✓       │         │
-│ Rate limit WARNING              │ ✓       │ ✓       │         │
-│ Rate limit EXHAUSTED (all)      │ ✓       │ ✓       │ ✓ *     │
-│ System alerts                   │ ✓       │ ✓       │         │
-└─────────────────────────────────┴─────────┴─────────┴─────────┘
+┌─────────────────────────────────┬─────────┬─────────┐
+│ Event Type                      │ In-App  │ Gmail   │
+├─────────────────────────────────┼─────────┼─────────┤
+│ Pipeline completed              │ ✓       │         │
+│ Pipeline failed                 │ ✓       │         │
+│ Dataset validation completed    │ ✓       │         │
+│ Dataset enrichment completed    │ ✓       │         │
+│ Scan vulnerabilities found      │ ✓       │         │
+│ Rate limit WARNING              │ ✓       │         │
+│ Rate limit EXHAUSTED (all)      │ ✓       │ ✓ *     │
+│ System alerts                   │ ✓       │         │
+└─────────────────────────────────┴─────────┴─────────┘
 * Gmail only for critical alerts when all tokens are exhausted
 """
 
 import logging
 import smtplib
-from datetime import datetime, timezone
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
-import httpx
 from bson import ObjectId
 from pymongo.database import Database
 
@@ -45,7 +43,6 @@ from app.config import settings
 from app.entities.notification import Notification, NotificationType
 from app.repositories.notification import NotificationRepository
 from app.services.email_templates import render_email
-from app.services import slack_templates
 
 logger = logging.getLogger(__name__)
 
@@ -61,23 +58,18 @@ class NotificationManager:
 
     Channels:
     - In-app: MongoDB stored notifications (always)
-    - Slack: Webhook for urgent alerts
     - Gmail: SMTP for critical alerts (optional)
     """
 
     def __init__(
         self,
         db: Optional[Database] = None,
-        slack_webhook_url: Optional[str] = None,
         gmail_enabled: Optional[bool] = None,
         gmail_user: Optional[str] = None,
         gmail_app_password: Optional[str] = None,
         gmail_recipients: Optional[List[str]] = None,
     ):
         self.db = db
-
-        # Slack config - from settings or override
-        self.slack_webhook_url = slack_webhook_url or settings.SLACK_WEBHOOK_URL
 
         # Gmail config (using App Password) - from settings or override
         self.gmail_enabled = (
@@ -123,50 +115,6 @@ class NotificationManager:
             metadata=metadata,
         )
         return repo.insert_one(notification)
-
-    # -------------------------------------------------------------------------
-    # Slack Notifications
-    # -------------------------------------------------------------------------
-
-    async def send_slack(self, blocks: List[Dict[str, Any]], text: str = "") -> bool:
-        """Send a Slack message via Incoming Webhook."""
-        if not self.slack_webhook_url:
-            logger.debug("Slack webhook not configured")
-            return False
-
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    self.slack_webhook_url,
-                    json={"blocks": blocks, "text": text},
-                )
-                if response.status_code == 200:
-                    logger.info("Slack notification sent")
-                    return True
-                else:
-                    logger.warning(f"Slack failed: {response.status_code}")
-                    return False
-        except Exception as e:
-            logger.error(f"Slack error: {e}")
-            return False
-
-    def send_slack_sync(self, blocks: List[Dict[str, Any]], text: str = "") -> bool:
-        """Synchronous Slack send for use in non-async contexts."""
-        if not self.slack_webhook_url:
-            return False
-
-        try:
-            import httpx
-
-            with httpx.Client(timeout=10.0) as client:
-                response = client.post(
-                    self.slack_webhook_url,
-                    json={"blocks": blocks, "text": text},
-                )
-                return response.status_code == 200
-        except Exception as e:
-            logger.error(f"Slack sync error: {e}")
-            return False
 
     # -------------------------------------------------------------------------
     # Gmail Notifications
@@ -316,10 +264,9 @@ def notify_pipeline_failed(
     repo_name: str,
     build_id: str,
     error: str,
-    send_slack: bool = True,
 ) -> Notification:
-    """Pipeline failed - in-app + Slack (urgent)."""
-    notification = create_notification(
+    """Pipeline failed - in-app only."""
+    return create_notification(
         db=db,
         user_id=user_id,
         type=NotificationType.PIPELINE_FAILED,
@@ -328,14 +275,6 @@ def notify_pipeline_failed(
         link="/admin/repos",
         metadata={"repo_name": repo_name, "build_id": build_id, "error": error},
     )
-
-    # Send to Slack for urgent visibility
-    if send_slack:
-        manager = get_notification_manager()
-        slack_msg = slack_templates.pipeline_failed(repo_name, build_id, error)
-        manager.send_slack_sync(blocks=slack_msg["blocks"], text=slack_msg["text"])
-
-    return notification
 
 
 def notify_dataset_validation_completed(
@@ -392,10 +331,9 @@ def notify_scan_vulnerabilities_found(
     repo_name: str,
     scan_type: str,
     issues_count: int,
-    send_slack: bool = True,
 ) -> Notification:
-    """Scan found vulnerabilities - in-app + Slack (security concern)."""
-    notification = create_notification(
+    """Scan found vulnerabilities - in-app only."""
+    return create_notification(
         db=db,
         user_id=user_id,
         type=NotificationType.SCAN_VULNERABILITIES_FOUND,
@@ -409,15 +347,6 @@ def notify_scan_vulnerabilities_found(
         },
     )
 
-    if send_slack:
-        manager = get_notification_manager()
-        slack_msg = slack_templates.scan_vulnerabilities_found(
-            repo_name, scan_type, issues_count
-        )
-        manager.send_slack_sync(blocks=slack_msg["blocks"], text=slack_msg["text"])
-
-    return notification
-
 
 # =============================================================================
 # GitHub Token Rate Limit Notifications
@@ -430,16 +359,15 @@ def notify_rate_limit_warning(
     token_label: str,
     remaining: int,
     reset_at: datetime,
-    send_slack: bool = True,
 ) -> Notification:
     """
-    Single token rate limit warning - in-app + Slack.
+    Single token rate limit warning - in-app only.
 
     Use when a token is running low but not exhausted.
     """
     reset_str = reset_at.strftime("%H:%M UTC") if reset_at else "soon"
 
-    notification = create_notification(
+    return create_notification(
         db=db,
         user_id=user_id,
         type=NotificationType.RATE_LIMIT_WARNING,
@@ -453,15 +381,6 @@ def notify_rate_limit_warning(
         },
     )
 
-    if send_slack:
-        manager = get_notification_manager()
-        slack_msg = slack_templates.rate_limit_warning(
-            token_label, remaining, reset_str
-        )
-        manager.send_slack_sync(blocks=slack_msg["blocks"], text=slack_msg["text"])
-
-    return notification
-
 
 def notify_rate_limit_exhausted(
     db: Database,
@@ -469,11 +388,10 @@ def notify_rate_limit_exhausted(
     exhausted_tokens: int,
     total_tokens: int,
     next_reset_at: Optional[datetime] = None,
-    send_slack: bool = True,
     send_gmail: bool = True,
 ) -> Notification:
     """
-    All tokens exhausted - CRITICAL - in-app + Slack + Gmail.
+    All tokens exhausted - CRITICAL - in-app + Gmail.
 
     Use when ALL tokens are rate limited and the system cannot make GitHub API calls.
     This is critical because it blocks all data ingestion.
@@ -494,17 +412,9 @@ def notify_rate_limit_exhausted(
         },
     )
 
-    manager = get_notification_manager()
-
-    # Slack - urgent
-    if send_slack:
-        slack_msg = slack_templates.rate_limit_exhausted(
-            exhausted_tokens, total_tokens, reset_str
-        )
-        manager.send_slack_sync(blocks=slack_msg["blocks"], text=slack_msg["text"])
-
     # Gmail - for critical alerts using Handlebars template
     if send_gmail:
+        manager = get_notification_manager()
         html_body = render_email(
             "rate_limit_exhausted",
             {
@@ -528,10 +438,9 @@ def notify_system_alert(
     user_id: ObjectId,
     title: str,
     message: str,
-    send_slack: bool = False,
 ) -> Notification:
-    """Generic system alert - in-app + optional Slack."""
-    notification = create_notification(
+    """Generic system alert - in-app only."""
+    return create_notification(
         db=db,
         user_id=user_id,
         type=NotificationType.SYSTEM,
@@ -540,10 +449,3 @@ def notify_system_alert(
         link=None,
         metadata=None,
     )
-
-    if send_slack:
-        manager = get_notification_manager()
-        slack_msg = slack_templates.system_alert(title, message)
-        manager.send_slack_sync(blocks=slack_msg["blocks"], text=slack_msg["text"])
-
-    return notification

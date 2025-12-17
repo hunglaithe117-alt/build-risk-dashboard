@@ -222,6 +222,9 @@ export const reposApi = {
     );
     return response.data;
   },
+  delete: async (repoId: string) => {
+    await api.delete(`/repos/${repoId}`);
+  },
 };
 
 export const datasetsApi = {
@@ -289,41 +292,12 @@ export const featuresApi = {
 };
 
 export const sonarApi = {
-  getConfig: async (repoId: string) => {
-    const response = await api.get<{ content: string }>(`/repos/${repoId}/sonar/config`);
-    return response.data;
-  },
-  updateConfig: async (repoId: string, content: string) => {
-    const response = await api.post<{ status: string }>(
-      `/repos/${repoId}/sonar/config`,
-      { content }
-    );
-    return response.data;
-  },
-  // Note: listJobs removed - scan jobs no longer created via API
-  // Note: retryJob removed - scanning now done via pipeline
-  listResults: async (repoId: string, params?: { skip?: number; limit?: number }) => {
-    const response = await api.get<{ items: ScanResult[]; total: number }>(
-      `/repos/${repoId}/sonar/results`,
-      { params }
-    );
-    return response.data;
-  },
-  listFailedScans: async (repoId: string, params?: { skip?: number; limit?: number }) => {
-    const response = await api.get<{ items: FailedScan[]; total: number }>(
-      `/repos/${repoId}/sonar/failed`,
-      { params }
-    );
-    return response.data;
-  },
-  updateFailedScanConfig: async (failedScanId: string, content: string) => {
-    const response = await api.put<{ status: string; failed_scan_id: string }>(
-      `/repos/sonar/failed/${failedScanId}/config`,
-      { content }
-    );
-    return response.data;
-  },
-  // Note: retryFailedScan removed - scanning now done via pipeline
+  // Deprecated stubs - scanning now done via pipeline
+  listFailedScans: async (_repoId: string): Promise<{ items: [] }> => ({ items: [] }),
+  updateFailedScanConfig: async (_scanId: string, _config: string): Promise<void> => { },
+  listResults: async (_repoId: string): Promise<{ items: [] }> => ({ items: [] }),
+  getConfig: async (_repoId: string): Promise<{ content: string }> => ({ content: '' }),
+  updateConfig: async (_repoId: string, _content: string): Promise<void> => { },
 };
 
 export const dashboardApi = {
@@ -393,6 +367,97 @@ export const integrationApi = {
 export const usersApi = {
   getCurrentUser: async () => {
     const response = await api.get<UserAccount>("/users/me");
+    return response.data;
+  },
+};
+
+// Admin User Management API
+export interface UserListResponse {
+  items: UserAccount[];
+  total: number;
+}
+
+export interface UserCreatePayload {
+  email: string;
+  name?: string;
+  role?: "admin" | "user";
+}
+
+export interface UserUpdatePayload {
+  email?: string;
+  name?: string;
+}
+
+export interface UserRoleUpdatePayload {
+  role: "admin" | "user";
+}
+
+export const adminUsersApi = {
+  list: async (): Promise<UserListResponse> => {
+    const response = await api.get<UserListResponse>("/admin/users");
+    return response.data;
+  },
+  create: async (payload: UserCreatePayload): Promise<UserAccount> => {
+    const response = await api.post<UserAccount>("/admin/users", payload);
+    return response.data;
+  },
+  get: async (userId: string): Promise<UserAccount> => {
+    const response = await api.get<UserAccount>(`/admin/users/${userId}`);
+    return response.data;
+  },
+  update: async (userId: string, payload: UserUpdatePayload): Promise<UserAccount> => {
+    const response = await api.patch<UserAccount>(`/admin/users/${userId}`, payload);
+    return response.data;
+  },
+  updateRole: async (userId: string, role: "admin" | "user"): Promise<UserAccount> => {
+    const response = await api.patch<UserAccount>(`/admin/users/${userId}/role`, { role });
+    return response.data;
+  },
+  delete: async (userId: string): Promise<void> => {
+    await api.delete(`/admin/users/${userId}`);
+  },
+};
+
+// Admin Repository Access API
+export interface RepoAccessSummary {
+  id: string;
+  full_name: string;
+  visibility: string;
+  granted_user_count: number;
+  owner_id: string;
+}
+
+export interface RepoAccessListResponse {
+  items: RepoAccessSummary[];
+  total: number;
+}
+
+export interface RepoAccessResponse {
+  repo_id: string;
+  full_name: string;
+  visibility: string;
+  granted_users: UserAccount[];
+}
+
+export const adminReposApi = {
+  list: async (params?: { skip?: number; limit?: number; visibility?: string }): Promise<RepoAccessListResponse> => {
+    const response = await api.get<RepoAccessListResponse>("/admin/repos", { params });
+    return response.data;
+  },
+  getAccess: async (repoId: string): Promise<RepoAccessResponse> => {
+    const response = await api.get<RepoAccessResponse>(`/admin/repos/${repoId}/access`);
+    return response.data;
+  },
+  grantAccess: async (repoId: string, userIds: string[]): Promise<RepoAccessResponse> => {
+    const response = await api.post<RepoAccessResponse>(`/admin/repos/${repoId}/grant`, { user_ids: userIds });
+    return response.data;
+  },
+  revokeAccess: async (repoId: string, userIds: string[]): Promise<RepoAccessResponse> => {
+    const response = await api.post<RepoAccessResponse>(`/admin/repos/${repoId}/revoke`, { user_ids: userIds });
+    return response.data;
+  },
+  updateVisibility: async (repoId: string, visibility: "public" | "private"): Promise<RepoAccessResponse> => {
+    const response = await api.patch<RepoAccessResponse>(`/admin/repos/${repoId}/visibility`, { visibility });
     return response.data;
   },
 };
@@ -755,6 +820,21 @@ export const settingsApi = {
   // Update settings
   update: async (settings: Partial<ApplicationSettings>): Promise<ApplicationSettings> => {
     const response = await api.patch<ApplicationSettings>("/settings", settings);
+    return response.data;
+  },
+
+  // Get available metrics for tools (grouped by category)
+  getAvailableMetrics: async (): Promise<{
+    sonarqube: {
+      metrics: Record<string, Array<{ key: string; display_name: string; description: string; data_type: string }>>;
+      all_keys: string[];
+    };
+    trivy: {
+      metrics: Record<string, Array<{ key: string; display_name: string; description: string; data_type: string }>>;
+      all_keys: string[];
+    };
+  }> => {
+    const response = await api.get("/settings/available-metrics");
     return response.data;
   },
 

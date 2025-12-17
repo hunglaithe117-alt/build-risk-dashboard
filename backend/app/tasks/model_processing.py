@@ -165,7 +165,7 @@ def dispatch_build_processing(
     """
     Create ModelTrainingBuild docs and dispatch feature extraction tasks.
 
-    Called by finalize_ingestion with the list of raw_build_run IDs.
+    Called by prepare_and_dispatch_processing with the list of raw_build_run IDs.
 
     Flow:
     1. Create ModelTrainingBuild for each raw_build_run (with PENDING status)

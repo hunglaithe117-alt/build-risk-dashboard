@@ -1,0 +1,57 @@
+@startuml Use Case - View repositories/build details
+'===============================================================
+' UC-02: VIEW REPOSITORIES / BUILD DETAILS (User)
+'===============================================================
+
+skinparam actorStyle stick
+skinparam usecase {
+    BorderColor #333333
+    BackgroundColor #FFFFCC
+}
+
+left to right direction
+
+actor "User" as User
+
+rectangle "View repositories / build details" {
+    usecase "View Repositories" as UC_ListRepos
+    usecase "View Build List" as UC_ListBuilds
+    usecase "View Build Details" as UC_BuildDetail
+    usecase "Display Build Metadata" as UC_Metadata
+    usecase "Examine Feature\nContributions" as UC_Features
+    usecase "View Risk Assessment" as UC_ViewRisk
+}
+
+' User starts from viewing their accessible repos
+User --> UC_ListRepos
+
+' Hierarchical flow
+UC_ListRepos ..> UC_ListBuilds : <<include>>
+UC_ListBuilds ..> UC_BuildDetail : <<include>>
+
+' Build Details branches into two parts
+UC_BuildDetail ..> UC_Metadata : <<include>>
+UC_BuildDetail ..> UC_ViewRisk : <<include>>
+
+' Features is optional extension of Metadata
+UC_Metadata ..> UC_Features : <<extend>>
+
+note right of UC_ListRepos
+  Only shows repositories
+  user has access to on GitHub
+end note
+
+note bottom of UC_Metadata
+  **Raw Data:**
+  - Commit info, author
+  - Build status, duration
+  - Test results
+end note
+
+note bottom of UC_ViewRisk
+  **Model Output:**
+  - Risk Level (Low/Medium/High)
+  - Uncertainty Score
+end note
+
+@enduml

@@ -1,0 +1,40 @@
+@startuml Use Case - Configure Notification Settings
+'===============================================================
+' UC-10: CONFIGURE NOTIFICATION SETTINGS (Both)
+'===============================================================
+
+skinparam actorStyle stick
+skinparam usecase {
+    BorderColor #333333
+    BackgroundColor #FFFFCC
+}
+
+left to right direction
+
+actor "Admin" as Admin
+actor "User" as User
+actor "Gmail SMTP" as SMTP <<External>>
+
+' User inherits from Admin for common use cases
+User --|> Admin
+
+rectangle "Configure Notification Settings" {
+    usecase "View Notification\nFeed" as UC_Feed
+    usecase "Mark as Read" as UC_MarkRead
+    
+    ' Admin only
+    usecase "Configure Email\nIntegration" as UC_Email
+}
+
+Admin --> UC_Feed
+Admin --> UC_MarkRead
+Admin --> UC_Email
+
+UC_Email --> SMTP
+
+note bottom of UC_Feed
+  User: Risk level alerts only
+  Admin: All system notifications
+end note
+
+@enduml

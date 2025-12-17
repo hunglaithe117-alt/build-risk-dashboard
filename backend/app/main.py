@@ -25,7 +25,6 @@ from app.api import (
     monitoring,
     notifications,
     admin_users,
-    admin_repos,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.api import model_repos
@@ -76,7 +75,6 @@ app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
 
 # Admin-only routes
 app.include_router(admin_users.router, prefix="/api", tags=["Admin - Users"])
-app.include_router(admin_repos.router, prefix="/api", tags=["Admin - Repos"])
 
 
 @app.get("/")

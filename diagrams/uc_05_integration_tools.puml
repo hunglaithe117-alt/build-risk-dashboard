@@ -1,0 +1,49 @@
+@startuml Use Case - Use integration Tools
+'===============================================================
+' UC-05: USE INTEGRATION TOOLS (Admin)
+'===============================================================
+
+skinparam actorStyle stick
+skinparam usecase {
+    BorderColor #333333
+    BackgroundColor #FFFFCC
+}
+
+left to right direction
+
+actor "Admin" as Admin
+actor "GitHub" as GitHub <<External>>
+actor "SonarQube" as Sonar <<External>>
+actor "Trivy" as Trivy <<External>>
+
+rectangle "Use integration Tools" {
+    usecase "Manage GitHub Tokens" as UC_Tokens
+    usecase "View GitHub Installations" as UC_Installations
+    usecase "Scan Repository Builds" as UC_ScanRepo
+    usecase "Scan Dataset Commits" as UC_ScanDataset
+    usecase "Run SonarQube Analysis" as UC_Sonar
+    usecase "Run Trivy Security Scan" as UC_Trivy
+    usecase "View Scan Results" as UC_Results
+}
+
+Admin --> UC_Tokens
+Admin --> UC_Installations
+Admin --> UC_ScanRepo
+Admin --> UC_ScanDataset
+Admin --> UC_Results
+
+UC_Tokens --> GitHub
+UC_Installations --> GitHub
+
+UC_ScanRepo ..> UC_Sonar : <<extend>>
+UC_ScanRepo ..> UC_Trivy : <<extend>>
+UC_ScanDataset ..> UC_Sonar : <<extend>>
+UC_ScanDataset ..> UC_Trivy : <<extend>>
+
+UC_Sonar --> Sonar
+UC_Trivy --> Trivy
+
+UC_Sonar ..> UC_Results : <<include>>
+UC_Trivy ..> UC_Results : <<include>>
+
+@enduml

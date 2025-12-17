@@ -53,14 +53,10 @@ class TrivySettingsDto(BaseModel):
 
 
 class NotificationSettingsDto(BaseModel):
-    """Notification settings (email + slack)."""
+    """Notification settings (email only)."""
 
     email_enabled: bool = False
     email_recipients: str = ""
-    slack_enabled: bool = False
-    slack_webhook_url: Optional[str] = Field(
-        None, description="Webhook URL (write-only, returns masked on read)"
-    )
 
 
 class ApplicationSettingsResponse(BaseModel):

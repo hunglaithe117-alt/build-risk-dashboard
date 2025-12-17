@@ -31,6 +31,24 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         )
         return ModelRepoConfig(**doc) if doc else None
 
+    def find_active_by_raw_repo_id(
+        self,
+        raw_repo_id: ObjectId,
+    ) -> Optional[ModelRepoConfig]:
+        """
+        Find the active (non-deleted) config for a raw repository.
+
+        Used by webhook to find the 1:1 mapped config for processing.
+        Returns None if no active config exists.
+        """
+        doc = self.collection.find_one(
+            {
+                "raw_repo_id": raw_repo_id,
+                "is_deleted": {"$ne": True},
+            }
+        )
+        return ModelRepoConfig(**doc) if doc else None
+
     def list_by_user(
         self,
         user_id: ObjectId,

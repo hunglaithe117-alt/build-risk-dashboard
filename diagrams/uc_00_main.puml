@@ -1,0 +1,49 @@
+@startuml Use Case Diagram - Build Risk Dashboard (Overview)
+'===============================================================
+' OVERVIEW USE CASE - CI/CD BUILD RISK EVALUATION SYSTEM
+'===============================================================
+
+skinparam actorStyle stick
+skinparam usecase {
+    BorderColor #333333
+    BackgroundColor #FFFFCC
+}
+
+top to bottom direction
+
+' =============== ACTORS ===============
+actor "Admin" as Admin
+actor "User" as User
+
+' =============== SYSTEM BOUNDARY ===============
+rectangle "Build Risk Dashboard System" {
+    
+    usecase "Configure\nSystem Settings" as UC_Settings
+    usecase "Configure\nNotification\nSettings" as UC_NotifSettings
+    usecase "View /\nCustomize\nDashboard" as UC_Dashboard
+    usecase "Manage Users\n& Access" as UC_Users
+    usecase "View\nrepositories/\nbuild details" as UC_Repos
+    usecase "Monitoring &\nView logs" as UC_Monitoring
+    usecase "Manage\nDatasets" as UC_Datasets
+    usecase "Authentication\n& Authorization" as UC_Auth
+    usecase "Manage\nRepositories" as UC_ManageRepos
+    usecase "Use integration\nTools" as UC_Tools
+}
+
+' =============== ADMIN ASSOCIATIONS ===============
+Admin --> UC_Settings
+Admin --> UC_Dashboard
+Admin --> UC_Users
+Admin --> UC_Monitoring
+Admin --> UC_Datasets
+Admin --> UC_ManageRepos
+Admin --> UC_Tools
+Admin --> UC_NotifSettings
+
+' =============== USER ASSOCIATIONS ===============
+User --> UC_NotifSettings
+User --> UC_Dashboard
+User --> UC_Repos
+User --> UC_Auth
+
+@enduml

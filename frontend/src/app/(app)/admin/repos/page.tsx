@@ -1,15 +1,8 @@
 "use client";
 
+import { Input } from "@/components/ui/input";
+import { useDebounce } from "@/hooks/use-debounce";
 import {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { createPortal } from "react-dom";
-import {
-  AlertCircle,
   CheckCircle2,
   Loader2,
   MoreVertical,
@@ -17,13 +10,19 @@ import {
   RefreshCw,
   RotateCcw,
   Settings,
-  X,
+  Trash2,
+  X
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
-import { useDebounce } from "@/hooks/use-debounce";
+import {
+  useCallback,
+  useEffect,
+  useState
+} from "react";
+import { createPortal } from "react-dom";
 
 import { useRouter } from "next/navigation";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -39,16 +38,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useWebSocket } from "@/contexts/websocket-context";
 import { reposApi } from "@/lib/api";
 import type {
   RepoDetail,
-  RepoSuggestion,
-  RepoSuggestionResponse,
   RepoUpdatePayload,
-  RepositoryRecord,
+  RepositoryRecord
 } from "@/types";
-import { Badge } from "@/components/ui/badge";
-import { useWebSocket } from "@/contexts/websocket-context";
 import { ImportRepoModal } from "./_components/ImportRepoModal";
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
@@ -160,6 +156,7 @@ export default function AdminReposPage() {
 
   const [rescanLoading, setRescanLoading] = useState<Record<string, boolean>>({});
   const [reprocessLoading, setReprocessLoading] = useState<Record<string, boolean>>({});
+  const [deleteLoading, setDeleteLoading] = useState<Record<string, boolean>>({});
 
   const handleRescan = async (repo: RepositoryRecord, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -192,6 +189,29 @@ export default function AdminReposPage() {
       setFeedback(err.response?.data?.detail || "Failed to trigger re-extraction.");
     } finally {
       setReprocessLoading((prev) => ({ ...prev, [repo.id]: false }));
+    }
+  };
+
+  const handleDelete = async (repo: RepositoryRecord, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (deleteLoading[repo.id]) return;
+
+    // Confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${repo.full_name}"?\n\nThis will soft-delete the repository configuration. You can re-import it later.`
+    );
+    if (!confirmed) return;
+
+    setDeleteLoading((prev) => ({ ...prev, [repo.id]: true }));
+    try {
+      await reposApi.delete(repo.id);
+      setFeedback(`Repository "${repo.full_name}" deleted successfully.`);
+      loadRepositories(page);
+    } catch (err: any) {
+      console.error(err);
+      setFeedback(err.response?.data?.detail || "Failed to delete repository.");
+    } finally {
+      setDeleteLoading((prev) => ({ ...prev, [repo.id]: false }));
     }
   };
 
@@ -445,6 +465,22 @@ export default function AdminReposPage() {
                             >
                               <Settings className="mr-2 h-4 w-4" />
                               Settings
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(repo, e as unknown as React.MouseEvent);
+                              }}
+                              disabled={deleteLoading[repo.id]}
+                              className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:text-red-400 dark:focus:bg-red-900/20"
+                            >
+                              {deleteLoading[repo.id] ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="mr-2 h-4 w-4" />
+                              )}
+                              Delete Repository
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

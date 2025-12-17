@@ -34,7 +34,7 @@ class Settings(BaseSettings):
 
     # RBAC / Organization Access
     GITHUB_ORGANIZATION: Optional[str] = None  # GitHub org name for membership check
-    REQUIRE_ORG_MEMBERSHIP: bool = False  # Temporarily disabled - all users have access
+    REQUIRE_ORG_MEMBERSHIP: bool = True
 
     # CircleCI
     CIRCLECI_TOKEN: Optional[str] = None
@@ -90,9 +90,6 @@ class Settings(BaseSettings):
     TRIVY_TIMEOUT: int = 300  # Seconds
     TRIVY_SKIP_DIRS: str = "node_modules,vendor,.git"
     TRIVY_ASYNC_THRESHOLD: int = 1000
-
-    # Notifications - Slack
-    SLACK_WEBHOOK_URL: Optional[str] = None
 
     # Notifications - Gmail (requires App Password, NOT regular password)
     GMAIL_NOTIFICATIONS_ENABLED: bool = False

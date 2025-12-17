@@ -1,0 +1,42 @@
+@startuml Use Case - Monitoring & View logs
+'===============================================================
+' UC-07: MONITORING & VIEW LOGS (Admin)
+'===============================================================
+
+skinparam actorStyle stick
+skinparam usecase {
+    BorderColor #333333
+    BackgroundColor #FFFFCC
+}
+
+left to right direction
+
+actor "Admin" as Admin
+actor "Loki" as Loki <<External>>
+
+rectangle "Monitoring & View logs" {
+    usecase "View System Stats" as UC_System
+    usecase "View Active Jobs" as UC_Jobs
+    usecase "View Pipeline Runs" as UC_Pipeline
+    usecase "View Queue Stats" as UC_Queues
+    usecase "Query Logs" as UC_Logs
+}
+
+Admin --> UC_System
+Admin --> UC_Jobs
+Admin --> UC_Pipeline
+Admin --> UC_Queues
+Admin --> UC_Logs
+
+UC_Logs --> Loki
+
+note bottom of UC_System
+  Celery workers, Redis, MongoDB
+end note
+
+note bottom of UC_Logs
+  LogQL queries via Loki
+  (container logs, errors, etc.)
+end note
+
+@enduml

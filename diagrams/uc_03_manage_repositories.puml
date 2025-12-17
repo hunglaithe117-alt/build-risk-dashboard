@@ -1,0 +1,44 @@
+@startuml Use Case - Manage Repositories
+'===============================================================
+' UC-03: MANAGE REPOSITORIES (Admin)
+'===============================================================
+
+skinparam actorStyle stick
+skinparam usecase {
+    BorderColor #333333
+    BackgroundColor #FFFFCC
+}
+
+left to right direction
+
+actor "Admin" as Admin
+actor "GitHub API" as GitHub <<External>>
+actor "ML Model" as Model <<Internal>>
+
+rectangle "Manage Repositories" {
+    usecase "Connect Repository" as UC_Connect
+    usecase "Sync Builds from GitHub" as UC_Sync
+    usecase "Extract Features" as UC_Extract
+    usecase "Run Risk Evaluation" as UC_Evaluate
+    usecase "Configure Repository" as UC_Config
+    usecase "Delete Repository" as UC_Delete
+}
+
+Admin --> UC_Connect
+Admin --> UC_Sync
+Admin --> UC_Config
+Admin --> UC_Delete
+
+UC_Connect --> GitHub
+UC_Sync --> GitHub
+UC_Sync ..> UC_Extract : <<include>>
+UC_Extract --> GitHub : "fetch commit data"
+UC_Extract ..> UC_Evaluate : <<include>>
+UC_Evaluate --> Model
+
+note bottom of UC_Evaluate
+  Bayesian Deep Learning
+  Output: Risk Level + Uncertainty
+end note
+
+@enduml

@@ -4,10 +4,10 @@ Model Ingestion Tasks - Resource preparation for model training builds.
 This module uses chain-based task pattern for fetching builds:
 1. ingest_model_builds - Orchestrator: Dispatches first batch
 2. fetch_builds_batch - Fetches one page, saves to DB, chains to next page
-3. finalize_ingestion - Builds and runs ingestion workflow after all pages fetched
+3. prepare_and_dispatch_processing - Prepares resources and dispatches processing
 
 Flow:
-  ingest_model_builds → fetch_builds_batch(page=1) → fetch_builds_batch(page=2) → ... → finalize_ingestion
+  ingest_model_builds → fetch_builds_batch(page=1) → fetch_builds_batch(page=2) → ... → prepare_and_dispatch_processing
 """
 
 import logging
@@ -134,7 +134,7 @@ def fetch_builds_batch(
     This task:
     1. Fetches one page from CI provider
     2. Saves builds to RawBuildRun collection
-    3. Chains to next page OR finalize_ingestion
+    3. Chains to next page OR prepare_and_dispatch_processing
     """
     import asyncio
 
@@ -243,7 +243,7 @@ def fetch_builds_batch(
                 "next_page": page + 1,
             }
         else:
-            finalize_ingestion.delay(
+            prepare_and_dispatch_processing.delay(
                 repo_config_id=repo_config_id,
                 raw_repo_id=raw_repo_id,
                 full_name=full_name,
@@ -269,12 +269,12 @@ def fetch_builds_batch(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.model_ingestion.finalize_ingestion",
+    name="app.tasks.model_ingestion.prepare_and_dispatch_processing",
     queue="ingestion",
     soft_time_limit=300,
     time_limit=360,
 )
-def finalize_ingestion(
+def prepare_and_dispatch_processing(
     self: PipelineTask,
     repo_config_id: str,
     raw_repo_id: str,

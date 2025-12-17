@@ -89,26 +89,27 @@ class RepositoryService:
 
                 from app.entities.model_repo_config import ModelRepoConfig
 
-                # Get max import_version for this raw_repo (across all users/imports)
-                all_configs = list(
-                    self.repo_config.collection.find({"raw_repo_id": raw_repo.id})
+                # Check if active config already exists - user must delete first to re-import
+                existing_config = self.repo_config.find_active_by_raw_repo_id(
+                    raw_repo.id
                 )
+                if existing_config:
+                    # Return error - user must explicitly delete before re-importing
+                    logger.warning(
+                        f"Cannot import {payload.full_name}: active config already exists"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Repository '{payload.full_name}' is already imported. Please delete it first to re-import.",
+                    )
 
-                # Calculate next version based on raw_repo_id
-                if all_configs:
-                    max_version = max(c.get("import_version", 1) for c in all_configs)
-                    next_version = max_version + 1
-                else:
-                    next_version = 1
-
-                # Always create new config with incremented version
+                # Create new config (1:1 with raw_repo)
                 repo_doc = self.repo_config.insert_one(
                     ModelRepoConfig(
                         _id=None,
                         user_id=ObjectId(target_user_id),
                         full_name=payload.full_name,
                         raw_repo_id=raw_repo.id,
-                        import_version=next_version,
                         installation_id=installation_id,
                         test_frameworks=payload.test_frameworks or [],
                         source_languages=payload.source_languages or [],
@@ -343,6 +344,29 @@ class RepositoryService:
         reprocess_repo_builds.delay(repo_id)
 
         return {"status": "queued", "message": "Re-extraction of features queued"}
+
+    def delete_repository(self, repo_id: str) -> None:
+        """
+        Soft delete a repository configuration.
+
+        This allows re-importing the same repository later.
+        """
+        repo_doc = self.repo_config.find_by_id(repo_id)
+        if not repo_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
+            )
+
+        # Check if already deleted
+        if repo_doc.is_deleted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Repository is already deleted",
+            )
+
+        # Soft delete
+        self.repo_config.soft_delete(repo_doc.id)
+        logger.info(f"Soft deleted repository config {repo_id}")
 
     def detect_languages(self, full_name: str, current_user: dict) -> dict:
         """

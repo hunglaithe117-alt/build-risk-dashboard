@@ -92,14 +92,6 @@ from .admin_user import (
     AdminUserUpdateRequest,
     AdminUserRoleUpdateRequest,
 )
-from .admin_repo import (
-    RepoAccessSummary,
-    AdminRepoListResponse,
-    RepoAccessResponse,
-    GrantAccessRequest,
-    RevokeAccessRequest,
-    VisibilityUpdateRequest,
-)
 
 __all__ = [
     # Auth
@@ -180,11 +172,4 @@ __all__ = [
     "AdminUserCreateRequest",
     "AdminUserUpdateRequest",
     "AdminUserRoleUpdateRequest",
-    # Admin Repo
-    "RepoAccessSummary",
-    "AdminRepoListResponse",
-    "RepoAccessResponse",
-    "GrantAccessRequest",
-    "RevokeAccessRequest",
-    "VisibilityUpdateRequest",
 ]

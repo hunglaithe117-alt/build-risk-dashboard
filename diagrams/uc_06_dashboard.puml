@@ -1,0 +1,37 @@
+@startuml Use Case - View / Customize Dashboard
+'===============================================================
+' UC-06: VIEW / CUSTOMIZE DASHBOARD (Both)
+'===============================================================
+
+skinparam actorStyle stick
+skinparam usecase {
+    BorderColor #333333
+    BackgroundColor #FFFFCC
+}
+
+top to bottom direction
+
+' =============== ACTORS ===============
+actor "Admin" as Admin
+actor "User" as User
+
+' User inherits from Admin (Admin has all User's capabilities)
+User --|> Admin
+
+' =============== SYSTEM BOUNDARY ===============
+rectangle "View / Customize Dashboard" {
+    usecase "View Dashboard\nOverview" as UC_Dashboard
+    usecase "Customize\nLayout" as UC_Customize
+    usecase "Resize Widget" as UC_Resize
+    usecase "Enable/Disable\nWidget" as UC_Toggle
+}
+
+' Admin (and User via inheritance) connects to use cases
+Admin --> UC_Dashboard
+Admin --> UC_Customize
+
+' Customize Layout includes widget operations
+UC_Customize ..> UC_Resize : <<include>>
+UC_Customize ..> UC_Toggle : <<include>>
+
+@enduml

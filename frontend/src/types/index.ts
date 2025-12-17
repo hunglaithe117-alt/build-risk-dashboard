@@ -779,6 +779,7 @@ export interface SonarQubeSettings {
   default_project_key: string;
   webhook_secret?: string | null;
   webhook_public_url?: string | null;
+  enabled_metrics: string[];
 }
 
 export interface TrivySettings {
@@ -787,6 +788,7 @@ export interface TrivySettings {
   timeout: number;
   skip_dirs: string;
   async_threshold: number;
+  enabled_metrics: string[];
 }
 
 export interface NotificationSettings {

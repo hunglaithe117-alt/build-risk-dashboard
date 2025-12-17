@@ -1,0 +1,49 @@
+@startuml Use Case - Manage Datasets
+'===============================================================
+' UC-04: MANAGE DATASETS (Admin)
+'===============================================================
+
+skinparam actorStyle stick
+skinparam usecase {
+    BorderColor #333333
+    BackgroundColor #FFFFCC
+}
+
+top to bottom direction
+
+' =============== ACTORS ===============
+actor "Admin" as Admin
+actor "GitHub" as GitHub <<External>>
+actor "SonarQube" as Sonar <<External>>
+actor "CI Provider" as CI <<External>>
+
+' =============== SYSTEM BOUNDARY ===============
+rectangle "Manage Datasets" {
+    usecase "Upload Dataset" as UC_Upload
+    usecase "Validate\nRepositories" as UC_ValidateRepos
+    usecase "Validate Builds" as UC_ValidateBuilds
+    usecase "Generate Risk\nLabel" as UC_Label
+    usecase "Create Dataset\nVersion" as UC_CreateVersion
+    usecase "Enrich Data" as UC_Enrich
+    usecase "Download\nDataset version" as UC_Download
+}
+
+' =============== ADMIN ASSOCIATIONS ===============
+Admin --> UC_Upload
+Admin --> UC_ValidateRepos
+Admin --> UC_ValidateBuilds
+Admin --> UC_CreateVersion
+Admin --> UC_Download
+
+' =============== RELATIONSHIPS ===============
+UC_CreateVersion ..> UC_Enrich : <<include>>
+
+' Generate Risk Label is OPTIONAL (extend)
+UC_ValidateBuilds ..> UC_Label : <<extend>>
+
+' =============== EXTERNAL SYSTEM CONNECTIONS ===============
+UC_ValidateRepos --> GitHub
+UC_Label --> Sonar
+UC_ValidateBuilds --> CI
+
+@enduml

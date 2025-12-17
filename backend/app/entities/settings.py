@@ -48,13 +48,10 @@ class TrivySettings(BaseEntity):
 
 
 class NotificationSettings(BaseEntity):
-    """Notification settings (email + slack)."""
+    """Notification settings (email only)."""
 
     email_enabled: bool = False
     email_recipients: str = ""
-
-    slack_enabled: bool = False
-    slack_webhook_url_encrypted: Optional[str] = None
 
 
 class ApplicationSettings(BaseEntity):
@@ -71,5 +68,5 @@ class ApplicationSettings(BaseEntity):
     sonarqube: SonarQubeSettings = Field(default_factory=SonarQubeSettings)
     trivy: TrivySettings = Field(default_factory=TrivySettings)
 
-    # Notifications (email + slack)
+    # Notifications (email only)
     notifications: NotificationSettings = Field(default_factory=NotificationSettings)

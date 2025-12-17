@@ -49,15 +49,21 @@ async def check_org_membership(access_token: str, username: str) -> bool:
 
     Returns:
         True if user is a member, False otherwise
-    """
-    org = settings.GITHUB_ORGANIZATION
-    if not org:
-        # No org configured, skip check
-        return True
 
+    Raises:
+        HTTPException: If REQUIRE_ORG_MEMBERSHIP=True but GITHUB_ORGANIZATION is not set
+    """
     if not settings.REQUIRE_ORG_MEMBERSHIP:
         # Org membership check disabled
         return True
+
+    org = settings.GITHUB_ORGANIZATION
+    if not org:
+        # REQUIRE_ORG_MEMBERSHIP=True but no org configured - this is a config error
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="REQUIRE_ORG_MEMBERSHIP is enabled but GITHUB_ORGANIZATION is not configured.",
+        )
 
     try:
         url = GITHUB_ORG_MEMBERSHIP_URL.format(org=org, username=username)
@@ -71,6 +77,8 @@ async def check_org_membership(access_token: str, username: str) -> bool:
             )
             # 204 No Content = member, 404 = not a member
             return response.status_code == 204
+    except HTTPException:
+        raise
     except Exception:
         return False
 

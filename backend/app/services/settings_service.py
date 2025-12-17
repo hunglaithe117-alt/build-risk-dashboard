@@ -112,12 +112,6 @@ class SettingsService:
             notifications=NotificationSettingsDto(
                 email_enabled=db_settings.notifications.email_enabled,
                 email_recipients=db_settings.notifications.email_recipients,
-                slack_enabled=db_settings.notifications.slack_enabled,
-                slack_webhook_url=self._mask_token(
-                    self._decrypt_token(
-                        db_settings.notifications.slack_webhook_url_encrypted or ""
-                    )
-                ),
             ),
         )
 
@@ -149,8 +143,6 @@ class SettingsService:
             notifications=NotificationSettingsDto(
                 email_enabled=False,
                 email_recipients="",
-                slack_enabled=False,
-                slack_webhook_url=None,
             ),
         )
 
@@ -201,14 +193,6 @@ class SettingsService:
 
         if request.notifications:
             notif_data = request.notifications.model_dump()
-            if notif_data.get("slack_webhook_url") and not notif_data[
-                "slack_webhook_url"
-            ].startswith("****"):
-                notif_data["slack_webhook_url_encrypted"] = self._encrypt_token(
-                    notif_data.pop("slack_webhook_url")
-                )
-            else:
-                notif_data.pop("slack_webhook_url", None)
             existing.notifications = NotificationSettings(**notif_data)
 
         # Save to database
@@ -230,8 +214,4 @@ class SettingsService:
             return self._decrypt_token(db_settings.travis.token_encrypted or "")
         elif service == "sonarqube":
             return self._decrypt_token(db_settings.sonarqube.token_encrypted or "")
-        elif service == "slack":
-            return self._decrypt_token(
-                db_settings.notifications.slack_webhook_url_encrypted or ""
-            )
         return None

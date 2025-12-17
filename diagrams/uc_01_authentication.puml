@@ -1,0 +1,32 @@
+@startuml Use Case - Authentication & Authorization
+'===============================================================
+' UC-01: AUTHENTICATION & AUTHORIZATION
+'===============================================================
+
+skinparam actorStyle stick
+skinparam usecase {
+    BorderColor #333333
+    BackgroundColor #FFFFCC
+}
+
+left to right direction
+
+actor "User" as User
+actor "GitHub OAuth" as GitHub <<External>>
+
+rectangle "Authentication & Authorization" {
+    usecase "Login via GitHub" as UC_Login
+    usecase "Logout" as UC_Logout
+    usecase "View Profile" as UC_Profile
+    usecase "Sync Repository Access" as UC_Sync
+}
+
+User --> UC_Login
+User --> UC_Logout
+User --> UC_Profile
+
+UC_Login --> GitHub
+UC_Login ..> UC_Sync : <<include>>
+UC_Sync --> GitHub
+
+@enduml

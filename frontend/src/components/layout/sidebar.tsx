@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Activity, BadgeCheck, Database, Home, Users } from "lucide-react";
+import { Activity, BadgeCheck, Database, GitBranch, Home, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -12,36 +12,42 @@ const navigation = [
     href: "/overview",
     icon: Home,
     adminOnly: false,
+    userOnly: false, // Shown to all
   },
   {
     label: "My Repositories",
     href: "/repos",
     icon: GitBranch,
     adminOnly: false,
+    userOnly: true,
   },
   {
     label: "Projects",
     href: "/admin/datasets",
     icon: Database,
     adminOnly: true,
+    userOnly: false,
   },
   {
     label: "Repositories",
     href: "/admin/repos",
     icon: BadgeCheck,
     adminOnly: true,
+    userOnly: false,
   },
   {
     label: "Monitoring",
     href: "/admin/monitoring",
     icon: Activity,
     adminOnly: true,
+    userOnly: false,
   },
   {
     label: "Users",
     href: "/admin/users",
     icon: Users,
     adminOnly: true,
+    userOnly: false,
   }
 ];
 
@@ -51,10 +57,11 @@ export function Sidebar() {
 
   const isAdmin = user?.role === "admin";
 
-  // Filter navigation items based on user role
-  const visibleNavigation = navigation.filter(
-    (item) => !item.adminOnly || isAdmin
-  );
+  const visibleNavigation = navigation.filter((item) => {
+    if (item.adminOnly && !isAdmin) return false;
+    if (item.userOnly && isAdmin) return false;
+    return true;
+  });
 
   return (
     <div className="flex h-full flex-col border-r bg-white/70 backdrop-blur dark:bg-slate-950/90">

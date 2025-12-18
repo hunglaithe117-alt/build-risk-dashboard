@@ -39,7 +39,8 @@ interface SystemStats {
 
 interface PipelineRunsResponse {
     runs: any[];
-    total: number;
+    next_cursor: string | null;
+    has_more: boolean;
 }
 
 interface BackgroundJobsResponse {
@@ -65,12 +66,14 @@ export default function MonitoringPage() {
     const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
     const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-    // Pipeline runs
+    // Pipeline runs with cursor pagination
     const [pipelineRuns, setPipelineRuns] = useState<PipelineRunsResponse>({
         runs: [],
-        total: 0,
+        next_cursor: null,
+        has_more: false,
     });
     const [isLoadingRuns, setIsLoadingRuns] = useState(true);
+    const [isLoadingMoreRuns, setIsLoadingMoreRuns] = useState(false);
 
     // Background jobs
     const [backgroundJobs, setBackgroundJobs] =
@@ -105,10 +108,10 @@ export default function MonitoringPage() {
         }
     }, []);
 
-    // Fetch pipeline runs
+    // Fetch pipeline runs with cursor pagination (reset)
     const fetchPipelineRuns = useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE}/monitoring/pipeline-runs?limit=20`, {
+            const res = await fetch(`${API_BASE}/monitoring/pipeline-runs/cursor?limit=20`, {
                 credentials: "include",
             });
             if (res.ok) {
@@ -121,6 +124,31 @@ export default function MonitoringPage() {
             setIsLoadingRuns(false);
         }
     }, []);
+
+    // Load more pipeline runs (append)
+    const loadMorePipelineRuns = useCallback(async () => {
+        if (!pipelineRuns.has_more || !pipelineRuns.next_cursor || isLoadingMoreRuns) return;
+
+        setIsLoadingMoreRuns(true);
+        try {
+            const res = await fetch(
+                `${API_BASE}/monitoring/pipeline-runs/cursor?limit=20&cursor=${pipelineRuns.next_cursor}`,
+                { credentials: "include" }
+            );
+            if (res.ok) {
+                const data = await res.json();
+                setPipelineRuns((prev) => ({
+                    runs: [...prev.runs, ...data.runs],
+                    next_cursor: data.next_cursor,
+                    has_more: data.has_more,
+                }));
+            }
+        } catch (error) {
+            console.error("Failed to load more pipeline runs:", error);
+        } finally {
+            setIsLoadingMoreRuns(false);
+        }
+    }, [pipelineRuns.has_more, pipelineRuns.next_cursor, isLoadingMoreRuns]);
 
     // Fetch background jobs
     const fetchBackgroundJobs = useCallback(async () => {
@@ -272,8 +300,10 @@ export default function MonitoringPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <PipelineRunsTable
                     runs={pipelineRuns.runs}
-                    total={pipelineRuns.total}
+                    hasMore={pipelineRuns.has_more}
                     isLoading={isLoadingRuns}
+                    isLoadingMore={isLoadingMoreRuns}
+                    onLoadMore={loadMorePipelineRuns}
                 />
                 <BackgroundJobsTable jobs={backgroundJobs} isLoading={isLoadingJobs} />
             </div>

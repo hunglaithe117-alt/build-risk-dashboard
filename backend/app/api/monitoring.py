@@ -57,6 +57,23 @@ def get_pipeline_runs(
     return service.get_pipeline_runs(limit=limit, skip=skip, status=status)
 
 
+@router.get("/pipeline-runs/cursor")
+def get_pipeline_runs_cursor(
+    limit: int = Query(20, ge=1, le=100),
+    cursor: Optional[str] = Query(None, description="Cursor from previous page"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    db: Database = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    """
+    Get pipeline runs with cursor-based pagination for infinite scroll.
+
+    Returns runs with enriched repository and build information.
+    """
+    service = MonitoringService(db)
+    return service.get_pipeline_runs_cursor(limit=limit, cursor=cursor, status=status)
+
+
 @router.get("/jobs")
 def get_background_jobs(
     db: Database = Depends(get_db),

@@ -30,6 +30,8 @@ class UserDashboardLayoutRepository(BaseRepository[UserDashboardLayout]):
         doc_dict = layout.model_dump(by_alias=True, exclude_none=True)
         doc_dict["user_id"] = user_id
         doc_dict["updated_at"] = datetime.utcnow()
+        # Remove created_at from $set to avoid conflict with $setOnInsert
+        doc_dict.pop("created_at", None)
 
         self.collection.update_one(
             {"user_id": user_id},

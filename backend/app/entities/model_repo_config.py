@@ -77,7 +77,7 @@ class ModelRepoConfig(RepoConfigBase):
     )
     total_builds_failed: int = Field(
         default=0,
-        description="Number of builds that failed to import",
+        description="Number of builds that failed to extract",
     )
     total_builds_processed: int = Field(
         default=0,

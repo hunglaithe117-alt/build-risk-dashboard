@@ -194,6 +194,88 @@ class MonitoringService:
             "total": total,
         }
 
+    def get_pipeline_runs_cursor(
+        self,
+        limit: int = 20,
+        cursor: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get pipeline runs with cursor-based pagination for infinite scroll."""
+        from bson import ObjectId
+        from app.repositories.pipeline_run import PipelineRunRepository
+
+        repo = PipelineRunRepository(self.db)
+
+        runs, next_cursor, has_more = repo.find_recent_cursor(
+            limit=limit,
+            cursor=cursor,
+            status=status,
+        )
+
+        # Collect unique repo_ids and build_run_ids to batch lookup
+        repo_ids = set()
+        build_ids = set()
+        for run in runs:
+            repo_ids.add(run.raw_repo_id)
+            build_ids.add(run.raw_build_run_id)
+
+        # Batch lookup repositories
+        repo_map: Dict[str, Dict[str, Any]] = {}
+        if repo_ids:
+            repos_cursor = self.db["raw_repositories"].find(
+                {"_id": {"$in": [ObjectId(str(rid)) for rid in repo_ids]}},
+                {"full_name": 1, "name": 1},
+            )
+            for r in repos_cursor:
+                repo_map[str(r["_id"])] = {
+                    "full_name": r.get("full_name", ""),
+                    "name": r.get("name", ""),
+                }
+
+        # Batch lookup build runs
+        build_map: Dict[str, Dict[str, Any]] = {}
+        if build_ids:
+            builds_cursor = self.db["raw_build_runs"].find(
+                {"_id": {"$in": [ObjectId(str(bid)) for bid in build_ids]}},
+                {"run_number": 1, "event": 1, "head_branch": 1, "workflow_name": 1},
+            )
+            for b in builds_cursor:
+                build_map[str(b["_id"])] = {
+                    "run_number": b.get("run_number"),
+                    "event": b.get("event", ""),
+                    "head_branch": b.get("head_branch", ""),
+                    "workflow_name": b.get("workflow_name", ""),
+                }
+
+        return {
+            "runs": [
+                {
+                    "id": str(run.id),
+                    "category": run.category,
+                    "raw_repo_id": str(run.raw_repo_id),
+                    "raw_build_run_id": str(run.raw_build_run_id),
+                    "repo": repo_map.get(str(run.raw_repo_id), {}),
+                    "build": build_map.get(str(run.raw_build_run_id), {}),
+                    "status": run.status,
+                    "started_at": (
+                        run.started_at.isoformat() if run.started_at else None
+                    ),
+                    "completed_at": (
+                        run.completed_at.isoformat() if run.completed_at else None
+                    ),
+                    "duration_ms": run.duration_ms,
+                    "feature_count": run.feature_count,
+                    "nodes_executed": run.nodes_executed,
+                    "nodes_succeeded": run.nodes_succeeded,
+                    "nodes_failed": run.nodes_failed,
+                    "errors": run.errors[:3] if run.errors else [],
+                }
+                for run in runs
+            ],
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+        }
+
     def get_background_jobs(self) -> Dict[str, Any]:
         """Get overview of all background jobs."""
         from app.repositories.export_job import ExportJobRepository

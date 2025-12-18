@@ -76,7 +76,6 @@ class Settings(BaseSettings):
     HAMILTON_CACHE_TYPE: str = "file"  # "file" (persistent) or "memory" (dev only)
 
     DATA_DIR: str = "../repo-data/data"
-    WORKFLOW_POLL_INTERVAL_MINUTES: int = 15
 
     # Security
     SECRET_KEY: str = "your-secret-key-change-in-production"

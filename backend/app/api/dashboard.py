@@ -99,10 +99,22 @@ def save_dashboard_layout(
         for w in request.widgets
     ]
 
+    def to_dto(w: WidgetConfig) -> WidgetConfigDto:
+        return WidgetConfigDto(
+            widget_id=w.widget_id,
+            widget_type=w.widget_type,
+            title=w.title,
+            enabled=w.enabled,
+            x=w.x,
+            y=w.y,
+            w=w.w,
+            h=w.h,
+        )
+
     layout = UserDashboardLayout(user_id=user_id, widgets=widget_configs)
     saved = repo.upsert_by_user(user_id, layout)
 
-    return DashboardLayoutResponse(widgets=saved.widgets)
+    return DashboardLayoutResponse(widgets=[to_dto(w) for w in saved.widgets])
 
 
 @router.get("/available-widgets", response_model=list[WidgetDefinition])

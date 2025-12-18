@@ -23,7 +23,7 @@ from app.tasks.base import PipelineTask
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.ci_providers import CIProvider, get_provider_config, get_ci_provider
-from app.services.github.exceptions import GithubRateLimitError
+from app.services.github.exceptions import GithubRateLimitError, GithubRetryableError
 from app.paths import REPOS_DIR, WORKTREES_DIR, LOGS_DIR
 from app.core.redis import RedisLock
 
@@ -204,7 +204,6 @@ def create_worktrees(
 
     Each chunk runs as a separate task for better fault tolerance.
     """
-
     if not commit_shas:
         return {"worktrees_created": 0, "worktrees_skipped": 0}
 
@@ -393,7 +392,6 @@ def create_worktree_chunk(
 )
 def download_build_logs(
     self: PipelineTask,
-    prev_result: Dict[str, Any] = None,
     raw_repo_id: str = "",
     full_name: str = "",
     build_ids: List[str] = [],
@@ -408,13 +406,6 @@ def download_build_logs(
     """
     import redis
 
-    prev_result = prev_result or {}
-    build_ids = build_ids or prev_result.get("build_ids", [])
-
-    if not build_ids:
-        return {**prev_result, "logs_downloaded": 0, "logs_expired": 0}
-
-    # Deduplicate
     unique_build_ids = list(dict.fromkeys(build_ids))
 
     if publish_status and raw_repo_id:
@@ -453,7 +444,6 @@ def download_build_logs(
     )
 
     return {
-        **prev_result,
         "log_chunks_dispatched": chunks_dispatched,
         "total_builds": len(unique_build_ids),
     }
@@ -466,7 +456,7 @@ def download_build_logs(
     queue="ingestion",
     soft_time_limit=600,  # 10 min per chunk
     time_limit=660,
-    autoretry_for=(GithubRateLimitError,),
+    autoretry_for=(GithubRateLimitError, GithubRetryableError),
     retry_kwargs={"max_retries": 2, "countdown": 60},
 )
 def download_logs_chunk(

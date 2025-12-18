@@ -52,6 +52,8 @@ class RepoResponse(BaseModel):
     test_frameworks: List[TestFramework] = Field(default_factory=list)
     source_languages: List[str] = Field(default_factory=list)
     total_builds_imported: int = 0
+    total_builds_processed: int = 0
+    total_builds_failed: int = 0
     import_status: Optional[str] = Field(
         default="imported",
         description="Import status: queued, importing, imported, failed",

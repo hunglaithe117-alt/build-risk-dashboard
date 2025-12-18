@@ -22,7 +22,7 @@ from app.repositories.model_repo_config import ModelRepoConfigRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.dataset_template_repository import DatasetTemplateRepository
 from app.ci_providers import CIProvider, get_provider_config, get_ci_provider
-from app.services.github.exceptions import GithubRateLimitError
+from app.services.github.exceptions import GithubRateLimitError, GithubRetryableError
 from app.tasks.pipeline.feature_dag._metadata import (
     get_required_resources_for_features,
     FeatureResource,
@@ -30,6 +30,7 @@ from app.tasks.pipeline.feature_dag._metadata import (
 from app.tasks.pipeline.resource_dag import get_ingestion_tasks_by_level
 from app.tasks.shared import build_ingestion_workflow
 from app.ci_providers.models import BuildStatus
+from app.tasks.model_processing import publish_status
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ def ingest_model_builds(
     queue="ingestion",
     soft_time_limit=300,
     time_limit=360,
-    autoretry_for=(GithubRateLimitError,),
+    autoretry_for=(GithubRateLimitError, GithubRetryableError),
     retry_backoff=60,
     max_retries=5,
 )
@@ -256,6 +257,18 @@ def fetch_builds_batch(
         raise
     except Exception as e:
         logger.error(f"Failed to fetch page {page} for {full_name}: {e}")
+        from app.entities.enums import ModelImportStatus
+
+        repo_config_repo = ModelRepoConfigRepository(self.db)
+        repo_config_repo.update_repository(
+            repo_config_id,
+            {
+                "import_status": ModelImportStatus.FAILED.value,
+                "last_sync_status": "failed",
+                "last_sync_error": str(e),
+            },
+        )
+        publish_status(repo_config_id, "failed", str(e))
         raise
 
 
@@ -288,55 +301,94 @@ def prepare_and_dispatch_processing(
 
     if not ci_build_ids:
         logger.info(f"No builds to process for {full_name}")
-        return {"status": "completed", "builds": 0}
+        from app.entities.enums import ModelImportStatus
 
-    raw_build_run_repo = RawBuildRunRepository(self.db)
-    ci_provider_enum = CIProvider(ci_provider)
-
-    raw_build_docs = raw_build_run_repo.find_ids_by_build_ids(
-        ObjectId(raw_repo_id), ci_build_ids, ci_provider_enum.value
-    )
-
-    raw_build_run_ids = [str(doc["_id"]) for doc in raw_build_docs]
-    commit_shas = list(
-        set(
-            doc.get("effective_sha") or doc.get("commit_sha")
-            for doc in raw_build_docs
-            if doc.get("commit_sha")
+        repo_config_repo = ModelRepoConfigRepository(self.db)
+        repo_config_repo.update_repository(
+            repo_config_id,
+            {
+                "import_status": ModelImportStatus.IMPORTED.value,
+                "last_sync_status": "success",
+                "last_sync_error": None,
+            },
         )
-    )
+        publish_status(repo_config_id, "imported", "No builds found")
+        return {"status": "completed", "builds": 0, "message": "No builds found"}
 
-    logger.info(
-        f"Finalizing ingestion for {full_name}: {len(raw_build_run_ids)} builds"
-    )
+    try:
+        raw_build_run_repo = RawBuildRunRepository(self.db)
+        ci_provider_enum = CIProvider(ci_provider)
 
-    # Step 2: Determine required resources based on template
-    required_resources = get_required_resources_for_template(self.db)
-    tasks_by_level = get_ingestion_tasks_by_level(list(required_resources))
+        raw_build_docs = raw_build_run_repo.find_ids_by_build_ids(
+            ObjectId(raw_repo_id), ci_build_ids, ci_provider_enum.value
+        )
 
-    # Step 3: Build ingestion workflow if resources needed
-    if tasks_by_level:
-        workflow = build_ingestion_workflow(
-            tasks_by_level=tasks_by_level,
+        raw_build_run_ids = [str(doc["_id"]) for doc in raw_build_docs]
+        commit_shas = list(
+            set(
+                doc.get("effective_sha") or doc.get("commit_sha")
+                for doc in raw_build_docs
+                if doc.get("commit_sha")
+            )
+        )
+
+        logger.info(
+            f"Finalizing ingestion for {full_name}: {len(raw_build_run_ids)} builds"
+        )
+
+        # Step 2: Determine required resources based on template
+        required_resources = get_required_resources_for_template(self.db)
+        tasks_by_level = get_ingestion_tasks_by_level(list(required_resources))
+
+        # Update total_builds_imported count
+        repo_config_repo = ModelRepoConfigRepository(self.db)
+        repo_config_repo.update_repository(
+            repo_config_id,
+            {
+                "total_builds_imported": len(raw_build_run_ids),
+                "feature_extractors": list(required_resources),
+            },
+        )
+
+        # Step 3: Build ingestion workflow if resources needed
+        if tasks_by_level:
+            workflow = build_ingestion_workflow(
+                tasks_by_level=tasks_by_level,
+                raw_repo_id=raw_repo_id,
+                full_name=full_name,
+                build_ids=ci_build_ids,
+                commit_shas=commit_shas,
+                ci_provider=ci_provider_enum.value,
+            )
+            if workflow:
+                workflow.apply_async()
+
+        dispatch_build_processing.delay(
+            repo_config_id=repo_config_id,
             raw_repo_id=raw_repo_id,
-            full_name=full_name,
-            build_ids=ci_build_ids,
-            commit_shas=commit_shas,
-            ci_provider=ci_provider_enum,
+            raw_build_run_ids=raw_build_run_ids,
         )
-        if workflow:
-            workflow.apply_async()
 
-    dispatch_build_processing.delay(
-        repo_config_id=repo_config_id,
-        raw_repo_id=raw_repo_id,
-        raw_build_run_ids=raw_build_run_ids,
-    )
+        return {
+            "status": "dispatched",
+            "raw_repo_id": raw_repo_id,
+            "builds": len(ci_build_ids),
+            "raw_build_run_ids": len(raw_build_run_ids),
+            "resources": list(required_resources) if tasks_by_level else [],
+        }
 
-    return {
-        "status": "dispatched",
-        "raw_repo_id": raw_repo_id,
-        "builds": len(ci_build_ids),
-        "raw_build_run_ids": len(raw_build_run_ids),
-        "resources": list(required_resources) if tasks_by_level else [],
-    }
+    except Exception as e:
+        logger.error(f"Failed to prepare/dispatch processing for {full_name}: {e}")
+        from app.entities.enums import ModelImportStatus
+
+        repo_config_repo = ModelRepoConfigRepository(self.db)
+        repo_config_repo.update_repository(
+            repo_config_id,
+            {
+                "import_status": ModelImportStatus.FAILED.value,
+                "last_sync_status": "failed",
+                "last_sync_error": str(e),
+            },
+        )
+        publish_status(repo_config_id, "failed", str(e))
+        raise

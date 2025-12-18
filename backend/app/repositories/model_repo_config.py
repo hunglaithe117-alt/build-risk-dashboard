@@ -234,6 +234,20 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
             },
         )
 
+    def increment_builds_failed(
+        self,
+        config_id: ObjectId,
+        count: int = 1,
+    ) -> None:
+        """Increment the total builds failed count."""
+        self.collection.update_one(
+            {"_id": config_id},
+            {
+                "$inc": {"total_builds_failed": count},
+                "$set": {"updated_at": datetime.utcnow()},
+            },
+        )
+
     def soft_delete(self, config_id: ObjectId) -> None:
         """Soft delete a config."""
         self.collection.update_one(

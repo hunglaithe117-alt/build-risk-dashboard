@@ -143,26 +143,40 @@ class RepositoryService:
                 )
 
                 if existing_config:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=f"Repository '{payload.full_name}' is already imported. Please delete it first to re-import.",
+                    if not existing_config.is_deleted:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Repository '{payload.full_name}' is already imported. Please delete it first to re-import.",
+                        )
+                    repo_doc = self.repo_config.update_one(
+                        existing_config.id,
+                        {
+                            "user_id": ObjectId(target_user_id),
+                            "test_frameworks": payload.test_frameworks or [],
+                            "source_languages": payload.source_languages or [],
+                            "ci_provider": payload.ci_provider,
+                            "import_status": ModelImportStatus.QUEUED,
+                            "max_builds_to_ingest": payload.max_builds,
+                            "since_days": payload.since_days,
+                            "only_with_logs": payload.only_with_logs or False,
+                        },
                     )
-
-                repo_doc = self.repo_config.insert_one(
-                    ModelRepoConfig(
-                        _id=None,
-                        user_id=ObjectId(target_user_id),
-                        full_name=payload.full_name,
-                        raw_repo_id=raw_repo.id,
-                        test_frameworks=payload.test_frameworks or [],
-                        source_languages=payload.source_languages or [],
-                        ci_provider=payload.ci_provider,
-                        import_status=ModelImportStatus.QUEUED,
-                        max_builds_to_ingest=payload.max_builds,
-                        since_days=payload.since_days,
-                        only_with_logs=payload.only_with_logs or False,
+                else:
+                    repo_doc = self.repo_config.insert_one(
+                        ModelRepoConfig(
+                            _id=None,
+                            user_id=ObjectId(target_user_id),
+                            full_name=payload.full_name,
+                            raw_repo_id=raw_repo.id,
+                            test_frameworks=payload.test_frameworks or [],
+                            source_languages=payload.source_languages or [],
+                            ci_provider=payload.ci_provider,
+                            import_status=ModelImportStatus.QUEUED,
+                            max_builds_to_ingest=payload.max_builds,
+                            since_days=payload.since_days,
+                            only_with_logs=payload.only_with_logs or False,
+                        )
                     )
-                )
 
                 start_model_processing.delay(
                     repo_config_id=str(repo_doc.id),

@@ -237,6 +237,8 @@ export interface RepositoryRecord {
   test_frameworks: string[];
   source_languages: string[];
   total_builds_imported: number;
+  total_builds_processed: number;
+  total_builds_failed: number;
   last_sync_error?: string;
   notes?: string;
   import_status: "queued" | "importing" | "imported" | "failed";

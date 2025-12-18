@@ -315,7 +315,7 @@ def process_workflow_run(
         model_build_repo.update_one(
             model_build_id,
             {
-                "extraction_status": ExtractionStatus.FAILED,
+                "extraction_status": ExtractionStatus.FAILED.value,
                 "extraction_error": "RawBuildRun not found",
             },
         )
@@ -345,36 +345,60 @@ def process_workflow_run(
         template = template_repo.find_by_name("TravisTorrent Full")
         feature_names = template.feature_names if template else []
 
+        # Create GitHub client for GITHUB_API features
+        github_client_input = None
+        try:
+            from app.services.github.github_client import get_public_github_client
+            from app.tasks.pipeline.feature_dag._inputs import GitHubClientInput
+
+            client = get_public_github_client()
+            github_client_input = GitHubClientInput(
+                client=client, full_name=raw_repo.full_name
+            )
+        except Exception as e:
+            logger.warning(f"Failed to create GitHub client: {e}")
+
         # Use shared helper for feature extraction with status
         result = extract_features_for_build(
             db=self.db,
             raw_repo=raw_repo,
             repo_config=repo_config,
-            build_run=raw_build_run,
+            raw_build_run=raw_build_run,
             selected_features=feature_names,
+            github_client=github_client_input,
         )
 
         updates = {}
         raw_features = result.get("features", {})
         updates["features"] = format_features_for_storage(raw_features)
+        updates["feature_count"] = len(updates["features"])
 
         if result["status"] == "completed":
-            updates["extraction_status"] = ExtractionStatus.COMPLETED
+            updates["extraction_status"] = ExtractionStatus.COMPLETED.value
         elif result["status"] == "partial":
-            updates["extraction_status"] = ExtractionStatus.PARTIAL
+            updates["extraction_status"] = ExtractionStatus.PARTIAL.value
         else:
-            updates["extraction_status"] = ExtractionStatus.FAILED
+            updates["extraction_status"] = ExtractionStatus.FAILED.value
 
         # Handle errors and warnings
         if result.get("errors"):
-            updates["error_message"] = "; ".join(result["errors"])
+            updates["extraction_error"] = "; ".join(result["errors"])
         elif result.get("warnings"):
-            updates["error_message"] = "Warning: " + "; ".join(result["warnings"])
+            updates["extraction_error"] = "Warning: " + "; ".join(result["warnings"])
 
         if result.get("is_missing_commit"):
             updates["is_missing_commit"] = True
 
         model_build_repo.update_one(build_id, updates)
+
+        # Update repo config stats
+        if updates["extraction_status"] in (
+            ExtractionStatus.COMPLETED.value,
+            ExtractionStatus.PARTIAL.value,
+        ):
+            repo_config_repo.increment_builds_processed(ObjectId(repo_config_id))
+        elif updates["extraction_status"] == ExtractionStatus.FAILED.value:
+            repo_config_repo.increment_builds_failed(ObjectId(repo_config_id))
 
         publish_build_update(repo_config_id, build_id, updates["extraction_status"])
 
@@ -398,10 +422,13 @@ def process_workflow_run(
         model_build_repo.update_one(
             build_id,
             {
-                "extraction_status": ExtractionStatus.FAILED,
-                "error_message": str(e),
+                "extraction_status": ExtractionStatus.FAILED.value,
+                "extraction_error": str(e),
             },
         )
+
+        # Increment failed count
+        repo_config_repo.increment_builds_failed(ObjectId(repo_config_id))
 
         publish_build_update(repo_config_id, build_id, "failed")
 

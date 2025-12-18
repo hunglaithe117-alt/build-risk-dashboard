@@ -34,6 +34,7 @@ const PAGE_SIZE = 20;
 
 export default function UserReposPage() {
     const router = useRouter();
+
     const [repositories, setRepositories] = useState<RepositoryRecord[]>([]);
     const [loading, setLoading] = useState(true);
     const [tableLoading, setTableLoading] = useState(false);
@@ -170,9 +171,9 @@ export default function UserReposPage() {
                                     <tr>
                                         <td
                                             colSpan={4}
-                                            className="px-6 py-6 text-center text-sm text-muted-foreground"
+                                            className="px-6 py-8 text-center text-sm text-muted-foreground"
                                         >
-                                            No repositories available. Contact an admin to add repositories.
+                                            No repositories available.
                                         </td>
                                     </tr>
                                 ) : (

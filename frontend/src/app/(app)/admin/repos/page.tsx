@@ -363,7 +363,7 @@ export default function AdminReposPage() {
                     Last sync time
                   </th>
                   <th className="px-6 py-3 text-left font-semibold text-slate-500">
-                    Total builds
+                    Builds Progress
                   </th>
                   <th className="px-6 py-3" />
                 </tr>
@@ -402,8 +402,36 @@ export default function AdminReposPage() {
                       <td className="px-6 py-4 text-muted-foreground">
                         {formatTimestamp(repo.last_scanned_at)}
                       </td>
-                      <td className="px-6 py-4 text-muted-foreground">
-                        {repo.total_builds_imported.toLocaleString()}
+                      <td className="px-6 py-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-3 text-sm">
+                            <span className="text-muted-foreground">
+                              {repo.total_builds_imported} imported
+                            </span>
+                            {repo.total_builds_imported > 0 && (
+                              <>
+                                <span className="text-green-600 dark:text-green-400">
+                                  {repo.total_builds_processed} processed
+                                </span>
+                                {repo.total_builds_failed > 0 && (
+                                  <span className="text-red-600 dark:text-red-400">
+                                    {repo.total_builds_failed} failed
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                          {repo.total_builds_imported > 0 && (
+                            <div className="h-1.5 w-32 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                              <div
+                                className="h-full bg-green-500 transition-all"
+                                style={{
+                                  width: `${Math.round((repo.total_builds_processed / repo.total_builds_imported) * 100)}%`,
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <DropdownMenu>

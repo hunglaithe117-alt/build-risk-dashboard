@@ -90,15 +90,38 @@ class RepoConfigInput:
     @classmethod
     def from_entity(cls, config: RepoConfigBase) -> RepoConfigInput:
         """Create from ModelRepoConfig or DatasetRepoConfig entity."""
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Debug logging
+        logger.info(
+            f"[DEBUG] config.ci_provider = {config.ci_provider!r}, type = {type(config.ci_provider)}"
+        )
+        logger.info(f"[DEBUG] config.test_frameworks = {config.test_frameworks!r}")
+        if config.test_frameworks:
+            for i, tf in enumerate(config.test_frameworks):
+                logger.info(f"[DEBUG] test_frameworks[{i}] = {tf!r}, type = {type(tf)}")
+
+        # Handle ci_provider - can be enum or string (due to use_enum_values=True)
+        ci_provider_value = config.ci_provider
+        if hasattr(ci_provider_value, "value"):
+            ci_provider_value = ci_provider_value.value
+        ci_provider_str = ci_provider_value if ci_provider_value else "github_actions"
+
+        # Handle test_frameworks - can be list of enums or strings
+        test_frameworks_list = []
+        for tf in config.test_frameworks or []:
+            if hasattr(tf, "value"):
+                test_frameworks_list.append(tf.value)
+            else:
+                test_frameworks_list.append(str(tf))
+
         return cls(
             id=str(config.id),
-            ci_provider=(
-                str(config.ci_provider.value)
-                if config.ci_provider
-                else "github_actions"
-            ),
+            ci_provider=ci_provider_str,
             source_languages=config.source_languages or [],
-            test_frameworks=[str(tf.value) for tf in (config.test_frameworks or [])],
+            test_frameworks=test_frameworks_list,
         )
 
 
@@ -118,13 +141,17 @@ class BuildRunInput:
     @classmethod
     def from_entity(cls, build_run: RawBuildRun) -> BuildRunInput:
         """Create from RawBuildRun entity."""
+        # Handle conclusion - can be enum or string (due to use_enum_values=True)
+        conclusion_value = build_run.conclusion
+        if hasattr(conclusion_value, "value"):
+            conclusion_value = conclusion_value.value
+        conclusion_str = str(conclusion_value) if conclusion_value else None
+
         return cls(
             build_id=build_run.build_id,
             build_number=build_run.build_number,
             commit_sha=build_run.commit_sha,
-            conclusion=(
-                str(build_run.conclusion.value) if build_run.conclusion else None
-            ),
+            conclusion=conclusion_str,
             created_at=build_run.created_at,
             completed_at=build_run.completed_at,
             duration_seconds=build_run.duration_seconds,

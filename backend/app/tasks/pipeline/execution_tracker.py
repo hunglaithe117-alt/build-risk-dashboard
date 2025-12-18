@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from hamilton.lifecycle import base
+from hamilton.graph import node
 
 logger = logging.getLogger(__name__)
 
@@ -87,18 +88,23 @@ class ExecutionTracker(base.BasePreNodeExecute, base.BasePostNodeExecute):
         self,
         *,
         run_id: str,
-        node_name: str,
-        node_tags: Dict[str, Any],
-        node_kwargs: Dict[str, Any],
-        node_return_type: type,
-        task_id: Optional[str],
-        **future_kwargs: Any,
+        node_: node.Node,
+        kwargs: Dict[str, Any],
+        task_id: Optional[str] = None,
     ) -> None:
         """
         Called before each node execution.
 
         Records start time for the node.
+
+        Args:
+            run_id: Unique run identifier
+            node_: Hamilton Node object containing name, tags, return type, etc.
+            kwargs: Arguments being passed to the node
+            task_id: Optional task identifier
         """
+        node_name = node_.name
+
         if self._started_at is None:
             self._started_at = datetime.now(timezone.utc)
 
@@ -111,21 +117,28 @@ class ExecutionTracker(base.BasePreNodeExecute, base.BasePostNodeExecute):
         self,
         *,
         run_id: str,
-        node_name: str,
-        node_tags: Dict[str, Any],
-        node_kwargs: Dict[str, Any],
-        node_return_type: type,
-        result: Any,
-        error: Optional[Exception],
+        node_: node.Node,
+        kwargs: Dict[str, Any],
         success: bool,
-        task_id: Optional[str],
-        **future_kwargs: Any,
+        error: Optional[Exception],
+        result: Any,
+        task_id: Optional[str] = None,
     ) -> None:
         """
         Called after each node execution.
 
         Records end time, duration, and success/failure status.
+
+        Args:
+            run_id: Unique run identifier
+            node_: Hamilton Node object containing name, tags, return type, etc.
+            kwargs: Arguments that were passed to the node
+            success: Whether the node executed successfully
+            error: Exception if the node failed
+            result: The result of node execution
+            task_id: Optional task identifier
         """
+        node_name = node_.name
         timing = self._node_timings.get(node_name, {})
         start_time = timing.get("start_time", time.perf_counter())
         started_at = timing.get("started_at", datetime.now(timezone.utc))

@@ -5,7 +5,6 @@ This module provides helpers to build Celery chain/group workflows
 based on task levels from resource_dag.
 """
 
-from app.ci_providers.models import CIProvider
 import logging
 from typing import Dict, List, Optional
 
@@ -23,7 +22,7 @@ def build_ingestion_workflow(
     full_name: str,
     build_ids: List[str],
     commit_shas: List[str],
-    ci_provider: CIProvider,
+    ci_provider: str,
     final_task: Optional[Signature] = None,
     custom_tasks: Optional[Dict[str, Signature]] = None,
 ) -> Optional[Signature]:
@@ -39,7 +38,7 @@ def build_ingestion_workflow(
         full_name: Repository full name (owner/repo)
         build_ids: List of build IDs for log download
         commit_shas: Optional list of commit SHAs for worktree creation
-        ci_provider: CI provider string
+        ci_provider: CI provider string (e.g., "github_actions")
         final_task: Optional final task to append to the workflow
         custom_tasks: Optional dict of task_name -> Signature for custom tasks
 
@@ -101,7 +100,7 @@ def _create_task_signature(
     full_name: str,
     build_ids: List[str],
     commit_shas: List[str],
-    ci_provider: CIProvider,
+    ci_provider: str,
     publish_status: bool = False,
 ) -> Optional[Signature]:
     """
@@ -118,18 +117,18 @@ def _create_task_signature(
         )
 
     elif task_name == "create_worktrees":
-        return create_worktrees.s(
+        return create_worktrees.si(
             raw_repo_id=raw_repo_id,
             commit_shas=commit_shas,
             publish_status=publish_status,
         )
 
     elif task_name == "download_build_logs":
-        return download_build_logs.s(
+        return download_build_logs.si(
             raw_repo_id=raw_repo_id,
             full_name=full_name,
             build_ids=build_ids,
-            ci_provider=ci_provider.value,
+            ci_provider=ci_provider,
             publish_status=publish_status,
         )
 

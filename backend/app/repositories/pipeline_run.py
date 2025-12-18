@@ -57,3 +57,43 @@ class PipelineRunRepository(BaseRepository[PipelineRun]):
     def find_by_build_sample(self, build_sample_id: str) -> Optional[PipelineRun]:
         """Find a run by build sample ID."""
         return self.find_one({"build_sample_id": self._to_object_id(build_sample_id)})
+
+    def find_recent_cursor(
+        self,
+        limit: int = 20,
+        cursor: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Tuple[List[PipelineRun], Optional[str], bool]:
+        """
+        Find recent pipeline runs with cursor-based pagination.
+
+        Args:
+            limit: Maximum number of runs to return
+            cursor: Last item ID from previous page (fetch items older than this)
+            status: Optional status filter
+
+        Returns:
+            Tuple of (list of runs, next_cursor, has_more)
+        """
+        query: Dict[str, Any] = {}
+        if status:
+            query["status"] = status
+
+        # If cursor provided, get items with _id less than cursor (older)
+        if cursor:
+            query["_id"] = {"$lt": self._to_object_id(cursor)}
+
+        # Fetch limit + 1 to check if there are more items
+        runs = self.find_many(
+            query,
+            sort=[("_id", -1)],  # Sort by _id descending (newest first)
+            limit=limit + 1,
+        )
+
+        has_more = len(runs) > limit
+        if has_more:
+            runs = runs[:limit]  # Remove the extra item
+
+        next_cursor = str(runs[-1].id) if runs and has_more else None
+
+        return runs, next_cursor, has_more

@@ -21,9 +21,9 @@ from app.entities.pipeline_run import (
 )
 from app.repositories.pipeline_run import PipelineRunRepository
 from app.tasks.pipeline.hamilton_runner import HamiltonPipeline
-from app.tasks.pipeline.feature_dag._inputs import build_hamilton_inputs
+from app.tasks.pipeline.feature_dag._inputs import build_hamilton_inputs, BuildLogsInput
 from app.tasks.pipeline.feature_dag._metadata import format_features_for_storage
-from app.paths import REPOS_DIR
+from app.paths import REPOS_DIR, LOGS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -165,15 +165,25 @@ def extract_features_for_build(
 
     try:
         # Build all Hamilton inputs using helper function
+        # Pass worktrees_base so GIT_WORKTREE resource is available
+        from app.paths import WORKTREES_DIR
+
+        worktrees_base = WORKTREES_DIR / str(raw_repo.id)
+
         inputs = build_hamilton_inputs(
             raw_repo=raw_repo,
             repo_config=repo_config,
             build_run=raw_build_run,
             repo_path=repo_path,
+            worktrees_base=worktrees_base,
         )
 
         # Execute Hamilton pipeline with tracking enabled
         pipeline = HamiltonPipeline(db=db, enable_tracking=True)
+
+        # Build logs input - LOGS_DIR/{raw_repo_id}/{raw_build_run_id}/*.log
+        logs_dir = LOGS_DIR / str(raw_repo.id) / str(raw_build_run.id)
+        build_logs_input = BuildLogsInput.from_path(logs_dir)
 
         features = pipeline.run(
             git_history=inputs.git_history,
@@ -182,6 +192,7 @@ def extract_features_for_build(
             build_run=inputs.build_run,
             repo_config=inputs.repo_config,
             github_client=github_client,
+            build_logs=build_logs_input,
             features_filter=set(selected_features) if selected_features else None,
         )
 

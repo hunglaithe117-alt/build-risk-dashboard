@@ -171,3 +171,52 @@ def _get_language_hints(repo_config: RepoConfigInput) -> Optional[List[str]]:
         lang.lower() if isinstance(lang, str) else str(lang).lower()
         for lang in repo_config.source_languages
     ]
+
+
+@feature_metadata(
+    display_name="Number of Log Jobs",
+    description="Number of job logs parsed from CI build",
+    category=FeatureCategory.BUILD_LOG,
+    data_type=FeatureDataType.INTEGER,
+    required_resources=[FeatureResource.BUILD_LOGS],
+)
+@tag(group="build_log")
+def tr_log_num_jobs(build_logs: BuildLogsInput) -> int:
+    """
+    Get number of job log files.
+
+    Returns the count of .log files in the logs directory.
+    """
+    if not build_logs.is_available:
+        return 0
+    return len(build_logs.log_files)
+
+
+@feature_metadata(
+    display_name="Job Names",
+    description="Names of jobs in the CI build, comma-separated (from log file names)",
+    category=FeatureCategory.BUILD_LOG,
+    data_type=FeatureDataType.STRING,
+    required_resources=[FeatureResource.BUILD_LOGS],
+    output_format=OutputFormat.COMMA_SEPARATED,
+)
+@tag(group="build_log")
+def tr_jobs(build_logs: BuildLogsInput) -> str:
+    """
+    Get job names from the build logs.
+
+    Extracts job names from log file names (e.g., 'build.log' -> 'build').
+    Returns comma-separated string of job names.
+    """
+    if not build_logs.is_available:
+        return ""
+
+    job_names = []
+    for log_path_str in build_logs.log_files:
+        log_path = Path(log_path_str)
+        # Extract job name from file name (remove .log extension)
+        job_name = log_path.stem
+        if job_name:
+            job_names.append(job_name)
+
+    return ",".join(job_names)

@@ -1,6 +1,6 @@
 @startuml
 '===============================================================
-' UC-05: VIEW / EXPORT DATASETS (User & Guest, Admin inherits)
+' UC-05: VIEW / EXPORT DATASETS (Admin full; Guest read-only)
 '===============================================================
 
 skinparam actorStyle stick
@@ -13,9 +13,8 @@ left to right direction
 
 ' =============== ACTORS ===============
 actor "Admin" as Admin
-actor "User" as User
-Admin --|> User
 actor "Guest\n(Read-only)" as Guest
+actor "Scan Tools\n(SonarQube/Trivy)" as ScanTools
 
 ' =============== SYSTEM BOUNDARY ===============
 rectangle {
@@ -25,26 +24,24 @@ rectangle {
     usecase "View Dataset\nVersions" as UC_Versions
     usecase "Download /\nExport Version" as UC_Download
     usecase "View Version\nMetadata" as UC_Metadata
+    usecase "View Scan\nResults" as UC_ScanResults
 }
 
 ' =============== ASSOCIATIONS ===============
-User --> UC_Browse
 Guest --> UC_Browse
-User --> UC_Filter
 Guest --> UC_Filter
-User --> UC_Download
-Guest --> UC_Download
+Admin --> UC_Browse
+Admin --> UC_Filter
+Admin --> UC_Download
+Admin --> UC_ScanResults
+Guest --> UC_ScanResults
 
 UC_Browse ..> UC_Filter : <<extend>>
 UC_Browse ..> UC_Details : <<include>>
 UC_Details ..> UC_Versions : <<include>>
 UC_Versions ..> UC_Metadata : <<include>>
 UC_Versions ..> UC_Download : <<include>>
-
-note right of UC_Download
-  Users and Guests can only
-  export versions for which
-  they have explicit access.
-end note
+UC_Versions ..> UC_ScanResults : <<include>>
+UC_ScanResults --> ScanTools
 
 @enduml

@@ -281,7 +281,7 @@ export default function RepoBuildsPage() {
         loadBuilds(1, true);
     }, [loadRepo, loadBuilds]);
 
-    // WebSocket connection
+    // WebSocket connection - BUILD_UPDATE for builds list
     useEffect(() => {
         const unsubscribe = subscribe("BUILD_UPDATE", (data: any) => {
             if (data.repo_id === repoId) {
@@ -295,6 +295,20 @@ export default function RepoBuildsPage() {
             unsubscribe();
         };
     }, [subscribe, loadBuilds, page, repoId]);
+
+    // WebSocket connection - REPO_UPDATE for repo stats (builds processed, last sync)
+    useEffect(() => {
+        const unsubscribe = subscribe("REPO_UPDATE", (data: any) => {
+            if (data.repo_id === repoId) {
+                // Reload repo to get updated stats (total builds, last sync time)
+                loadRepo();
+            }
+        });
+
+        return () => {
+            unsubscribe();
+        };
+    }, [subscribe, loadRepo, repoId]);
 
     const totalPages = total > 0 ? Math.ceil(total / PAGE_SIZE) : 1;
     const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -443,6 +457,23 @@ export default function RepoBuildsPage() {
                                 <span className="text-muted-foreground">Total builds:</span>
                                 <span className="font-medium">{repo.total_builds_imported.toLocaleString()}</span>
                             </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">Processed:</span>
+                                <span className="font-medium">
+                                    {(repo.total_builds_processed || 0).toLocaleString()}
+                                    {repo.total_builds_failed ? (
+                                        <span className="text-red-500 ml-1">
+                                            ({repo.total_builds_failed} failed)
+                                        </span>
+                                    ) : null}
+                                </span>
+                            </div>
+                            {repo.last_synced_at && (
+                                <div className="flex items-center gap-2">
+                                    <span className="text-muted-foreground">Last synced:</span>
+                                    <span className="font-medium">{formatTimestamp(repo.last_synced_at)}</span>
+                                </div>
+                            )}
                             <div className="flex items-center gap-2">
                                 <span className="text-muted-foreground">CI Provider:</span>
                                 <Badge variant="outline">{repo.ci_provider}</Badge>

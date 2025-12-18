@@ -257,11 +257,14 @@ def dispatch_build_processing(
             time.sleep(1.0)
 
     # Mark import as complete
+    from datetime import datetime
+
     repo_config_repo.update_repository(
         repo_config_id,
         {
             "import_status": ModelImportStatus.IMPORTED.value,
             "last_sync_status": "success",
+            "last_synced_at": datetime.utcnow(),
         },
     )
 
@@ -403,8 +406,14 @@ def process_workflow_run(
             ExtractionStatus.PARTIAL.value,
         ):
             repo_config_repo.increment_builds_processed(ObjectId(repo_config_id))
+            # Notify frontend of stats update
+            publish_status(
+                repo_config_id, "processing", f"Build {build_id[:8]} completed"
+            )
         elif updates["extraction_status"] == ExtractionStatus.FAILED.value:
             repo_config_repo.increment_builds_failed(ObjectId(repo_config_id))
+            # Notify frontend of stats update
+            publish_status(repo_config_id, "processing", f"Build {build_id[:8]} failed")
 
         publish_build_update(repo_config_id, build_id, updates["extraction_status"])
 
@@ -435,6 +444,8 @@ def process_workflow_run(
 
         # Increment failed count
         repo_config_repo.increment_builds_failed(ObjectId(repo_config_id))
+        # Notify frontend of stats update
+        publish_status(repo_config_id, "processing", f"Build {build_id[:8]} failed")
 
         publish_build_update(repo_config_id, build_id, "failed")
 

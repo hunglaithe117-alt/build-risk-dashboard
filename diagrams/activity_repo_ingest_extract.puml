@@ -1,0 +1,26 @@
+@startuml
+'===============================================================
+' ACTIVITY (SWIMLANE): REPO IMPORT, INGEST, FEATURE EXTRACTION
+'===============================================================
+|Admin|
+start
+:Select repository to import;
+:Provide token / scopes;
+|System|
+:Validate token/scopes;
+if (Validation OK?) then (yes)
+  :Store repository config (DB);
+  :Enqueue sync job;
+  |GitHub|
+  :Fetch workflow runs & build metadata;
+  |System|
+  :Persist builds / commits;
+  :Queue feature extraction for new builds;
+  :Extract features (GitHub, git, logs, SonarQube);
+  :Persist feature vectors;
+  :Notify dashboard/model pipeline ready;
+else (no)
+  :Return error (invalid token or repo);
+endif
+stop
+@enduml

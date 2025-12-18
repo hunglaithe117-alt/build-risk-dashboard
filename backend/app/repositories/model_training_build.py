@@ -165,3 +165,17 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         if limit:
             cursor = cursor.limit(limit)
         return [ModelTrainingBuild(**doc) for doc in cursor]
+
+    def delete_by_repo_config(self, model_repo_config_id: ObjectId) -> int:
+        """
+        Delete all builds associated with a model repo config.
+
+        Called when soft-deleting a ModelRepoConfig to clean up related builds.
+
+        Returns:
+            Number of documents deleted.
+        """
+        result = self.collection.delete_many(
+            {"model_repo_config_id": model_repo_config_id}
+        )
+        return result.deleted_count

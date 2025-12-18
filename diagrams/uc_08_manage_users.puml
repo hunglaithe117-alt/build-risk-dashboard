@@ -37,9 +37,4 @@ Admin --> UC_RevokeInvite
 UC_ListUsers ..> UC_Search : <<extend>>
 UC_ListInvites ..> UC_RevokeInvite : <<extend>>
 
-note right of UC_InviteGuest
-  Guest accounts are created only
-  through invitations and Google login.
-end note
-
 @enduml

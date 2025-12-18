@@ -340,13 +340,21 @@ def prepare_and_dispatch_processing(
         required_resources = get_required_resources_for_template(self.db)
         tasks_by_level = get_ingestion_tasks_by_level(list(required_resources))
 
-        # Update total_builds_imported count
+        # Debug logging for resource resolution
+        logger.info(f"[DEBUG] Required resources: {sorted(required_resources)}")
+        logger.info(f"[DEBUG] Tasks by level: {tasks_by_level}")
+        logger.info(f"[DEBUG] Commit SHAs for worktrees: {commit_shas[:5]}...")
+
+        template_repo = DatasetTemplateRepository(self.db)
+        template = template_repo.find_by_name("TravisTorrent Full")
+        feature_names = template.feature_names if template else []
+
         repo_config_repo = ModelRepoConfigRepository(self.db)
         repo_config_repo.update_repository(
             repo_config_id,
             {
                 "total_builds_imported": len(raw_build_run_ids),
-                "feature_extractors": list(required_resources),
+                "feature_extractors": feature_names,
             },
         )
 

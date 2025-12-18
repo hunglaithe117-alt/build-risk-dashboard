@@ -23,8 +23,7 @@ rectangle {
     usecase "Configure\nNotification\nSettings" as UC_NotifSettings
     usecase "View /\nCustomize\nDashboard" as UC_Dashboard
     usecase "View repositories/\nbuild details" as UC_Repos
-    usecase "View Datasets" as UC_ViewDatasets
-    usecase "Export /\nDownload\nDatasets" as UC_ExportDatasets
+    usecase "View /\nExport\nDatasets" as UC_ViewExportDatasets
     usecase "Authentication\n& Authorization" as UC_Auth
     usecase "Configure\nSystem Settings" as UC_Settings
     usecase "Manage Users\n& Access" as UC_Users
@@ -41,6 +40,7 @@ Admin --> UC_Invites
 Admin --> UC_Monitoring
 Admin --> UC_Datasets
 Admin --> UC_ManageRepos
+Admin --> UC_ViewExportDatasets
 
 ' =============== USER ASSOCIATIONS ===============
 User --> UC_NotifSettings
@@ -53,7 +53,6 @@ Guest --> UC_Auth
 Guest --> UC_Dashboard
 Guest --> UC_Repos
 Guest --> UC_NotifSettings
-Guest --> UC_ViewDatasets
-Guest --> UC_ExportDatasets
+Guest --> UC_ViewExportDatasets
 
 @enduml

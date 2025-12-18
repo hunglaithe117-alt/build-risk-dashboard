@@ -447,7 +447,10 @@ class RepositoryService:
         Soft delete a repository configuration.
 
         This allows re-importing the same repository later.
+        Also deletes associated ModelTrainingBuild documents.
         """
+        from app.repositories.model_training_build import ModelTrainingBuildRepository
+
         repo_doc = self.repo_config.find_by_id(repo_id)
         if not repo_doc:
             raise HTTPException(
@@ -461,7 +464,14 @@ class RepositoryService:
                 detail="Repository is already deleted",
             )
 
-        # Soft delete
+        # Delete associated ModelTrainingBuild documents
+        build_repo = ModelTrainingBuildRepository(self.db)
+        deleted_count = build_repo.delete_by_repo_config(ObjectId(repo_id))
+        logger.info(
+            f"Deleted {deleted_count} ModelTrainingBuild documents for repo config {repo_id}"
+        )
+
+        # Soft delete the config
         self.repo_config.soft_delete(repo_doc.id)
         logger.info(f"Soft deleted repository config {repo_id}")
 

@@ -31,9 +31,4 @@ Admin --> UC_Email
 
 UC_Email --> SMTP
 
-note right of UC_Email
-  Configure Gmail/SMTP channel
-  (system-wide, admin only).
-end note
-
 @enduml

@@ -23,6 +23,7 @@ from app.tasks.pipeline.feature_dag import (
     build_features,
     git_features,
     github_features,
+    log_features,
     repo_features,
 )
 from app.tasks.pipeline.feature_dag._inputs import (
@@ -121,6 +122,7 @@ class HamiltonPipeline:
             git_features,
             build_features,
             github_features,
+            log_features,
             repo_features,
         )
 
@@ -227,6 +229,7 @@ class HamiltonPipeline:
         build_run: BuildRunInput,
         repo_config: Optional[RepoConfigInput] = None,
         github_client: Optional[GitHubClientInput] = None,
+        build_logs: Optional[BuildLogsInput] = None,
         features_filter: Optional[Set[str]] = None,
     ) -> Dict[str, Any]:
         """
@@ -254,7 +257,7 @@ class HamiltonPipeline:
             git_history=git_history,
             git_worktree=git_worktree,
             github_client=github_client,
-            build_logs=None,  # TODO: Add build_logs parameter
+            build_logs=build_logs,
         )
 
         # Filter features based on available resources
@@ -282,6 +285,7 @@ class HamiltonPipeline:
                 f"Skipping {len(skipped_features)} features due to missing resources: "
                 f"{sorted(skipped_features)[:5]}{'...' if len(skipped_features) > 5 else ''}"
             )
+            logger.warning(f"Missing resources: {sorted(missing_resources)}")
 
         if not valid_features:
             logger.warning("No features to extract after resource validation")
@@ -302,8 +306,14 @@ class HamiltonPipeline:
         if github_client:
             inputs["github_client"] = github_client
 
-        # Convert to list for Hamilton
-        final_vars = list(valid_features)
+        if build_logs:
+            inputs["build_logs"] = build_logs
+
+        # Filter out input resource names from features to request
+        # This ensures Hamilton only returns actual feature values, not inputs
+        from app.tasks.pipeline.constants import INPUT_RESOURCE_NAMES
+
+        final_vars = list(valid_features - INPUT_RESOURCE_NAMES)
 
         logger.info(f"Extracting {len(final_vars)} features via Hamilton")
         logger.debug(f"Features: {sorted(final_vars)}")
@@ -316,7 +326,9 @@ class HamiltonPipeline:
             # Filter output to only return explicitly requested features
             # (Hamilton may return intermediate values, so we filter)
             filtered_result = {
-                k: v for k, v in dict(result).items() if k in requested_features
+                k: v
+                for k, v in dict(result).items()
+                if k in requested_features and k not in INPUT_RESOURCE_NAMES
             }
 
             return filtered_result

@@ -225,11 +225,44 @@ def get_required_resources_for_features(
     return resources
 
 
+def _is_serializable(value: Any) -> bool:
+    """
+    Check if a value is JSON-serializable for MongoDB storage.
+
+    Returns False for custom dataclass objects that cannot be encoded.
+    """
+    from dataclasses import is_dataclass
+    from pathlib import Path
+
+    if value is None:
+        return True
+    if isinstance(value, (str, int, float, bool)):
+        return True
+    if isinstance(value, (list, tuple)):
+        return all(_is_serializable(v) for v in value)
+    if isinstance(value, dict):
+        return all(_is_serializable(v) for v in value.values())
+    # Path objects are not serializable
+    if isinstance(value, Path):
+        return False
+    # Dataclass instances (like GitHistoryInput, GitWorktreeInput) are not serializable
+    if is_dataclass(value) and not isinstance(value, type):
+        return False
+    # Objects with custom types are likely not serializable
+    if hasattr(value, "__dict__") and not isinstance(value, (type, type(None))):
+        return False
+    return True
+
+
 def format_features_for_storage(
     features: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Format feature values.
+    Format feature values for MongoDB storage.
+
+    Filters out:
+    - Input resource names (git_history, git_worktree, etc.)
+    - Non-serializable objects (custom dataclasses, Path objects)
 
     Args:
         features: Dictionary of extracted features
@@ -237,12 +270,20 @@ def format_features_for_storage(
         Dictionary with formatted values ready for DB storage
     """
     # Lazy load to avoid circular import
-    from app.tasks.pipeline.constants import HAMILTON_MODULES
+    from app.tasks.pipeline.constants import HAMILTON_MODULES, INPUT_RESOURCE_NAMES
 
     registry = build_metadata_registry(HAMILTON_MODULES)
     result = {}
 
     for name, value in features.items():
+        # Skip input resources - these are not actual features
+        if name in INPUT_RESOURCE_NAMES:
+            continue
+
+        # Skip non-serializable values (custom objects, Path, etc.)
+        if not _is_serializable(value):
+            continue
+
         # Get output format from metadata
         metadata = registry.get(name, {})
 

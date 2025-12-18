@@ -68,3 +68,7 @@ logs/
 Thumbs.db
 
 repo-data/*
+
+# Gmail Secrets
+backend/gmail_credentials.json
+backend/gmail_token.json

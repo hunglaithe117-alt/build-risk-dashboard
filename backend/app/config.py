@@ -40,10 +40,8 @@ class Settings(BaseSettings):
     REQUIRE_ORG_MEMBERSHIP: bool = True
 
     # Google OAuth (for guest login via Gmail)
-    GOOGLE_CLIENT_ID: str = (
-        "Optional[str] = None"
-    )
-    GOOGLE_CLIENT_SECRET: str = "Optional[str] = None"
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/google/callback"
 
     # Gmail API Integration (Environment Variables)

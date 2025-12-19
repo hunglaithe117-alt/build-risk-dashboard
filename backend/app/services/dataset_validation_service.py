@@ -148,7 +148,7 @@ class DatasetValidationService:
             repo_results.append(
                 {
                     "id": str(repo.id),
-                    "full_name": repo.normalized_full_name,
+                    "full_name": repo.full_name,
                     "validation_status": (
                         repo.validation_status.value
                         if hasattr(repo.validation_status, "value")

@@ -12,8 +12,7 @@ class DatasetRepoSummary(BaseModel):
 
     id: PyObjectIdStr = Field(..., alias="_id")
     raw_repo_id: Optional[PyObjectIdStr] = None
-    repo_name: str
-    repo_name_from_csv: str
+    repo_name: str  # Maps to full_name from entity
     validation_status: str
     validation_error: Optional[str] = None
     builds_in_csv: int = 0

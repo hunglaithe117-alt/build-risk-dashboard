@@ -33,18 +33,40 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ml = [
-  "torch>=2.1,<2.2",
-  "torchvision>=0.16,<0.17"
-]
+ml = ["torch>=2.1,<2.2", "torchvision>=0.16,<0.17"]
 dev = [
   "pytest>=7.4,<8.2",
   "pytest-asyncio>=0.21,<0.24",
   "httpx>=0.25,<0.28",
   "black>=23.12,<24.11",
   "ruff>=0.5.0,<0.6.0",
-  "mypy>=1.7,<1.10"
+  "mypy>=1.7,<1.10",
 ]
+
+[tool.ruff]
+select = [
+  "E", # pycodestyle errors
+  "W", # pycodestyle warnings
+  "F", # pyflakes
+  "I", # isort (tự động sắp xếp import)
+  "C", # flake8-comprehensions
+  "B", # flake8-bugbear
+]
+ignore = []
+
+# Độ dài dòng tối đa (thường 88 hoặc 100)
+line-length = 100
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+# Cấu hình kiểm tra kiểu dữ liệu cho FastAPI/Pydantic
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
 
 [build-system]
 requires = ["setuptools>=65"]

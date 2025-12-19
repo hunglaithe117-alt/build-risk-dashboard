@@ -54,11 +54,13 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
   const displayRole = user?.role === 'admin' ? 'admin' : 'user'
 
   const pageTitle = useMemo(() => {
-    if (pathname?.startsWith('/admin/datasets')) return 'Projects / Datasets'
-    if (pathname?.startsWith('/admin/repos')) return 'Repositories'
+    if (pathname?.startsWith('/projects')) return 'Projects'
+    if (pathname?.startsWith('/repositories')) return 'Repositories'
+    if (pathname?.startsWith('/my-repos')) return 'My Repositories'
     if (pathname?.startsWith('/admin/users')) return 'User Management'
     if (pathname?.startsWith('/overview')) return 'Overview'
     if (pathname?.startsWith('/admin/monitoring')) return 'Monitoring'
+    if (pathname?.startsWith('/settings')) return 'Settings'
     if (pathname?.startsWith('/admin/settings')) return 'Settings'
     return 'Workspace'
   }, [pathname])
@@ -100,7 +102,7 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
             className="rounded-full p-2 text-muted-foreground transition hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800"
             aria-label="Settings"
             type="button"
-            onClick={() => router.push('/admin/settings')}
+            onClick={() => router.push('/settings')}
           >
             <Settings className="h-5 w-5" />
           </button>

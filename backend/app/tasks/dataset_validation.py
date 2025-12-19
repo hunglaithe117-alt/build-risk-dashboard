@@ -315,7 +315,7 @@ def start_validation(self, dataset_id: str) -> Dict[str, Any]:
                 "validation_status": DatasetRepoValidationStatus.VALID,
             }
         )
-        saved_repos = {repo.normalized_full_name: repo for repo in saved_repos_list}
+        saved_repos = {repo.full_name: repo for repo in saved_repos_list}
 
         if not saved_repos:
             raise ValueError(
@@ -572,7 +572,7 @@ def validate_builds_chunk(
                 _id=None,
                 dataset_id=ObjectId(dataset_id),
                 build_id_from_csv=build_id,
-                repo_name_from_csv=repo_name,
+                full_name=repo_name,
                 raw_repo_id=ObjectId(raw_repo_id),
             )
 

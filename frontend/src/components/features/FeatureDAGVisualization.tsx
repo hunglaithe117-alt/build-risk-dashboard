@@ -21,10 +21,37 @@ import "reactflow/dist/style.css";
 import { Badge } from "@/components/ui/badge";
 import { Database, GitBranch, FileCode, Users, Clock, Server } from "lucide-react";
 
-import type { DAGNode, FeatureDAGData } from "./types";
+// Types matching backend response
+export interface DAGNode {
+    id: string;
+    type: "extractor" | "resource";
+    label: string;
+    features: string[];
+    feature_count: number;
+    requires_resources: string[];
+    requires_features: string[];
+    level: number;
+}
 
-// Re-export types for consumers
-export type { DAGNode, DAGEdge, ExecutionLevel, FeatureDAGData } from "./types";
+export interface DAGEdge {
+    id: string;
+    source: string;
+    target: string;
+    type: "feature_dependency" | "resource_dependency";
+}
+
+export interface ExecutionLevel {
+    level: number;
+    nodes: string[];
+}
+
+export interface FeatureDAGData {
+    nodes: DAGNode[];
+    edges: DAGEdge[];
+    execution_levels: ExecutionLevel[];
+    total_features: number;
+    total_nodes: number;
+}
 
 interface FeatureDAGVisualizationProps {
     dagData: FeatureDAGData | null;

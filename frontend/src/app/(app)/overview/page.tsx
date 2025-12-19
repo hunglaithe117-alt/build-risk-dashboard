@@ -447,7 +447,7 @@ export default function OverviewPage() {
                       <tr
                         key={repo.id}
                         className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-900/50"
-                        onClick={() => !isEditing && router.push(`/admin/repos/${repo.id}/builds`)}
+                        onClick={() => !isEditing && router.push(`/repositories/${repo.id}/builds`)}
                       >
                         <td className="px-3 py-2 font-medium truncate max-w-[150px]">{repo.repository}</td>
                         <td className="px-3 py-2 text-muted-foreground">

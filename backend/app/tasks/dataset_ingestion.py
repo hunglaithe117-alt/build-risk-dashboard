@@ -67,7 +67,7 @@ def ingest_dataset_builds(
     if not repo_config:
         raise ValueError(f"Dataset repo config {repo_config_id} not found")
 
-    full_name = repo_config.normalized_full_name
+    full_name = repo_config.full_name
     ci_provider = repo_config.ci_provider
 
     # Determine required resources using feature_dag metadata

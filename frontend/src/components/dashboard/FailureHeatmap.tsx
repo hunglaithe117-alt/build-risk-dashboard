@@ -24,6 +24,7 @@ export function FailureHeatmap() {
 
                 for (const build of builds) {
                     if (build.conclusion === "failure" || build.conclusion === "failed") {
+                        if (!build.created_at) continue;
                         const date = new Date(build.created_at);
                         const day = date.getDay(); // 0-6
                         const hour = date.getHours(); // 0-23

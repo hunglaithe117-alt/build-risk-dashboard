@@ -38,20 +38,10 @@ class DatasetRepoConfig(RepoConfigBase):
         description="Reference to datasets table",
     )
 
-    # Reference to raw repository (None if not found/validated yet)
+    # Reference to raw repository (None for invalid/not found repos)
     raw_repo_id: Optional[PyObjectId] = Field(
         None,
-        description="Reference to raw_repositories._id (None if repo not found/validated)",
-    )
-
-    # Original data from CSV
-    repo_name_from_csv: str = Field(
-        ...,
-        description="Repository name as it appears in the CSV",
-    )
-    normalized_full_name: str = Field(
-        ...,
-        description="Normalized to owner/repo format",
+        description="Reference to raw_repositories._id (None if repo validation failed)",
     )
 
     # Validation status

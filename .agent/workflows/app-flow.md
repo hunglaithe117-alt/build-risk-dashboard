@@ -2,243 +2,88 @@
 description: Quy tắc kiến trúc cho Build Risk Dashboard
 ---
 
-# Architecture Rules
+# 📘 Project Instruction Manual & Anti-Gravity Rules
 
-## 1. Backend Layers
+Tài liệu này là nguồn sự thật duy nhất (Single Source of Truth) cho các quy tắc kiến trúc và tiêu chuẩn code trong dự án.
 
-```
-API (app/api/)  →  Service (app/services/)  →  Repository (app/repositories/)
-     ↓                    ↓                           ↓
-   Routes            Business Logic              DB Queries
-     ↓                    ↓                           ↓
-   DTOs              Entity ↔ DTO              Entity models
-```
+## 🛠 1. Nguyên tắc Anti-Gravity (Thực thi tức thì)
 
-### API Layer (`app/api/`)
-- ✅ Chỉ define routes (`@router.get`, `@router.post`)
-- ✅ Dùng `Depends()` cho DB, Auth
-- ✅ Validate input qua DTOs
-- ✅ Gọi Service để xử lý logic
-- ❌ KHÔNG viết business logic
-- ❌ KHÔNG query DB trực tiếp
+Đây là luật quan trọng nhất để duy trì tốc độ phát triển và chất lượng code:
 
-```python
-@router.get("/", response_model=DatasetListResponse)
-def list_datasets(
-    skip: int = Query(default=0),
-    db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    service = DatasetService(db)
-    return service.list_datasets(str(current_user["_id"]), skip=skip)
-```
-
-### Service Layer (`app/services/`)
-- ✅ Chứa business logic
-- ✅ Dùng Repository để query DB
-- ✅ Raise HTTPException cho lỗi
-- ✅ Convert Entity → DTO trước khi return
-- ❌ KHÔNG query DB trực tiếp
-
-```python
-class DatasetService:
-    def __init__(self, db: Database):
-        self.repo = DatasetRepository(db)
-
-    def get_dataset(self, dataset_id: str, user_id: str) -> DatasetResponse:
-        dataset = self.repo.find_by_id(dataset_id)
-        if not dataset or str(dataset.user_id) != user_id:
-            raise HTTPException(status_code=404, detail="Not found")
-        return DatasetResponse.model_validate(dataset.model_dump(by_alias=True))
-```
-
-### Repository Layer (`app/repositories/`)
-- ✅ Kế thừa `BaseRepository[T]`
-- ✅ Chỉ chứa MongoDB queries
-- ✅ Trả về Entity models
-- ❌ KHÔNG chứa business logic
-- ❌ KHÔNG raise HTTPException
-
-```python
-class DatasetRepository(BaseRepository[DatasetProject]):
-    def __init__(self, db: Database):
-        super().__init__(db, "datasets", DatasetProject)
-
-    def list_by_user(self, user_id: str, skip: int, limit: int):
-        query = {"user_id": self._to_object_id(user_id)}
-        return self.paginate(query, skip=skip, limit=limit)
-```
-
-**BaseRepository methods:** `find_by_id`, `find_one`, `find_many`, `paginate`, `insert_one`, `update_one`, `delete_one`
-
-### DTO Layer (`app/dtos/`)
-- ✅ Pydantic BaseModel
-- ✅ Dùng `PyObjectIdStr` cho ObjectId
-- ✅ Pattern: `*Request`, `*Response`
-
-```python
-class DatasetResponse(BaseModel):
-    id: PyObjectIdStr = Field(..., alias="_id")
-    name: str
-    model_config = ConfigDict(populate_by_name=True, from_attributes=True)
-
-class DatasetCreateRequest(BaseModel):
-    name: str
-    file_name: str
-```
-
-### Entity Layer (`app/entities/`)
-- ✅ Kế thừa `BaseEntity`
-- ✅ Dùng `PyObjectId` (không phải `PyObjectIdStr`)
-- ✅ Enum cho status fields
-
-```python
-class DatasetProject(BaseEntity):
-    user_id: Optional[PyObjectId] = None
-    name: str
-    validation_status: DatasetValidationStatus = DatasetValidationStatus.PENDING
-```
-
-### Task Layer (`app/tasks/`)
-- ✅ Kế thừa `PipelineTask`
-- ✅ Access DB qua `self.db`
-- ✅ Gọi bằng `.delay()` hoặc `.apply_async()`
-
-```python
-@celery_app.task(bind=True, base=PipelineTask)
-def validate_dataset_task(self, dataset_id: str):
-    service = DatasetValidationService(self.db)
-    return service.run_validation(dataset_id)
-```
+* **Check-First Policy**: Trước khi tạo bất kỳ hàm mới nào, hãy quét codebase để đảm bảo không tái phát minh bánh xe.
+* **No Stubs/Placeholders**: Cấm sử dụng `pass`, `...`, hoặc `raise NotImplementedError`.
+* **Full Implementation**: Khi một hàm được khai báo, logic xử lý bên trong **phải được viết hoàn chỉnh ngay lập tức**.
+* **Context Awareness**: AI không được phép tạo ra các hàm "rỗng" để chờ người dùng điền vào. Nếu thiếu thông tin logic, phải yêu cầu người dùng làm rõ trước khi viết code.
 
 ---
 
-## 2. Frontend Layers
+## 🏗 2. Cấu trúc Lớp Backend (Layered Architecture)
 
-| Layer | Path | Mục đích |
-|-------|------|----------|
-| Pages | `src/app/` | Routes (App Router) |
-| Components | `src/components/` | UI components |
-| API Client | `src/lib/api.ts` | Axios calls |
-| Types | `src/types/` | TypeScript interfaces |
-| Contexts | `src/contexts/` | Global state |
-| Hooks | `src/hooks/` | Custom hooks |
+Luồng dữ liệu: **API ↔ Service ↔ Repository ↔ Database**
 
-### Components Structure
-```
-components/
-├── ui/       # shadcn/ui components
-├── layout/   # Sidebar, Topbar, AppShell
-├── auth/     # Auth components
-└── sonar/    # Feature-specific
-```
+### **API Layer (`app/api/`)**
 
-### API Client Pattern
-```typescript
-export const datasetApi = {
-  list: async (params?: { skip?: number }) => {
-    const response = await api.get<DatasetListResponse>("/datasets", { params });
-    return response.data;
-  },
-};
-```
+* **Nhiệm vụ**: Routes, Validation (DTOs), Authentication.
+* **Quy tắc**: Chỉ gọi Service. Tuyệt đối không query DB hoặc xử lý logic tại đây.
+
+### **Service Layer (`app/services/`)**
+
+* **Nhiệm vụ**: Chứa toàn bộ Business Logic. Điều phối các Repository.
+* **Quy tắc**: Chuyển đổi Entity sang DTO tại đây. Xử lý lỗi bằng `HTTPException`.
+
+### **Repository Layer (`app/repositories/`)**
+
+* **Nhiệm vụ**: Chỉ chứa truy vấn MongoDB. Kế thừa từ `BaseRepository`.
+* **Quy tắc**: Trả về Entity Model. Không xử lý logic nghiệp vụ.
 
 ---
 
-## 3. Naming Conventions
+## 🏷️ 3. Quy tắc đặt tên biến TƯỜNG MINH (Explicit Naming)
 
-### Backend
-| Type | File | Class |
-|------|------|-------|
-| API | `datasets.py` | - |
-| Service | `dataset_service.py` | `DatasetService` |
-| Repository | `dataset_repository.py` | `DatasetRepository` |
-| Entity | `dataset.py` | `DatasetProject` |
-| DTO Request | `dataset.py` | `DatasetCreateRequest` |
-| DTO Response | `dataset.py` | `DatasetResponse` |
+Nghiêm cấm đặt tên biến chung chung hoặc viết tắt. Tên biến phải tự giải thích được ý nghĩa và phạm vi của nó.
 
-### Frontend
-| Type | Pattern |
-|------|---------|
-| Page | `page.tsx` |
-| Component | `{name}.tsx` |
-| Hook | `use-{name}.ts` |
-| Context | `{name}-context.tsx` |
+### **A. Biến Logic & Thực thể (Entities)**
 
-### Variable Naming Rules (Class-bound variables)
+* ❌ **Sai**: `data`, `res`, `obj`, `item`, `d`, `temp`.
+* ✅ **Đúng**: `dataset_list`, `user_profile`, `validation_result`, `pending_task`.
 
-- Variables instantiated from a class MUST be named as a concise,
-  lowercase, snake_case derivative of the class name.
-- The variable name MUST preserve the domain context of the class.
-- The role suffix MUST match the layer or responsibility:
-  - Repository → *_repo
-  - Service → *_service
-  - Task → *_task
-  - Client / Adapter → *_client
+### **B. Quản lý ID (Critical)**
 
-### ID Naming Convention (CRITICAL)
+Tuyệt đối không dùng tên `id` đơn lẻ. Phải dùng tên định danh cụ thể để tránh nhầm lẫn giữa các loại ID:
 
-Different entities have different ID types. Use explicit names to avoid confusion:
+* **Dạng ObjectId (MongoDB)**: `{entity}_id` (ví dụ: `raw_build_run_id`, `user_id`).
+* **Dạng chuỗi hệ thống ngoài**: `{provider}_{entity}_id` (ví dụ: `github_run_id`, `circleci_job_id`).
+* **ID Logic/Phụ**: `model_training_id`, `config_version_id`.
 
-| Name Pattern | Meaning | Example |
-|--------------|---------|---------|
-| `ci_run_id` / `workflow_run_id` | ID from CI provider (GitHub Actions, CircleCI, etc.) | `"20349163111"` |
-| `raw_build_run_id` | MongoDB `_id` of `RawBuildRun` entity | `ObjectId("6944711f...")` |
-| `model_training_build_id` / `model_build_id` | MongoDB `_id` of `ModelTrainingBuild` entity | `ObjectId("6944711f...")` |
-| `raw_repo_id` | MongoDB `_id` of `RawRepository` entity | `ObjectId("...")` |
-| `repo_config_id` / `model_repo_config_id` | MongoDB `_id` of `ModelRepoConfig` entity | `ObjectId("...")` |
+### **C. Biến Class (Class-bound variables)**
 
-**Rules:**
-- ❌ NEVER use ambiguous `build_id` in internal code/tasks
-- ✅ Use explicit names: `raw_build_run_id`, `model_training_build_id`
-- ✅ For API path params, `build_id` refers to `raw_build_run_id` (what UI shows)
-- ✅ Add docstring explaining which ID type each parameter expects
+Tên biến thực thể hóa từ Class phải có hậu tố phản ánh Layer:
 
-**Entity Field Reference:**
-- `RawBuildRun.build_id` → CI provider's run ID (keep for API compatibility)
-- `RawBuildRun._id` → MongoDB ObjectId → use as `raw_build_run_id`
-- `ModelTrainingBuild._id` → MongoDB ObjectId → use as `model_training_build_id`
-
-## 4. New Feature Checklist
-
-### Backend
-- [ ] `app/entities/{resource}.py`
-- [ ] `app/dtos/{resource}.py`
-- [ ] `app/repositories/{resource}_repository.py`
-- [ ] `app/services/{resource}_service.py`
-- [ ] `app/api/{resource}.py`
-- [ ] Update `app/main.py` (register router)
-- [ ] Update `app/dtos/__init__.py`
-
-### Frontend
-- [ ] `src/types/index.ts`
-- [ ] `src/lib/api.ts`
-- [ ] `src/app/(app)/{resource}/page.tsx`
+* **Repository**: `{domain}_repo` (ví dụ: `dataset_repo`, `auth_repo`).
+* **Service**: `{domain}_service` (ví dụ: `dataset_service`, `email_service`).
+* **Task/Worker**: `{domain}_task` (ví dụ: `sync_github_task`).
+* **Client/Adapter**: `{domain}_client` (ví dụ: `s3_client`, `slack_client`).
 
 ---
 
-## 5. Import Rules
+## 📂 4. Cấu trúc File & Thư mục
 
-```python
-# 1. Standard library
-from datetime import datetime
-from typing import Optional
+| Path | Loại File | Quy tắc đặt tên Class |
+| --- | --- | --- |
+| `app/entities/` | Entity | `NameProject` (e.g., `DatasetProject`) |
+| `app/dtos/` | DTO | `NameRequest` / `NameResponse` |
+| `app/services/` | Service | `NameService` |
+| `app/repositories/` | Repository | `NameRepository` |
+| `src/components/` | Frontend | `{Name}.tsx` (PascalCase) |
+| `src/hooks/` | Hooks | `use-{name}.ts` (kebab-case) |
 
-# 2. Third-party
-from fastapi import HTTPException
-from pymongo.database import Database
+---
 
-# 3. Local entities
-from app.entities.dataset import DatasetProject
+## 🤖 5. Hướng dẫn cho AI Partner (Prompting)
 
-# 4. Local repositories
-from app.repositories.dataset_repository import DatasetRepository
+Khi thực hiện yêu cầu từ người dùng, AI phải:
 
-# 5. Local dtos
-from app.dtos import DatasetResponse
-```
-
-**Avoid Circular Imports:**
-- Entity ❌ DTO
-- Repository ❌ Service
-- DTO ❌ Entity (chỉ dùng base types)
+1. **Read Context**: Đọc file architecture rules này trước khi viết dòng code đầu tiên.
+2. **Verify Presence**: Kiểm tra xem class/method đã tồn tại trong các file tương ứng chưa để tránh viết đè hoặc duplicate.
+3. **Explicit Refactoring**: Nếu người dùng đưa vào mã giả hoặc tên biến sai quy tắc (như `id`), AI phải tự động sửa lại thành tên tường minh (`dataset_id`) trong kết quả cuối cùng.
+4. **Full Implementation**: Viết code hoàn chỉnh cho các lớp (API, Service, Repo) trong một lần phản hồi. **Tuyệt đối không dùng `pass` hoặc `// Logic here**`. Nếu không biết logic, AI phải hỏi để hiểu trước khi viết.

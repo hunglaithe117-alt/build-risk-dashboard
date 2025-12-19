@@ -12,7 +12,7 @@ import Image from 'next/image'
 import { Loader2 } from 'lucide-react'
 
 export default function ProfilePage() {
-    const { user: authUser, refresh } = useAuth()
+    const { user: authUser, refresh, githubProfile } = useAuth()
     const { toast } = useToast()
 
     const [name, setName] = useState('')
@@ -74,9 +74,9 @@ export default function ProfilePage() {
                             {/* Avatar Section */}
                             <div className="flex items-center gap-4">
                                 <div className="relative h-20 w-20 overflow-hidden rounded-full border bg-muted">
-                                    {authUser.avatar_url ? (
+                                    {githubProfile?.avatar_url ? (
                                         <Image
-                                            src={authUser.avatar_url}
+                                            src={githubProfile.avatar_url}
                                             alt="Avatar"
                                             fill
                                             className="object-cover"

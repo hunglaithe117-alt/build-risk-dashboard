@@ -30,16 +30,16 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
         )
         return DatasetRepoConfig(**doc) if doc else None
 
-    def find_by_dataset_and_csv_name(
+    def find_by_dataset_and_full_name(
         self,
         dataset_id: ObjectId,
-        repo_name_from_csv: str,
+        full_name: str,
     ) -> Optional[DatasetRepoConfig]:
-        """Find config by dataset and original CSV repo name."""
+        """Find config by dataset and full name."""
         doc = self.collection.find_one(
             {
                 "dataset_id": dataset_id,
-                "repo_name_from_csv": repo_name_from_csv,
+                "full_name": full_name,
             }
         )
         return DatasetRepoConfig(**doc) if doc else None
@@ -64,7 +64,7 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
         config_id: ObjectId,
         status: DatasetRepoValidationStatus,
         raw_repo_id: Optional[ObjectId] = None,
-        normalized_full_name: Optional[str] = None,
+        full_name: Optional[str] = None,
         error: Optional[str] = None,
     ) -> None:
         """Update validation status for a config."""
@@ -75,8 +75,8 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
         }
         if raw_repo_id:
             update["raw_repo_id"] = raw_repo_id
-        if normalized_full_name:
-            update["normalized_full_name"] = normalized_full_name
+        if full_name:
+            update["full_name"] = full_name
         if error:
             update["validation_error"] = error
 
@@ -144,19 +144,6 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
         cursor = self.collection.find({"dataset_id": ds_id}).sort("created_at", -1)
         return [DatasetRepoConfig(**doc) for doc in cursor]
 
-    def find_by_dataset_and_repo(
-        self, dataset_id: str, full_name: str
-    ) -> Optional[DatasetRepoConfig]:
-        """Find a repo config by dataset and normalized full name."""
-        ds_id = ObjectId(dataset_id)
-        doc = self.collection.find_one(
-            {
-                "dataset_id": ds_id,
-                "normalized_full_name": full_name,
-            }
-        )
-        return DatasetRepoConfig(**doc) if doc else None
-
     def update_config(self, config_id: str, updates: dict) -> None:
         """Update specific fields on a config."""
         oid = ObjectId(config_id)
@@ -175,17 +162,14 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
         default_branch: str | None = None,
         validation_error: str | None = None,
     ) -> DatasetRepoConfig:
-        """Upsert a dataset repo config by dataset + normalized_full_name.
+        """Upsert a dataset repo config by dataset + full_name.
 
-        Maps the provided `full_name` to both `repo_name_from_csv` and
-        `normalized_full_name` for Step 2 where user inputs repos directly.
         Links to `raw_repo_id` when available.
         """
         ds_id = ObjectId(dataset_id)
 
         update_fields = {
-            "repo_name_from_csv": full_name,
-            "normalized_full_name": full_name,
+            "full_name": full_name,
             "ci_provider": ci_provider,
             "source_languages": source_languages or [],
             "test_frameworks": test_frameworks or [],
@@ -203,7 +187,7 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
         self.collection.update_one(
             {
                 "dataset_id": ds_id,
-                "normalized_full_name": full_name,
+                "full_name": full_name,
             },
             {
                 "$set": update_fields,
@@ -219,9 +203,7 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
             upsert=True,
         )
 
-        doc = self.collection.find_one(
-            {"dataset_id": ds_id, "normalized_full_name": full_name}
-        )
+        doc = self.collection.find_one({"dataset_id": ds_id, "full_name": full_name})
         return DatasetRepoConfig(**doc)
 
     def update_repo_config(
@@ -247,7 +229,7 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
             update_fields["test_frameworks"] = test_frameworks
 
         result = self.collection.update_one(
-            {"dataset_id": ds_id, "normalized_full_name": full_name},
+            {"dataset_id": ds_id, "full_name": full_name},
             {"$set": update_fields},
         )
         return result.modified_count > 0

@@ -9,10 +9,8 @@ Flow:
 5. finalize_enrichment - Mark version as completed
 """
 
-from app.entities.raw_repository import RawRepository
-from app.entities.dataset_repo_config import DatasetRepoConfig
-from datetime import datetime
 import logging
+from datetime import datetime
 from typing import Any, Dict, List
 
 from bson import ObjectId
@@ -21,14 +19,16 @@ from celery import chain, chord, group
 from app.celery_app import celery_app
 from app.config import settings
 from app.entities.dataset_build import DatasetBuild
-from app.entities.enums import ExtractionStatus
 from app.entities.dataset_enrichment_build import DatasetEnrichmentBuild
-from app.repositories.dataset_repository import DatasetRepository
-from app.repositories.dataset_version import DatasetVersionRepository
+from app.entities.dataset_repo_config import DatasetRepoConfig
+from app.entities.enums import ExtractionStatus
+from app.entities.raw_repository import RawRepository
 from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
-from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.dataset_repo_config import DatasetRepoConfigRepository
+from app.repositories.dataset_repository import DatasetRepository
+from app.repositories.dataset_version import DatasetVersionRepository
+from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.tasks.base import PipelineTask
 from app.tasks.shared import extract_features_for_build
@@ -89,9 +89,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
                 "ingestion_status": "ingesting",
             },
         )
-        logger.info(
-            f"Found {total_rows} validated builds, {len(repo_configs)} repos to ingest"
-        )
+        logger.info(f"Found {total_rows} validated builds, {len(repo_configs)} repos to ingest")
 
         # Dispatch ingestion first, then enrichment
         # Pass repo_config_ids to avoid re-querying DB
@@ -194,15 +192,11 @@ def start_ingestion_for_version(
                 repos_ingested += 1
             else:
                 repos_failed += 1
-                logger.error(
-                    f"Ingestion failed for repo {repo_config.normalized_full_name}"
-                )
+                logger.error(f"Ingestion failed for repo {repo_config.full_name}")
 
         except Exception as e:
             repos_failed += 1
-            logger.error(
-                f"Ingestion error for repo {repo_config.normalized_full_name}: {e}"
-            )
+            logger.error(f"Ingestion error for repo {repo_config.full_name}: {e}")
 
         # Update progress
         progress = int(((i + 1) / len(repo_config_ids)) * 100)
@@ -273,9 +267,7 @@ def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str
     # For each repo, get builds and split into batches
     for raw_repo_id in validated_raw_repo_ids:
         # Get validated builds for this repo (status='found')
-        builds = dataset_build_repo.find_found_builds_by_repo(
-            version.dataset_id, str(raw_repo_id)
-        )
+        builds = dataset_build_repo.find_found_builds_by_repo(version.dataset_id, str(raw_repo_id))
         if not builds:
             continue
 

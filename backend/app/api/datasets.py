@@ -4,10 +4,12 @@ from fastapi import (
     Depends,
     File,
     Form,
-    Path as PathParam,
     Query,
     UploadFile,
     status,
+)
+from fastapi import (
+    Path as PathParam,
 )
 from pymongo.database import Database
 
@@ -18,9 +20,8 @@ from app.dtos import (
     DatasetUpdateRequest,
 )
 from app.middleware.auth import get_current_user
-from app.middleware.require_admin import require_admin
+from app.middleware.require_dataset_manager import require_dataset_manager
 from app.services.dataset_service import DatasetService
-
 
 router = APIRouter(prefix="/datasets", tags=["Datasets"])
 
@@ -51,10 +52,10 @@ async def upload_dataset(
     name: str | None = Form(default=None),
     description: str | None = Form(default=None),
     db: Database = Depends(get_db),
-    admin_user: dict = Depends(require_admin),
+    current_user: dict = Depends(require_dataset_manager),
 ):
-    """Upload a CSV file and create dataset (Admin only)."""
-    user_id = str(admin_user["_id"])
+    """Upload a CSV file and create dataset (Admin and Guest)."""
+    user_id = str(current_user["_id"])
     upload_fobj = file.file
     try:
         upload_fobj.seek(0)
@@ -97,10 +98,10 @@ def update_dataset(
     dataset_id: str = PathParam(..., description="Dataset id (Mongo ObjectId)"),
     payload: DatasetUpdateRequest = Body(...),
     db: Database = Depends(get_db),
-    admin_user: dict = Depends(require_admin),
+    current_user: dict = Depends(require_dataset_manager),
 ):
-    """Update dataset metadata (Admin only)."""
-    user_id = str(admin_user["_id"])
+    """Update dataset metadata (Admin and Guest)."""
+    user_id = str(current_user["_id"])
     service = DatasetService(db)
     return service.update_dataset(dataset_id, user_id, payload)
 
@@ -112,10 +113,10 @@ def update_dataset(
 def delete_dataset(
     dataset_id: str = PathParam(..., description="Dataset id (Mongo ObjectId)"),
     db: Database = Depends(get_db),
-    admin_user: dict = Depends(require_admin),
+    current_user: dict = Depends(require_dataset_manager),
 ):
-    """Delete a dataset and all associated data (Admin only)."""
-    user_id = str(admin_user["_id"])
+    """Delete a dataset and all associated data (Admin and Guest)."""
+    user_id = str(current_user["_id"])
     service = DatasetService(db)
     service.delete_dataset(dataset_id, user_id)
     return None
@@ -152,6 +153,7 @@ def list_dataset_builds(
 ):
     """List builds for a dataset with enriched details from RawBuildRun."""
     from bson import ObjectId
+
     from app.repositories.raw_build_run import RawBuildRunRepository
 
     raw_build_repo = RawBuildRunRepository(db)
@@ -169,9 +171,7 @@ def list_dataset_builds(
 
     # Get total and items
     total = db.dataset_builds.count_documents(query)
-    cursor = (
-        db.dataset_builds.find(query).skip(skip).limit(limit).sort("validated_at", -1)
-    )
+    cursor = db.dataset_builds.find(query).skip(skip).limit(limit).sort("validated_at", -1)
 
     items = []
     for doc in cursor:
@@ -249,9 +249,7 @@ def get_dataset_builds_stats(
         )
     )
 
-    workflow_ids = [
-        b["workflow_run_id"] for b in validated_builds if b.get("workflow_run_id")
-    ]
+    workflow_ids = [b["workflow_run_id"] for b in validated_builds if b.get("workflow_run_id")]
 
     # Conclusion breakdown from RawBuildRun
     conclusion_breakdown = {}
@@ -261,9 +259,7 @@ def get_dataset_builds_stats(
             {"$group": {"_id": "$conclusion", "count": {"$sum": 1}}},
         ]
         conclusion_counts = list(db.raw_build_runs.aggregate(conclusion_pipeline))
-        conclusion_breakdown = {
-            item["_id"]: item["count"] for item in conclusion_counts
-        }
+        conclusion_breakdown = {item["_id"]: item["count"] for item in conclusion_counts}
 
     # Builds per repo (for bar chart)
     repo_pipeline = [
@@ -273,9 +269,7 @@ def get_dataset_builds_stats(
         {"$limit": 10},
     ]
     repo_counts = list(db.dataset_builds.aggregate(repo_pipeline))
-    builds_per_repo = [
-        {"repo": item["_id"], "count": item["count"]} for item in repo_counts
-    ]
+    builds_per_repo = [{"repo": item["_id"], "count": item["count"]} for item in repo_counts]
 
     # Duration stats
     avg_duration = None
@@ -304,12 +298,8 @@ def get_dataset_builds_stats(
             {
                 "$group": {
                     "_id": None,
-                    "available": {
-                        "$sum": {"$cond": [{"$eq": ["$logs_available", True]}, 1, 0]}
-                    },
-                    "expired": {
-                        "$sum": {"$cond": [{"$eq": ["$logs_expired", True]}, 1, 0]}
-                    },
+                    "available": {"$sum": {"$cond": [{"$eq": ["$logs_available", True]}, 1, 0]}},
+                    "expired": {"$sum": {"$cond": [{"$eq": ["$logs_expired", True]}, 1, 0]}},
                     "total": {"$sum": 1},
                 }
             },
@@ -319,9 +309,7 @@ def get_dataset_builds_stats(
             logs_stats["available"] = logs_result[0].get("available", 0)
             logs_stats["expired"] = logs_result[0].get("expired", 0)
             logs_stats["unavailable"] = (
-                logs_result[0]["total"]
-                - logs_stats["available"]
-                - logs_stats["expired"]
+                logs_result[0]["total"] - logs_stats["available"] - logs_stats["expired"]
             )
 
     return {

@@ -1,18 +1,17 @@
-from bson.objectid import ObjectId
 import logging
 from dataclasses import dataclass
 from typing import Generator, List, Optional
 
+from bson.objectid import ObjectId
 from fastapi import HTTPException
 from pymongo.database import Database
 
-from app.entities.dataset_version import DatasetVersion, VersionStatus
 from app.entities.dataset import DatasetProject
-from app.repositories.dataset_version import DatasetVersionRepository
+from app.entities.dataset_version import DatasetVersion, VersionStatus
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
+from app.repositories.dataset_version import DatasetVersionRepository
 from app.services.dataset_service import DatasetService
 from app.services.export_service import ExportService, ExportSource
-
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +85,13 @@ class DatasetVersionService:
     ) -> DatasetVersion:
         """Create a new version and start enrichment task."""
         from datetime import datetime, timezone
-        from app.core.redis import get_redis, RedisLock
 
-        if role != "admin":
+        from app.core.redis import RedisLock, get_redis
+
+        if role not in ("admin", "guest"):
             raise HTTPException(
                 status_code=403,
-                detail="You don't have permission to create dataset versions.",
+                detail="You don't have permission to create dataset versions. Admins and guests can create versions.",
             )
 
         dataset = self._verify_dataset_access(dataset_id, user_id, role=role)
@@ -170,8 +170,8 @@ class DatasetVersionService:
         features: Optional[List[str]] = None,
     ) -> ExportResult:
         """Export version data from DB in specified format."""
-        import tempfile
         import os
+        import tempfile
 
         dataset = self._verify_dataset_access(dataset_id, user_id, role=role)
         version = self._get_version(dataset_id, version_id)
@@ -289,6 +289,7 @@ class DatasetVersionService:
         If output_path is None, writes to memory and returns bytes.
         """
         import io
+
         import pyarrow as pa
         import pyarrow.parquet as pq
         from bson import ObjectId
@@ -383,14 +384,12 @@ class DatasetVersionService:
             "feature_count": len(all_features),
         }
 
-    def delete_version(
-        self, dataset_id: str, version_id: str, user_id: str, role: str
-    ) -> None:
+    def delete_version(self, dataset_id: str, version_id: str, user_id: str, role: str) -> None:
         """Delete a version and its enrichment builds."""
-        if role != "admin":
+        if role not in ("admin", "guest"):
             raise HTTPException(
                 status_code=403,
-                detail="You don't have permission to delete dataset versions.",
+                detail="You don't have permission to delete dataset versions. Admins and guests can delete versions.",
             )
 
         self._verify_dataset_access(dataset_id, user_id, role=role)
@@ -415,12 +414,13 @@ class DatasetVersionService:
         a new version can be created.
         """
         from datetime import datetime, timezone
+
         from app.core.redis import get_redis
 
-        if role != "admin":
+        if role not in ("admin", "guest"):
             raise HTTPException(
                 status_code=403,
-                detail="You don't have permission to cancel dataset versions.",
+                detail="You don't have permission to cancel dataset versions. Admins and guests can cancel versions.",
             )
 
         self._verify_dataset_access(dataset_id, user_id, role=role)
@@ -442,9 +442,7 @@ class DatasetVersionService:
         cooldown_until = datetime.now(timezone.utc).timestamp() + cooldown_seconds
         redis.set(cooldown_key, str(cooldown_until), ex=cooldown_seconds + 5)
 
-        logger.info(
-            f"Cancelled version {version_id}, cooldown set for {cooldown_seconds}s"
-        )
+        logger.info(f"Cancelled version {version_id}, cooldown set for {cooldown_seconds}s")
         return version
 
     def get_version_data(
@@ -494,17 +492,13 @@ class DatasetVersionService:
                 "name": version.name,
                 "version_number": version.version_number,
                 "status": (
-                    version.status.value
-                    if hasattr(version.status, "value")
-                    else version.status
+                    version.status.value if hasattr(version.status, "value") else version.status
                 ),
                 "total_rows": version.total_rows,
                 "enriched_rows": version.enriched_rows,
                 "failed_rows": version.failed_rows,
                 "selected_features": version.selected_features,
-                "created_at": (
-                    version.created_at.isoformat() if version.created_at else None
-                ),
+                "created_at": (version.created_at.isoformat() if version.created_at else None),
                 "completed_at": (
                     version.completed_at.isoformat() if version.completed_at else None
                 ),

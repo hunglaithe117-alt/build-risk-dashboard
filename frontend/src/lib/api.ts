@@ -224,7 +224,7 @@ export function getValidationErrors(
   error: any
 ): Array<{ field: string; message: string }> | null {
   if (error.apiError instanceof ApiError && error.apiError.details) {
-    return error.apiError.details.map((d) => ({
+    return error.apiError.details.map((d: { field: string; message: string }) => ({
       field: d.field,
       message: d.message,
     }));
@@ -365,8 +365,8 @@ export const datasetsApi = {
     await api.delete(`/datasets/${datasetId}`);
   },
   listRepoConfigs: async (datasetId: string): Promise<DatasetRepoConfigDto[]> => {
-    const response = await api.get<DatasetRepoConfigDto[]>(`/datasets/${datasetId}/repos`);
-    return response.data;
+    const response = await api.get<{ items: DatasetRepoConfigDto[]; total: number }>(`/datasets/${datasetId}/repos`);
+    return response.data.items;
   },
 };
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Activity, BadgeCheck, Database, GitBranch, Home, Users } from "lucide-react";
+import { Activity, BadgeCheck, Database, GitBranch, Home, Settings, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
@@ -17,7 +17,7 @@ const navigation = [
   },
   {
     label: "My Repositories",
-    href: "/repos",
+    href: "/my-repos",
     icon: GitBranch,
     adminOnly: false,
     guestOnly: false,
@@ -25,7 +25,7 @@ const navigation = [
   },
   {
     label: "Projects",
-    href: "/admin/datasets",
+    href: "/projects",
     icon: Database,
     adminOnly: false,
     guestOnly: true, // Admin + Guest
@@ -33,10 +33,10 @@ const navigation = [
   },
   {
     label: "Repositories",
-    href: "/admin/repos",
+    href: "/repositories",
     icon: BadgeCheck,
-    adminOnly: false,
-    guestOnly: true, // Admin + Guest
+    adminOnly: true, // Admin only
+    guestOnly: false,
     userOnly: false,
   },
   {
@@ -54,7 +54,15 @@ const navigation = [
     adminOnly: true, // Admin only
     guestOnly: false,
     userOnly: false,
-  }
+  },
+  {
+    label: "Settings",
+    href: "/settings",
+    icon: Settings,
+    adminOnly: false,
+    guestOnly: true, // Admin + Guest can access settings
+    userOnly: false,
+  },
 ];
 
 export function Sidebar() {

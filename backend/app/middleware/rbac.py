@@ -10,8 +10,7 @@ This module provides a centralized permission system with:
 from __future__ import annotations
 
 from enum import Enum
-from functools import wraps
-from typing import Callable, Set
+from typing import Set
 
 from fastapi import Depends, HTTPException, status
 
@@ -64,14 +63,15 @@ ROLE_PERMISSIONS: dict[str, Set[Permission]] = {
         Permission.VIEW_OWN_DASHBOARD,
     },
     "guest": {
-        # Guest has read-only access to everything
-        Permission.VIEW_DASHBOARD,
-        Permission.VIEW_REPOS,
-        Permission.VIEW_BUILDS,
+        # Guest focuses on dataset enrichment - FULL capabilities
+        # Can upload datasets, create/delete/cancel versions, start/cancel scans
+        # Cannot access repositories or builds outside of dataset context
         Permission.VIEW_DATASETS,
         Permission.VIEW_DATASET_VERSIONS,
         Permission.VIEW_SCANS,
         Permission.EXPORT_DATA,
+        Permission.MANAGE_DATASETS,  # Full dataset management
+        Permission.START_SCANS,  # Start/cancel scans
     },
     "user": {
         # User can only see their own repos

@@ -1,41 +1,40 @@
-'use client'
+'use client';
 
-import { type ReactNode, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { type ReactNode, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 
-import { useAuth } from '@/contexts/auth-context'
+import { useAuth } from '@/contexts/auth-context';
 
-// /admin routes are now admin-only (monitoring, users, settings)
-// /projects and /repositories have their own layouts
-
-export default function AdminLayout({ children }: { children: ReactNode }) {
+/**
+ * Layout for /repositories route.
+ * Admin only - manages all organization repositories.
+ */
+export default function RepositoriesLayout({ children }: { children: ReactNode }) {
     const router = useRouter();
     const { authenticated, loading, user } = useAuth();
 
     const userRole = user?.role;
-    const isAdmin = userRole === "admin";
+    const isAdmin = userRole === 'admin';
 
     useEffect(() => {
         if (loading) return;
 
         if (!authenticated) {
-            router.replace("/login");
+            router.replace('/login');
             return;
         }
 
-        // All /admin/* routes are admin-only now
         if (!isAdmin) {
-            // Redirect based on role
-            if (userRole === "guest") {
-                router.replace("/projects");
+            // Non-admins redirect to appropriate page
+            if (userRole === 'guest') {
+                router.replace('/projects');
             } else {
-                router.replace("/overview");
+                router.replace('/overview');
             }
         }
     }, [authenticated, loading, isAdmin, userRole, router]);
 
-    // Show loading while checking auth
     if (loading) {
         return (
             <div className="flex min-h-[400px] items-center justify-center">
@@ -44,10 +43,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     <span>Checking permissions…</span>
                 </div>
             </div>
-        )
+        );
     }
 
-    // Show loading while redirecting
     if (!authenticated || !isAdmin) {
         return (
             <div className="flex min-h-[400px] items-center justify-center">
@@ -56,8 +54,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                     <span>Redirecting…</span>
                 </div>
             </div>
-        )
+        );
     }
 
-    return <>{children}</>
+    return <>{children}</>;
 }

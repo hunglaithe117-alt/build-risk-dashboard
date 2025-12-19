@@ -425,7 +425,7 @@ export default function AdminUsersPage() {
                                 <div className="text-center py-8 text-muted-foreground">
                                     <UserPlus className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
                                     <p>No pending invitations</p>
-                                    <p className="text-sm">Click "Invite User" to invite someone</p>
+                                    <p className="text-sm">Click &quot;Invite User&quot; to invite someone</p>
                                 </div>
                             ) : (
                                 <Table>

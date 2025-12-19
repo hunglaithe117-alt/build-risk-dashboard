@@ -29,38 +29,38 @@ from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.middleware.exception_handlers import (
-    http_exception_handler,
-    validation_exception_handler,
-    general_exception_handler,
-)
-
 # ResponseWrapperMiddleware disabled - has issues with StreamingResponse
 # from app.middleware.response_wrapper import ResponseWrapperMiddleware
 from app.api import (
+    admin_invitations,
+    admin_users,
+    auth,
     dashboard,
+    dataset_validation,
+    dataset_versions,
+    datasets,
+    export,
+    features,
     health,
     integrations,
-    auth,
+    logs,
+    model_repos,
+    monitoring,
+    notifications,
+    settings,
+    templates,
+    tokens,
+    user_settings,
     users,
     webhook,
     websocket,
-    logs,
-    features,
-    datasets,
-    tokens,
-    export,
-    dataset_validation,
-    dataset_versions,
-    templates,
-    settings,
-    monitoring,
-    notifications,
-    admin_users,
-    admin_invitations,
+)
+from app.middleware.exception_handlers import (
+    general_exception_handler,
+    http_exception_handler,
+    validation_exception_handler,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
-from app.api import model_repos
 
 logger = logging.getLogger(__name__)
 
@@ -103,20 +103,17 @@ app.include_router(features.router, prefix="/api", tags=["Feature Definitions"])
 app.include_router(datasets.router, prefix="/api", tags=["Datasets"])
 app.include_router(tokens.router, prefix="/api", tags=["GitHub Tokens"])
 app.include_router(export.router, prefix="/api", tags=["Export"])
-app.include_router(
-    dataset_validation.router, prefix="/api", tags=["Dataset Validation"]
-)
+app.include_router(dataset_validation.router, prefix="/api", tags=["Dataset Validation"])
 app.include_router(dataset_versions.router, prefix="/api", tags=["Dataset Versions"])
 app.include_router(templates.router, prefix="/api", tags=["Templates"])
 app.include_router(settings.router, prefix="/api", tags=["Settings"])
 app.include_router(monitoring.router, prefix="/api", tags=["Monitoring"])
 app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
+app.include_router(user_settings.router, prefix="/api", tags=["User Settings"])
 
 # Admin-only routes
 app.include_router(admin_users.router, prefix="/api", tags=["Admin - Users"])
-app.include_router(
-    admin_invitations.router, prefix="/api", tags=["Admin - Invitations"]
-)
+app.include_router(admin_invitations.router, prefix="/api", tags=["Admin - Invitations"])
 
 
 @app.get("/")
@@ -134,8 +131,8 @@ async def startup_event():
     """Application startup tasks."""
     # Ensure MongoDB indexes exist
     try:
-        from app.database.mongo import get_database
         from app.database.ensure_indexes import ensure_indexes
+        from app.database.mongo import get_database
 
         db = get_database()
         ensure_indexes(db)
@@ -157,14 +154,12 @@ async def startup_event():
 
     # Import pipeline to trigger feature module loading
     try:
-        from app.tasks.pipeline.hamilton_runner import HamiltonPipeline
         from app.database.mongo import get_database
+        from app.tasks.pipeline.hamilton_runner import HamiltonPipeline
 
         db = get_database()
         pipeline = HamiltonPipeline(db)
         feature_count = len(pipeline.get_active_features())
-        logger.info(
-            f"Loaded {feature_count} feature definitions from Hamilton pipeline"
-        )
+        logger.info(f"Loaded {feature_count} feature definitions from Hamilton pipeline")
     except Exception as e:
         logger.warning(f"Failed to load feature definitions: {e}")

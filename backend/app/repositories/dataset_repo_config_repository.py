@@ -27,7 +27,7 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
 
         return self.find_many(
             query,
-            sort=[("repo_name_from_csv", 1)],
+            sort=[("full_name", 1)],
         )
 
     def count_by_dataset(self, dataset_id: ObjectId) -> int:
@@ -43,6 +43,6 @@ class DatasetRepoConfigRepository(BaseRepository[DatasetRepoConfig]):
         return self.find_one(
             {
                 "dataset_id": dataset_id,
-                "repo_name_from_csv": repo_name,
+                "full_name": repo_name,
             }
         )

@@ -255,6 +255,36 @@ class RedisTokenPool:
         else:
             self._redis.hset(f"{KEY_STATS}:{token_hash}", "status", TOKEN_STATUS_ACTIVE)
 
+    def update_rate_limit_from_headers(
+        self,
+        token_hash: str,
+        headers: dict,
+    ) -> None:
+        """
+        Update rate limit info from HTTP response headers.
+
+        Args:
+            token_hash: Token hash
+            headers: HTTP response headers dict
+        """
+        remaining = headers.get("X-RateLimit-Remaining")
+        limit = headers.get("X-RateLimit-Limit")
+        reset = headers.get("X-RateLimit-Reset")
+
+        if remaining is None:
+            return
+
+        try:
+            remaining_int = int(remaining)
+            limit_int = int(limit) if limit else 5000
+            reset_dt = (
+                datetime.fromtimestamp(int(reset), tz=timezone.utc) if reset else None
+            )
+
+            self.update_rate_limit(token_hash, remaining_int, limit_int, reset_dt)
+        except (TypeError, ValueError):
+            pass
+
     def mark_rate_limited(
         self,
         token_hash: str,

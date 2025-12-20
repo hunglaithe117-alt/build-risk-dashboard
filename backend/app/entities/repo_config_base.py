@@ -22,7 +22,7 @@ class FeatureConfigBase(BaseEntity):
     Common configuration for feature extraction.
 
     Includes shared, user-configurable settings such as languages,
-    test frameworks, and CI provider.
+    test frameworks
     """
 
     feature_configs: Dict[str, Any] = Field(

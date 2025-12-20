@@ -8,14 +8,13 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-
 from app.celery_app import celery_app
 from app.database.mongo import get_database
 from app.entities.dataset_scan import DatasetScanStatus
+from app.integrations import ScanMode, get_tool
+from app.repositories.dataset_repo_config import DatasetRepoConfigRepository
 from app.repositories.dataset_scan import DatasetScanRepository
 from app.repositories.dataset_scan_result import DatasetScanResultRepository
-from app.repositories.dataset_repo_config import DatasetRepoConfigRepository
-from app.integrations import get_tool, ScanMode
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +62,7 @@ def run_dataset_scan(self, scan_id: str):
     # Get tool
     tool = get_tool(scan.tool_type)
     if not tool:
-        scan_repo.mark_status(
-            scan_id, DatasetScanStatus.FAILED, f"Unknown tool: {scan.tool_type}"
-        )
+        scan_repo.mark_status(scan_id, DatasetScanStatus.FAILED, f"Unknown tool: {scan.tool_type}")
         return {"status": "error", "error": f"Unknown tool: {scan.tool_type}"}
 
     if not tool.is_available():
@@ -94,25 +91,19 @@ def run_dataset_scan(self, scan_id: str):
                 pending += 1
 
             # Update progress
-            scan_repo.update_progress(
-                scan_id, scanned=completed, failed=failed, pending=pending
-            )
+            scan_repo.update_progress(scan_id, scanned=completed, failed=failed, pending=pending)
 
         except Exception as e:
             logger.error(f"Failed to scan commit {result.commit_sha}: {e}")
             result_repo.mark_failed(str(result.id), str(e))
             failed += 1
-            scan_repo.update_progress(
-                scan_id, scanned=completed, failed=failed, pending=pending
-            )
+            scan_repo.update_progress(scan_id, scanned=completed, failed=failed, pending=pending)
 
     # Determine final status
     if tool.scan_mode == ScanMode.ASYNC and pending > 0:
         # Async tool - mark as partial, will complete via webhook
         scan_repo.mark_status(scan_id, DatasetScanStatus.PARTIAL)
-        logger.info(
-            f"Scan {scan_id} partial: {completed} completed, {pending} pending webhook"
-        )
+        logger.info(f"Scan {scan_id} partial: {completed} completed, {pending} pending webhook")
         return {
             "status": "partial",
             "completed": completed,
@@ -179,14 +170,10 @@ def retry_scan_result(self, result_id: str, scan_id: str):
     try:
         if tool.scan_mode == ScanMode.SYNC:
             # Trivy: run sync scan with config
-            _run_trivy_scan(
-                result, tool, result_repo, dataset_repo_config, effective_config
-            )
+            _run_trivy_scan(result, tool, result_repo, dataset_repo_config, effective_config)
         else:
             # SonarQube: start async scan with config
-            _start_sonar_scan(
-                result, tool, result_repo, dataset_repo_config, effective_config
-            )
+            _start_sonar_scan(result, tool, result_repo, dataset_repo_config, effective_config)
 
         # Check scan completion after single result
         from app.services.dataset_scan_service import DatasetScanService
@@ -213,9 +200,7 @@ def _run_trivy_scan(
     """Run Trivy scan on a commit (sync)."""
     from app.integrations.tools.trivy import TrivyTool
 
-    logger.info(
-        f"Running Trivy scan on {result.repo_full_name}@{result.commit_sha[:8]}"
-    )
+    logger.info(f"Running Trivy scan on {result.repo_full_name}@{result.commit_sha[:8]}")
 
     result_repo.mark_scanning(str(result.id))
 
@@ -238,9 +223,7 @@ def _run_trivy_scan(
         scan_result = trivy_tool.scan(str(worktree_path), config_content=config_content)
 
         if scan_result.get("status") == "failed":
-            result_repo.mark_failed(
-                str(result.id), scan_result.get("error", "Scan failed")
-            )
+            result_repo.mark_failed(str(result.id), scan_result.get("error", "Scan failed"))
             raise Exception(scan_result.get("error", "Scan failed"))
 
         # Save results
@@ -265,9 +248,7 @@ def _start_sonar_scan(
     config_content: Optional[str] = None,
 ):
     """Start SonarQube scan on a commit (async)."""
-    logger.info(
-        f"Starting SonarQube scan on {result.repo_full_name}@{result.commit_sha[:8]}"
-    )
+    logger.info(f"Starting SonarQube scan on {result.repo_full_name}@{result.commit_sha[:8]}")
 
     # Generate component key using original commit_sha (for result identification)
     repo_name_safe = result.repo_full_name.replace("/", "_")
@@ -319,9 +300,10 @@ def _clone_bare_repo(raw_repo_id: str, full_name: str) -> None:
     Raises exception on failure.
     """
     import subprocess
-    from app.paths import REPOS_DIR
+
     from app.config import settings
     from app.core.redis import RedisLock
+    from app.paths import REPOS_DIR
 
     repo_path = REPOS_DIR / raw_repo_id
 
@@ -370,18 +352,15 @@ def _ensure_worktree(
         - is_temp_clone: Always False for shared worktrees (no cleanup needed)
     """
     import subprocess
-    from app.paths import REPOS_DIR, WORKTREES_DIR
+
     from app.core.redis import RedisLock
+    from app.paths import REPOS_DIR, WORKTREES_DIR
 
     try:
         # Get repo from DB to get raw_repo_id
-        repo = dataset_repo_config.find_by_dataset_and_full_name(
-            dataset_id, repo_full_name
-        )
+        repo = dataset_repo_config.find_by_dataset_and_full_name(dataset_id, repo_full_name)
         if not repo:
-            logger.error(
-                f"Repository not found in DB: {repo_full_name} for dataset {dataset_id}"
-            )
+            logger.error(f"Repository not found in DB: {repo_full_name} for dataset {dataset_id}")
             return None, False
 
         raw_repo_id = str(repo.raw_repo_id) if repo.raw_repo_id else str(repo.id)
@@ -395,8 +374,7 @@ def _ensure_worktree(
             git_marker = worktree_path / ".git"
             if git_marker.exists():
                 logger.info(
-                    f"Using existing shared worktree at {worktree_path} "
-                    f"for {commit_sha[:8]}"
+                    f"Using existing shared worktree at {worktree_path} " f"for {commit_sha[:8]}"
                 )
                 return worktree_path, False
 
@@ -448,9 +426,7 @@ def _ensure_worktree(
                 timeout=60,
             )
 
-            logger.info(
-                f"Created shared worktree at {worktree_path} for {commit_sha[:8]}"
-            )
+            logger.info(f"Created shared worktree at {worktree_path} for {commit_sha[:8]}")
             return worktree_path, False  # Shared worktree, no cleanup needed
 
     except subprocess.CalledProcessError as e:
@@ -460,9 +436,7 @@ def _ensure_worktree(
         logger.error(f"Timeout creating worktree for {repo_full_name}@{commit_sha}")
         return None, False
     except Exception as e:
-        logger.error(
-            f"Failed to create worktree for {repo_full_name}@{commit_sha}: {e}"
-        )
+        logger.error(f"Failed to create worktree for {repo_full_name}@{commit_sha}: {e}")
         return None, False
 
 

@@ -1,26 +1,19 @@
 """Dashboard analytics endpoints."""
 
+from bson import ObjectId
 from fastapi import APIRouter, Depends
 from pymongo.database import Database
-from bson import ObjectId
 
 from app.database.mongo import get_db
-from app.dtos import DashboardSummaryResponse, BuildSummary
+from app.dtos import BuildSummary, DashboardSummaryResponse
 from app.dtos.dashboard import (
     DashboardLayoutResponse,
     DashboardLayoutUpdateRequest,
-    WidgetConfigDto,
     WidgetDefinition,
 )
 from app.middleware.auth import get_current_user
-from app.services.dashboard_service import DashboardService
 from app.services.build_service import BuildService
-from app.repositories.user_dashboard_layout import UserDashboardLayoutRepository
-from app.entities.user_dashboard_layout import (
-    UserDashboardLayout,
-    WidgetConfig,
-    DEFAULT_WIDGETS,
-)
+from app.services.dashboard_service import DashboardService
 
 router = APIRouter()
 
@@ -30,8 +23,8 @@ async def get_dashboard_summary(
     db: Database = Depends(get_db), current_user: dict = Depends(get_current_user)
 ):
     """Return aggregated dashboard metrics derived from repository metadata."""
-    service = DashboardService(db)
-    return service.get_summary(current_user)
+    dashboard_service = DashboardService(db)
+    return dashboard_service.get_summary(current_user)
 
 
 @router.get("/recent-builds", response_model=list[BuildSummary])
@@ -41,8 +34,8 @@ async def get_recent_builds(
     current_user: dict = Depends(get_current_user),
 ):
     """Return recent builds across repositories accessible to the user."""
-    service = BuildService(db)
-    return service.get_recent_builds(limit, current_user)
+    build_service = BuildService(db)
+    return build_service.get_recent_builds(limit, current_user)
 
 
 @router.get("/layout", response_model=DashboardLayoutResponse)
@@ -51,27 +44,9 @@ def get_dashboard_layout(
     current_user: dict = Depends(get_current_user),
 ):
     """Get current user's dashboard layout."""
-    repo = UserDashboardLayoutRepository(db)
+    dashboard_service = DashboardService(db)
     user_id = ObjectId(current_user["_id"])
-    layout = repo.find_by_user(user_id)
-
-    def to_dto(w: WidgetConfig) -> WidgetConfigDto:
-        return WidgetConfigDto(
-            widget_id=w.widget_id,
-            widget_type=w.widget_type,
-            title=w.title,
-            enabled=w.enabled,
-            x=w.x,
-            y=w.y,
-            w=w.w,
-            h=w.h,
-        )
-
-    if not layout:
-        # Return default layout for new users
-        return DashboardLayoutResponse(widgets=[to_dto(w) for w in DEFAULT_WIDGETS])
-
-    return DashboardLayoutResponse(widgets=[to_dto(w) for w in layout.widgets])
+    return dashboard_service.get_layout(user_id)
 
 
 @router.put("/layout", response_model=DashboardLayoutResponse)
@@ -81,40 +56,9 @@ def save_dashboard_layout(
     current_user: dict = Depends(get_current_user),
 ):
     """Save current user's dashboard layout."""
-    repo = UserDashboardLayoutRepository(db)
+    dashboard_service = DashboardService(db)
     user_id = ObjectId(current_user["_id"])
-
-    # Convert request widgets to entity widgets
-    widget_configs = [
-        WidgetConfig(
-            widget_id=w.widget_id,
-            widget_type=w.widget_type,
-            title=w.title,
-            enabled=w.enabled,
-            x=w.x,
-            y=w.y,
-            w=w.w,
-            h=w.h,
-        )
-        for w in request.widgets
-    ]
-
-    def to_dto(w: WidgetConfig) -> WidgetConfigDto:
-        return WidgetConfigDto(
-            widget_id=w.widget_id,
-            widget_type=w.widget_type,
-            title=w.title,
-            enabled=w.enabled,
-            x=w.x,
-            y=w.y,
-            w=w.w,
-            h=w.h,
-        )
-
-    layout = UserDashboardLayout(user_id=user_id, widgets=widget_configs)
-    saved = repo.upsert_by_user(user_id, layout)
-
-    return DashboardLayoutResponse(widgets=[to_dto(w) for w in saved.widgets])
+    return dashboard_service.save_layout(user_id, request.widgets)
 
 
 @router.get("/available-widgets", response_model=list[WidgetDefinition])

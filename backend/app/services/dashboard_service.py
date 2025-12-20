@@ -1,8 +1,16 @@
-from typing import Optional
+from typing import List, Optional
 
+from bson import ObjectId
 from pymongo.database import Database
 
-from app.dtos import DashboardSummaryResponse, DashboardMetrics, RepoDistributionEntry
+from app.dtos import DashboardMetrics, DashboardSummaryResponse, RepoDistributionEntry
+from app.dtos.dashboard import DashboardLayoutResponse, WidgetConfigDto
+from app.entities.user_dashboard_layout import (
+    DEFAULT_WIDGETS,
+    UserDashboardLayout,
+    WidgetConfig,
+)
+from app.repositories.user_dashboard_layout import UserDashboardLayoutRepository
 
 
 class DashboardService:
@@ -10,10 +18,9 @@ class DashboardService:
         self.db = db
         self.build_collection = db["model_builds"]
         self.repo_collection = db["repositories"]
+        self.layout_repo = UserDashboardLayoutRepository(db)
 
-    def get_summary(
-        self, current_user: Optional[dict] = None
-    ) -> DashboardSummaryResponse:
+    def get_summary(self, current_user: Optional[dict] = None) -> DashboardSummaryResponse:
         """
         Get dashboard summary with RBAC filtering.
 
@@ -22,9 +29,7 @@ class DashboardService:
         - User: sees only repos in their github_accessible_repos
         """
         user_role = current_user.get("role", "user") if current_user else "admin"
-        accessible_repos = (
-            current_user.get("github_accessible_repos", []) if current_user else []
-        )
+        accessible_repos = current_user.get("github_accessible_repos", []) if current_user else []
 
         # Base repo filter
         repo_filter = {"import_status": "imported", "is_deleted": {"$ne": True}}
@@ -39,11 +44,7 @@ class DashboardService:
         repo_ids = [repo["_id"] for repo in repos]
 
         # Build filter for RBAC (admin and guest see all, users see filtered)
-        build_filter = (
-            {"repo_id": {"$in": repo_ids}}
-            if user_role not in ("admin", "guest")
-            else {}
-        )
+        build_filter = {"repo_id": {"$in": repo_ids}} if user_role not in ("admin", "guest") else {}
 
         # 2. Calculate total builds
         total_builds = self.build_collection.count_documents(build_filter)
@@ -51,9 +52,7 @@ class DashboardService:
         # 3. Success rate
         success_filter = {**build_filter, "tr_status": "passed"}
         successful_builds = self.build_collection.count_documents(success_filter)
-        success_rate = (
-            (successful_builds / total_builds * 100) if total_builds > 0 else 0.0
-        )
+        success_rate = (successful_builds / total_builds * 100) if total_builds > 0 else 0.0
 
         # 4. Average duration
         pipeline = [
@@ -61,9 +60,7 @@ class DashboardService:
             {"$group": {"_id": None, "avg_duration": {"$avg": "$tr_duration"}}},
         ]
         avg_duration_result = list(self.build_collection.aggregate(pipeline))
-        avg_duration_seconds = (
-            avg_duration_result[0]["avg_duration"] if avg_duration_result else 0
-        )
+        avg_duration_seconds = avg_duration_result[0]["avg_duration"] if avg_duration_result else 0
         avg_duration_minutes = avg_duration_seconds / 60 if avg_duration_seconds else 0
 
         # 5. Repo distribution (already filtered)
@@ -88,4 +85,57 @@ class DashboardService:
             ),
             trends=[],  # Can be implemented later
             repo_distribution=repo_distribution,
+        )
+
+    def _widget_config_to_dto(self, widget: WidgetConfig) -> WidgetConfigDto:
+        """Convert WidgetConfig entity to DTO."""
+        return WidgetConfigDto(
+            widget_id=widget.widget_id,
+            widget_type=widget.widget_type,
+            title=widget.title,
+            enabled=widget.enabled,
+            x=widget.x,
+            y=widget.y,
+            w=widget.w,
+            h=widget.h,
+        )
+
+    def get_layout(self, user_id: ObjectId) -> DashboardLayoutResponse:
+        """Get dashboard layout for a user."""
+        layout = self.layout_repo.find_by_user(user_id)
+
+        if not layout:
+            # Return default layout for new users
+            return DashboardLayoutResponse(
+                widgets=[self._widget_config_to_dto(w) for w in DEFAULT_WIDGETS]
+            )
+
+        return DashboardLayoutResponse(
+            widgets=[self._widget_config_to_dto(w) for w in layout.widgets]
+        )
+
+    def save_layout(
+        self, user_id: ObjectId, widgets: List[WidgetConfigDto]
+    ) -> DashboardLayoutResponse:
+        """Save dashboard layout for a user."""
+        # Convert request widgets to entity widgets
+        widget_configs = [
+            WidgetConfig(
+                widget_id=w.widget_id,
+                widget_type=w.widget_type,
+                title=w.title,
+                enabled=w.enabled,
+                x=w.x,
+                y=w.y,
+                w=w.w,
+                h=w.h,
+            )
+            for w in widgets
+        ]
+
+        layout = UserDashboardLayout(user_id=user_id, widgets=widget_configs)
+        saved = self.layout_repo.upsert_by_user(user_id, layout)
+
+        return DashboardLayoutResponse(
+            widgets=[self._widget_config_to_dto(w) for w in saved.widgets]
         )

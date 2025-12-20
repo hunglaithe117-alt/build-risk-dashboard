@@ -46,6 +46,87 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# NotificationService - CRUD operations for API Layer
+# =============================================================================
+
+
+class NotificationService:
+    """
+    Service for notification CRUD operations.
+
+    Used by API layer following the layered architecture pattern:
+    API -> Service -> Repository -> Database
+    """
+
+    def __init__(self, db: Database):
+        self.db = db
+        self.notification_repo = NotificationRepository(db)
+
+    def list_notifications(
+        self,
+        user_id: ObjectId,
+        skip: int = 0,
+        limit: int = 20,
+        unread_only: bool = False,
+    ) -> tuple[list[Notification], int, int]:
+        """
+        List notifications for a user.
+
+        Returns: (items, total, unread_count)
+        """
+        items, total = self.notification_repo.find_by_user(
+            user_id, skip=skip, limit=limit, unread_only=unread_only
+        )
+        unread_count = self.notification_repo.count_unread(user_id)
+        return items, total, unread_count
+
+    def get_unread_count(self, user_id: ObjectId) -> int:
+        """Get the count of unread notifications for a user."""
+        return self.notification_repo.count_unread(user_id)
+
+    def mark_as_read(self, user_id: ObjectId, notification_id: str) -> bool:
+        """
+        Mark a single notification as read.
+
+        Raises HTTPException if notification not found or not owned by user.
+        """
+        from fastapi import HTTPException
+
+        notification = self.notification_repo.find_by_id(notification_id)
+        if not notification:
+            raise HTTPException(status_code=404, detail="Notification not found")
+
+        if notification.user_id != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        return self.notification_repo.mark_as_read(ObjectId(notification_id))
+
+    def mark_all_as_read(self, user_id: ObjectId) -> int:
+        """Mark all notifications as read for a user."""
+        return self.notification_repo.mark_all_as_read(user_id)
+
+    def create_notification(
+        self,
+        user_id: ObjectId,
+        notification_type: NotificationType,
+        title: str,
+        message: str,
+        link: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> Notification:
+        """Create a new notification."""
+        notification = Notification(
+            user_id=user_id,
+            type=notification_type,
+            title=title,
+            message=message,
+            link=link,
+            metadata=metadata,
+        )
+        return self.notification_repo.insert_one(notification)
+
+
+# =============================================================================
 # Multi-Channel Notification Manager
 # =============================================================================
 

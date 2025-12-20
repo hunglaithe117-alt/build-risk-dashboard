@@ -16,7 +16,8 @@ import logging
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Generator, Optional, List, Dict, Any, Set
+from typing import Any, Dict, Generator, List, Optional, Set
+
 from bson import ObjectId
 from pymongo.database import Database
 
@@ -511,4 +512,71 @@ class ExportService:
             "sample_rows": sample_rows,
             "available_features": sorted(all_features),
             "feature_count": len(all_features),
+        }
+
+    def get_export_preview(
+        self,
+        repo_id: Optional[str] = None,
+        features: Optional[List[str]] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        build_status: Optional[str] = None,
+        sample_limit: int = 5,
+    ) -> Dict[str, Any]:
+        """
+        Get preview of exportable data for a repository (model_builds).
+
+        Returns:
+            Dict with total_rows, use_async_recommended, sample_rows, available_features
+        """
+        source = ExportSource.MODEL_BUILDS
+
+        count = self.estimate_row_count(
+            source=source,
+            repo_id=repo_id,
+            start_date=start_date,
+            end_date=end_date,
+            build_status=build_status,
+        )
+
+        use_async = self.should_use_background_job(
+            source=source,
+            repo_id=repo_id,
+            start_date=start_date,
+            end_date=end_date,
+            build_status=build_status,
+        )
+
+        # Get sample rows
+        query = self._build_query(
+            source,
+            repo_id=repo_id,
+            start_date=start_date,
+            end_date=end_date,
+            build_status=build_status,
+        )
+        collection = self._get_collection(source)
+        sample_docs = list(collection.find(query).sort("created_at", 1).limit(sample_limit))
+
+        feature_list = features.split(",") if isinstance(features, str) else features
+        sample_rows = [self._format_row(doc, feature_list) for doc in sample_docs]
+
+        # Get available features
+        available_features = list(
+            self._get_all_feature_keys(
+                source,
+                repo_id=repo_id,
+                start_date=start_date,
+                end_date=end_date,
+                build_status=build_status,
+            )
+        )
+
+        return {
+            "total_rows": count,
+            "use_async_recommended": use_async,
+            "async_threshold": STREAMING_THRESHOLD,
+            "sample_rows": sample_rows,
+            "available_features": sorted(available_features),
+            "feature_count": len(available_features),
         }

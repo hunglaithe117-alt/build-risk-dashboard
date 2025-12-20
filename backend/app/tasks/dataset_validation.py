@@ -22,11 +22,11 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
-from celery import chord, group
+from celery import chain, group
 
 from app.celery_app import celery_app
 from app.ci_providers.factory import get_ci_provider
-from app.ci_providers.models import CIProvider
+from app.ci_providers.models import BuildData, CIProvider
 from app.config import settings
 from app.database.mongo import get_database
 from app.entities import DatasetBuild, DatasetBuildStatus, ValidationStats
@@ -216,9 +216,8 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
         # Update total chunks in Redis
         increment_validation_stat(dataset_id, "total_chunks", len(repo_chunks))
 
-        # Create repo validation tasks
         repo_tasks = [
-            validate_repo_chunk.s(
+            validate_repo_chunk.si(
                 dataset_id=dataset_id,
                 repo_builds_chunk=chunk,
                 chunk_index=i,
@@ -226,14 +225,12 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
             for i, chunk in enumerate(repo_chunks)
         ]
 
-        # Create build validation tasks for ALL builds upfront
-        # Each repo's builds are already known from CSV
         build_tasks = []
         for repo_name, builds in all_repo_builds.items():
             build_chunks = list(chunk_list(builds, settings.BUILD_CHUNK_SIZE))
             for build_chunk in build_chunks:
                 build_tasks.append(
-                    validate_builds_chunk.s(
+                    validate_builds_chunk.si(
                         dataset_id=dataset_id,
                         repo_name=repo_name,
                         raw_repo_id=None,  # Will be looked up in task
@@ -241,10 +238,15 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
                     )
                 )
 
-        # Combine all tasks: repo validation + build validation
-        # All must complete before aggregate runs
-        all_tasks = repo_tasks + build_tasks
-        workflow = chord(group(all_tasks))(aggregate_validation_results.s(dataset_id=dataset_id))
+        # Two-stage workflow:
+        # Stage 1: All repo validation tasks
+        # Stage 2: All build validation tasks
+        # Final: Aggregate results
+        workflow = chain(
+            group(repo_tasks),  # Stage 1: Validate repos first
+            group(build_tasks),  # Stage 2: Validate builds
+            aggregate_validation_results.si(dataset_id=dataset_id),  # Final: Aggregate results
+        ).apply_async()
 
         logger.info(f"Dispatched {len(repo_chunks)} repo chunks for dataset {dataset_id}")
 
@@ -479,7 +481,7 @@ def validate_builds_chunk(
             builds_to_validate.append(build_info)
 
     # Fetch all build details concurrently
-    async def fetch_build_details_batch():
+    async def fetch_build_details_batch() -> List[Optional[BuildData]]:
         """Fetch all build data concurrently using fetch_build_details."""
         tasks = []
         for build_info in builds_to_validate:
@@ -516,8 +518,12 @@ def validate_builds_chunk(
                     provider=ci_provider,
                     repo_name=build_data.repo_name or repo_name,
                     build_number=build_data.build_number,
-                    status=build_data.status.value if build_data.status else None,
-                    conclusion=build_data.conclusion.value if build_data.conclusion else None,
+                    status=build_data.status.value
+                    if hasattr(build_data.status, "value")
+                    else build_data.status,
+                    conclusion=build_data.conclusion.value
+                    if hasattr(build_data.conclusion, "value")
+                    else build_data.conclusion,
                     commit_sha=build_data.commit_sha,
                     branch=build_data.branch,
                     started_at=build_data.started_at,
@@ -598,16 +604,17 @@ def validate_builds_chunk(
 )
 def aggregate_validation_results(
     self,
-    repo_chunk_results: List[Dict[str, Any]],
     dataset_id: str,
 ) -> Dict[str, Any]:
     """
     Aggregate validation results from all worker tasks.
 
-    Called as chord callback after all repo and build validation tasks complete.
+    Called as final step in chain after:
+    1. Repo validation group (creates RawRepository records)
+    2. Build validation group (validates builds, creates RawBuildRun records)
 
     Args:
-        repo_chunk_results: Results from all validate tasks (both repo and build)
+        build_chunk_results: Results from build validation tasks (passed from chain)
         dataset_id: Dataset that was validated
 
     Returns:

@@ -76,7 +76,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
             raise ValueError("No validated builds found. Please run validation first.")
 
         # Get validated repos from dataset (replaces DatasetRepoConfig)
-        validated_raw_repo_ids = dataset.validated_raw_repo_ids or []
+        validated_raw_repo_ids = list(dataset.repo_ci_providers.keys())
 
         version_repo.update_one(
             version_id,
@@ -92,7 +92,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
         )
 
         # Dispatch ingestion first, then enrichment
-        # Pass validated_raw_repo_ids instead of repo_config_ids
+        # Pass raw_repo_ids from repo_ci_providers
         workflow = chain(
             start_ingestion_for_version.s(
                 version_id=version_id,
@@ -137,7 +137,7 @@ def start_ingestion_for_version(
     Args:
         version_id: DatasetVersion ID
         dataset_id: Dataset ID (passed from caller to avoid re-query)
-        raw_repo_ids: List of RawRepository IDs (from dataset.validated_raw_repo_ids)
+        raw_repo_ids: List of RawRepository IDs (from dataset.repo_ci_providers.keys())
 
     This is a synchronous task that dispatches per-repo ingestion tasks
     and waits for them to complete before returning.
@@ -238,7 +238,7 @@ def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str
     """
     After ingestion completes, dispatch enrichment batches grouped by raw_repo_id.
 
-    Uses dataset.validated_raw_repo_ids for repo grouping.
+    Uses dataset.repo_ci_providers.keys() for repo grouping.
     Within each repo, splits builds into chunks of ENRICHMENT_BATCH_SIZE.
     """
     version_repo = DatasetVersionRepository(self.db)
@@ -249,12 +249,13 @@ def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str
     if not dataset_version:
         raise ValueError(f"Version {version_id} not found")
 
-    # Get validated_raw_repo_ids from dataset (set during save_repos)
+    # Get validated repo IDs from dataset (set during save_repos)
     dataset = dataset_repo.find_by_id(dataset_version.dataset_id)
     if not dataset:
         raise ValueError(f"Dataset {dataset_version.dataset_id} not found")
 
-    validated_raw_repo_ids = dataset.validated_raw_repo_ids or []
+    # Use repo_ci_providers keys as validated repo IDs
+    validated_raw_repo_ids = list(dataset.repo_ci_providers.keys())
     if not validated_raw_repo_ids:
         version_repo.mark_completed(version_id)
         return {"status": "completed", "message": "No validated repos to process"}

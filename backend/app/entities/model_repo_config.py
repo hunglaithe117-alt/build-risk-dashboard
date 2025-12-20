@@ -26,6 +26,11 @@ class ModelRepoConfig(FeatureConfigBase):
         description="Full repository name (e.g., 'owner/repo')",
     )
 
+    ci_provider: str = Field(
+        ...,
+        description="CI/CD provider name (e.g., github_actions, travis_ci)",
+    )
+
     # User ownership
     user_id: PyObjectId = Field(
         ...,

@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Set
 
-from .base import FrameworkParser, ParsedLog
-from . import python as python_parsers
-from . import ruby as ruby_parsers
+from . import cpp as cpp_parsers
+from . import go as go_parsers
 from . import java as java_parsers
 from . import javascript as javascript_parsers
-from . import go as go_parsers
-from . import cpp as cpp_parsers
+from . import python as python_parsers
+from . import ruby as ruby_parsers
+from .base import FrameworkParser, ParsedLog
 
 
 class LogParserRegistry:
@@ -40,7 +40,6 @@ class LogParserRegistry:
         self._register_parsers("typescript", javascript_parsers.PARSERS)  # Same as JS
         self._register_parsers("go", go_parsers.PARSERS)
         self._register_parsers("cpp", cpp_parsers.PARSERS)
-        self._register_parsers("c++", cpp_parsers.PARSERS)  # Alias
 
     def _register_parsers(self, language: str, parsers: List[FrameworkParser]) -> None:
         """Register parsers for a language."""
@@ -54,9 +53,7 @@ class LogParserRegistry:
 
     def get_frameworks_by_language(self) -> Dict[str, List[str]]:
         """Get frameworks grouped by language."""
-        return {
-            lang: [p.name for p in parsers] for lang, parsers in self._parsers.items()
-        }
+        return {lang: [p.name for p in parsers] for lang, parsers in self._parsers.items()}
 
     def get_languages(self) -> List[str]:
         """Get list of supported languages."""
@@ -79,9 +76,7 @@ class LogParserRegistry:
         Returns:
             ParsedLog with extracted metrics, or empty result if no match
         """
-        allowed = (
-            {f.lower() for f in allowed_frameworks} if allowed_frameworks else None
-        )
+        allowed = {f.lower() for f in allowed_frameworks} if allowed_frameworks else None
 
         # Build ordered list of parsers to try
         parsers_to_try: List[FrameworkParser] = []

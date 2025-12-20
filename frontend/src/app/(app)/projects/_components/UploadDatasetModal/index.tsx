@@ -305,6 +305,9 @@ export function UploadDatasetModal({
                                 >
                                     Cancel
                                 </Button>
+                            ) : validationStatus === "completed" ? (
+                                // Hide back button when validation is completed
+                                null
                             ) : (
                                 <Button
                                     variant="outline"

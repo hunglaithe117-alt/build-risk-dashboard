@@ -142,19 +142,44 @@ export function FeatureConfigForm({
         // If options are available, use Select
         if (field.options && field.options.length > 0) {
             if (field.type === "list") {
-                // Multi-select as comma-separated for now (simplified)
+                // Multi-select with clickable badges
                 const arrayValue = (currentValue as string[]) || [];
+
+                const toggleOption = (option: string) => {
+                    if (disabled) return;
+                    const lowerOption = option.toLowerCase();
+                    const newValue = arrayValue.includes(lowerOption)
+                        ? arrayValue.filter((v) => v !== lowerOption)
+                        : [...arrayValue, lowerOption];
+                    handleConfigChange(field.name, newValue);
+                };
+
                 return (
-                    <Input
-                        type="text"
-                        placeholder={`Choose from: ${field.options.slice(0, 3).join(", ")}...`}
-                        value={arrayValue.join(", ")}
-                        onChange={(e) =>
-                            handleConfigChange(field.name, parseArrayValue(e.target.value))
-                        }
-                        disabled={disabled}
-                        className="flex-1"
-                    />
+                    <div className="flex flex-col gap-2">
+                        {/* Option badges grid */}
+                        <div className="flex flex-wrap gap-1.5">
+                            {field.options.map((option) => {
+                                const isSelected = arrayValue.includes(option.toLowerCase());
+                                return (
+                                    <Badge
+                                        key={option}
+                                        variant={isSelected ? "default" : "outline"}
+                                        className={`cursor-pointer transition-colors ${disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-primary/80"
+                                            } ${isSelected ? "" : "hover:bg-muted"}`}
+                                        onClick={() => toggleOption(option)}
+                                    >
+                                        {option}
+                                    </Badge>
+                                );
+                            })}
+                        </div>
+                        {/* Selected count */}
+                        {arrayValue.length > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                                {arrayValue.length} selected: {arrayValue.join(", ")}
+                            </span>
+                        )}
+                    </div>
                 );
             } else {
                 // Single select

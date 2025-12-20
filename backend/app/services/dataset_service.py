@@ -359,3 +359,186 @@ class DatasetService:
 
         # Delete the dataset document
         self.repo.delete_one(dataset_id)
+
+    def get_dataset_builds(
+        self,
+        dataset_id: str,
+        user_id: str,
+        role: str = "user",
+        skip: int = 0,
+        limit: int = 50,
+        status_filter: Optional[str] = None,
+    ) -> dict:
+        """
+        List builds for a dataset with enriched details from RawBuildRun.
+
+        Returns paginated list of builds with RawBuildRun enrichment.
+        """
+        from app.repositories.raw_build_run import RawBuildRunRepository
+
+        # Access check and dataset existence
+        self.get_dataset(dataset_id, user_id, role=role)
+
+        raw_build_repo = RawBuildRunRepository(self.db)
+        dataset_oid = ObjectId(dataset_id)
+
+        # Build query
+        query: Dict = {"dataset_id": dataset_oid}
+        if status_filter:
+            query["status"] = status_filter
+
+        # Get total and items
+        total = self.build_repo.count_by_query(query)
+        builds = self.build_repo.find_by_query(
+            query, skip=skip, limit=limit, sort_by="validated_at"
+        )
+
+        items = []
+        for build in builds:
+            build_item = {
+                "id": str(build.id),
+                "build_id_from_csv": build.build_id_from_csv,
+                "repo_name_from_csv": build.repo_name_from_csv,
+                "status": build.status,
+                "validation_error": build.validation_error,
+                "validated_at": build.validated_at,
+            }
+
+            # Enrich with RawBuildRun data if available
+            if build.workflow_run_id:
+                raw_build = raw_build_repo.find_by_id(build.workflow_run_id)
+                if raw_build:
+                    build_item.update(
+                        {
+                            "build_number": raw_build.build_number,
+                            "branch": raw_build.branch,
+                            "commit_sha": raw_build.commit_sha,
+                            "commit_message": raw_build.commit_message,
+                            "commit_author": raw_build.commit_author,
+                            "conclusion": raw_build.conclusion,
+                            "started_at": raw_build.started_at,
+                            "completed_at": raw_build.completed_at,
+                            "duration_seconds": raw_build.duration_seconds,
+                            "logs_available": raw_build.logs_available,
+                            "web_url": raw_build.web_url,
+                        }
+                    )
+
+            items.append(build_item)
+
+        return {
+            "items": items,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+        }
+
+    def get_dataset_builds_stats(
+        self,
+        dataset_id: str,
+        user_id: str,
+        role: str = "user",
+    ) -> dict:
+        """
+        Get aggregated build stats for charts.
+
+        Returns status breakdown, conclusion breakdown, builds per repo, duration stats,
+        and logs availability statistics.
+        """
+        # Access check (raises if not permitted)
+        self.get_dataset(dataset_id, user_id, role=role)
+
+        dataset_oid = ObjectId(dataset_id)
+
+        # Status breakdown (for pie chart)
+        status_pipeline = [
+            {"$match": {"dataset_id": dataset_oid}},
+            {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+        ]
+        status_counts = list(self.db.dataset_builds.aggregate(status_pipeline))
+        status_breakdown = {item["_id"]: item["count"] for item in status_counts}
+
+        # Get validated builds for conclusion breakdown
+        validated_builds = list(
+            self.db.dataset_builds.find(
+                {"dataset_id": dataset_oid, "status": "found", "workflow_run_id": {"$ne": None}},
+                {"workflow_run_id": 1},
+            )
+        )
+
+        workflow_run_ids = [
+            b["workflow_run_id"] for b in validated_builds if b.get("workflow_run_id")
+        ]
+
+        # Conclusion breakdown from RawBuildRun
+        conclusion_breakdown = {}
+        if workflow_run_ids:
+            conclusion_pipeline = [
+                {"$match": {"_id": {"$in": workflow_run_ids}}},
+                {"$group": {"_id": "$conclusion", "count": {"$sum": 1}}},
+            ]
+            conclusion_counts = list(self.db.raw_build_runs.aggregate(conclusion_pipeline))
+            conclusion_breakdown = {item["_id"]: item["count"] for item in conclusion_counts}
+
+        # Builds per repo (for bar chart)
+        repo_pipeline = [
+            {"$match": {"dataset_id": dataset_oid, "status": "found"}},
+            {"$group": {"_id": "$repo_name_from_csv", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 10},
+        ]
+        repo_counts = list(self.db.dataset_builds.aggregate(repo_pipeline))
+        builds_per_repo = [{"repo": item["_id"], "count": item["count"]} for item in repo_counts]
+
+        # Duration stats
+        avg_duration = None
+        if workflow_run_ids:
+            duration_result = list(
+                self.db.raw_build_runs.aggregate(
+                    [
+                        {
+                            "$match": {
+                                "_id": {"$in": workflow_run_ids},
+                                "duration_seconds": {"$ne": None},
+                            }
+                        },
+                        {"$group": {"_id": None, "avg": {"$avg": "$duration_seconds"}}},
+                    ]
+                )
+            )
+            if duration_result:
+                avg_duration = duration_result[0]["avg"]
+
+        # Logs availability
+        logs_stats = {"available": 0, "unavailable": 0, "expired": 0}
+        if workflow_run_ids:
+            logs_pipeline = [
+                {"$match": {"_id": {"$in": workflow_run_ids}}},
+                {
+                    "$group": {
+                        "_id": None,
+                        "available": {
+                            "$sum": {"$cond": [{"$eq": ["$logs_available", True]}, 1, 0]}
+                        },
+                        "expired": {"$sum": {"$cond": [{"$eq": ["$logs_expired", True]}, 1, 0]}},
+                        "total": {"$sum": 1},
+                    }
+                },
+            ]
+            logs_result = list(self.db.raw_build_runs.aggregate(logs_pipeline))
+            if logs_result:
+                logs_stats["available"] = logs_result[0].get("available", 0)
+                logs_stats["expired"] = logs_result[0].get("expired", 0)
+                logs_stats["unavailable"] = (
+                    logs_result[0]["total"] - logs_stats["available"] - logs_stats["expired"]
+                )
+
+        return {
+            "status_breakdown": status_breakdown,
+            "conclusion_breakdown": conclusion_breakdown,
+            "builds_per_repo": builds_per_repo,
+            "avg_duration_seconds": avg_duration,
+            "logs_stats": logs_stats,
+            "total_builds": sum(status_breakdown.values()),
+            "found_builds": status_breakdown.get("found", 0),
+        }

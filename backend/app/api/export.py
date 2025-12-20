@@ -11,8 +11,9 @@ Endpoints:
 
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, Path, Query, HTTPException
-from fastapi.responses import StreamingResponse, FileResponse
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi.responses import FileResponse, StreamingResponse
 from pymongo.database import Database
 
 from app.database.mongo import get_db
@@ -93,9 +94,7 @@ def export_builds(
             build_status=build_status,
         ),
         media_type=content_type,
-        headers={
-            "Content-Disposition": f'attachment; filename="{repo_id}_builds.{extension}"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{repo_id}_builds.{extension}"'},
     )
 
 
@@ -192,9 +191,7 @@ def get_export_job_status(
 
     if job.status == "completed":
         result["file_size"] = job.file_size
-        result["file_size_mb"] = (
-            round(job.file_size / (1024 * 1024), 2) if job.file_size else 0
-        )
+        result["file_size_mb"] = round(job.file_size / (1024 * 1024), 2) if job.file_size else 0
         result["completed_at"] = job.completed_at
         result["download_url"] = f"/api/export/jobs/{job_id}/download"
 
@@ -270,9 +267,7 @@ def list_export_jobs(
                 "created_at": j.created_at,
                 "completed_at": j.completed_at,
                 "download_url": (
-                    f"/api/export/jobs/{j.id}/download"
-                    if j.status == "completed"
-                    else None
+                    f"/api/export/jobs/{j.id}/download" if j.status == "completed" else None
                 ),
             }
             for j in jobs
@@ -296,57 +291,14 @@ def preview_export(
 
     Returns count, sample rows, and available features.
     """
-    service = ExportService(db)
-
-    count = service.estimate_row_count(
-        repo_id=repo_id,
-        start_date=start_date,
-        end_date=end_date,
-        build_status=build_status,
-    )
-    use_async = service.should_use_background_job(
-        repo_id=repo_id,
-        start_date=start_date,
-        end_date=end_date,
-        build_status=build_status,
-    )
-
-    # Get sample rows (first 5)
-    from app.services.export_service import ExportSource
-
-    query = service._build_query(
-        ExportSource.MODEL_BUILDS,
-        repo_id=repo_id,
-        start_date=start_date,
-        end_date=end_date,
-        build_status=build_status,
-    )
-    sample_docs = list(
-        service._get_collection(ExportSource.MODEL_BUILDS)
-        .find(query)
-        .sort("created_at", 1)
-        .limit(5)
-    )
+    export_service = ExportService(db)
 
     feature_list = features.split(",") if features else None
-    sample_rows = [service._format_row(doc, feature_list) for doc in sample_docs]
 
-    # Get available features
-    available_features = list(
-        service._get_all_feature_keys(
-            ExportSource.MODEL_BUILDS,
-            repo_id=repo_id,
-            start_date=start_date,
-            end_date=end_date,
-            build_status=build_status,
-        )
+    return export_service.get_export_preview(
+        repo_id=repo_id,
+        features=feature_list,
+        start_date=start_date,
+        end_date=end_date,
+        build_status=build_status,
     )
-
-    return {
-        "total_rows": count,
-        "use_async_recommended": use_async,
-        "async_threshold": 1000,
-        "sample_rows": sample_rows,
-        "available_features": sorted(available_features),
-        "feature_count": len(available_features),
-    }

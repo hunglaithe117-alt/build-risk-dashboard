@@ -1,51 +1,20 @@
 """User settings API endpoints."""
 
-from typing import Optional
-
 from bson import ObjectId
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from pymongo.database import Database
 
 from app.database.mongo import get_db
+from app.dtos import (
+    NotificationPreferencesDTO,
+    UpdateUserSettingsRequest,
+    UserSettingsResponse,
+)
 from app.entities.user_settings import NotificationPreferences
 from app.middleware.auth import get_current_user
 from app.repositories.user_settings import UserSettingsRepository
 
 router = APIRouter(prefix="/user-settings", tags=["User Settings"])
-
-
-# ============================================================================
-# DTOs
-# ============================================================================
-
-
-class NotificationPreferencesDTO(BaseModel):
-    """DTO for notification preferences."""
-
-    email_on_version_complete: bool = True
-    email_on_scan_complete: bool = True
-    email_on_version_failed: bool = True
-    browser_notifications: bool = True
-
-
-class UserSettingsResponse(BaseModel):
-    """Response DTO for user settings."""
-
-    user_id: str
-    notification_preferences: NotificationPreferencesDTO
-    timezone: str
-    language: str
-    created_at: str
-    updated_at: str
-
-
-class UpdateUserSettingsRequest(BaseModel):
-    """Request DTO to update user settings."""
-
-    notification_preferences: Optional[NotificationPreferencesDTO] = None
-    timezone: Optional[str] = None
-    language: Optional[str] = None
 
 
 # ============================================================================

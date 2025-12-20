@@ -182,21 +182,12 @@ def gh_lang(repo: RepoInput) -> Optional[str]:
     description="CI/CD provider name (e.g., GitHub Actions, Travis CI)",
     category=FeatureCategory.METADATA,
     data_type=FeatureDataType.STRING,
-    required_resources=[FeatureResource.REPO_CONFIG],
+    required_resources=[FeatureResource.BUILD_RUN],
 )
 @tag(group="metadata")
-@requires_config(
-    ci_provider={
-        "type": "string",
-        "scope": "repo",
-        "required": True,
-        "description": "CI/CD provider (e.g., github_actions, travis_ci)",
-        "default": "github_actions",
-    }
-)
-def ci_provider(feature_config: FeatureConfigInput) -> str:
+def ci_provider(build_run: BuildRunInput) -> str:
     """CI/CD provider name."""
-    return feature_config.get("ci_provider", "github_actions", scope="repo")
+    return build_run.ci_provider
 
 
 @feature_metadata(

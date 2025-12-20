@@ -103,7 +103,6 @@ class DatasetProject(BaseEntity):
     validation_stats: ValidationStats = Field(default_factory=ValidationStats)
     validation_error: Optional[str] = None
 
-    validated_raw_repo_ids: List[PyObjectId] = Field(default_factory=list)
     repo_ci_providers: Dict[PyObjectId, CIProvider] = Field(
         default_factory=dict,
         description="CI provider per repo: {raw_repo_id: ci_provider}",

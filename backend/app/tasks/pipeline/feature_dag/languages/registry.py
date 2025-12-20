@@ -17,7 +17,6 @@ class LanguageRegistry:
         "typescript": JavascriptStrategy(),
         "go": GoStrategy(),
         "cpp": CppStrategy(),
-        "c++": CppStrategy(),
     }
     _generic = GenericStrategy()
 

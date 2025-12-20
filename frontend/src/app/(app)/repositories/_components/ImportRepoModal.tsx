@@ -417,14 +417,10 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
             source_languages: string[];
         }) => {
             const languageSet = new Set(config.source_languages.map((l) => l.toLowerCase()));
-            // Get frameworks from API data based on selected languages
             const fromApi = Array.from(
                 new Set(
                     Array.from(languageSet).flatMap((lang) => {
-                        // Try exact match first, then try aliases (e.g., "c++" -> "cpp")
-                        return frameworksByLang[lang] ||
-                            frameworksByLang[lang.replace("+", "p")] ||
-                            [];
+                        return frameworksByLang[lang] || [];
                     })
                 )
             );

@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Optional, Set
+from typing import Optional, Set
 
 from fastapi import (
     APIRouter,
@@ -11,15 +11,22 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from pydantic import BaseModel
 from pymongo.database import Database
 
 from app.database.mongo import get_db
-
-# from app.dtos.github import (
-#     GithubInstallationListResponse,
-#     GithubInstallationResponse,
-# )
+from app.dtos import (
+    FailedResultsListResponse,
+    RetryResultRequest,
+    ScanDetailResponse,
+    ScanResponse,
+    ScanResultResponse,
+    ScanResultsListResponse,
+    ScansListResponse,
+    ScanSummaryResponse,
+    SonarWebhookPayload,
+    StartScanRequest,
+    ToolsListResponse,
+)
 from app.middleware.auth import get_current_user
 from app.middleware.rbac import require_view_scans
 from app.middleware.require_dataset_manager import require_dataset_manager
@@ -33,26 +40,6 @@ router = APIRouter(prefix="/integrations", tags=["Integrations"])
 # GitHub Installations (DEPRECATED/REMOVED)
 # We now use single-tenant config GITHUB_INSTALLATION_ID.
 # =============================================================================
-
-
-# =============================================================================
-# Scanning Tools (new)
-# =============================================================================
-
-
-class ToolInfoResponse(BaseModel):
-    type: str
-    display_name: str
-    description: str
-    scan_mode: str
-    is_available: bool
-    config: dict
-    scan_types: List[str]
-    metric_count: int
-
-
-class ToolsListResponse(BaseModel):
-    tools: List[ToolInfoResponse]
 
 
 @router.get("/tools", response_model=ToolsListResponse)
@@ -69,25 +56,6 @@ def list_tools(
 # =============================================================================
 # Dataset Scanning
 # =============================================================================
-
-
-class StartScanRequest(BaseModel):
-    tool_type: str  # "sonarqube" or "trivy"
-    scan_config: Optional[str] = None  # Default config for all commits
-
-
-class ScanResponse(BaseModel):
-    id: str
-    dataset_id: str
-    tool_type: str
-    status: str
-    total_commits: int
-    scanned_commits: int
-    failed_commits: int
-    pending_commits: int
-    progress_percentage: float
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
 
 
 @router.post("/datasets/{dataset_id}/scans", response_model=ScanResponse)
@@ -123,11 +91,6 @@ def start_scan(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-class ScansListResponse(BaseModel):
-    scans: List[ScanResponse]
-    total: int
-
-
 @router.get("/datasets/{dataset_id}/scans", response_model=ScansListResponse)
 def list_scans(
     dataset_id: str,
@@ -158,22 +121,6 @@ def list_scans(
         ],
         "total": total,
     }
-
-
-class ScanDetailResponse(BaseModel):
-    id: str
-    dataset_id: str
-    tool_type: str
-    status: str
-    total_commits: int
-    scanned_commits: int
-    failed_commits: int
-    pending_commits: int
-    progress_percentage: float
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    results_summary: Optional[dict] = None
-    error_message: Optional[str] = None
 
 
 @router.get("/datasets/{dataset_id}/scans/{scan_id}", response_model=ScanDetailResponse)
@@ -226,22 +173,6 @@ def cancel_scan(
     return {"status": "cancelled"}
 
 
-class ScanResultResponse(BaseModel):
-    id: str
-    commit_sha: str
-    repo_full_name: str
-    row_indices: List[int]
-    status: str
-    results: dict
-    error_message: Optional[str] = None
-    scan_duration_ms: Optional[int] = None
-
-
-class ScanResultsListResponse(BaseModel):
-    results: List[ScanResultResponse]
-    total: int
-
-
 @router.get(
     "/datasets/{dataset_id}/scans/{scan_id}/results",
     response_model=ScanResultsListResponse,
@@ -279,16 +210,6 @@ def get_scan_results(
     }
 
 
-class ScanSummaryResponse(BaseModel):
-    scan_id: str
-    tool_type: str
-    status: str
-    progress: float
-    total_commits: int
-    status_counts: dict
-    aggregated_metrics: dict
-
-
 @router.get(
     "/datasets/{dataset_id}/scans/{scan_id}/summary",
     response_model=ScanSummaryResponse,
@@ -312,20 +233,6 @@ def get_scan_summary(
 # =============================================================================
 # Failed Results and Retry
 # =============================================================================
-
-
-class FailedResultResponse(BaseModel):
-    id: str
-    commit_sha: str
-    repo_full_name: str
-    error_message: Optional[str] = None
-    retry_count: int = 0
-    override_config: Optional[str] = None
-
-
-class FailedResultsListResponse(BaseModel):
-    results: List[FailedResultResponse]
-    total: int
 
 
 @router.get(
@@ -359,10 +266,6 @@ def get_failed_results(
         ],
         "total": len(results),
     }
-
-
-class RetryResultRequest(BaseModel):
-    override_config: Optional[str] = None  # Per-commit config override
 
 
 @router.post(
@@ -402,12 +305,6 @@ def retry_result(
 # =============================================================================
 # SonarQube Webhook
 # =============================================================================
-
-
-class SonarWebhookPayload(BaseModel):
-    project: dict
-    status: str
-    analysedAt: Optional[str] = None
 
 
 @router.post("/webhooks/sonarqube")

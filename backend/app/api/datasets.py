@@ -122,24 +122,6 @@ def delete_dataset(
     return None
 
 
-@router.get("/{dataset_id}/repos")
-def list_dataset_repos(
-    dataset_id: str = PathParam(..., description="Dataset id"),
-    db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
-):
-    """
-    List repositories configured for this dataset.
-
-    Returns repos from dataset_repo_configs with their raw_repo_id
-    for drill-down to RawBuildRun via /repos/{raw_repo_id}/builds.
-    """
-    user_id = str(current_user["_id"])
-    role = current_user.get("role", "user")
-    service = DatasetService(db)
-    return service.list_repos(dataset_id, user_id, role=role)
-
-
 @router.get("/{dataset_id}/builds")
 def list_dataset_builds(
     dataset_id: str = PathParam(..., description="Dataset id"),
@@ -152,67 +134,18 @@ def list_dataset_builds(
     current_user: dict = Depends(get_current_user),
 ):
     """List builds for a dataset with enriched details from RawBuildRun."""
-    from bson import ObjectId
-
-    from app.repositories.raw_build_run import RawBuildRunRepository
-
-    raw_build_repo = RawBuildRunRepository(db)
     service = DatasetService(db)
     user_id = str(current_user["_id"])
     role = current_user.get("role", "user")
 
-    # Access check and dataset existence
-    service.get_dataset(dataset_id, user_id, role=role)
-
-    # Build query
-    query = {"dataset_id": ObjectId(dataset_id)}
-    if status_filter:
-        query["status"] = status_filter
-
-    # Get total and items
-    total = db.dataset_builds.count_documents(query)
-    cursor = db.dataset_builds.find(query).skip(skip).limit(limit).sort("validated_at", -1)
-
-    items = []
-    for doc in cursor:
-        build_item = {
-            "id": str(doc["_id"]),
-            "build_id_from_csv": doc.get("build_id_from_csv"),
-            "repo_name_from_csv": doc.get("repo_name_from_csv"),
-            "status": doc.get("status"),
-            "validation_error": doc.get("validation_error"),
-            "validated_at": doc.get("validated_at"),
-        }
-
-        # Enrich with RawBuildRun data if available
-        workflow_run_id = doc.get("workflow_run_id")
-        if workflow_run_id:
-            raw_build = raw_build_repo.find_by_id(workflow_run_id)
-            if raw_build:
-                build_item.update(
-                    {
-                        "build_number": raw_build.build_number,
-                        "branch": raw_build.branch,
-                        "commit_sha": raw_build.commit_sha,
-                        "commit_message": raw_build.commit_message,
-                        "commit_author": raw_build.commit_author,
-                        "conclusion": raw_build.conclusion,
-                        "started_at": raw_build.started_at,
-                        "completed_at": raw_build.completed_at,
-                        "duration_seconds": raw_build.duration_seconds,
-                        "logs_available": raw_build.logs_available,
-                        "web_url": raw_build.web_url,
-                    }
-                )
-
-        items.append(build_item)
-
-    return {
-        "items": items,
-        "total": total,
-        "skip": skip,
-        "limit": limit,
-    }
+    return service.get_dataset_builds(
+        dataset_id=dataset_id,
+        user_id=user_id,
+        role=role,
+        skip=skip,
+        limit=limit,
+        status_filter=status_filter,
+    )
 
 
 @router.get("/{dataset_id}/builds/stats")
@@ -222,101 +155,12 @@ def get_dataset_builds_stats(
     current_user: dict = Depends(get_current_user),
 ):
     """Get aggregated build stats for charts."""
-    from bson import ObjectId
-
     service = DatasetService(db)
     user_id = str(current_user["_id"])
     role = current_user.get("role", "user")
-    # Access check (raises if not permitted)
-    service.get_dataset(dataset_id, user_id, role=role)
 
-    oid = ObjectId(dataset_id)
-
-    # Status breakdown (for pie chart)
-    status_pipeline = [
-        {"$match": {"dataset_id": oid}},
-        {"$group": {"_id": "$status", "count": {"$sum": 1}}},
-    ]
-    status_counts = list(db.dataset_builds.aggregate(status_pipeline))
-    status_breakdown = {item["_id"]: item["count"] for item in status_counts}
-
-    # Get validated builds for conclusion breakdown
-    validated_builds = list(
-        db.dataset_builds.find(
-            {"dataset_id": oid, "status": "found", "workflow_run_id": {"$ne": None}},
-            {"workflow_run_id": 1},
-        )
+    return service.get_dataset_builds_stats(
+        dataset_id=dataset_id,
+        user_id=user_id,
+        role=role,
     )
-
-    workflow_ids = [b["workflow_run_id"] for b in validated_builds if b.get("workflow_run_id")]
-
-    # Conclusion breakdown from RawBuildRun
-    conclusion_breakdown = {}
-    if workflow_ids:
-        conclusion_pipeline = [
-            {"$match": {"_id": {"$in": workflow_ids}}},
-            {"$group": {"_id": "$conclusion", "count": {"$sum": 1}}},
-        ]
-        conclusion_counts = list(db.raw_build_runs.aggregate(conclusion_pipeline))
-        conclusion_breakdown = {item["_id"]: item["count"] for item in conclusion_counts}
-
-    # Builds per repo (for bar chart)
-    repo_pipeline = [
-        {"$match": {"dataset_id": oid, "status": "found"}},
-        {"$group": {"_id": "$repo_name_from_csv", "count": {"$sum": 1}}},
-        {"$sort": {"count": -1}},
-        {"$limit": 10},
-    ]
-    repo_counts = list(db.dataset_builds.aggregate(repo_pipeline))
-    builds_per_repo = [{"repo": item["_id"], "count": item["count"]} for item in repo_counts]
-
-    # Duration stats
-    avg_duration = None
-    if workflow_ids:
-        duration_result = list(
-            db.raw_build_runs.aggregate(
-                [
-                    {
-                        "$match": {
-                            "_id": {"$in": workflow_ids},
-                            "duration_seconds": {"$ne": None},
-                        }
-                    },
-                    {"$group": {"_id": None, "avg": {"$avg": "$duration_seconds"}}},
-                ]
-            )
-        )
-        if duration_result:
-            avg_duration = duration_result[0]["avg"]
-
-    # Logs availability
-    logs_stats = {"available": 0, "unavailable": 0, "expired": 0}
-    if workflow_ids:
-        logs_pipeline = [
-            {"$match": {"_id": {"$in": workflow_ids}}},
-            {
-                "$group": {
-                    "_id": None,
-                    "available": {"$sum": {"$cond": [{"$eq": ["$logs_available", True]}, 1, 0]}},
-                    "expired": {"$sum": {"$cond": [{"$eq": ["$logs_expired", True]}, 1, 0]}},
-                    "total": {"$sum": 1},
-                }
-            },
-        ]
-        logs_result = list(db.raw_build_runs.aggregate(logs_pipeline))
-        if logs_result:
-            logs_stats["available"] = logs_result[0].get("available", 0)
-            logs_stats["expired"] = logs_result[0].get("expired", 0)
-            logs_stats["unavailable"] = (
-                logs_result[0]["total"] - logs_stats["available"] - logs_stats["expired"]
-            )
-
-    return {
-        "status_breakdown": status_breakdown,
-        "conclusion_breakdown": conclusion_breakdown,
-        "builds_per_repo": builds_per_repo,
-        "avg_duration_seconds": avg_duration,
-        "logs_stats": logs_stats,
-        "total_builds": sum(status_breakdown.values()),
-        "found_builds": status_breakdown.get("found", 0),
-    }

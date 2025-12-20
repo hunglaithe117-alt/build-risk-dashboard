@@ -1,9 +1,21 @@
 """Data Transfer Objects (DTOs) for API requests and responses"""
 
+from .admin_user import (
+    AdminUserCreateRequest,
+    AdminUserListResponse,
+    AdminUserResponse,
+    AdminUserRoleUpdateRequest,
+    AdminUserUpdateRequest,
+)
 from .auth import (
     AuthVerifyResponse,
     GithubLoginRequest,
     UserLoginResponse,
+)
+from .build import (
+    BuildDetail,
+    BuildListResponse,
+    BuildSummary,
 )
 from .dashboard import (
     DashboardMetrics,
@@ -11,10 +23,36 @@ from .dashboard import (
     DashboardTrendPoint,
     RepoDistributionEntry,
 )
-from .build import (
-    BuildDetail,
-    BuildListResponse,
-    BuildSummary,
+from .dataset import (
+    DatasetCreateRequest,
+    DatasetListResponse,
+    DatasetResponse,
+    DatasetUpdateRequest,
+    RepoValidationItem,
+    RepoValidationResponse,
+)
+from .dataset_repo import (
+    DatasetRepoListResponse,
+    DatasetRepoSummary,
+)
+from .dataset_template import (
+    DatasetTemplateListResponse,
+    DatasetTemplateResponse,
+)
+from .dataset_version import (
+    CreateVersionRequest,
+    VersionListResponse,
+    VersionResponse,
+)
+from .feature import (
+    DAGEdgeResponse,
+    DAGNodeResponse,
+    DAGResponse,
+    ExecutionLevelResponse,
+    FeatureDefinitionResponse,
+    FeatureListResponse,
+    FeatureSummaryResponse,
+    ValidationResponse,
 )
 from .github import (
     GithubAuthorizeResponse,
@@ -22,6 +60,28 @@ from .github import (
     # GithubInstallationResponse,
     GithubOAuthInitRequest,
     GithubRepositoryStatus,
+)
+from .integration import (
+    FailedResultResponse,
+    FailedResultsListResponse,
+    RetryResultRequest,
+    ScanDetailResponse,
+    ScanResponse,
+    ScanResultResponse,
+    ScanResultsListResponse,
+    ScansListResponse,
+    ScanSummaryResponse,
+    SonarWebhookPayload,
+    StartScanRequest,
+    ToolInfoResponse,
+    ToolsListResponse,
+)
+from .notification import (
+    CreateNotificationRequest,
+    MarkReadResponse,
+    NotificationListResponse,
+    NotificationResponse,
+    UnreadCountResponse,
 )
 from .repository import (
     RepoDetailResponse,
@@ -33,65 +93,32 @@ from .repository import (
     RepoSuggestionListResponse,
     RepoUpdateRequest,
 )
+from .settings import (
+    ApplicationSettingsResponse,
+    ApplicationSettingsUpdateRequest,
+    CircleCISettingsDto,
+    NotificationSettingsDto,
+    SonarQubeSettingsDto,
+    TravisCISettingsDto,
+    TrivySettingsDto,
+)
+from .token import (
+    TokenCreateRequest,
+    TokenListResponse,
+    TokenPoolStatusResponse,
+    TokenResponse,
+    TokenUpdateRequest,
+    TokenVerifyResponse,
+)
 from .user import (
     OAuthIdentityResponse,
     UserResponse,
     UserUpdate,
 )
-from .dataset import (
-    DatasetResponse,
-    DatasetListResponse,
-    DatasetCreateRequest,
-    DatasetUpdateRequest,
-    RepoValidationItem,
-    RepoValidationResponse,
-)
-from .dataset_template import (
-    DatasetTemplateResponse,
-    DatasetTemplateListResponse,
-)
-from .token import (
-    TokenCreateRequest,
-    TokenUpdateRequest,
-    TokenResponse,
-    TokenPoolStatusResponse,
-    TokenVerifyResponse,
-    TokenListResponse,
-)
-from .feature import (
-    FeatureDefinitionResponse,
-    FeatureListResponse,
-    FeatureSummaryResponse,
-    ValidationResponse,
-    DAGNodeResponse,
-    DAGEdgeResponse,
-    ExecutionLevelResponse,
-    DAGResponse,
-)
-from .dataset_version import (
-    CreateVersionRequest,
-    VersionResponse,
-    VersionListResponse,
-)
-from .dataset_repo import (
-    DatasetRepoSummary,
-    DatasetRepoListResponse,
-)
-from .settings import (
-    ApplicationSettingsResponse,
-    ApplicationSettingsUpdateRequest,
-    CircleCISettingsDto,
-    TravisCISettingsDto,
-    SonarQubeSettingsDto,
-    TrivySettingsDto,
-    NotificationSettingsDto,
-)
-from .admin_user import (
-    AdminUserResponse,
-    AdminUserListResponse,
-    AdminUserCreateRequest,
-    AdminUserUpdateRequest,
-    AdminUserRoleUpdateRequest,
+from .user_settings import (
+    NotificationPreferencesDTO,
+    UpdateUserSettingsRequest,
+    UserSettingsResponse,
 )
 
 __all__ = [
@@ -174,4 +201,28 @@ __all__ = [
     "AdminUserCreateRequest",
     "AdminUserUpdateRequest",
     "AdminUserRoleUpdateRequest",
+    # Notification
+    "NotificationResponse",
+    "NotificationListResponse",
+    "UnreadCountResponse",
+    "MarkReadResponse",
+    "CreateNotificationRequest",
+    # User Settings
+    "NotificationPreferencesDTO",
+    "UserSettingsResponse",
+    "UpdateUserSettingsRequest",
+    # Integration / Scan
+    "ToolInfoResponse",
+    "ToolsListResponse",
+    "StartScanRequest",
+    "ScanResponse",
+    "ScansListResponse",
+    "ScanDetailResponse",
+    "ScanResultResponse",
+    "ScanResultsListResponse",
+    "ScanSummaryResponse",
+    "FailedResultResponse",
+    "FailedResultsListResponse",
+    "RetryResultRequest",
+    "SonarWebhookPayload",
 ]

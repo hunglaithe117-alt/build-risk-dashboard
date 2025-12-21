@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from pymongo.database import Database
 
 from app.config import settings
-from app.repositories.sonar_scan_pending import SonarScanPendingRepository
+from app.repositories.sonar_commit_scan import SonarCommitScanRepository
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class SonarWebhookService:
 
     def __init__(self, db: Database):
         self.db = db
-        self.pending_repo = SonarScanPendingRepository(db)
+        self.scan_repo = SonarCommitScanRepository(db)
 
     def validate_signature(
         self,
@@ -72,93 +72,98 @@ class SonarWebhookService:
         if task_status != "SUCCESS":
             logger.warning(f"SonarQube task not successful: {task_status}")
 
-        # Find pending scan (pipeline-initiated)
-        pending = self.pending_repo.find_pending_by_component_key(component_key)
+        # Find scan record (pipeline-initiated)
+        scan_record = self.scan_repo.find_pending_by_component_key(component_key)
 
-        if pending:
+        if scan_record:
             # Pipeline-initiated scan - use export_metrics_from_webhook
             from app.tasks.sonar import export_metrics_from_webhook
 
-            export_metrics_from_webhook.delay(component_key=component_key)
+            export_metrics_from_webhook.delay(
+                component_key=component_key,
+                analysis_status=task_status or "SUCCESS",
+            )
 
             logger.info(
                 f"Queued metrics export for pipeline scan: {component_key}, "
-                f"build {pending.build_id}"
+                f"commit {scan_record.commit_sha[:8]}"
             )
             return {
                 "received": True,
                 "component_key": component_key,
                 "source": "pipeline",
-                "build_id": str(pending.build_id),
+                "commit_sha": scan_record.commit_sha,
             }
 
-        # No pending scan found
-        logger.warning(f"No pending scan found for component {component_key}")
+        # No scan record found
+        logger.warning(f"No scan record found for component {component_key}")
         return {
             "received": True,
             "component_key": component_key,
             "tracked": False,
         }
 
-    def get_pending_scan(self, component_key: str) -> Dict[str, Any]:
+    def get_scan_record(self, component_key: str) -> Dict[str, Any]:
         """
-        Get pending scan status by component key.
+        Get scan record status by component key.
 
         Args:
             component_key: SonarQube project key
 
         Returns:
-            Pending scan info dict.
+            Scan record info dict.
 
         Raises:
             HTTPException: If not found.
         """
-        pending = self.pending_repo.find_by_component_key(component_key)
+        scan_record = self.scan_repo.find_by_component_key(component_key)
 
-        if not pending:
-            raise HTTPException(status_code=404, detail="Pending scan not found")
+        if not scan_record:
+            raise HTTPException(status_code=404, detail="Scan record not found")
 
         return {
             "component_key": component_key,
             "status": (
-                pending.status.value if hasattr(pending.status, "value") else pending.status
+                scan_record.status.value
+                if hasattr(scan_record.status, "value")
+                else scan_record.status
             ),
-            "build_id": str(pending.build_id),
-            "build_type": pending.build_type,
-            "started_at": (pending.started_at.isoformat() if pending.started_at else None),
-            "completed_at": (pending.completed_at.isoformat() if pending.completed_at else None),
-            "has_metrics": pending.metrics is not None,
-            "error_message": pending.error_message,
+            "commit_sha": scan_record.commit_sha,
+            "repo_full_name": scan_record.repo_full_name,
+            "started_at": (scan_record.started_at.isoformat() if scan_record.started_at else None),
+            "completed_at": (
+                scan_record.completed_at.isoformat() if scan_record.completed_at else None
+            ),
+            "has_metrics": scan_record.metrics is not None,
+            "error_message": scan_record.error_message,
         }
 
-    def get_dataset_pending_scans(self, dataset_id: str) -> Dict[str, Any]:
+    def get_version_scans(self, version_id: str) -> Dict[str, Any]:
         """
-        Get all pending scans for a dataset's enrichment builds.
+        Get all scans for a dataset version.
 
         Args:
-            dataset_id: Dataset ID (currently unused, gets all enrichment scans).
+            version_id: DatasetVersion ID.
 
         Returns:
-            Dict with list of pending scans.
+            Dict with list of scans.
         """
-        # Get all pending scans (all are enrichment scans now)
-        pending_scans = list(self.pending_repo.collection.find({}).sort("started_at", -1).limit(50))
+        from bson import ObjectId
+
+        scans = self.scan_repo.find_by_version(ObjectId(version_id))
 
         items = []
-        for scan in pending_scans:
+        for scan in scans:
             items.append(
                 {
-                    "component_key": scan.get("component_key"),
-                    "status": scan.get("status"),
-                    "build_id": str(scan.get("build_id")),
-                    "started_at": (
-                        scan.get("started_at").isoformat() if scan.get("started_at") else None
-                    ),
-                    "completed_at": (
-                        scan.get("completed_at").isoformat() if scan.get("completed_at") else None
-                    ),
-                    "has_metrics": scan.get("metrics") is not None,
-                    "error_message": scan.get("error_message"),
+                    "component_key": scan.component_key,
+                    "status": scan.status.value if hasattr(scan.status, "value") else scan.status,
+                    "commit_sha": scan.commit_sha,
+                    "repo_full_name": scan.repo_full_name,
+                    "started_at": (scan.started_at.isoformat() if scan.started_at else None),
+                    "completed_at": (scan.completed_at.isoformat() if scan.completed_at else None),
+                    "has_metrics": scan.metrics is not None,
+                    "error_message": scan.error_message,
                 }
             )
 

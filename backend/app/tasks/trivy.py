@@ -7,17 +7,31 @@ Tasks:
 
 import logging
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 
 from app.celery_app import celery_app
 from app.database.mongo import get_database
 from app.integrations.tools.trivy import TrivyTool
+from app.paths import WORKTREES_DIR
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
 
 logger = logging.getLogger(__name__)
+
+
+def get_worktree_path(raw_repo_id: str, commit_sha: str) -> Optional[str]:
+    """
+    Derive worktree path from raw_repo_id and commit_sha.
+
+    Follows shared infrastructure pattern from ingestion_tasks.
+    Path format: WORKTREES_DIR / raw_repo_id / commit_sha[:12]
+    """
+    path = WORKTREES_DIR / raw_repo_id / commit_sha[:12]
+    if path.exists():
+        return str(path)
+    return None
 
 
 # =============================================================================
@@ -37,7 +51,7 @@ def start_trivy_scan_for_version_commit(
     version_id: str,
     commit_sha: str,
     repo_full_name: str,
-    worktree_path: str,
+    raw_repo_id: str,
     trivy_config: Dict[str, Any] = None,
     selected_metrics: List[str] = None,
 ):
@@ -51,7 +65,7 @@ def start_trivy_scan_for_version_commit(
         version_id: DatasetVersion ID
         commit_sha: Commit SHA being scanned
         repo_full_name: Repository full name (owner/repo)
-        worktree_path: Path to git worktree to scan
+        raw_repo_id: RawRepository ID - used to derive worktree path
         trivy_config: Optional scan config (scanners, severity, extraArgs)
         selected_metrics: Optional list of metrics to filter
     """
@@ -64,15 +78,23 @@ def start_trivy_scan_for_version_commit(
     trivy_scan_repo = TrivyCommitScanRepository(db)
     enrichment_build_repo = DatasetEnrichmentBuildRepository(db)
 
-    # Create or get scan record
+    # Create or get scan record (stores raw_repo_id for retry)
     scan_record = trivy_scan_repo.create_or_get(
         version_id=ObjectId(version_id),
         commit_sha=commit_sha,
         repo_full_name=repo_full_name,
+        raw_repo_id=ObjectId(raw_repo_id),
         scan_config=trivy_config,
         selected_metrics=selected_metrics,
-        worktree_path=worktree_path,
     )
+
+    # Derive worktree path from raw_repo_id
+    worktree_path = get_worktree_path(raw_repo_id, commit_sha)
+    if not worktree_path:
+        error_msg = f"Worktree not found for {repo_full_name} @ {commit_sha[:8]}"
+        logger.error(error_msg)
+        trivy_scan_repo.mark_failed(scan_record.id, error_msg)
+        raise ValueError(error_msg)
 
     # Mark as scanning
     trivy_scan_repo.mark_scanning(scan_record.id)

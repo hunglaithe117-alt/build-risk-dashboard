@@ -172,6 +172,7 @@ export function useUploadDatasetWizard({
                 dataset = await datasetsApi.update(createdDataset.id, {
                     mapped_fields: mappedFields,
                     ci_provider: ciProviderValue,
+                    build_filters: step1.buildFilters,
                 });
                 setCreatedDataset(dataset);
             } else if (step1.file) {
@@ -185,6 +186,7 @@ export function useUploadDatasetWizard({
                 dataset = await datasetsApi.update(dataset.id, {
                     mapped_fields: mappedFields,
                     ci_provider: ciProviderValue,
+                    build_filters: step1.buildFilters,
                 });
 
                 setCreatedDataset(dataset);

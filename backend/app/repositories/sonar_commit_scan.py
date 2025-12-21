@@ -1,5 +1,5 @@
 """
-SonarScanPending Repository - CRUD operations for pending SonarQube scans.
+SonarCommitScan Repository - CRUD operations for SonarQube commit scans.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -8,94 +8,85 @@ from typing import List, Optional
 from bson import ObjectId
 from pymongo.database import Database
 
-from app.entities.sonar_scan_pending import ScanPendingStatus, SonarScanPending
+from app.entities.sonar_commit_scan import SonarCommitScan, SonarScanStatus
+from app.repositories.base import BaseRepository
 
 
-class SonarScanPendingRepository:
-    """Repository for SonarScanPending records."""
+class SonarCommitScanRepository(BaseRepository[SonarCommitScan]):
+    """Repository for SonarCommitScan entities."""
 
     def __init__(self, db: Database):
-        self.db = db
-        self.collection = db["sonar_scan_pending"]
-
-    def insert_one(self, pending: SonarScanPending) -> SonarScanPending:
-        """Insert a new pending scan record."""
-        doc = pending.model_dump(by_alias=True, exclude={"id"})
-        result = self.collection.insert_one(doc)
-        pending.id = result.inserted_id
-        return pending
+        super().__init__(db, "sonar_commit_scans", SonarCommitScan)
 
     def find_by_version(
         self,
         version_id: ObjectId,
-        status: Optional[ScanPendingStatus] = None,
-    ) -> List[SonarScanPending]:
+        status: Optional[SonarScanStatus] = None,
+    ) -> List[SonarCommitScan]:
         """Find all scans for a version, optionally filtered by status."""
         query = {"dataset_version_id": version_id}
         if status:
             query["status"] = status.value
-        cursor = self.collection.find(query).sort("created_at", -1)
-        return [SonarScanPending(**doc) for doc in cursor]
+        return self.find_many(query, sort=[("created_at", -1)])
 
     def find_by_version_and_commit(
         self,
         version_id: ObjectId,
         commit_sha: str,
-    ) -> Optional[SonarScanPending]:
+    ) -> Optional[SonarCommitScan]:
         """Find scan for specific version + commit."""
-        doc = self.collection.find_one(
+        return self.find_one(
             {
                 "dataset_version_id": version_id,
                 "commit_sha": commit_sha,
             }
         )
-        return SonarScanPending(**doc) if doc else None
 
-    def find_by_component_key(self, component_key: str) -> Optional[SonarScanPending]:
-        """Find pending scan by component key."""
-        doc = self.collection.find_one({"component_key": component_key})
-        return SonarScanPending(**doc) if doc else None
+    def find_by_component_key(self, component_key: str) -> Optional[SonarCommitScan]:
+        """Find scan by component key."""
+        return self.find_one({"component_key": component_key})
 
     def find_pending_by_component_key(
         self,
         component_key: str,
-    ) -> Optional[SonarScanPending]:
+    ) -> Optional[SonarCommitScan]:
         """Find only scanning (not completed) record by component key."""
-        doc = self.collection.find_one(
+        return self.find_one(
             {
                 "component_key": component_key,
                 "status": {
                     "$in": [
-                        ScanPendingStatus.PENDING.value,
-                        ScanPendingStatus.SCANNING.value,
+                        SonarScanStatus.PENDING.value,
+                        SonarScanStatus.SCANNING.value,
                     ]
                 },
             }
         )
-        return SonarScanPending(**doc) if doc else None
 
     def create_or_get(
         self,
         version_id: ObjectId,
         commit_sha: str,
         repo_full_name: str,
+        raw_repo_id: ObjectId,
         component_key: str,
-        repo_url: str,
         scan_config: Optional[dict] = None,
-    ) -> SonarScanPending:
+        selected_metrics: Optional[list] = None,
+    ) -> SonarCommitScan:
         """Create new scan record or return existing."""
         existing = self.find_by_version_and_commit(version_id, commit_sha)
         if existing:
             return existing
 
-        scan = SonarScanPending(
+        scan = SonarCommitScan(
             dataset_version_id=version_id,
             commit_sha=commit_sha,
             repo_full_name=repo_full_name,
+            raw_repo_id=raw_repo_id,
             component_key=component_key,
-            repo_url=repo_url,
             scan_config=scan_config,
-            status=ScanPendingStatus.PENDING,
+            selected_metrics=selected_metrics,
+            status=SonarScanStatus.PENDING,
         )
         return self.insert_one(scan)
 
@@ -105,7 +96,7 @@ class SonarScanPendingRepository:
             {"_id": scan_id},
             {
                 "$set": {
-                    "status": ScanPendingStatus.SCANNING.value,
+                    "status": SonarScanStatus.SCANNING.value,
                     "started_at": datetime.now(timezone.utc),
                 }
             },
@@ -113,16 +104,16 @@ class SonarScanPendingRepository:
 
     def mark_completed(
         self,
-        pending_id: ObjectId,
+        scan_id: ObjectId,
         metrics: dict,
         builds_affected: int = 0,
     ) -> None:
-        """Mark a scan as completed with metrics."""
+        """Mark scan as completed with metrics."""
         self.collection.update_one(
-            {"_id": pending_id},
+            {"_id": scan_id},
             {
                 "$set": {
-                    "status": ScanPendingStatus.COMPLETED.value,
+                    "status": SonarScanStatus.COMPLETED.value,
                     "metrics": metrics,
                     "builds_affected": builds_affected,
                     "completed_at": datetime.now(timezone.utc),
@@ -131,13 +122,13 @@ class SonarScanPendingRepository:
             },
         )
 
-    def mark_failed(self, pending_id: ObjectId, error_message: str) -> None:
-        """Mark a scan as failed."""
+    def mark_failed(self, scan_id: ObjectId, error_message: str) -> None:
+        """Mark scan as failed."""
         self.collection.update_one(
-            {"_id": pending_id},
+            {"_id": scan_id},
             {
                 "$set": {
-                    "status": ScanPendingStatus.FAILED.value,
+                    "status": SonarScanStatus.FAILED.value,
                     "error_message": error_message,
                     "completed_at": datetime.now(timezone.utc),
                 }
@@ -151,7 +142,7 @@ class SonarScanPendingRepository:
             {
                 "$inc": {"retry_count": 1},
                 "$set": {
-                    "status": ScanPendingStatus.PENDING.value,
+                    "status": SonarScanStatus.PENDING.value,
                     "error_message": None,
                     "started_at": None,
                     "completed_at": None,
@@ -159,15 +150,14 @@ class SonarScanPendingRepository:
             },
         )
 
-    def get_failed_by_version(self, version_id: ObjectId) -> List[SonarScanPending]:
+    def get_failed_by_version(self, version_id: ObjectId) -> List[SonarCommitScan]:
         """Get all failed scans for a version."""
-        cursor = self.collection.find(
+        return self.find_many(
             {
                 "dataset_version_id": version_id,
-                "status": ScanPendingStatus.FAILED.value,
+                "status": SonarScanStatus.FAILED.value,
             }
         )
-        return [SonarScanPending(**doc) for doc in cursor]
 
     def delete_old_scans(self, days: int = 30) -> int:
         """Delete completed scans older than specified days."""
@@ -176,8 +166,8 @@ class SonarScanPendingRepository:
             {
                 "status": {
                     "$in": [
-                        ScanPendingStatus.COMPLETED.value,
-                        ScanPendingStatus.FAILED.value,
+                        SonarScanStatus.COMPLETED.value,
+                        SonarScanStatus.FAILED.value,
                     ]
                 },
                 "completed_at": {"$lt": cutoff},

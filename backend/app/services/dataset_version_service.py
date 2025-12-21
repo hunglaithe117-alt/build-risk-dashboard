@@ -624,11 +624,11 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id, role)
         self._get_version(dataset_id, version_id)
 
-        from app.repositories.sonar_scan_pending import SonarScanPendingRepository
+        from app.repositories.sonar_commit_scan import SonarCommitScanRepository
         from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
 
         trivy_repo = TrivyCommitScanRepository(self._repo.db)
-        sonar_repo = SonarScanPendingRepository(self._repo.db)
+        sonar_repo = SonarCommitScanRepository(self._repo.db)
 
         version_oid = ObjectId(version_id)
 
@@ -687,22 +687,10 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id, role)
         self._get_version(dataset_id, version_id)  # Verify exists
 
-        from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
-        from app.repositories.sonar_scan_pending import SonarScanPendingRepository
+        from app.repositories.sonar_commit_scan import SonarCommitScanRepository
         from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
 
         version_oid = ObjectId(version_id)
-        enrichment_repo = DatasetEnrichmentBuildRepository(self._repo.db)
-
-        # Get worktree path and repo info from a build with this commit
-        builds = enrichment_repo.find_by_version_and_commit(version_oid, commit_sha)
-        if not builds:
-            raise HTTPException(status_code=404, detail="No builds found for this commit")
-
-        sample_build = builds[0]
-        worktree_path = sample_build.worktree_path or ""
-        repo_full_name = sample_build.repo_full_name or ""
-        repo_url = sample_build.repo_url or ""
 
         if tool_type == "trivy":
             trivy_repo = TrivyCommitScanRepository(self._repo.db)
@@ -723,8 +711,8 @@ class DatasetVersionService:
             task = start_trivy_scan_for_version_commit.delay(
                 version_id=version_id,
                 commit_sha=commit_sha,
-                repo_full_name=repo_full_name,
-                worktree_path=worktree_path,
+                repo_full_name=scan.repo_full_name,
+                raw_repo_id=str(scan.raw_repo_id),
                 trivy_config=trivy_config,
                 selected_metrics=selected_metrics,
             )
@@ -732,7 +720,7 @@ class DatasetVersionService:
             return {"status": "dispatched", "task_id": task.id, "tool": "trivy"}
 
         elif tool_type == "sonarqube":
-            sonar_repo = SonarScanPendingRepository(self._repo.db)
+            sonar_repo = SonarCommitScanRepository(self._repo.db)
             scan = sonar_repo.find_by_version_and_commit(version_oid, commit_sha)
 
             if not scan:
@@ -746,8 +734,8 @@ class DatasetVersionService:
             task = start_sonar_scan_for_version_commit.delay(
                 version_id=version_id,
                 commit_sha=commit_sha,
-                repo_full_name=repo_full_name,
-                repo_url=repo_url,
+                repo_full_name=scan.repo_full_name,
+                raw_repo_id=str(scan.raw_repo_id),
                 component_key=scan.component_key,
             )
 

@@ -104,7 +104,7 @@ class ConfigFieldSpec(BaseModel):
     required: bool
     description: str
     default: Optional[Any] = None
-    options: Optional[List[str]] = None  # For dropdowns (e.g., list of languages)
+    options: Optional[Any] = None  # Flexible: list, dict (grouped), or any structure for UI
 
 
 class ConfigRequirementsRequest(BaseModel):

@@ -1,6 +1,6 @@
 """Dataset validation API endpoints."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pymongo.database import Database
 
 from app.database.mongo import get_db
@@ -60,6 +60,24 @@ async def get_validation_summary(
         status=result["status"],
         stats=result["stats"],
         repos=[RepoValidationResult(**r) for r in result["repos"]],
+    )
+
+
+@router.get("/{dataset_id}/repos")
+async def list_dataset_repos(
+    dataset_id: str,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    q: str | None = Query(default=None),
+    db: Database = Depends(get_db),
+):
+    """List repositories in a dataset (paginated)."""
+    service = DatasetValidationService(db)
+    return service.get_dataset_repos(
+        dataset_id,
+        skip=skip,
+        limit=limit,
+        search=q,
     )
 
 

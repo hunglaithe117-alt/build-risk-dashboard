@@ -36,15 +36,13 @@ import {
 } from "lucide-react";
 
 interface DatasetRepo {
-    id: string;
+    id: string; // raw_repo_id
     raw_repo_id: string | null;
-    repo_name: string;
     full_name: string;
     validation_status: string;
     validation_error?: string;
     builds_in_csv: number;
     builds_found: number;
-    builds_processed: number;
 }
 
 interface DatasetReposResponse {
@@ -213,7 +211,7 @@ export function RepoBuildsView({ datasetId, isIngested }: RepoBuildsViewProps) {
                         <div>
                             <CardTitle className="flex items-center gap-2">
                                 <FolderGit2 className="h-5 w-5" />
-                                {selectedRepo.repo_name}
+                                {selectedRepo.full_name}
                             </CardTitle>
                             <CardDescription>
                                 {total} builds found
@@ -340,7 +338,6 @@ export function RepoBuildsView({ datasetId, isIngested }: RepoBuildsViewProps) {
                                 <TableHead>Validation</TableHead>
                                 <TableHead>Builds in CSV</TableHead>
                                 <TableHead>Builds Found</TableHead>
-                                <TableHead>Processed</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -353,7 +350,7 @@ export function RepoBuildsView({ datasetId, isIngested }: RepoBuildsViewProps) {
                                     <TableCell className="font-mono text-sm">
                                         <div className="flex items-center gap-2">
                                             <FolderGit2 className="h-4 w-4 text-muted-foreground" />
-                                            {repo.repo_name}
+                                            {repo.full_name}
                                         </div>
                                     </TableCell>
                                     <TableCell>
@@ -361,7 +358,6 @@ export function RepoBuildsView({ datasetId, isIngested }: RepoBuildsViewProps) {
                                     </TableCell>
                                     <TableCell>{repo.builds_in_csv}</TableCell>
                                     <TableCell>{repo.builds_found}</TableCell>
-                                    <TableCell>{repo.builds_processed}</TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>

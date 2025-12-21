@@ -47,9 +47,9 @@ class TrivyCommitScanRepository(BaseRepository[TrivyCommitScan]):
         version_id: ObjectId,
         commit_sha: str,
         repo_full_name: str,
+        raw_repo_id: ObjectId,
         scan_config: Optional[dict] = None,
         selected_metrics: Optional[list] = None,
-        worktree_path: Optional[str] = None,
     ) -> TrivyCommitScan:
         """Create new scan record or return existing."""
         existing = self.find_by_version_and_commit(version_id, commit_sha)
@@ -60,9 +60,9 @@ class TrivyCommitScanRepository(BaseRepository[TrivyCommitScan]):
             dataset_version_id=version_id,
             commit_sha=commit_sha,
             repo_full_name=repo_full_name,
+            raw_repo_id=raw_repo_id,
             scan_config=scan_config,
             selected_metrics=selected_metrics,
-            worktree_path=worktree_path,
             status=TrivyScanStatus.PENDING,
         )
         return self.insert_one(scan)

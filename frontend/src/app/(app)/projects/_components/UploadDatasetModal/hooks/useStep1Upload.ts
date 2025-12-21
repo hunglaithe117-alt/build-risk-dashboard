@@ -2,7 +2,14 @@
 
 import { useState, useRef, useCallback } from "react";
 import Papa from "papaparse";
+import type { BuildValidationFilters } from "@/types";
 import type { CSVPreview, MappingKey, CIProviderMode } from "../types";
+
+const DEFAULT_BUILD_FILTERS: BuildValidationFilters = {
+    exclude_bots: false,
+    only_completed: true,
+    allowed_conclusions: ["success", "failure"],
+};
 
 interface UseStep1UploadReturn {
     file: File | null;
@@ -14,6 +21,7 @@ interface UseStep1UploadReturn {
     ciProvider: string;
     ciProviderMode: CIProviderMode;
     ciProviderColumn: string;
+    buildFilters: BuildValidationFilters;
     mappings: Record<MappingKey, string>;
     isMappingValid: boolean;
     fileInputRef: React.RefObject<HTMLInputElement | null>;
@@ -22,6 +30,7 @@ interface UseStep1UploadReturn {
     setCiProvider: (provider: string) => void;
     setCiProviderMode: (mode: CIProviderMode) => void;
     setCiProviderColumn: (column: string) => void;
+    setBuildFilters: (filters: BuildValidationFilters) => void;
     setError: (error: string | null) => void;
     handleFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => Promise<void>;
     handleMappingChange: (field: MappingKey, value: string) => void;
@@ -37,7 +46,8 @@ interface UseStep1UploadReturn {
         size_bytes?: number;
         preview?: Record<string, unknown>[];
         mapped_fields?: { build_id?: string | null; repo_name?: string | null };
-        ci_provider?: string;
+        ci_provider?: string | null;
+        build_filters?: BuildValidationFilters;
     }) => void;
 }
 
@@ -55,6 +65,7 @@ export function useStep1Upload(): UseStep1UploadReturn {
     const [ciProvider, setCiProvider] = useState("github_actions");
     const [ciProviderMode, setCiProviderMode] = useState<CIProviderMode>("single");
     const [ciProviderColumn, setCiProviderColumn] = useState("");
+    const [buildFilters, setBuildFilters] = useState<BuildValidationFilters>(DEFAULT_BUILD_FILTERS);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -71,6 +82,7 @@ export function useStep1Upload(): UseStep1UploadReturn {
         setCiProvider("github_actions");
         setCiProviderMode("single");
         setCiProviderColumn("");
+        setBuildFilters(DEFAULT_BUILD_FILTERS);
     }, []);
 
     const resetMappings = useCallback(() => {
@@ -182,7 +194,8 @@ export function useStep1Upload(): UseStep1UploadReturn {
             size_bytes?: number;
             preview?: Record<string, unknown>[];
             mapped_fields?: { build_id?: string | null; repo_name?: string | null };
-            ci_provider?: string;
+            ci_provider?: string | null;
+            build_filters?: BuildValidationFilters;
         }) => {
             setName(dataset.name || "");
             setDescription(dataset.description || "");
@@ -196,6 +209,10 @@ export function useStep1Upload(): UseStep1UploadReturn {
 
             if (dataset.ci_provider) {
                 setCiProvider(dataset.ci_provider);
+            }
+
+            if (dataset.build_filters) {
+                setBuildFilters(dataset.build_filters);
             }
 
             if (dataset.columns?.length) {
@@ -228,6 +245,7 @@ export function useStep1Upload(): UseStep1UploadReturn {
         ciProvider,
         ciProviderMode,
         ciProviderColumn,
+        buildFilters,
         mappings,
         isMappingValid,
         fileInputRef,
@@ -236,6 +254,7 @@ export function useStep1Upload(): UseStep1UploadReturn {
         setCiProvider,
         setCiProviderMode,
         setCiProviderColumn,
+        setBuildFilters,
         setError,
         handleFileSelect,
         handleMappingChange,

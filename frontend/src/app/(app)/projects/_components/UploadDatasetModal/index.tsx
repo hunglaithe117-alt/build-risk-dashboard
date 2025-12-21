@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
     AlertCircle,
@@ -12,15 +12,28 @@ import {
     X,
     AlertTriangle,
     ArrowLeft,
+    ChevronLeft,
+    ChevronRight,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { datasetsApi } from "@/lib/api";
 import type { UploadDatasetModalProps, Step, CIProviderOption } from "./types";
 import { StepIndicator } from "./StepIndicator";
 import { StepUpload } from "./StepUpload";
 import { useUploadDatasetWizard } from "./hooks/useUploadDatasetWizard";
 import { useFeaturesConfig } from "./hooks/useFeaturesConfig";
+
+// Type for repo stats from API
+interface RepoStatItem {
+    id: string;
+    full_name: string;
+    builds_total: number;
+    builds_found: number;
+    builds_not_found: number;
+    builds_filtered: number;
+}
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
     const [mounted, setMounted] = useState(false);
@@ -35,6 +48,8 @@ const STEP_TITLES: Record<Step, string> = {
     1: "Upload & Map Columns",
     2: "Validate Builds",
 };
+
+const REPOS_PER_PAGE = 20;
 
 export function UploadDatasetModal({
     open,
@@ -53,12 +68,51 @@ export function UploadDatasetModal({
 
     const { config: featuresConfig } = useFeaturesConfig();
 
+    // Repo stats state (separate from validation stats)
+    const [repoStats, setRepoStats] = useState<RepoStatItem[]>([]);
+    const [repoStatsTotal, setRepoStatsTotal] = useState(0);
+    const [repoStatsPage, setRepoStatsPage] = useState(0);
+    const [repoStatsLoading, setRepoStatsLoading] = useState(false);
+
     // Default CI providers fallback
     const ciProviders: CIProviderOption[] = featuresConfig?.ciProviders ?? [
         { value: "github_actions", label: "GitHub Actions" },
         { value: "travis_ci", label: "Travis CI" },
         { value: "circleci", label: "CircleCI" },
     ];
+
+    // Fetch repo stats when validation completes
+    const fetchRepoStats = useCallback(async (datasetId: string, page: number = 0) => {
+        setRepoStatsLoading(true);
+        try {
+            const result = await datasetsApi.getRepoStats(datasetId, {
+                skip: page * REPOS_PER_PAGE,
+                limit: REPOS_PER_PAGE,
+            });
+            setRepoStats(result.items);
+            setRepoStatsTotal(result.total);
+        } catch (err) {
+            console.error("Failed to fetch repo stats:", err);
+        } finally {
+            setRepoStatsLoading(false);
+        }
+    }, []);
+
+    // Fetch repo stats when validation completes
+    useEffect(() => {
+        if (wizard.validationStatus === "completed" && wizard.datasetId) {
+            fetchRepoStats(wizard.datasetId, repoStatsPage);
+        }
+    }, [wizard.validationStatus, wizard.datasetId, repoStatsPage, fetchRepoStats]);
+
+    // Reset repo stats when modal closes or validation resets
+    useEffect(() => {
+        if (!open || wizard.validationStatus === "pending") {
+            setRepoStats([]);
+            setRepoStatsTotal(0);
+            setRepoStatsPage(0);
+        }
+    }, [open, wizard.validationStatus]);
 
     if (!open) return null;
 
@@ -72,6 +126,8 @@ export function UploadDatasetModal({
         validationStats,
         validationError,
     } = wizard;
+
+    const totalPages = Math.ceil(repoStatsTotal / REPOS_PER_PAGE);
 
     return (
         <Portal>
@@ -121,6 +177,7 @@ export function UploadDatasetModal({
                                 ciProviderMode={step1.ciProviderMode}
                                 ciProviderColumn={step1.ciProviderColumn}
                                 ciProviders={ciProviders}
+                                buildFilters={step1.buildFilters}
                                 mappings={step1.mappings}
                                 isMappingValid={step1.isMappingValid}
                                 isDatasetCreated={!!wizard.datasetId}
@@ -131,6 +188,7 @@ export function UploadDatasetModal({
                                 onCiProviderChange={step1.setCiProvider}
                                 onCiProviderModeChange={step1.setCiProviderMode}
                                 onCiProviderColumnChange={step1.setCiProviderColumn}
+                                onBuildFiltersChange={step1.setBuildFilters}
                                 onMappingChange={step1.handleMappingChange}
                                 onClearFile={step1.handleClearFile}
                             />
@@ -188,7 +246,7 @@ export function UploadDatasetModal({
 
                                 {/* Stats Summary */}
                                 {validationStats && (
-                                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                                    <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-5">
                                         <div className="rounded-lg border bg-slate-50 p-4 dark:bg-slate-800">
                                             <p className="text-xs uppercase text-muted-foreground">
                                                 Total Repos
@@ -211,6 +269,14 @@ export function UploadDatasetModal({
                                             </p>
                                             <p className="mt-1 text-2xl font-bold">
                                                 {validationStats.builds_found}
+                                            </p>
+                                        </div>
+                                        <div className="rounded-lg border bg-blue-50 p-4 dark:bg-blue-900/20">
+                                            <p className="text-xs uppercase text-muted-foreground">
+                                                Builds Filtered
+                                            </p>
+                                            <p className="mt-1 text-2xl font-bold text-blue-600">
+                                                {validationStats.builds_filtered ?? 0}
                                             </p>
                                         </div>
                                         <div className="rounded-lg border bg-amber-50 p-4 dark:bg-amber-900/20">
@@ -249,41 +315,85 @@ export function UploadDatasetModal({
                                     </div>
                                 )}
 
-                                {/* Per-Repo Stats Table */}
-                                {validationStats?.repo_stats && validationStats.repo_stats.length > 0 && (
+                                {/* Per-Repo Stats Table (Paginated) */}
+                                {validationStatus === "completed" && (
                                     <div className="rounded-lg border overflow-hidden">
-                                        <div className="bg-muted/50 px-4 py-2 border-b">
-                                            <span className="text-sm font-medium">Repository Details</span>
+                                        <div className="bg-muted/50 px-4 py-2 border-b flex items-center justify-between">
+                                            <span className="text-sm font-medium">
+                                                Repository Details
+                                                {repoStatsTotal > 0 && (
+                                                    <span className="text-muted-foreground ml-2">
+                                                        ({repoStatsTotal} repos)
+                                                    </span>
+                                                )}
+                                            </span>
+                                            {totalPages > 1 && (
+                                                <div className="flex items-center gap-2">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => setRepoStatsPage(Math.max(0, repoStatsPage - 1))}
+                                                        disabled={repoStatsPage === 0 || repoStatsLoading}
+                                                    >
+                                                        <ChevronLeft className="h-4 w-4" />
+                                                    </Button>
+                                                    <span className="text-xs text-muted-foreground">
+                                                        {repoStatsPage + 1} / {totalPages}
+                                                    </span>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => setRepoStatsPage(Math.min(totalPages - 1, repoStatsPage + 1))}
+                                                        disabled={repoStatsPage >= totalPages - 1 || repoStatsLoading}
+                                                    >
+                                                        <ChevronRight className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="max-h-48 overflow-y-auto">
-                                            <table className="w-full text-sm">
-                                                <thead className="bg-muted/30 sticky top-0">
-                                                    <tr>
-                                                        <th className="text-left px-4 py-2 font-medium">Repository</th>
-                                                        <th className="text-center px-2 py-2 font-medium">Found</th>
-                                                        <th className="text-center px-2 py-2 font-medium">Not Found</th>
-                                                        <th className="text-center px-2 py-2 font-medium">Total</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {validationStats.repo_stats.map((repo, idx) => (
-                                                        <tr key={repo.full_name || idx} className="border-t hover:bg-muted/20">
-                                                            <td className="px-4 py-2 font-mono text-xs truncate max-w-[200px]" title={repo.full_name}>
-                                                                {repo.full_name}
-                                                            </td>
-                                                            <td className="text-center px-2 py-2 text-green-600 font-medium">
-                                                                {repo.builds_found}
-                                                            </td>
-                                                            <td className="text-center px-2 py-2 text-amber-600 font-medium">
-                                                                {repo.builds_not_found}
-                                                            </td>
-                                                            <td className="text-center px-2 py-2 text-muted-foreground">
-                                                                {repo.builds_total}
-                                                            </td>
+                                            {repoStatsLoading ? (
+                                                <div className="flex items-center justify-center py-8">
+                                                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                                </div>
+                                            ) : repoStats.length > 0 ? (
+                                                <table className="w-full text-sm">
+                                                    <thead className="bg-muted/30 sticky top-0">
+                                                        <tr>
+                                                            <th className="text-left px-4 py-2 font-medium">Repository</th>
+                                                            <th className="text-center px-2 py-2 font-medium">Found</th>
+                                                            <th className="text-center px-2 py-2 font-medium">Filtered</th>
+                                                            <th className="text-center px-2 py-2 font-medium">Not Found</th>
+                                                            <th className="text-center px-2 py-2 font-medium">Total</th>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                                    </thead>
+                                                    <tbody>
+                                                        {repoStats.map((repo) => (
+                                                            <tr key={repo.id} className="border-t hover:bg-muted/20">
+                                                                <td className="px-4 py-2 font-mono text-xs truncate max-w-[200px]" title={repo.full_name}>
+                                                                    {repo.full_name}
+                                                                </td>
+                                                                <td className="text-center px-2 py-2 text-green-600 font-medium">
+                                                                    {repo.builds_found}
+                                                                </td>
+                                                                <td className="text-center px-2 py-2 text-blue-600 font-medium">
+                                                                    {repo.builds_filtered}
+                                                                </td>
+                                                                <td className="text-center px-2 py-2 text-amber-600 font-medium">
+                                                                    {repo.builds_not_found}
+                                                                </td>
+                                                                <td className="text-center px-2 py-2 text-muted-foreground">
+                                                                    {repo.builds_total}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            ) : (
+                                                <div className="py-4 text-center text-muted-foreground text-sm">
+                                                    No repository data available
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}

@@ -56,11 +56,14 @@ class RepoValidationResult(BaseModel):
     """Validation result for a single repository."""
 
     id: str
+    raw_repo_id: str
     full_name: str
+    ci_provider: str = "github_actions"
     validation_status: str
     validation_error: Optional[str] = None
-    builds_found: Optional[int] = None
-    builds_not_found: Optional[int] = None
+    builds_total: int = 0
+    builds_found: int = 0
+    builds_not_found: int = 0
 
 
 class ValidationSummaryResponse(BaseModel):

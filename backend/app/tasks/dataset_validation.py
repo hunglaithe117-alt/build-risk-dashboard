@@ -32,6 +32,7 @@ from app.database.mongo import get_database
 from app.entities import DatasetBuild, DatasetBuildStatus, ValidationStats
 from app.entities.dataset import DatasetValidationStatus
 from app.repositories.dataset_build_repository import DatasetBuildRepository
+from app.repositories.dataset_repo_stats import DatasetRepoStatsRepository
 from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
@@ -301,7 +302,7 @@ def validate_repo_chunk(
     """
     db = get_database()
     raw_repo_repo = RawRepositoryRepository(db)
-    dataset_repo = DatasetRepository(db)
+    dataset_repo_stats_repo = DatasetRepoStatsRepository(db)
 
     # Check if cancelled before starting
     if is_validation_cancelled(dataset_id):
@@ -312,7 +313,6 @@ def validate_repo_chunk(
     repos_not_found = 0
     repos_private = 0
     valid_repos_data: List[Dict[str, Any]] = []
-    repo_ci_providers_updates: Dict[str, str] = {}  # {raw_repo_id: ci_provider}
 
     with get_public_github_client() as client:
         for repo_name, builds in repo_builds_chunk.items():
@@ -347,8 +347,13 @@ def validate_repo_chunk(
                 # Extract CI provider from first build
                 # All builds for same repo have same ci_provider
                 ci_provider = builds[0].get("ci_provider") if builds else None
-                if ci_provider:
-                    repo_ci_providers_updates[str(raw_repo.id)] = ci_provider
+
+                dataset_repo_stats_repo.upsert_by_dataset_and_repo(
+                    dataset_id=dataset_id,
+                    raw_repo_id=str(raw_repo.id),
+                    full_name=repo_name,
+                    ci_provider=ci_provider or "github_actions",
+                )
 
                 valid_repos_data.append(
                     {
@@ -372,13 +377,6 @@ def validate_repo_chunk(
                 increment_validation_stat(dataset_id, "repos_not_found")
                 increment_validation_stat(dataset_id, "builds_not_found", len(builds))
 
-    # Update dataset with repo CI providers
-    if repo_ci_providers_updates:
-        dataset_repo.update_one(
-            dataset_id,
-            {f"repo_ci_providers.{k}": v for k, v in repo_ci_providers_updates.items()},
-        )
-
     # Update chunk completion
     increment_validation_stat(dataset_id, "chunks_completed")
 
@@ -395,11 +393,7 @@ def validate_repo_chunk(
     }
 
 
-# =============================================================================
 # Task 3: Build Chunk Validator
-# =============================================================================
-
-
 @celery_app.task(
     bind=True,
     base=PipelineTask,
@@ -458,6 +452,7 @@ def validate_builds_chunk(
 
     builds_found = 0
     builds_not_found = 0
+    builds_filtered = 0
     builds_to_insert: List[DatasetBuild] = []
 
     # Determine CI provider from first build
@@ -467,11 +462,35 @@ def validate_builds_chunk(
     # Get CI provider client
     ci_client = get_ci_provider(ci_provider, db=db)
 
+    # Load build filters from dataset
+    dataset_repo = DatasetRepository(db)
+    dataset = dataset_repo.find_by_id(dataset_id)
+    build_filters = getattr(dataset, "build_filters", None)
+    if build_filters is None:
+        # Default filters
+        exclude_bots = False
+        only_completed = True
+        allowed_conclusions = ["success", "failure"]
+    else:
+        exclude_bots = getattr(build_filters, "exclude_bots", False)
+        only_completed = getattr(build_filters, "only_completed", True)
+        allowed_conclusions = getattr(build_filters, "allowed_conclusions", ["success", "failure"])
+
+    build_ids = [b["build_id"] for b in builds]
+    existing_builds = dataset_build_repo.find_many(
+        {
+            "dataset_id": ObjectId(dataset_id),
+            "raw_repo_id": ObjectId(raw_repo_id),
+            "build_id_from_csv": {"$in": build_ids},
+        }
+    )
+    existing_map = {b.build_id_from_csv: b for b in existing_builds}
+
     # Filter out already validated builds
     builds_to_validate = []
     for build_info in builds:
         build_id = build_info["build_id"]
-        existing = dataset_build_repo.find_existing(dataset_id, build_id, raw_repo_id)
+        existing = existing_map.get(build_id)
         if existing:
             if existing.status == DatasetBuildStatus.FOUND:
                 builds_found += 1
@@ -497,6 +516,29 @@ def validate_builds_chunk(
         logger.error(f"Failed to fetch build details for {repo_name}: {e}")
         build_results = [e] * len(builds_to_validate)
 
+    # Helper to check if build should be filtered
+    def should_filter_build(build_data: BuildData) -> tuple[bool, str]:
+        """Check if build should be filtered based on dataset filters."""
+        conclusion = (
+            build_data.conclusion.value
+            if hasattr(build_data.conclusion, "value")
+            else build_data.conclusion
+        )
+
+        # Check only_completed filter
+        if only_completed and not ci_client.is_build_completed(build_data):
+            return True, "Build not completed"
+
+        # Check exclude_bots filter
+        if exclude_bots and getattr(build_data, "is_bot_commit", False):
+            return True, "Bot commit"
+
+        # Check if conclusion is in allowed list
+        if conclusion not in allowed_conclusions:
+            return True, f"Conclusion '{conclusion}' not in allowed list"
+
+        return False, ""
+
     # Process results
     for build_info, build_data in zip(builds_to_validate, build_results, strict=False):
         build_id = build_info["build_id"]
@@ -510,8 +552,7 @@ def validate_builds_chunk(
             if isinstance(build_data, Exception):
                 raise build_data
 
-            if build_data and ci_client.is_build_completed(build_data):
-                # Create RawBuildRun using business key
+            if build_data:
                 raw_build_run = raw_build_run_repo.upsert_by_business_key(
                     raw_repo_id=ObjectId(raw_repo_id),
                     build_id=build_id,
@@ -533,19 +574,38 @@ def validate_builds_chunk(
                     raw_data=build_data.raw_data,
                 )
 
-                builds_to_insert.append(
-                    DatasetBuild(
-                        _id=None,
-                        dataset_id=ObjectId(dataset_id),
-                        build_id_from_csv=build_id,
-                        repo_name_from_csv=repo_name,
-                        raw_repo_id=ObjectId(raw_repo_id),
-                        status=DatasetBuildStatus.FOUND,
-                        workflow_run_id=raw_build_run.id,
-                        validated_at=utc_now(),
+                # Check if build should be filtered for dataset
+                should_filter, filter_reason = should_filter_build(build_data)
+                if should_filter:
+                    builds_filtered += 1
+                    builds_to_insert.append(
+                        DatasetBuild(
+                            _id=None,
+                            dataset_id=ObjectId(dataset_id),
+                            build_id_from_csv=build_id,
+                            repo_name_from_csv=repo_name,
+                            raw_repo_id=ObjectId(raw_repo_id),
+                            status=DatasetBuildStatus.FILTERED,
+                            workflow_run_id=raw_build_run.id,  # Still link to RawBuildRun
+                            validation_error=f"Filtered: {filter_reason}",
+                            validated_at=utc_now(),
+                        )
                     )
-                )
-                builds_found += 1
+                else:
+                    # Build passed filters
+                    builds_to_insert.append(
+                        DatasetBuild(
+                            _id=None,
+                            dataset_id=ObjectId(dataset_id),
+                            build_id_from_csv=build_id,
+                            repo_name_from_csv=repo_name,
+                            raw_repo_id=ObjectId(raw_repo_id),
+                            status=DatasetBuildStatus.FOUND,
+                            workflow_run_id=raw_build_run.id,
+                            validated_at=utc_now(),
+                        )
+                    )
+                    builds_found += 1
 
             else:
                 builds_to_insert.append(
@@ -585,11 +645,13 @@ def validate_builds_chunk(
     # Update Redis counters
     increment_validation_stat(dataset_id, "builds_found", builds_found)
     increment_validation_stat(dataset_id, "builds_not_found", builds_not_found)
+    increment_validation_stat(dataset_id, "builds_filtered", builds_filtered)
 
     return {
         "repo_name": repo_name,
         "builds_found": builds_found,
         "builds_not_found": builds_not_found,
+        "builds_filtered": builds_filtered,
     }
 
 
@@ -620,11 +682,11 @@ def aggregate_validation_results(
     Returns:
         Final validation summary
     """
-    from app.entities.dataset import RepoValidationStats
 
     db = get_database()
     dataset_repo = DatasetRepository(db)
     dataset_build_repo = DatasetBuildRepository(db)
+    dataset_repo_stats_repo = DatasetRepoStatsRepository(db)
 
     # Get final stats from Redis (all tasks have completed at this point)
     stats = get_validation_stats(dataset_id)
@@ -634,13 +696,12 @@ def aggregate_validation_results(
     repos_valid = stats["repos_valid"]
     repos_not_found = stats["repos_not_found"] + stats["repos_private"]
     builds_found = stats["builds_found"]
-    builds_not_found = stats["builds_not_found"] + stats["builds_filtered"]
+    builds_not_found = stats["builds_not_found"]
+    builds_filtered = stats["builds_filtered"]
 
     # Calculate coverage
     build_coverage = round((builds_found / total_builds) * 100, 2) if total_builds > 0 else 0.0
 
-    # Get per-repo stats from DatasetBuild collection
-    repo_stats_list = []
     try:
         # Aggregate builds by repo_name_from_csv
         pipeline = [
@@ -654,6 +715,9 @@ def aggregate_validation_results(
                     "builds_not_found": {
                         "$sum": {"$cond": [{"$eq": ["$status", "not_found"]}, 1, 0]}
                     },
+                    "builds_filtered": {
+                        "$sum": {"$cond": [{"$eq": ["$status", "filtered"]}, 1, 0]}
+                    },
                 }
             },
             {"$sort": {"_id": 1}},
@@ -662,14 +726,20 @@ def aggregate_validation_results(
 
         for agg in agg_results:
             full_name = agg["_id"]
-            repo_stat = RepoValidationStats(
-                full_name=full_name,
-                builds_total=agg["builds_total"],
-                builds_found=agg["builds_found"],
-                builds_not_found=agg["builds_not_found"],
-                is_valid=agg["builds_found"] > 0,
-            )
-            repo_stats_list.append(repo_stat)
+            raw_repo_id = agg["raw_repo_id"]
+
+            # Update stats in DatasetRepoStats collection
+            if raw_repo_id:
+                dataset_repo_stats_repo.upsert_by_dataset_and_repo(
+                    dataset_id=dataset_id,
+                    raw_repo_id=str(raw_repo_id),
+                    full_name=full_name,
+                    builds_total=agg["builds_total"],
+                    builds_found=agg["builds_found"],
+                    builds_not_found=agg["builds_not_found"],
+                    builds_filtered=agg["builds_filtered"],
+                    is_valid=agg["builds_found"] > 0,
+                )
     except Exception as e:
         logger.warning(f"Failed to aggregate per-repo stats: {e}")
 
@@ -682,7 +752,7 @@ def aggregate_validation_results(
         builds_total=total_builds,
         builds_found=builds_found,
         builds_not_found=builds_not_found,
-        repo_stats=[rs.model_dump() for rs in repo_stats_list],
+        builds_filtered=builds_filtered,
     )
 
     # Update dataset

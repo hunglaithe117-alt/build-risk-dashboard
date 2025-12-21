@@ -14,7 +14,7 @@ from bson import ObjectId
 
 from app.celery_app import celery_app
 from app.repositories.dataset_version import DatasetVersionRepository
-from app.repositories.sonar_scan_pending import SonarScanPendingRepository
+from app.repositories.sonar_commit_scan import SonarCommitScanRepository
 from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
 from app.tasks.base import PipelineTask
 
@@ -33,8 +33,6 @@ def dispatch_scan_for_commit(
     raw_repo_id: str,
     commit_sha: str,
     repo_full_name: str,
-    repo_url: str,
-    worktree_path: str,
 ) -> Dict[str, Any]:
     """
     Dispatch scans for a single commit in a dataset version.
@@ -43,15 +41,13 @@ def dispatch_scan_for_commit(
 
     Args:
         version_id: DatasetVersion ID
-        raw_repo_id: RawRepository ID for worktree lookup
+        raw_repo_id: RawRepository ID (used to derive worktree path)
         commit_sha: Commit SHA to scan
         repo_full_name: Repository full name (owner/repo)
-        repo_url: Repository URL for SonarQube checkout
-        worktree_path: Path to git worktree for scanning
     """
     version_repo = DatasetVersionRepository(self.db)
     trivy_scan_repo = TrivyCommitScanRepository(self.db)
-    sonar_scan_repo = SonarScanPendingRepository(self.db)
+    sonar_scan_repo = SonarCommitScanRepository(self.db)
 
     version = version_repo.find_by_id(version_id)
     if not version:
@@ -68,14 +64,14 @@ def dispatch_scan_for_commit(
         try:
             trivy_config = version.scan_config.get("trivy", {})
 
-            # Create tracking record
+            # Create tracking record (stores raw_repo_id for retry)
             trivy_scan_repo.create_or_get(
                 version_id=ObjectId(version_id),
                 commit_sha=commit_sha,
                 repo_full_name=repo_full_name,
+                raw_repo_id=ObjectId(raw_repo_id),
                 scan_config=trivy_config,
                 selected_metrics=trivy_metrics,
-                worktree_path=worktree_path,
             )
 
             # Dispatch to queue
@@ -85,7 +81,7 @@ def dispatch_scan_for_commit(
                 version_id=version_id,
                 commit_sha=commit_sha,
                 repo_full_name=repo_full_name,
-                worktree_path=worktree_path,
+                raw_repo_id=raw_repo_id,
                 trivy_config=trivy_config,
                 selected_metrics=trivy_metrics,
             )
@@ -110,13 +106,13 @@ def dispatch_scan_for_commit(
             version_prefix = version_id[:8]
             component_key = f"{version_prefix}_{repo_name_safe}_{commit_sha[:12]}"
 
-            # Create tracking record with scan_config for retry
+            # Create tracking record (stores raw_repo_id for retry)
             sonar_scan_repo.create_or_get(
                 version_id=ObjectId(version_id),
                 commit_sha=commit_sha,
                 repo_full_name=repo_full_name,
+                raw_repo_id=ObjectId(raw_repo_id),
                 component_key=component_key,
-                repo_url=repo_url,
                 scan_config=sonar_config,
             )
 
@@ -130,11 +126,9 @@ def dispatch_scan_for_commit(
                 version_id=version_id,
                 commit_sha=commit_sha,
                 repo_full_name=repo_full_name,
-                repo_url=repo_url,
+                raw_repo_id=raw_repo_id,
                 component_key=component_key,
                 config_content=config_content,
-                shared_worktree_path=worktree_path,
-                raw_repo_id=raw_repo_id,
             )
 
             results["sonarqube"] = {"status": "dispatched", "component_key": component_key}

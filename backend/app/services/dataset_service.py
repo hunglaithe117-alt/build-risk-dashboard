@@ -170,6 +170,12 @@ class DatasetService:
                     f"Dispatched distributed validation task {task.id} for dataset {dataset_id}"
                 )
 
+        if "ci_provider" in payload_dict:
+            updates["ci_provider"] = payload_dict["ci_provider"]
+
+        if "build_filters" in payload_dict:
+            updates["build_filters"] = payload_dict["build_filters"]
+
         if "stats" in payload_dict:
             merged_stats = {}
             if getattr(dataset, "stats", None):
@@ -335,18 +341,33 @@ class DatasetService:
         return self._serialize(self.repo.find_by_id(str(dataset.id)))
 
     def delete_dataset(self, dataset_id: str, user_id: str) -> None:
-        """Delete a dataset and all associated data."""
+        """Delete a dataset and all associated data from all related entities."""
+        from app.repositories.dataset_repo_stats import DatasetRepoStatsRepository
+        from app.repositories.dataset_version import DatasetVersionRepository
+
         dataset = self.repo.find_by_id(dataset_id)
         if not dataset or (dataset.user_id and str(dataset.user_id) != user_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
 
         dataset_oid = ObjectId(dataset_id)
 
-        # Delete associated enrichment builds
-        self.enrichment_build_repo.delete_by_dataset(dataset_oid)
+        # Delete associated enrichment builds (DatasetEnrichmentBuild)
+        deleted_enrichment = self.enrichment_build_repo.delete_by_dataset(dataset_oid)
+        logger.info(f"Deleted {deleted_enrichment} enrichment builds for dataset {dataset_id}")
 
-        # Delete associated dataset builds
-        self.build_repo.delete_by_dataset(dataset_id)
+        # Delete associated dataset builds (DatasetBuild)
+        deleted_builds = self.build_repo.delete_by_dataset(dataset_id)
+        logger.info(f"Deleted {deleted_builds} dataset builds for dataset {dataset_id}")
+
+        # Delete repo stats (DatasetRepoStats)
+        repo_stats_repo = DatasetRepoStatsRepository(self.db)
+        deleted_stats = repo_stats_repo.delete_by_dataset(dataset_id)
+        logger.info(f"Deleted {deleted_stats} repo stats for dataset {dataset_id}")
+
+        # Delete versions (DatasetVersion)
+        version_repo = DatasetVersionRepository(self.db)
+        deleted_versions = version_repo.delete_by_dataset(dataset_id)
+        logger.info(f"Deleted {deleted_versions} versions for dataset {dataset_id}")
 
         # Delete the CSV file if exists
         if dataset.file_path:
@@ -357,8 +378,9 @@ class DatasetService:
             except Exception as e:
                 logger.warning("Failed to delete dataset file: %s", e)
 
-        # Delete the dataset document
+        # Delete the dataset document (DatasetProject)
         self.repo.delete_one(dataset_id)
+        logger.info(f"Deleted dataset {dataset_id}")
 
     def get_dataset_builds(
         self,

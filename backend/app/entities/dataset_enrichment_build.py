@@ -98,6 +98,3 @@ class DatasetEnrichmentBuild(BaseEntity):
         None,
         description="Timestamp when features were extracted",
     )
-
-    # NOTE: Raw scan results are stored in dataset_scan_results table,
-    # not duplicated here. Scan metrics are merged into features dict above.

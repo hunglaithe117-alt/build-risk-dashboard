@@ -18,6 +18,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import type { BuildValidationFilters } from "@/types";
 
 import { ColumnSelector } from "./ColumnSelector";
 import type { StepUploadProps, MappingKey } from "./types";
@@ -31,6 +32,7 @@ export function StepUpload({
     ciProviderMode,
     ciProviderColumn,
     ciProviders,
+    buildFilters,
     mappings,
     isMappingValid,
     isDatasetCreated,
@@ -41,6 +43,7 @@ export function StepUpload({
     onCiProviderChange,
     onCiProviderModeChange,
     onCiProviderColumnChange,
+    onBuildFiltersChange,
     onMappingChange,
     onClearFile,
 }: StepUploadProps) {
@@ -213,6 +216,88 @@ export function StepUpload({
                         </p>
                     </div>
                 )}
+            </div>
+
+            {/* Build Filters */}
+            <div className="space-y-4 rounded-lg border bg-slate-50/50 p-4 dark:bg-slate-800/50">
+                <div>
+                    <Label className="text-base font-semibold">Build Filters</Label>
+                    <p className="text-xs text-muted-foreground">
+                        Configure which builds to include during validation
+                    </p>
+                </div>
+
+                {/* Boolean filters */}
+                <div className="flex flex-wrap gap-3">
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2 transition hover:border-blue-300 dark:bg-slate-900">
+                        <input
+                            type="checkbox"
+                            checked={buildFilters.only_completed}
+                            onChange={(e) =>
+                                onBuildFiltersChange({
+                                    ...buildFilters,
+                                    only_completed: e.target.checked,
+                                })
+                            }
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm">Only completed builds</span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2 transition hover:border-blue-300 dark:bg-slate-900">
+                        <input
+                            type="checkbox"
+                            checked={buildFilters.exclude_bots}
+                            onChange={(e) =>
+                                onBuildFiltersChange({
+                                    ...buildFilters,
+                                    exclude_bots: e.target.checked,
+                                })
+                            }
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm">Exclude bot commits</span>
+                    </label>
+                </div>
+
+                <div className="space-y-2">
+                    <Label className="text-sm font-medium">Allowed Build Conclusions</Label>
+                    <p className="text-xs text-muted-foreground">
+                        Select which build results to include (click to toggle)
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                        {[
+                            { value: "success", label: "✓ Success", color: "bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-700 dark:text-emerald-400" },
+                            { value: "failure", label: "✗ Failure", color: "bg-red-100 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-700 dark:text-red-400" },
+                            { value: "cancelled", label: "◯ Cancelled", color: "bg-slate-100 border-slate-300 text-slate-600 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-400" },
+                            { value: "skipped", label: "⊘ Skipped", color: "bg-amber-100 border-amber-300 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-400" },
+                            { value: "timed_out", label: "⏱ Timed Out", color: "bg-orange-100 border-orange-300 text-orange-700 dark:bg-orange-900/30 dark:border-orange-700 dark:text-orange-400" },
+                            { value: "neutral", label: "◎ Neutral", color: "bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-400" },
+                        ].map((option) => {
+                            const isSelected = buildFilters.allowed_conclusions.includes(option.value);
+                            return (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => {
+                                        const newConclusions = isSelected
+                                            ? buildFilters.allowed_conclusions.filter((c) => c !== option.value)
+                                            : [...buildFilters.allowed_conclusions, option.value];
+                                        onBuildFiltersChange({
+                                            ...buildFilters,
+                                            allowed_conclusions: newConclusions,
+                                        });
+                                    }}
+                                    className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${isSelected
+                                        ? option.color
+                                        : "border-slate-200 bg-white text-slate-400 opacity-50 dark:border-slate-700 dark:bg-slate-900"
+                                        }`}
+                                >
+                                    {option.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
             </div>
 
             {/* Preview */}

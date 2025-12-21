@@ -7,6 +7,7 @@ from pymongo.database import Database
 from app.core.redis import get_async_redis
 from app.entities.dataset import DatasetProject, DatasetValidationStatus
 from app.repositories.dataset_build_repository import DatasetBuildRepository
+from app.repositories.dataset_repo_stats import DatasetRepoStatsRepository
 from app.repositories.dataset_repository import DatasetRepository
 from app.tasks.dataset_validation import dataset_validation_orchestrator
 
@@ -17,6 +18,7 @@ class DatasetValidationService:
     def __init__(self, db: Database):
         self.db = db
         self.dataset_repo = DatasetRepository(db)
+        self.dataset_repo_stats_repo = DatasetRepoStatsRepository(db)
         self.build_repo = DatasetBuildRepository(db)
 
     def _get_dataset_or_404(self, dataset_id: str) -> DatasetProject:
@@ -71,20 +73,25 @@ class DatasetValidationService:
         """
         dataset = self._get_dataset_or_404(dataset_id)
 
-        repo_stats = dataset.validation_stats.repo_stats if dataset.validation_stats else []
+        # Fetch repo stats from separate collection
+        repo_stats = self.dataset_repo_stats_repo.find_by_dataset(dataset_id)
 
         repos_list = [
             {
-                "id": str(stat.full_name),  # Use full_name as id since we don't have separate id
+                "id": str(stat.raw_repo_id),
+                "raw_repo_id": str(stat.raw_repo_id),
                 "full_name": stat.full_name,
-                "repo_name": stat.full_name,  # Keep for frontend compatibility
-                "validation_status": "valid",
-                "builds_in_csv": stat.builds_total,
+                "ci_provider": stat.ci_provider.value
+                if hasattr(stat.ci_provider, "value")
+                else str(stat.ci_provider),
+                "validation_status": "valid" if stat.is_valid else "invalid",
+                "validation_error": stat.validation_error,
+                "builds_total": stat.builds_total,
                 "builds_found": stat.builds_found,
                 "builds_not_found": stat.builds_not_found,
+                "builds_filtered": stat.builds_filtered,
             }
             for stat in repo_stats
-            if stat.is_valid
         ]
 
         return {
@@ -92,6 +99,56 @@ class DatasetValidationService:
             "status": dataset.validation_status or DatasetValidationStatus.PENDING,
             "stats": dataset.validation_stats or {},
             "repos": repos_list,
+        }
+
+    def get_dataset_repos(
+        self,
+        dataset_id: str,
+        skip: int = 0,
+        limit: int = 20,
+        search: str = None,
+    ) -> dict:
+        """Get paginated list of repositories for a dataset."""
+        self._get_dataset_or_404(dataset_id)
+
+        # Build query
+        filter_query = {"dataset_id": ObjectId(dataset_id)}
+        if search:
+            filter_query["full_name"] = {"$regex": search, "$options": "i"}
+
+        # Get total count
+        total = self.dataset_repo_stats_repo.collection.count_documents(filter_query)
+
+        # Get page
+        stats = (
+            self.dataset_repo_stats_repo.collection.find(filter_query)
+            .sort("full_name", 1)
+            .skip(skip)
+            .limit(limit)
+        )
+
+        items = []
+        for stat in stats:
+            items.append(
+                {
+                    "id": str(stat["_id"]),
+                    "raw_repo_id": str(stat["raw_repo_id"]) if stat.get("raw_repo_id") else None,
+                    "full_name": stat["full_name"],
+                    "is_valid": stat.get("is_valid", False),
+                    "validation_status": "valid" if stat.get("is_valid") else "invalid",
+                    "validation_error": stat.get("validation_error"),
+                    "builds_total": stat.get("builds_total", 0),
+                    "builds_found": stat.get("builds_found", 0),
+                    "builds_not_found": stat.get("builds_not_found", 0),
+                    "builds_filtered": stat.get("builds_filtered", 0),
+                }
+            )
+
+        return {
+            "items": items,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
         }
 
     async def cancel_validation(self, dataset_id: str) -> dict:
@@ -137,6 +194,10 @@ class DatasetValidationService:
         )
 
         # Delete all build records for this dataset
-        deleted_count = self.build_repo.delete_by_dataset(dataset_id)
+        self.build_repo.delete_by_dataset(dataset_id)
 
-        return {"message": f"Reset validation. Deleted {deleted_count} build records."}
+        # Delete repo stats
+        deleted_stats = self.dataset_repo_stats_repo.delete_by_dataset(dataset_id)
+        # builds are deleted by delete_by_dataset above
+
+        return {"message": f"Reset validation. Stats deleted: {deleted_stats}"}

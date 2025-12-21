@@ -189,12 +189,16 @@ def get_config_requirements(request: ConfigRequirementsRequest):
         if field_name == "source_languages":
             field_spec.options = LanguageRegistry.get_supported_languages()
         elif field_name == "test_frameworks":
-            field_spec.options = log_parser_registry.get_supported_frameworks()
+            # Grouped by language for custom UI rendering
+            field_spec.options = log_parser_registry.get_frameworks_by_language()
         elif field_name == "ci_provider":
             from app.ci_providers.factory import CIProviderRegistry
 
             field_spec.options = [p.value for p in CIProviderRegistry.get_all_types()]
 
         fields.append(field_spec)
+
+    # Sort fields by name for consistent ordering
+    fields.sort(key=lambda f: f.name)
 
     return ConfigRequirementsResponse(fields=fields)

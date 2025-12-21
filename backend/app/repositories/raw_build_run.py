@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional
 from bson import ObjectId
 from pymongo import ReturnDocument
 
+from app.entities.base import validate_object_id
 from app.entities.raw_build_run import RawBuildRun
 from app.repositories.base import BaseRepository
-from app.entities.base import validate_object_id
 
 
 class RawBuildRunRepository(BaseRepository[RawBuildRun]):
@@ -19,19 +19,16 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
 
     def find_by_business_key(
         self,
-        raw_repo_id: ObjectId,
+        raw_repo_id: str,
         build_id: str,
         provider: str,
     ) -> Optional[RawBuildRun]:
-        """
-        Find by business key (raw_repo_id + build_id + provider).
-
-        This is the preferred lookup method for deduplication and sharing
-        RawBuildRun data between model flow and dataset flow.
-        """
+        oid = validate_object_id(raw_repo_id)
+        if not oid:
+            return None
         doc = self.collection.find_one(
             {
-                "raw_repo_id": raw_repo_id,
+                "raw_repo_id": oid,
                 "build_id": build_id,
                 "provider": provider,
             }
@@ -43,7 +40,6 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
         raw_repo_id: ObjectId,
         build_id: str,
     ) -> Optional[RawBuildRun]:
-        """Find a build run by repo and build_id (legacy - prefer find_by_business_key)."""
         doc = self.collection.find_one(
             {
                 "raw_repo_id": raw_repo_id,
@@ -162,9 +158,7 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
         # Extract provider from kwargs if available
         provider = kwargs.get("provider")
         if provider:
-            return self.upsert_by_business_key(
-                raw_repo_id, build_id, provider, **kwargs
-            )
+            return self.upsert_by_business_key(raw_repo_id, build_id, provider, **kwargs)
 
         # Legacy behavior: upsert by (raw_repo_id, build_id) only
         update_data = {
@@ -186,11 +180,7 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
         raw_repo_id: ObjectId,
     ) -> Optional[RawBuildRun]:
         """Get the most recent build run for a repository."""
-        doc = (
-            self.collection.find({"raw_repo_id": raw_repo_id})
-            .sort("created_at", -1)
-            .limit(1)
-        )
+        doc = self.collection.find({"raw_repo_id": raw_repo_id}).sort("created_at", -1).limit(1)
         docs = list(doc)
         return RawBuildRun(**docs[0]) if docs else None
 

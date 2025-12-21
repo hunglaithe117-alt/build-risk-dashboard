@@ -6,7 +6,7 @@ Used for tracking scan status and retry functionality.
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import Field
 
@@ -38,6 +38,12 @@ class TrivyCommitScan(BaseEntity):
     commit_sha: str = Field(..., description="Git commit SHA")
     repo_full_name: str = Field(..., description="Repository full name (owner/repo)")
 
+    # Raw repository reference - needed to derive worktree path for retry
+    raw_repo_id: PyObjectId = Field(
+        ...,
+        description="RawRepository ID - used to derive worktree path for scan/retry",
+    )
+
     # Status tracking
     status: TrivyScanStatus = TrivyScanStatus.PENDING
     error_message: Optional[str] = None
@@ -47,7 +53,7 @@ class TrivyCommitScan(BaseEntity):
         None,
         description="Trivy config: severity, scanners, extraArgs",
     )
-    selected_metrics: Optional[list] = Field(
+    selected_metrics: Optional[List[str]] = Field(
         None,
         description="Selected metrics to filter",
     )
@@ -61,9 +67,6 @@ class TrivyCommitScan(BaseEntity):
         0,
         description="Number of builds backfilled with results",
     )
-
-    # Path info for retry
-    worktree_path: Optional[str] = None
 
     # Timestamps
     started_at: Optional[datetime] = None

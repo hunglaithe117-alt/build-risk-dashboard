@@ -23,8 +23,6 @@ def build_ingestion_workflow(
     build_ids: List[str],
     commit_shas: List[str],
     ci_provider: str,
-    final_task: Optional[Signature] = None,
-    custom_tasks: Optional[Dict[str, Signature]] = None,
 ) -> Optional[Signature]:
     """
     Build a Celery workflow from task levels.
@@ -39,8 +37,6 @@ def build_ingestion_workflow(
         build_ids: List of build IDs for log download
         commit_shas: Optional list of commit SHAs for worktree creation
         ci_provider: CI provider string (e.g., "github_actions")
-        final_task: Optional final task to append to the workflow
-        custom_tasks: Optional dict of task_name -> Signature for custom tasks
 
     Returns:
         Celery workflow (chain/group) or None if no tasks
@@ -48,7 +44,6 @@ def build_ingestion_workflow(
     if not tasks_by_level:
         return None
 
-    custom_tasks = custom_tasks or {}
     level_workflows = []
 
     for level in sorted(tasks_by_level.keys()):
@@ -56,11 +51,6 @@ def build_ingestion_workflow(
         level_tasks = []
 
         for task_name in task_names:
-            # Check for custom task first
-            if task_name in custom_tasks:
-                level_tasks.append(custom_tasks[task_name])
-                continue
-
             task_sig = _create_task_signature(
                 task_name=task_name,
                 raw_repo_id=raw_repo_id,
@@ -84,10 +74,6 @@ def build_ingestion_workflow(
     if not level_workflows:
         return None
 
-    # Add final task if provided
-    if final_task:
-        level_workflows.append(final_task)
-
     # Chain all levels together
     if len(level_workflows) == 1:
         return level_workflows[0]
@@ -110,7 +96,7 @@ def _create_task_signature(
     (e.g., create_worktrees without commit_shas).
     """
     if task_name == "clone_repo":
-        return clone_repo.s(
+        return clone_repo.si(
             raw_repo_id=raw_repo_id,
             full_name=full_name,
             publish_status=publish_status,

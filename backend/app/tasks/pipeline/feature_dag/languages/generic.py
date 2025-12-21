@@ -1,4 +1,5 @@
 import re
+
 from .base import LanguageStrategy
 
 
@@ -17,9 +18,7 @@ class GenericStrategy(LanguageStrategy):
         lowered = path.lower()
         if any(hint in lowered for hint in self.TEST_DIR_HINTS):
             return True
-        return lowered.endswith(
-            ("_test.py", "_test.rb", "test.py", "test.rb", "_spec.rb")
-        )
+        return lowered.endswith(("_test.py", "_test.rb", "test.py", "test.rb", "_spec.rb"))
 
     def matches_test_definition(self, line: str) -> bool:
         stripped = line.strip()

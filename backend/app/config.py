@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     COMMIT_REPLAY_MAX_DEPTH: int = 100  # Max depth to traverse for commit replay
     LOG_UNAVAILABLE_THRESHOLD: int = 10  # Stop after N consecutive unavailable logs
 
+    # Ingestion Configuration
+    INGESTION_MAX_RETRIES: int = 2  # Retries per ingestion task
+    INGESTION_RETRY_DELAY: int = 30  # Seconds between retries
+
     # CSV Dataset Validation
     CSV_MAX_FILE_SIZE_MB: int = 50  # Maximum CSV file size in MB
     CSV_MAX_ROWS: int = 100000  # Maximum rows allowed in CSV

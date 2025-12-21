@@ -11,21 +11,20 @@ Features:
 - Optional status publishing for UI updates
 """
 
+import asyncio
 import logging
 import subprocess
-import asyncio
 from typing import Any, Dict, List
 
-
 from app.celery_app import celery_app
+from app.ci_providers import CIProvider, get_ci_provider, get_provider_config
 from app.config import settings
-from app.tasks.base import PipelineTask
+from app.core.redis import RedisLock
+from app.paths import LOGS_DIR, REPOS_DIR, WORKTREES_DIR
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
-from app.ci_providers import CIProvider, get_provider_config, get_ci_provider
 from app.services.github.exceptions import GithubRateLimitError, GithubRetryableError
-from app.paths import REPOS_DIR, WORKTREES_DIR, LOGS_DIR
-from app.core.redis import RedisLock
+from app.tasks.base import PipelineTask
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +36,9 @@ class RateLimiter:
 
     def wait(self):
         """Wait until rate limit allows next call."""
-        import redis
         import time
+
+        import redis
 
         redis_client = redis.from_url(settings.REDIS_URL)
         while True:
@@ -60,8 +60,9 @@ class RateLimiter:
 def _publish_status(repo_id: str, status: str, message: str = ""):
     """Publish status update to Redis for real-time UI updates."""
     try:
-        import redis
         import json
+
+        import redis
 
         redis_client = redis.from_url(settings.REDIS_URL)
         redis_client.publish(
@@ -114,9 +115,7 @@ def clone_repo(
             # Check if this repo belongs to the configured organization
             from app.services.repository_service import is_org_repo
 
-            use_installation_token = (
-                is_org_repo(full_name) and settings.GITHUB_INSTALLATION_ID
-            )
+            use_installation_token = is_org_repo(full_name) and settings.GITHUB_INSTALLATION_ID
 
             if repo_path.exists():
                 logger.info(f"Updating existing clone for {full_name}")
@@ -126,9 +125,7 @@ def clone_repo(
                     from app.services.github.github_app import get_installation_token
 
                     token = get_installation_token()
-                    auth_url = (
-                        f"https://x-access-token:{token}@github.com/{full_name}.git"
-                    )
+                    auth_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
                     subprocess.run(
                         ["git", "remote", "set-url", "origin", auth_url],
                         cwd=str(repo_path),
@@ -153,9 +150,7 @@ def clone_repo(
                     from app.services.github.github_app import get_installation_token
 
                     token = get_installation_token()
-                    clone_url = (
-                        f"https://x-access-token:{token}@github.com/{full_name}.git"
-                    )
+                    clone_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
 
                 subprocess.run(
                     ["git", "clone", "--bare", clone_url, str(repo_path)],
@@ -165,9 +160,7 @@ def clone_repo(
                 )
 
             if publish_status and raw_repo_id:
-                _publish_status(
-                    raw_repo_id, "importing", "Repository cloned successfully"
-                )
+                _publish_status(raw_repo_id, "importing", "Repository cloned successfully")
 
             result = {
                 "raw_repo_id": raw_repo_id,
@@ -358,9 +351,7 @@ def _create_worktree_chunk_impl(
                             )
                             if synthetic_sha:
                                 if build_run:
-                                    build_run_repo.update_effective_sha(
-                                        build_run.id, synthetic_sha
-                                    )
+                                    build_run_repo.update_effective_sha(build_run.id, synthetic_sha)
                                 sha = synthetic_sha
                                 fork_commits_replayed += 1
                             else:
@@ -562,6 +553,7 @@ def _download_logs_chunk_impl(
     avoiding the 'Never call result.get() within a task!' error.
     """
     import redis
+
     from app.services.github.exceptions import GithubLogsUnavailableError
 
     # Check if we should stop (other chunk hit max expired)
@@ -583,9 +575,7 @@ def _download_logs_chunk_impl(
     max_log_size = settings.MAX_LOG_SIZE_MB * 1024 * 1024
 
     rate_limit = getattr(settings, "API_RATE_LIMIT_PER_SECOND", 5.0)
-    github_limiter = RateLimiter(
-        f"github_logs:{raw_repo_id}", calls_per_second=rate_limit
-    )
+    github_limiter = RateLimiter(f"github_logs:{raw_repo_id}", calls_per_second=rate_limit)
 
     max_consecutive = int(redis_client.get(f"{session_key}:max_expired") or 10)
 
@@ -598,8 +588,18 @@ def _download_logs_chunk_impl(
 
         build_run = build_run_repo.find_by_repo_and_build_id(raw_repo_id, build_id)
         if build_run and build_run.logs_available:
-            logs_skipped += 1
-            return "skipped"
+            # Verify log files actually exist on disk
+            expected_logs_dir = LOGS_DIR / raw_repo_id / build_id
+            if expected_logs_dir.exists() and any(expected_logs_dir.glob("*.log")):
+                logs_skipped += 1
+                return "skipped"
+            else:
+                # logs_available is True but files missing - reset and re-download
+                logger.info(f"Log files missing for {build_id}, re-downloading...")
+                build_run_repo.update_one(
+                    str(build_run.id),
+                    {"logs_available": False, "logs_path": None},
+                )
 
         try:
             build_logs_dir = LOGS_DIR / raw_repo_id / build_id

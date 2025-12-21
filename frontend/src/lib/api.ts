@@ -382,12 +382,41 @@ export const datasetsApi = {
       status: string;
       stats: Record<string, number>;
       repos: Array<{
-        repo_name: string;
+        id: string;
+        raw_repo_id: string;
+        full_name: string;
+        ci_provider: string;
         validation_status: string;
-        builds_in_csv: number;
+        validation_error?: string | null;
+        builds_total: number;
         builds_found: number;
+        builds_not_found: number;
       }>;
     }>(`/datasets/${datasetId}/validation-summary`);
+    return response.data;
+  },
+  // Paginated repo stats from separate collection
+  getRepoStats: async (
+    datasetId: string,
+    params?: { skip?: number; limit?: number; q?: string }
+  ) => {
+    const response = await api.get<{
+      items: Array<{
+        id: string;
+        raw_repo_id: string;
+        full_name: string;
+        is_valid: boolean;
+        validation_status: string;
+        validation_error?: string;
+        builds_total: number;
+        builds_found: number;
+        builds_not_found: number;
+        builds_filtered: number;
+      }>;
+      total: number;
+      skip: number;
+      limit: number;
+    }>(`/datasets/${datasetId}/repos`, { params });
     return response.data;
   },
 };
@@ -1145,5 +1174,51 @@ export const datasetScanApi = {
     a.download = `scan_${scanId}_results.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  },
+};
+
+// Dataset Version API
+export interface VersionDataResponse {
+  version: {
+    id: string;
+    name: string;
+    version_number: number;
+    status: string;
+    total_rows: number;
+    enriched_rows: number;
+    failed_rows: number;
+    selected_features: string[];
+    created_at: string | null;
+    completed_at: string | null;
+  };
+  data: {
+    rows: Record<string, unknown>[];
+    total: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+  };
+  column_stats?: Record<string, unknown>;
+}
+
+export const datasetVersionApi = {
+  getVersionData: async (
+    datasetId: string,
+    versionId: string,
+    page: number = 1,
+    pageSize: number = 20,
+    includeStats: boolean = true
+  ): Promise<VersionDataResponse> => {
+    const response = await api.get<VersionDataResponse>(
+      `/datasets/${datasetId}/versions/${versionId}/data`,
+      {
+        params: {
+          page,
+          page_size: pageSize,
+          include_stats: includeStats,
+        },
+      }
+    );
+    return response.data;
   },
 };

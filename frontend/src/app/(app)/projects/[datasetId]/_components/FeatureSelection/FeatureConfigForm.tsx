@@ -41,14 +41,13 @@ interface ConfigFieldSpec {
 }
 
 interface RepoInfo {
-    repo_name: string;
+    id: string; // raw_repo_id
+    full_name: string;
     validation_status: string;
 }
 
-interface RepoConfig {
-    source_languages: string[];
-    test_frameworks: string[];
-}
+// Dynamic config: field name -> array of selected values
+type RepoConfig = Record<string, string[]>;
 
 /** Structure for configs: { global: {...}, repos: {...} } */
 interface FeatureConfigsData {
@@ -103,7 +102,8 @@ export function FeatureConfigForm({
                 const summary = await datasetsApi.getValidationSummary(datasetId);
                 if (!isCancelled && summary.repos) {
                     setRepos(summary.repos.map(r => ({
-                        repo_name: r.repo_name,
+                        id: r.id,
+                        full_name: r.full_name,
                         validation_status: r.validation_status,
                     })));
                 }

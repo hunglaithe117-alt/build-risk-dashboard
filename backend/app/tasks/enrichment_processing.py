@@ -1,12 +1,14 @@
 """
-Version Enrichment Tasks - Chain+Group pattern for parallel feature extraction.
+Version Enrichment Tasks - Chord pattern for parallel ingestion and feature extraction.
 
-Flow:
-1. start_enrichment - Orchestrator: Dispatch ingestion then enrichment
-2. start_ingestion_for_version - Run ingestion for repos with selected features
-3. dispatch_enrichment_batches - After ingestion, dispatch batch processing
-4. process_enrichment_batch - Process a batch of builds for feature extraction
-5. finalize_enrichment - Mark version as completed
+Flow (NEW - chord pattern):
+1. start_enrichment - Orchestrator: Build parallel ingestion tasks
+2. aggregate_ingestion_results - Chord callback: aggregate ingestion results
+3. dispatch_scans_and_processing - Dispatch scans (async) + processing
+4. dispatch_enrichment_batches - Dispatch batch processing
+5. process_enrichment_batch - Extract features for a batch of builds
+6. finalize_enrichment - Mark version as completed
+7. dispatch_version_scans - Dispatch scans per unique commit (async)
 """
 
 import logging
@@ -25,6 +27,7 @@ from app.entities.enums import ExtractionStatus
 from app.entities.raw_repository import RawRepository
 from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
+from app.repositories.dataset_repo_stats import DatasetRepoStatsRepository
 from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
@@ -35,27 +38,42 @@ from app.tasks.shared import extract_features_for_build
 logger = logging.getLogger(__name__)
 
 
-# Task 1: Orchestrator - starts ingestion AND scans in parallel
 @celery_app.task(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.start_enrichment",
     queue="processing",
+    soft_time_limit=120,
+    time_limit=180,
 )
 def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
     """
-    Orchestrator: Start ingestion AND scans in PARALLEL for version.
+    Orchestrator: Build ingestion chains and dispatch as chord.
 
-    Flow:
+    Flow (pure Celery chord pattern):
         start_enrichment
-            ├── [Parallel Group]
-            │     ├── start_ingestion_for_version → dispatch_enrichment_batches
-            │     └── dispatch_version_scans (if scan_metrics selected)
-            └── finalize_enrichment (via chord callback)
+            └── chord(
+                    group(
+                        chain(clone_1 → worktrees_1 → logs_1),
+                        chain(clone_2 → worktrees_2 → logs_2),
+                        ...
+                    ),
+                    chain(aggregate_ingestion_results, dispatch_scans_and_processing)
+                )
+
+    Chains are built directly here (not wrapped in tasks) so chord properly
+    waits for ALL chain tasks to complete before calling the callback.
     """
+    from app.tasks.pipeline.feature_dag._metadata import get_required_resources_for_features
+    from app.tasks.pipeline.resource_dag import get_ingestion_tasks_by_level
+    from app.tasks.shared import build_ingestion_workflow
+
     version_repo = DatasetVersionRepository(self.db)
     dataset_build_repo = DatasetBuildRepository(self.db)
     dataset_repo = DatasetRepository(self.db)
+    dataset_repo_stats_repo = DatasetRepoStatsRepository(self.db)
+    raw_repo_repo = RawRepositoryRepository(self.db)
+    raw_build_run_repo = RawBuildRunRepository(self.db)
 
     # Load version
     dataset_version = version_repo.find_by_id(version_id)
@@ -79,8 +97,9 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
         if total_rows == 0:
             raise ValueError("No validated builds found. Please run validation first.")
 
-        # Get validated repos from dataset
-        validated_raw_repo_ids = list(dataset.repo_ci_providers.keys())
+        # Get validated repos from dataset stats
+        repo_stats_list = dataset_repo_stats_repo.find_by_dataset(dataset_version.dataset_id)
+        validated_raw_repo_ids = [str(stat.raw_repo_id) for stat in repo_stats_list]
 
         version_repo.update_one(
             version_id,
@@ -91,41 +110,132 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
             },
         )
         logger.info(
-            f"Found {total_rows} validated builds, "
+            f"[start_enrichment] {total_rows} builds, "
             f"{len(validated_raw_repo_ids)} repos to ingest"
         )
 
-        # Build PARALLEL workflow: ingestion + scans run simultaneously
-        # Ingestion chain
-        ingestion_chain = chain(
-            start_ingestion_for_version.s(
-                version_id=version_id,
-                dataset_id=str(dataset_version.dataset_id),
-                raw_repo_ids=[str(repo_id) for repo_id in validated_raw_repo_ids],
-            ),
-            dispatch_enrichment_batches.si(version_id=version_id),
+        if not validated_raw_repo_ids:
+            # No repos to process
+            version_repo.mark_completed(version_id)
+            return {"status": "completed", "message": "No repos to ingest"}
+
+        # Calculate required resources from features
+        feature_set = (
+            set(dataset_version.selected_features) if dataset_version.selected_features else set()
+        )
+        required_resources = get_required_resources_for_features(feature_set)
+
+        # FORCE worktree if scans are enabled
+        has_scans = bool(dataset_version.scan_metrics.get("sonarqube")) or bool(
+            dataset_version.scan_metrics.get("trivy")
+        )
+        if has_scans and "git_worktree" not in required_resources:
+            required_resources.add("git_worktree")
+
+        # Get tasks grouped by level from resource_dag
+        tasks_by_level = get_ingestion_tasks_by_level(list(required_resources))
+
+        logger.info(
+            f"[start_enrichment] Resources={required_resources}, "
+            f"tasks_by_level={tasks_by_level}, scans={has_scans}"
         )
 
-        # Check if scans are needed
-        has_sonar = bool(dataset_version.scan_metrics.get("sonarqube"))
-        has_trivy = bool(dataset_version.scan_metrics.get("trivy"))
+        # Build INGESTION CHAINS directly (not wrapped in tasks)
+        # This ensures chord properly waits for all chain tasks
+        ingestion_chains = []
+        repo_metadata = []  # Track metadata for aggregation
 
-        if has_sonar or has_trivy:
-            # Dispatch scans in parallel with ingestion
-            logger.info(
-                f"Dispatching scans for version {version_id}: "
-                f"sonar={has_sonar}, trivy={has_trivy}"
+        for raw_repo_id in validated_raw_repo_ids:
+            # Get repo info
+            raw_repo = raw_repo_repo.find_by_id(raw_repo_id)
+            if not raw_repo:
+                logger.warning(f"RawRepository {raw_repo_id} not found, skipping")
+                continue
+
+            # Get CI provider from repo stats
+            repo_stats = dataset_repo_stats_repo.find_by_dataset_and_repo(
+                str(dataset.id), raw_repo_id
             )
-            dispatch_version_scans.delay(version_id)
+            ci_provider = "github_actions"
+            if repo_stats and repo_stats.ci_provider:
+                ci_provider = (
+                    repo_stats.ci_provider.value
+                    if hasattr(repo_stats.ci_provider, "value")
+                    else repo_stats.ci_provider
+                )
 
-        # Start ingestion workflow (scans are independent)
-        ingestion_chain.apply_async()
+            # Get build IDs and commit SHAs for this repo
+            repo_builds = dataset_build_repo.find_found_builds_by_repo(
+                dataset_version.dataset_id, raw_repo_id
+            )
+            build_csv_ids = list({str(build.build_id_from_csv) for build in repo_builds})
+
+            if not build_csv_ids:
+                continue
+
+            # Get commit SHAs
+            commit_shas = []
+            for build_csv_id in build_csv_ids:
+                raw_build_run = raw_build_run_repo.find_by_business_key(
+                    raw_repo_id, build_csv_id, ci_provider
+                )
+                if raw_build_run and raw_build_run.commit_sha:
+                    commit_shas.append(raw_build_run.effective_sha or raw_build_run.commit_sha)
+            commit_shas = list(set(commit_shas))
+
+            # Build ingestion chain for this repo
+            repo_chain = build_ingestion_workflow(
+                tasks_by_level=tasks_by_level,
+                raw_repo_id=raw_repo_id,
+                full_name=raw_repo.full_name,
+                build_ids=build_csv_ids,
+                commit_shas=commit_shas,
+                ci_provider=ci_provider,
+            )
+
+            if repo_chain:
+                ingestion_chains.append(repo_chain)
+                repo_metadata.append(
+                    {
+                        "raw_repo_id": raw_repo_id,
+                        "full_name": raw_repo.full_name,
+                        "builds": len(build_csv_ids),
+                        "commits": len(commit_shas),
+                    }
+                )
+                logger.info(
+                    f"[start_enrichment] Built chain for {raw_repo.full_name}: "
+                    f"{len(build_csv_ids)} builds, {len(commit_shas)} commits"
+                )
+
+        if not ingestion_chains:
+            # No ingestion needed (no tasks required for features)
+            logger.info("[start_enrichment] No ingestion chains needed, proceeding to processing")
+            dispatch_scans_and_processing.delay(version_id)
+            return {"status": "dispatched", "message": "No ingestion needed, dispatched processing"}
+
+        # Use chord: run all repo ingestion chains in parallel → aggregate → process
+        # Note: chord waits for ALL chains to complete (including retries/failures)
+        workflow = chord(
+            group(ingestion_chains),
+            chain(
+                aggregate_ingestion_results.s(version_id=version_id),
+                dispatch_scans_and_processing.si(version_id=version_id),
+            ),
+        )
+        workflow.apply_async()
+
+        logger.info(
+            f"[start_enrichment] Dispatched {len(ingestion_chains)} ingestion chains "
+            f"for version {version_id}"
+        )
 
         return {
             "status": "dispatched",
             "total_builds": total_rows,
             "repos": len(validated_raw_repo_ids),
-            "scans_dispatched": has_sonar or has_trivy,
+            "ingestion_chains": len(ingestion_chains),
+            "repo_metadata": repo_metadata,
         }
 
     except Exception as exc:
@@ -135,133 +245,135 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
         raise
 
 
-# Task 1b: Run ingestion for version repos
+# Task 1b: Aggregate ingestion results (chord callback)
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.start_ingestion_for_version",
-    queue="ingestion",
-    soft_time_limit=600,
-    time_limit=900,
+    name="app.tasks.version_enrichment.aggregate_ingestion_results",
+    queue="processing",
+    soft_time_limit=30,
+    time_limit=60,
 )
-def start_ingestion_for_version(
+def aggregate_ingestion_results(
     self: PipelineTask,
+    results: List[Dict[str, Any]],
     version_id: str,
-    dataset_id: str,
-    raw_repo_ids: List[str],
 ) -> Dict[str, Any]:
     """
-    Run ingestion for all repos in a version with selected features.
+    Aggregate results from parallel repo ingestion chains.
 
-    Args:
-        version_id: DatasetVersion ID
-        dataset_id: Dataset ID (passed from caller to avoid re-query)
-        raw_repo_ids: List of RawRepository IDs (from dataset.repo_ci_providers.keys())
-
-    This is a synchronous task that dispatches per-repo ingestion tasks
-    and waits for them to complete before returning.
+    This is the chord callback that runs after ALL ingestion chains complete.
+    Each result is from the last task in each chain (clone/worktree/logs).
+    Chains may fail after retries - we count those as failed.
     """
-    from app.tasks.dataset_ingestion import ingest_dataset_builds_for_repo
-
     version_repo = DatasetVersionRepository(self.db)
-    raw_repo_repo = RawRepositoryRepository(self.db)
-    dataset_build_repo = DatasetBuildRepository(self.db)
 
-    dataset_version = version_repo.find_by_id(version_id)
-    if not dataset_version:
-        raise ValueError(f"Version {version_id} not found")
-
-    if not raw_repo_ids:
-        version_repo.update_one(
-            version_id,
-            {"ingestion_status": "completed", "ingestion_progress": 100},
-        )
-        return {"status": "completed", "message": "No repos to ingest"}
-
-    repos_ingested = 0
+    # Count success/failed - chains return status from their last task
+    # A chain is successful if it didn't raise an exception
+    repos_success = 0
     repos_failed = 0
 
-    for idx, raw_repo_id in enumerate(raw_repo_ids):
-        # Lookup RawRepository by ID
-        raw_repo = raw_repo_repo.find_by_id(raw_repo_id)
-        if not raw_repo:
-            logger.warning(f"RawRepository {raw_repo_id} not found, skipping")
+    for result in results:
+        if result is None:
+            # Task failed completely (returned None or raised exception)
             repos_failed += 1
-            continue
-
-        # Get validated builds for this repo
-        dataset_builds = dataset_build_repo.find_found_builds_by_repo(dataset_id, raw_repo_id)
-        build_csv_ids = [str(build.build_id_from_csv) for build in dataset_builds]
-
-        if not build_csv_ids:
-            continue
-
-        try:
-            # Run ingestion synchronously for this repo
-            ingestion_result = ingest_dataset_builds_for_repo.apply(
-                kwargs={
-                    "version_id": version_id,
-                    "raw_repo_id": raw_repo_id,
-                    "build_csv_ids": build_csv_ids,
-                    "features": dataset_version.selected_features,
-                }
-            )
-
-            if ingestion_result.successful():
-                repos_ingested += 1
+        elif isinstance(result, dict):
+            # Check various success indicators from ingestion tasks
+            status = result.get("status", "")
+            if status in ("cloned", "updated", "completed", "skipped"):
+                repos_success += 1
+            elif "worktrees_created" in result or "logs_downloaded" in result:
+                # Worktree/logs task completed
+                repos_success += 1
             else:
                 repos_failed += 1
-                logger.error(f"Ingestion failed for repo {raw_repo.full_name}")
-
-        except Exception as exc:
+        else:
             repos_failed += 1
-            logger.error(f"Ingestion error for repo {raw_repo.full_name}: {exc}")
-
-        # Update progress
-        progress = int(((idx + 1) / len(raw_repo_ids)) * 100)
-        version_repo.update_one(
-            version_id,
-            {
-                "ingestion_progress": progress,
-                "repos_ingested": repos_ingested,
-                "repos_failed": repos_failed,
-            },
-        )
-
-    # Mark ingestion complete
-    version_repo.update_one(
-        version_id,
-        {"ingestion_status": "completed", "ingestion_progress": 100},
-    )
 
     logger.info(
-        f"Ingestion completed for version {version_id}: "
-        f"{repos_ingested} succeeded, {repos_failed} failed"
+        f"[aggregate_ingestion_results] version={version_id}: "
+        f"{repos_success} chains succeeded, {repos_failed} chains failed, "
+        f"total results: {len(results)}"
     )
 
+    # Update version status
+    version_repo.update_one(
+        version_id,
+        {
+            "ingestion_status": "completed",
+            "ingestion_progress": 100,
+            "repos_ingested": repos_success,
+            "repos_failed": repos_failed,
+        },
+    )
+
+    return {"success": repos_success, "failed": repos_failed}
+
+
+# Task 1c: Dispatch scans and processing after ingestion
+@celery_app.task(
+    bind=True,
+    base=PipelineTask,
+    name="app.tasks.version_enrichment.dispatch_scans_and_processing",
+    queue="processing",
+    soft_time_limit=30,
+    time_limit=60,
+)
+def dispatch_scans_and_processing(self: PipelineTask, version_id: str) -> Dict[str, Any]:
+    """
+    Dispatch scans (async, fire & forget) and processing after ingestion completes.
+
+    Scans run independently without blocking feature extraction.
+    Scan results are backfilled to DatasetEnrichmentBuild.features later.
+    """
+    version_repo = DatasetVersionRepository(self.db)
+
+    version = version_repo.find_by_id(version_id)
+    if not version:
+        return {"status": "error", "error": "Version not found"}
+
+    has_sonar = bool(version.scan_metrics.get("sonarqube"))
+    has_trivy = bool(version.scan_metrics.get("trivy"))
+
+    # Dispatch scans (async, fire & forget - doesn't block processing)
+    if has_sonar or has_trivy:
+        logger.info(
+            f"[dispatch_scans_and_processing] Dispatching scans: "
+            f"sonar={has_sonar}, trivy={has_trivy}"
+        )
+        dispatch_version_scans.delay(version_id)
+
+    # Dispatch processing immediately (doesn't wait for scans)
+    dispatch_enrichment_batches.delay(version_id)
+
+    logger.info(f"[dispatch_scans_and_processing] Processing dispatched for {version_id}")
+
     return {
-        "status": "completed",
-        "repos_ingested": repos_ingested,
-        "repos_failed": repos_failed,
+        "status": "dispatched",
+        "scans_dispatched": has_sonar or has_trivy,
+        "processing_dispatched": True,
     }
 
 
-# Task 1c: Dispatch enrichment batches after ingestion
+# Task 2: Dispatch enrichment batches after ingestion
 @celery_app.task(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.dispatch_enrichment_batches",
     queue="processing",
+    soft_time_limit=120,
+    time_limit=180,
 )
 def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str, Any]:
     """
     After ingestion completes, dispatch enrichment batches grouped by raw_repo_id.
 
-    Uses dataset.repo_ci_providers.keys() for repo grouping.
+    Uses validated repos from dataset_repo_stats for repo grouping.
     Within each repo, splits builds into chunks of ENRICHMENT_BATCH_SIZE.
     """
     version_repo = DatasetVersionRepository(self.db)
     dataset_repo = DatasetRepository(self.db)
+    dataset_repo_stats_repo = DatasetRepoStatsRepository(self.db)
     dataset_build_repo = DatasetBuildRepository(self.db)
 
     dataset_version = version_repo.find_by_id(version_id)
@@ -273,8 +385,10 @@ def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str
     if not dataset:
         raise ValueError(f"Dataset {dataset_version.dataset_id} not found")
 
-    # Use repo_ci_providers keys as validated repo IDs
-    validated_raw_repo_ids = list(dataset.repo_ci_providers.keys())
+    # Use repo_stats to get validated repo IDs
+    repo_stats_list = dataset_repo_stats_repo.find_by_dataset(str(dataset_version.dataset_id))
+    validated_raw_repo_ids = [str(stat.raw_repo_id) for stat in repo_stats_list]
+
     if not validated_raw_repo_ids:
         version_repo.mark_completed(version_id)
         return {"status": "completed", "message": "No validated repos to process"}
@@ -495,6 +609,8 @@ def process_enrichment_batch(
     base=PipelineTask,
     name="app.tasks.version_enrichment.finalize_enrichment",
     queue="processing",
+    soft_time_limit=30,
+    time_limit=60,
 )
 def finalize_enrichment(
     self: PipelineTask,
@@ -581,19 +697,21 @@ def _extract_features_for_enrichment(
             "warnings": [],
         }
 
-    # Use shared helper for feature extraction
-    # DatasetVersion inherits from FeatureConfigBase, so it works as config source
+    # Create GitHub client for GITHUB_API features (required)
+    from app.services.github.github_client import get_public_github_client
+    from app.tasks.pipeline.feature_dag._inputs import GitHubClientInput
+
+    github_client = get_public_github_client()
+    github_client_input = GitHubClientInput(client=github_client, full_name=raw_repo.full_name)
+
     return extract_features_for_build(
         db=db,
         raw_repo=raw_repo,
         feature_config=dataset_version.feature_configs,
         raw_build_run=raw_build_run,
         selected_features=selected_features,
+        github_client=github_client_input,
     )
-
-
-# NOTE: Removed _merge_existing_scan_results - now using version-scoped scans
-# See enrichment_scan_helpers.py for new implementation
 
 
 # Task 4: Dispatch version scans (runs in parallel with ingestion)
@@ -602,6 +720,8 @@ def _extract_features_for_enrichment(
     base=PipelineTask,
     name="app.tasks.version_enrichment.dispatch_version_scans",
     queue="processing",
+    soft_time_limit=120,
+    time_limit=180,
 )
 def dispatch_version_scans(self: PipelineTask, version_id: str) -> Dict[str, Any]:
     """
@@ -664,7 +784,7 @@ def dispatch_version_scans(self: PipelineTask, version_id: str) -> Dict[str, Any
         from app.tasks.enrichment_scan_helpers import dispatch_scan_for_commit
 
         scan_tasks.append(
-            dispatch_scan_for_commit.s(
+            dispatch_scan_for_commit.si(
                 version_id=version_id,
                 raw_repo_id=commit_info["raw_repo_id"],
                 commit_sha=commit_info["commit_sha"],

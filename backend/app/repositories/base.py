@@ -94,9 +94,7 @@ class BaseRepository(ABC, Generic[T]):
 
         return models
 
-    def update_one(
-        self, entity_id: str | ObjectId, updates: Dict[str, Any]
-    ) -> Optional[T]:
+    def update_one(self, entity_id: str | ObjectId, updates: Dict[str, Any]) -> Optional[T]:
         """Update a document by ID"""
         identifier = self._to_object_id(entity_id)
         if identifier is None:
@@ -131,6 +129,102 @@ class BaseRepository(ABC, Generic[T]):
     def aggregate(self, pipeline: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Execute an aggregation pipeline"""
         return list(self.collection.aggregate(pipeline))
+
+    def find_one_and_update(
+        self,
+        query: Dict[str, Any],
+        update: Dict[str, Any],
+        upsert: bool = False,
+        return_updated: bool = True,
+    ) -> Optional[T]:
+        """
+        Atomically find and update a document.
+
+        Args:
+            query: Filter to find the document
+            update: Update operations (e.g., {"$set": {...}})
+            upsert: If True, insert if not found
+            return_updated: If True, return the updated document; otherwise return original
+
+        Returns:
+            The document (updated or original based on return_updated)
+        """
+        from pymongo import ReturnDocument
+
+        doc = self.collection.find_one_and_update(
+            query,
+            update,
+            upsert=upsert,
+            return_document=ReturnDocument.AFTER if return_updated else ReturnDocument.BEFORE,
+        )
+        return self._to_model(doc)
+
+    def update_one_by_query(
+        self,
+        query: Dict[str, Any],
+        updates: Dict[str, Any],
+        upsert: bool = False,
+    ) -> bool:
+        """
+        Update a single document matching the query.
+
+        Args:
+            query: Filter to find the document
+            updates: Fields to update (will be wrapped in $set)
+            upsert: If True, insert if not found
+
+        Returns:
+            True if a document was modified or upserted
+        """
+        result = self.collection.update_one(query, {"$set": updates}, upsert=upsert)
+        return result.modified_count > 0 or result.upserted_id is not None
+
+    def update_one_raw(
+        self,
+        query: Dict[str, Any],
+        update: Dict[str, Any],
+        upsert: bool = False,
+    ) -> bool:
+        """
+        Update a document with raw update operators (without auto-wrapping in $set).
+
+        Args:
+            query: Filter to find the document
+            update: Raw update operations (e.g., {"$set": {...}, "$inc": {...}})
+            upsert: If True, insert if not found
+
+        Returns:
+            True if a document was modified or upserted
+        """
+        result = self.collection.update_one(query, update, upsert=upsert)
+        return result.modified_count > 0 or result.upserted_id is not None
+
+    def upsert_one(
+        self,
+        query: Dict[str, Any],
+        data: Dict[str, Any],
+    ) -> T:
+        """
+        Insert or update a document matching the query.
+
+        Args:
+            query: Filter to find existing document
+            data: Data to set (merged with query fields on insert)
+
+        Returns:
+            The upserted/updated document as model
+        """
+        from pymongo import ReturnDocument
+
+        # Merge query fields into data for insert case
+        update_data = {**query, **data}
+        doc = self.collection.find_one_and_update(
+            query,
+            {"$set": update_data},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return self._to_model(doc)
 
     def _to_model(self, doc: Optional[Dict[str, Any]]) -> Optional[T]:
         """Convert a dictionary to a model instance"""

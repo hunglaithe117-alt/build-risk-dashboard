@@ -7,6 +7,7 @@ Tasks:
 """
 
 import logging
+from typing import Optional
 
 from bson import ObjectId
 
@@ -14,11 +15,24 @@ from app.celery_app import celery_app
 from app.database.mongo import get_database
 from app.integrations.tools.sonarqube.exporter import MetricsExporter
 from app.integrations.tools.sonarqube.runner import SonarCommitRunner
+from app.paths import WORKTREES_DIR
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.dataset_version import DatasetVersionRepository
-from app.repositories.sonar_scan_pending import SonarScanPendingRepository
+from app.repositories.sonar_commit_scan import SonarCommitScanRepository
 
 logger = logging.getLogger(__name__)
+
+
+def get_worktree_path(raw_repo_id: str, commit_sha: str) -> Optional[str]:
+    """
+    Derive worktree path from raw_repo_id and commit_sha.
+
+    Path format: WORKTREES_DIR / raw_repo_id / commit_sha[:12]
+    """
+    path = WORKTREES_DIR / raw_repo_id / commit_sha[:12]
+    if path.exists():
+        return str(path)
+    return None
 
 
 # =============================================================================
@@ -38,40 +52,36 @@ def start_sonar_scan_for_version_commit(
     version_id: str,
     commit_sha: str,
     repo_full_name: str,
-    repo_url: str,
+    raw_repo_id: str,
     component_key: str,
     config_content: str = None,
-    shared_worktree_path: str = None,
-    raw_repo_id: str = None,
 ):
     """
     Start SonarQube scan for a commit in a dataset version.
 
-    Creates/updates SonarScanPending record for tracking.
+    Creates/updates SonarCommitScan record for tracking.
     Webhook will backfill results to all builds with matching commit.
 
     Args:
         version_id: DatasetVersion ID
         commit_sha: Commit SHA to scan
         repo_full_name: Repository full name (owner/repo)
-        repo_url: Repository URL for checkout
+        raw_repo_id: RawRepository ID - used to derive worktree path
         component_key: SonarQube project key (format: reponame_commithash)
         config_content: Optional sonar-project.properties content
-        shared_worktree_path: Optional path to existing worktree
-        raw_repo_id: Optional RawRepository ID for worktree lookup
     """
     logger.info(f"Starting SonarQube scan for commit {commit_sha[:8]} in version {version_id[:8]}")
 
     db = get_database()
-    pending_repo = SonarScanPendingRepository(db)
+    scan_repo = SonarCommitScanRepository(db)
 
-    # Create or get scan record
-    scan_record = pending_repo.create_or_get(
+    # Create or get scan record (stores raw_repo_id for retry)
+    scan_record = scan_repo.create_or_get(
         version_id=ObjectId(version_id),
         commit_sha=commit_sha,
         repo_full_name=repo_full_name,
+        raw_repo_id=ObjectId(raw_repo_id),
         component_key=component_key,
-        repo_url=repo_url,
     )
 
     # Check if already scanning
@@ -79,17 +89,25 @@ def start_sonar_scan_for_version_commit(
         logger.info(f"Scan already in progress for {component_key}")
         return {"status": "already_scanning", "component_key": component_key}
 
+    # Derive worktree path from raw_repo_id
+    worktree_path = get_worktree_path(raw_repo_id, commit_sha)
+    if not worktree_path:
+        error_msg = f"Worktree not found for {repo_full_name} @ {commit_sha[:8]}"
+        logger.error(error_msg)
+        scan_repo.mark_failed(scan_record.id, error_msg)
+        raise ValueError(error_msg)
+
     # Mark as scanning
-    pending_repo.mark_scanning(scan_record.id)
+    scan_repo.mark_scanning(scan_record.id)
 
     try:
         project_key = component_key.rsplit("_", 1)[0]
         runner = SonarCommitRunner(project_key, raw_repo_id=raw_repo_id)
         runner.scan_commit(
-            repo_url,
-            commit_sha,
+            repo_url=f"https://github.com/{repo_full_name}.git",
+            commit_sha=commit_sha,
             sonar_config_content=config_content,
-            shared_worktree_path=shared_worktree_path,
+            shared_worktree_path=worktree_path,
             full_name=repo_full_name,
         )
 
@@ -99,7 +117,7 @@ def start_sonar_scan_for_version_commit(
     except Exception as exc:
         error_msg = str(exc)
         logger.error(f"SonarQube scan failed for {component_key}: {error_msg}")
-        pending_repo.mark_failed(scan_record.id, error_msg)
+        scan_repo.mark_failed(scan_record.id, error_msg)
 
         raise self.retry(
             exc=exc,
@@ -135,20 +153,20 @@ def export_metrics_from_webhook(
     logger.info(f"Processing SonarQube webhook for {component_key}, status={analysis_status}")
 
     db = get_database()
-    pending_repo = SonarScanPendingRepository(db)
+    scan_repo = SonarCommitScanRepository(db)
     version_repo = DatasetVersionRepository(db)
     enrichment_build_repo = DatasetEnrichmentBuildRepository(db)
 
-    # Find pending scan record
-    pending = pending_repo.find_by_component_key(component_key)
-    if not pending:
-        logger.warning(f"No pending scan found for {component_key}")
-        return {"status": "no_pending", "component_key": component_key}
+    # Find scan record
+    scan_record = scan_repo.find_by_component_key(component_key)
+    if not scan_record:
+        logger.warning(f"No scan record found for {component_key}")
+        return {"status": "no_scan_record", "component_key": component_key}
 
     try:
         # Handle failed analysis
         if analysis_status != "SUCCESS":
-            pending_repo.mark_failed(pending.id, f"Analysis failed: {analysis_status}")
+            scan_repo.mark_failed(scan_record.id, f"Analysis failed: {analysis_status}")
             return {"status": "failed", "component_key": component_key}
 
         # Export metrics from SonarQube API
@@ -157,14 +175,14 @@ def export_metrics_from_webhook(
 
         if not raw_metrics:
             logger.warning(f"No metrics available for {component_key}")
-            pending_repo.mark_failed(pending.id, "No metrics available")
+            scan_repo.mark_failed(scan_record.id, "No metrics available")
             return {"status": "no_metrics", "component_key": component_key}
 
         # Get version to filter metrics
-        version = version_repo.find_by_id(str(pending.dataset_version_id))
+        version = version_repo.find_by_id(str(scan_record.dataset_version_id))
         if not version:
-            logger.error(f"Version {pending.dataset_version_id} not found")
-            pending_repo.mark_failed(pending.id, "Version not found")
+            logger.error(f"Version {scan_record.dataset_version_id} not found")
+            scan_repo.mark_failed(scan_record.id, "Version not found")
             return {"status": "version_not_found", "component_key": component_key}
 
         # Filter metrics based on user selection
@@ -173,18 +191,18 @@ def export_metrics_from_webhook(
 
         # Backfill to all builds in version with matching commit
         updated_count = enrichment_build_repo.backfill_by_commit_in_version(
-            version_id=pending.dataset_version_id,
-            commit_sha=pending.commit_sha,
+            version_id=scan_record.dataset_version_id,
+            commit_sha=scan_record.commit_sha,
             scan_features=filtered_metrics,
             prefix="sonar_",
         )
 
-        # Mark pending as completed
-        pending_repo.mark_completed(pending.id, raw_metrics, updated_count)
+        # Mark completed
+        scan_repo.mark_completed(scan_record.id, raw_metrics, updated_count)
 
         logger.info(
             f"SonarQube metrics backfilled to {updated_count} builds "
-            f"for commit {pending.commit_sha[:8]} ({len(filtered_metrics)} metrics)"
+            f"for commit {scan_record.commit_sha[:8]} ({len(filtered_metrics)} metrics)"
         )
 
         return {
@@ -195,7 +213,7 @@ def export_metrics_from_webhook(
 
     except Exception as exc:
         logger.error(f"Failed to export metrics for {component_key}: {exc}")
-        pending_repo.mark_failed(pending.id, str(exc))
+        scan_repo.mark_failed(scan_record.id, str(exc))
         raise
 
 

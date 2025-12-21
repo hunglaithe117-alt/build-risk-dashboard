@@ -29,7 +29,7 @@ import {
 /** Structure for configs from FeatureConfigForm */
 interface FeatureConfigsData {
     global: Record<string, unknown>;
-    repos: Record<string, { source_languages: string[]; test_frameworks: string[] }>;
+    repos: Record<string, Record<string, string[]>>;
 }
 
 /** Scan metrics selection */

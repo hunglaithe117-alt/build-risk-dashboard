@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Optional
 
 from bson import ObjectId
-from pydantic import BaseModel, BeforeValidator, Field, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 
 def validate_object_id(v: Any) -> ObjectId | None:

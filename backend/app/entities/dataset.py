@@ -35,17 +35,6 @@ class DatasetStats(BaseModel):
     build_coverage: float = 0.0
 
 
-class RepoValidationStats(BaseModel):
-    """Per-repository validation statistics."""
-
-    full_name: str
-    builds_total: int = 0
-    builds_found: int = 0
-    builds_not_found: int = 0
-    is_valid: bool = True
-    error: Optional[str] = None
-
-
 class ValidationStats(BaseModel):
     """Statistics from dataset validation process."""
 
@@ -56,16 +45,17 @@ class ValidationStats(BaseModel):
     builds_total: int = 0
     builds_found: int = 0
     builds_not_found: int = 0
-    repo_stats: List[RepoValidationStats] = Field(default_factory=list)
+    builds_filtered: int = 0
 
 
 class BuildValidationFilters(BaseModel):
     """Filters applied during build validation."""
 
     exclude_bots: bool = False
-    exclude_cancelled: bool = True
-    exclude_errored: bool = False
     only_completed: bool = True
+
+    # Available: success, failure, cancelled, skipped, timed_out, action_required, neutral, stale
+    allowed_conclusions: List[str] = Field(default_factory=lambda: ["success", "failure"])
 
 
 class DatasetProject(BaseEntity):
@@ -102,11 +92,6 @@ class DatasetProject(BaseEntity):
     validation_progress: int = 0  # 0-100
     validation_stats: ValidationStats = Field(default_factory=ValidationStats)
     validation_error: Optional[str] = None
-
-    repo_ci_providers: Dict[PyObjectId, CIProvider] = Field(
-        default_factory=dict,
-        description="CI provider per repo: {raw_repo_id: ci_provider}",
-    )
 
     # Setup progress tracking (1=uploaded, 2=validated)
     setup_step: int = 1

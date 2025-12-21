@@ -1,11 +1,19 @@
 "use client";
 
-import { useCallback } from "react";
-import { Loader2, AlertCircle } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Loader2, AlertCircle, Sparkles, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import type { DatasetRecord } from "@/types";
-import { FeatureSelectionCard } from "../FeatureSelection";
-import { VersionHistory } from "../VersionHistory";
+import { CreateVersionModal } from "../FeatureSelection/CreateVersionModal";
+import { VersionHistoryTable } from "../VersionHistoryTable";
 import { useDatasetVersions } from "../../_hooks/useDatasetVersions";
 
 interface EnrichmentTabProps {
@@ -19,6 +27,8 @@ export function EnrichmentTab({
     dataset,
     onEnrichmentStatusChange,
 }: EnrichmentTabProps) {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
     const {
         versions,
         activeVersion,
@@ -34,7 +44,7 @@ export function EnrichmentTab({
 
     // Notify parent when active version status changes
     const hasActiveVersion = !!activeVersion;
-    // Using useCallback to avoid re-renders
+
     const notifyParent = useCallback(() => {
         onEnrichmentStatusChange?.(hasActiveVersion);
     }, [hasActiveVersion, onEnrichmentStatusChange]);
@@ -50,7 +60,7 @@ export function EnrichmentTab({
         features: string[],
         featureConfigs: {
             global: Record<string, unknown>;
-            repos: Record<string, { source_languages: string[]; test_frameworks: string[] }>;
+            repos: Record<string, Record<string, string[]>>;
         },
         scanData: {
             metrics: { sonarqube: string[]; trivy: string[] };
@@ -61,7 +71,6 @@ export function EnrichmentTab({
         },
         name?: string
     ) => {
-        // Flatten configs for API: merge global + repos into single object
         const flatConfigs: Record<string, unknown> = {
             ...featureConfigs.global,
             repo_configs: featureConfigs.repos,
@@ -77,8 +86,6 @@ export function EnrichmentTab({
             notifyParent();
         }
     };
-
-
 
     // Handle cancel
     const handleCancel = async (versionId: string) => {
@@ -122,6 +129,24 @@ export function EnrichmentTab({
 
     return (
         <div className="space-y-6">
+            {/* Header with Create Button */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold">Dataset Enrichment</h2>
+                    <p className="text-sm text-muted-foreground">
+                        Create enriched versions of your dataset with extracted features
+                    </p>
+                </div>
+                <Button
+                    onClick={() => setIsModalOpen(true)}
+                    disabled={hasActiveVersion}
+                    className="gap-2"
+                >
+                    <Sparkles className="h-4 w-4" />
+                    Create New Version
+                </Button>
+            </div>
+
             {/* Error Alert */}
             {error && (
                 <Alert variant="destructive">
@@ -130,25 +155,82 @@ export function EnrichmentTab({
                 </Alert>
             )}
 
-            {/* Feature Selection Card */}
-            <FeatureSelectionCard
-                datasetId={datasetId}
-                rowCount={dataset.rows || 0}
-                onCreateVersion={handleCreateVersion}
-                isCreating={creating}
-                hasActiveVersion={hasActiveVersion}
-            />
+            {/* Active Version Progress */}
+            {activeVersion && (
+                <ActiveVersionCard version={activeVersion} onCancel={handleCancel} />
+            )}
 
-            {/* Version History */}
-            <VersionHistory
+            {/* Version History Table */}
+            <VersionHistoryTable
                 datasetId={datasetId}
                 versions={versions}
                 loading={loading}
                 onRefresh={refresh}
                 onDownload={downloadVersion}
                 onDelete={deleteVersion}
-                onCancel={handleCancel}
+            />
+
+            {/* Create Version Modal */}
+            <CreateVersionModal
+                datasetId={datasetId}
+                rowCount={dataset.rows || 0}
+                open={isModalOpen}
+                onOpenChange={setIsModalOpen}
+                onCreateVersion={handleCreateVersion}
+                isCreating={creating}
+                hasActiveVersion={hasActiveVersion}
             />
         </div>
+    );
+}
+
+interface ActiveVersionCardProps {
+    version: {
+        id: string;
+        name: string;
+        progress_percent: number;
+        processed_rows: number;
+        total_rows: number;
+        failed_rows: number;
+    };
+    onCancel: (versionId: string) => void;
+}
+
+function ActiveVersionCard({ version, onCancel }: ActiveVersionCardProps) {
+    return (
+        <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">
+            <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                        <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                        Processing: {version.name}
+                    </CardTitle>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onCancel(version.id)}
+                        className="text-destructive hover:text-destructive"
+                    >
+                        <X className="mr-1 h-4 w-4" />
+                        Cancel
+                    </Button>
+                </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+                <Progress value={version.progress_percent} className="h-2" />
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>
+                        {version.processed_rows.toLocaleString()} /{" "}
+                        {version.total_rows.toLocaleString()} rows
+                    </span>
+                    <span>{version.progress_percent.toFixed(1)}%</span>
+                </div>
+                {version.failed_rows > 0 && (
+                    <p className="text-sm text-amber-600">
+                        ⚠️ {version.failed_rows} rows failed
+                    </p>
+                )}
+            </CardContent>
+        </Card>
     );
 }

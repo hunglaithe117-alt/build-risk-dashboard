@@ -26,6 +26,7 @@ class RepoValidationStatsDto(BaseModel):
     builds_total: int = 0
     builds_found: int = 0
     builds_not_found: int = 0
+    builds_filtered: int = 0
     is_valid: bool = True
     error: Optional[str] = None
 
@@ -38,7 +39,18 @@ class ValidationStatsDto(BaseModel):
     builds_total: int = 0
     builds_found: int = 0
     builds_not_found: int = 0
+    builds_filtered: int = 0
     repo_stats: List[RepoValidationStatsDto] = Field(default_factory=list)
+
+
+class BuildValidationFiltersDto(BaseModel):
+    """Filters applied during build validation."""
+
+    exclude_bots: bool = False
+    only_completed: bool = True
+
+    # Available: success, failure, cancelled, skipped, timed_out, action_required, neutral, stale
+    allowed_conclusions: List[str] = Field(default_factory=lambda: ["success", "failure"])
 
 
 class DatasetResponse(BaseModel):
@@ -57,6 +69,12 @@ class DatasetResponse(BaseModel):
     preview: List[Dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: Optional[datetime] = None
+
+    # CI Provider
+    ci_provider: Optional[str] = None
+
+    # Build validation filters
+    build_filters: BuildValidationFiltersDto = Field(default_factory=BuildValidationFiltersDto)
 
     # Validation status fields (unified validation)
     validation_status: str = "pending"
@@ -98,6 +116,8 @@ class DatasetUpdateRequest(BaseModel):
     description: Optional[str] = None
     mapped_fields: Optional[DatasetMappingDto] = None
     stats: Optional[DatasetStatsDto] = None
+    ci_provider: Optional[str] = None
+    build_filters: Optional[BuildValidationFiltersDto] = None
     source_languages: Optional[List[str]] = None
     test_frameworks: Optional[List[str]] = None
     setup_step: Optional[int] = None

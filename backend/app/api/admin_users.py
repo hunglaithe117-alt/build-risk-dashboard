@@ -9,13 +9,13 @@ from pymongo.database import Database
 
 from app.database.mongo import get_db
 from app.dtos.admin_user import (
-    AdminUserResponse,
-    AdminUserListResponse,
     AdminUserCreateRequest,
-    AdminUserUpdateRequest,
+    AdminUserListResponse,
+    AdminUserResponse,
     AdminUserRoleUpdateRequest,
+    AdminUserUpdateRequest,
 )
-from app.middleware.require_admin import require_admin
+from app.middleware.rbac import Permission, RequirePermission
 from app.services.admin_user_service import AdminUserService
 
 router = APIRouter(prefix="/admin/users", tags=["Admin - Users"])
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/admin/users", tags=["Admin - Users"])
 def list_users(
     q: Optional[str] = Query(None, description="Search by name, username, or email"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """List all users (Admin only). UC6: View User List"""
     service = AdminUserService(db)
@@ -45,7 +45,7 @@ def list_users(
 def create_user(
     payload: AdminUserCreateRequest,
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """Create a new user (Admin only). UC1: Create User Account"""
     service = AdminUserService(db)
@@ -60,7 +60,7 @@ def create_user(
 def get_user(
     user_id: str = Path(..., description="User ID"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """Get user details (Admin only)."""
     service = AdminUserService(db)
@@ -76,7 +76,7 @@ def update_user(
     payload: AdminUserUpdateRequest,
     user_id: str = Path(..., description="User ID"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """Update user profile (Admin only). UC3: Update User Profile"""
     service = AdminUserService(db)
@@ -92,7 +92,7 @@ def update_user_role(
     payload: AdminUserRoleUpdateRequest,
     user_id: str = Path(..., description="User ID"),
     db: Database = Depends(get_db),
-    admin: dict = Depends(require_admin),
+    admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """Assign/change user role (Admin only). UC2: Assign User Role"""
     service = AdminUserService(db)
@@ -107,7 +107,7 @@ def update_user_role(
 def delete_user(
     user_id: str = Path(..., description="User ID"),
     db: Database = Depends(get_db),
-    admin: dict = Depends(require_admin),
+    admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """Delete user account (Admin only). UC4: Delete User Account"""
     service = AdminUserService(db)

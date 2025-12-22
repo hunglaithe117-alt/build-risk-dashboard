@@ -12,10 +12,10 @@ from pymongo.database import Database
 from app.database.mongo import get_db
 from app.dtos.invitation import (
     InvitationCreateRequest,
-    InvitationResponse,
     InvitationListResponse,
+    InvitationResponse,
 )
-from app.middleware.require_admin import require_admin
+from app.middleware.rbac import Permission, RequirePermission
 from app.services.invitation_service import InvitationService
 
 router = APIRouter(prefix="/admin/invitations", tags=["Admin - Invitations"])
@@ -31,7 +31,7 @@ def list_invitations(
         None, description="Filter by status: pending, accepted, expired, revoked"
     ),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """List all invitations (Admin only)."""
     service = InvitationService(db)
@@ -47,7 +47,7 @@ def list_invitations(
 def create_invitation(
     payload: InvitationCreateRequest,
     db: Database = Depends(get_db),
-    admin: dict = Depends(require_admin),
+    admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """
     Create a new invitation (Admin only).
@@ -70,7 +70,7 @@ def create_invitation(
 def get_invitation(
     invitation_id: str = Path(..., description="Invitation ID"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """Get invitation details (Admin only)."""
     service = InvitationService(db)
@@ -85,7 +85,7 @@ def get_invitation(
 def revoke_invitation(
     invitation_id: str = Path(..., description="Invitation ID"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_USERS)),
 ):
     """
     Revoke a pending invitation (Admin only).

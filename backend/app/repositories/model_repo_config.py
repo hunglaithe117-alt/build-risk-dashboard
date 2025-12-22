@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Repository for ModelRepoConfig entities (user config for model training flow)."""
 
 from datetime import datetime
@@ -5,8 +7,8 @@ from typing import List, Optional
 
 from bson import ObjectId
 
-from app.entities.model_repo_config import ModelRepoConfig
 from app.entities.enums import ModelImportStatus, ModelSyncStatus
+from app.entities.model_repo_config import ModelRepoConfig
 from app.repositories.base import BaseRepository
 
 
@@ -18,14 +20,14 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
 
     def find_by_user_and_repo(
         self,
-        user_id: ObjectId,
-        raw_repo_id: ObjectId,
+        user_id: ObjectId | str,
+        raw_repo_id: ObjectId | str,
     ) -> Optional[ModelRepoConfig]:
         """Find config by user and raw repository."""
         doc = self.collection.find_one(
             {
-                "user_id": user_id,
-                "raw_repo_id": raw_repo_id,
+                "user_id": self.ensure_object_id(user_id),
+                "raw_repo_id": self.ensure_object_id(raw_repo_id),
                 "is_deleted": {"$ne": True},
             }
         )
@@ -95,8 +97,8 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         if search_query:
             base_query["full_name"] = {"$regex": search_query, "$options": "i"}
 
-        if user_role in ("admin", "guest"):
-            # Admin and guest see everything
+        if user_role == "admin":
+            # Admin sees everything
             pass
         else:
             # Regular user: only sees repos they have access to on GitHub
@@ -107,9 +109,7 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
                 # No GitHub repos synced - user sees nothing
                 base_query["full_name"] = {"$in": []}
 
-        return self.paginate(
-            base_query, sort=[("created_at", -1)], skip=skip, limit=limit
-        )
+        return self.paginate(base_query, sort=[("created_at", -1)], skip=skip, limit=limit)
 
     def can_user_access(
         self,
@@ -127,7 +127,7 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         Args:
             github_accessible_repos: List of repo full_names user can access on GitHub
         """
-        if user_role in ("admin", "guest"):
+        if user_role == "admin":
             return True
 
         repo = self.find_by_id(repo_id)
@@ -149,9 +149,9 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         updates["updated_at"] = datetime.utcnow()
         self.collection.update_one({"_id": ObjectId(repo_id)}, {"$set": updates})
 
-    def find_by_id(self, config_id: str) -> Optional[ModelRepoConfig]:
+    def find_by_id(self, config_id: str | ObjectId) -> Optional[ModelRepoConfig]:
         """Find config by ID."""
-        doc = self.collection.find_one({"_id": ObjectId(config_id)})
+        doc = self.collection.find_one({"_id": self.ensure_object_id(config_id)})
         return ModelRepoConfig(**doc) if doc else None
 
     def find_one(self, query: dict) -> Optional[ModelRepoConfig]:
@@ -161,14 +161,10 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
 
     def find_by_full_name(self, full_name: str) -> Optional[ModelRepoConfig]:
         """Find config by full_name (e.g., 'owner/repo')."""
-        doc = self.collection.find_one(
-            {"full_name": full_name, "is_deleted": {"$ne": True}}
-        )
+        doc = self.collection.find_one({"full_name": full_name, "is_deleted": {"$ne": True}})
         return ModelRepoConfig(**doc) if doc else None
 
-    def find_by_full_name_include_deleted(
-        self, full_name: str
-    ) -> Optional[ModelRepoConfig]:
+    def find_by_full_name_include_deleted(self, full_name: str) -> Optional[ModelRepoConfig]:
         """
         Find config by full_name including soft-deleted records.
 

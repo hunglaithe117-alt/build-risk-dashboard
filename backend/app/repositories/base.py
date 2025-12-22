@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Base repository pattern for MongoDB operations"""
 
 from abc import ABC
@@ -245,3 +247,29 @@ class BaseRepository(ABC, Generic[T]):
             except (InvalidId, TypeError):
                 return None
         return None
+
+    @staticmethod
+    def ensure_object_id(value: str | ObjectId) -> ObjectId:
+        """
+        Ensure value is a valid ObjectId, raising error if invalid.
+
+        Use this method when you need to guarantee ObjectId type in queries
+        to prevent accidentally querying with string values that won't match.
+
+        Args:
+            value: String or ObjectId to validate and convert
+
+        Returns:
+            ObjectId instance
+
+        Raises:
+            ValueError: If value is an invalid ObjectId string
+            TypeError: If value is not str or ObjectId
+        """
+        if isinstance(value, ObjectId):
+            return value
+        if isinstance(value, str):
+            if ObjectId.is_valid(value):
+                return ObjectId(value)
+            raise ValueError(f"Invalid ObjectId string: {value}")
+        raise TypeError(f"Expected str or ObjectId, got {type(value).__name__}")

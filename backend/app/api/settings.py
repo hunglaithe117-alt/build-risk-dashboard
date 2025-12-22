@@ -9,7 +9,7 @@ from app.dtos.settings import (
     ApplicationSettingsUpdateRequest,
 )
 from app.middleware.auth import get_current_user
-from app.middleware.require_admin import require_admin
+from app.middleware.rbac import Permission, RequirePermission
 from app.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
@@ -29,7 +29,7 @@ def get_settings(
 def update_settings(
     request: ApplicationSettingsUpdateRequest,
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
 ):
     """Update application settings (Admin only)."""
     service = SettingsService(db)

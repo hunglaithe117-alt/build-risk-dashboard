@@ -3,7 +3,8 @@ Export Job Repository - Database operations for export jobs.
 """
 
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import List, Optional
+
 from bson import ObjectId
 from pymongo.database import Database
 
@@ -55,18 +56,14 @@ class ExportJobRepository:
     def list_by_repo(self, repo_id: str, limit: int = 10) -> List[ExportJob]:
         """List export jobs for a repository, newest first."""
         cursor = (
-            self.collection.find({"repo_id": ObjectId(repo_id)})
-            .sort("created_at", -1)
-            .limit(limit)
+            self.collection.find({"repo_id": ObjectId(repo_id)}).sort("created_at", -1).limit(limit)
         )
         return [ExportJob(**doc) for doc in cursor]
 
     def list_by_user(self, user_id: str, limit: int = 20) -> List[ExportJob]:
         """List export jobs for a user, newest first."""
         cursor = (
-            self.collection.find({"user_id": ObjectId(user_id)})
-            .sort("created_at", -1)
-            .limit(limit)
+            self.collection.find({"user_id": ObjectId(user_id)}).sort("created_at", -1).limit(limit)
         )
         return [ExportJob(**doc) for doc in cursor]
 

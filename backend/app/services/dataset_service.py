@@ -55,40 +55,18 @@ class DatasetService:
                 },
             )
 
-    def _can_view_dataset(self, dataset, user_id: str, role: str) -> bool:
-        """
-        Access rules:
-        - admin: full access
-        - guest: read-only access
-        - user: no access
-        """
-        if role == "admin":
-            return True
-        if role == "guest":
-            return True
-        return False
-
     def list_datasets(
         self,
         user_id: str,
-        role: str = "user",
         skip: int = 0,
         limit: int = 20,
         q: Optional[str] = None,
     ) -> DatasetListResponse:
         """
-        List datasets with access control.
+        List datasets.
 
-        - admin: list all
-        - guest: list all (read-only)
-        - user: no access
+        Permission is validated at API layer via RequirePermission middleware.
         """
-        if role == "user":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to access datasets.",
-            )
-
         datasets, total = self.repo.list_by_user(None, skip=skip, limit=limit, q=q)
         return DatasetListResponse(
             total=total,
@@ -97,20 +75,11 @@ class DatasetService:
             items=[self._serialize(ds) for ds in datasets],
         )
 
-    def get_dataset(self, dataset_id: str, user_id: str, role: str = "user") -> DatasetResponse:
+    def get_dataset(self, dataset_id: str, user_id: str) -> DatasetResponse:
+        """Get dataset details. Permission validated at API layer."""
         dataset = self.repo.find_by_id(dataset_id)
         if not dataset:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-        if role == "user":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to access this dataset",
-            )
-        if not self._can_view_dataset(dataset, user_id, role):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to access this dataset",
-            )
         return self._serialize(dataset)
 
     def create_dataset(self, user_id: str, payload: DatasetCreateRequest) -> DatasetResponse:
@@ -386,7 +355,6 @@ class DatasetService:
         self,
         dataset_id: str,
         user_id: str,
-        role: str = "user",
         skip: int = 0,
         limit: int = 50,
         status_filter: Optional[str] = None,
@@ -399,7 +367,7 @@ class DatasetService:
         from app.repositories.raw_build_run import RawBuildRunRepository
 
         # Access check and dataset existence
-        self.get_dataset(dataset_id, user_id, role=role)
+        self.get_dataset(dataset_id, user_id)
 
         raw_build_repo = RawBuildRunRepository(self.db)
         dataset_oid = ObjectId(dataset_id)
@@ -459,16 +427,16 @@ class DatasetService:
         self,
         dataset_id: str,
         user_id: str,
-        role: str = "user",
     ) -> dict:
         """
         Get aggregated build stats for charts.
 
         Returns status breakdown, conclusion breakdown, builds per repo, duration stats,
         and logs availability statistics.
+        Permission validated at API layer.
         """
         # Access check (raises if not permitted)
-        self.get_dataset(dataset_id, user_id, role=role)
+        self.get_dataset(dataset_id, user_id)
 
         dataset_oid = ObjectId(dataset_id)
 

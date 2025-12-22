@@ -34,23 +34,13 @@ class DatasetVersionService:
         self._export_service = ExportService(db)
         self._enrichment_build_repo = DatasetEnrichmentBuildRepository(db)
 
-    def _verify_dataset_access(
-        self, dataset_id: str, user_id: str, role: str = "user"
-    ) -> DatasetProject:
+    def _verify_dataset_access(self, dataset_id: str, user_id: str) -> DatasetProject:
         """
-        Verify dataset access based on role:
-        - admin: full
-        - guest: read-only
-        - user: no access
+        Verify dataset exists. Permission is validated at API layer.
         """
-        dataset = self._dataset_service.get_dataset(dataset_id, user_id, role=role)
+        dataset = self._dataset_service.get_dataset(dataset_id, user_id)
         if not dataset:
             raise HTTPException(status_code=404, detail="Dataset not found")
-        if role == "user":
-            raise HTTPException(
-                status_code=403,
-                detail="You don't have permission to access datasets.",
-            )
         return dataset
 
     def _get_version(self, dataset_id: str, version_id: str) -> DatasetVersion:
@@ -61,24 +51,21 @@ class DatasetVersionService:
         return version
 
     def list_versions(
-        self, dataset_id: str, user_id: str, role: str = "user", limit: int = 50
-    ) -> List[DatasetVersion]:
-        """List all versions for a dataset."""
-        self._verify_dataset_access(dataset_id, user_id, role=role)
-        return self._repo.find_by_dataset(dataset_id, limit=limit)
+        self, dataset_id: str, user_id: str, skip: int = 0, limit: int = 10
+    ) -> tuple[List[DatasetVersion], int]:
+        """List all versions for a dataset with pagination."""
+        self._verify_dataset_access(dataset_id, user_id)
+        return self._repo.find_by_dataset(dataset_id, skip=skip, limit=limit)
 
-    def get_version(
-        self, dataset_id: str, version_id: str, user_id: str, role: str = "user"
-    ) -> DatasetVersion:
+    def get_version(self, dataset_id: str, version_id: str, user_id: str) -> DatasetVersion:
         """Get a specific version."""
-        self._verify_dataset_access(dataset_id, user_id, role=role)
+        self._verify_dataset_access(dataset_id, user_id)
         return self._get_version(dataset_id, version_id)
 
     def create_version(
         self,
         dataset_id: str,
         user_id: str,
-        role: str,
         selected_features: List[str],
         feature_configs: Optional[dict] = None,
         scan_metrics: Optional[dict] = None,
@@ -86,21 +73,12 @@ class DatasetVersionService:
         name: Optional[str] = None,
         description: Optional[str] = None,
     ) -> DatasetVersion:
-        """Create a new version and start enrichment task."""
+        """Create a new version and start enrichment task. Permission validated at API layer."""
         from datetime import datetime, timezone
 
         from app.core.redis import RedisLock, get_redis
 
-        if role not in ("admin", "guest"):
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    "You don't have permission to create dataset versions. "
-                    "Admins and guests can create versions."
-                ),
-            )
-
-        dataset = self._verify_dataset_access(dataset_id, user_id, role=role)
+        dataset = self._verify_dataset_access(dataset_id, user_id)
 
         if dataset.validation_status != "completed":
             raise HTTPException(
@@ -188,7 +166,6 @@ class DatasetVersionService:
         dataset_id: str,
         version_id: str,
         user_id: str,
-        role: str = "user",
         format: str = "csv",
         features: Optional[List[str]] = None,
     ) -> ExportResult:
@@ -196,7 +173,7 @@ class DatasetVersionService:
         import os
         import tempfile
 
-        dataset = self._verify_dataset_access(dataset_id, user_id, role=role)
+        dataset = self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
         if version.status != VersionStatus.COMPLETED:
@@ -379,11 +356,9 @@ class DatasetVersionService:
 
         return None
 
-    def get_export_preview(
-        self, dataset_id: str, version_id: str, user_id: str, role: str = "user"
-    ) -> dict:
+    def get_export_preview(self, dataset_id: str, version_id: str, user_id: str) -> dict:
         """Get preview of exportable data."""
-        self._verify_dataset_access(dataset_id, user_id, role=role)
+        self._verify_dataset_access(dataset_id, user_id)
 
         builds = self._enrichment_build_repo.get_enriched_for_export(
             dataset_id=ObjectId(dataset_id),
@@ -407,15 +382,9 @@ class DatasetVersionService:
             "feature_count": len(all_features),
         }
 
-    def delete_version(self, dataset_id: str, version_id: str, user_id: str, role: str) -> None:
-        """Delete a version and its enrichment builds."""
-        if role not in ("admin", "guest"):
-            raise HTTPException(
-                status_code=403,
-                detail="You don't have permission to delete dataset versions. Admins and guests can delete versions.",
-            )
-
-        self._verify_dataset_access(dataset_id, user_id, role=role)
+    def delete_version(self, dataset_id: str, version_id: str, user_id: str) -> None:
+        """Delete a version and its enrichment builds. Permission validated at API layer."""
+        self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
         if version.status in (VersionStatus.PENDING, VersionStatus.PROCESSING):
@@ -428,10 +397,8 @@ class DatasetVersionService:
         self._repo.delete(version_id)
         logger.info(f"Deleted version {version_id} for dataset {dataset_id}")
 
-    def cancel_version(
-        self, dataset_id: str, version_id: str, user_id: str, role: str
-    ) -> DatasetVersion:
-        """Cancel a processing version.
+    def cancel_version(self, dataset_id: str, version_id: str, user_id: str) -> DatasetVersion:
+        """Cancel a processing version. Permission validated at API layer.
 
         Sets a cooldown period to allow ingestion tasks to cleanup before
         a new version can be created.
@@ -440,13 +407,7 @@ class DatasetVersionService:
 
         from app.core.redis import get_redis
 
-        if role not in ("admin", "guest"):
-            raise HTTPException(
-                status_code=403,
-                detail="You don't have permission to cancel dataset versions. Admins and guests can cancel versions.",
-            )
-
-        self._verify_dataset_access(dataset_id, user_id, role=role)
+        self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
         if version.status not in (VersionStatus.PENDING, VersionStatus.PROCESSING):
@@ -473,15 +434,16 @@ class DatasetVersionService:
         dataset_id: str,
         version_id: str,
         user_id: str,
-        role: str = "user",
         page: int = 1,
         page_size: int = 20,
         include_stats: bool = True,
     ) -> dict:
-        """Get paginated version data with column statistics."""
+        """Get paginated version data with build overview and features."""
         from bson import ObjectId
 
-        self._verify_dataset_access(dataset_id, user_id, role=role)
+        from app.repositories.raw_repository import RawRepositoryRepository
+
+        self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
         if version.status != VersionStatus.COMPLETED:
@@ -497,11 +459,37 @@ class DatasetVersionService:
             dataset_version_id=ObjectId(version_id), skip=skip, limit=page_size
         )
 
-        rows = []
+        # Batch lookup repo names
+        raw_repo_repo = RawRepositoryRepository(self._repo.db)
+        repo_id_set = {build.raw_repo_id for build in items}
+        repo_map = {}
+        for repo_id in repo_id_set:
+            repo = raw_repo_repo.find_by_id(str(repo_id))
+            if repo:
+                repo_map[str(repo_id)] = repo.full_name
+
+        # Build response with overview info
+        builds = []
+        expected_feature_count = len(version.selected_features)
         for build in items:
-            feature_dict = build.features
-            row = {f: feature_dict.get(f) for f in version.selected_features}
-            rows.append(row)
+            builds.append(
+                {
+                    "id": str(build.id),
+                    "raw_build_run_id": str(build.raw_build_run_id),
+                    "repo_full_name": repo_map.get(str(build.raw_repo_id), "Unknown"),
+                    "extraction_status": (
+                        build.extraction_status.value
+                        if hasattr(build.extraction_status, "value")
+                        else build.extraction_status
+                    ),
+                    "feature_count": build.feature_count,
+                    "expected_feature_count": expected_feature_count,
+                    "skipped_features": build.skipped_features,
+                    "missing_resources": build.missing_resources,
+                    "enriched_at": (build.enriched_at.isoformat() if build.enriched_at else None),
+                    "features": build.features,
+                }
+            )
 
         column_stats = {}
         if include_stats:
@@ -526,13 +514,11 @@ class DatasetVersionService:
                     version.completed_at.isoformat() if version.completed_at else None
                 ),
             },
-            "data": {
-                "rows": rows,
-                "total": total_count,
-                "page": page,
-                "page_size": page_size,
-                "total_pages": (total_count + page_size - 1) // page_size,
-            },
+            "builds": builds,
+            "total": total_count,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total_count + page_size - 1) // page_size,
             "column_stats": column_stats,
         }
 
@@ -563,14 +549,13 @@ class DatasetVersionService:
         dataset_id: str,
         version_id: str,
         user_id: str,
-        role: str = "user",
     ) -> dict:
         """
         Get scan metrics status for a version.
 
         Returns counts of builds with sonar/trivy features.
         """
-        self._verify_dataset_access(dataset_id, user_id, role)
+        self._verify_dataset_access(dataset_id, user_id)
         self._get_version(dataset_id, version_id)  # Verify exists
 
         from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
@@ -583,14 +568,13 @@ class DatasetVersionService:
         dataset_id: str,
         version_id: str,
         user_id: str,
-        role: str = "user",
     ) -> dict:
         """
         Retry scans for a version.
 
         Re-dispatches scan tasks for all unique commits in the version.
         """
-        self._verify_dataset_access(dataset_id, user_id, role)
+        self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
         if version.status not in ["completed", "failed"]:
@@ -614,14 +598,13 @@ class DatasetVersionService:
         dataset_id: str,
         version_id: str,
         user_id: str,
-        role: str = "user",
     ) -> dict:
         """
         Get detailed commit scan status for a version.
 
         Returns separate lists for Trivy and SonarQube scans.
         """
-        self._verify_dataset_access(dataset_id, user_id, role)
+        self._verify_dataset_access(dataset_id, user_id)
         self._get_version(dataset_id, version_id)
 
         from app.repositories.sonar_commit_scan import SonarCommitScanRepository
@@ -674,7 +657,6 @@ class DatasetVersionService:
         commit_sha: str,
         tool_type: str,
         user_id: str,
-        role: str = "user",
         config_override: dict = None,
     ) -> dict:
         """
@@ -684,7 +666,7 @@ class DatasetVersionService:
             tool_type: "trivy" or "sonarqube"
             config_override: Optional new config to use
         """
-        self._verify_dataset_access(dataset_id, user_id, role)
+        self._verify_dataset_access(dataset_id, user_id)
         self._get_version(dataset_id, version_id)  # Verify exists
 
         from app.repositories.sonar_commit_scan import SonarCommitScanRepository

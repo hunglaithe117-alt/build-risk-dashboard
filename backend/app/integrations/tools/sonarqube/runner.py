@@ -7,9 +7,9 @@ from typing import List, Optional
 import requests
 
 from app.config import settings
-from app.paths import REPOS_DIR, WORKTREES_DIR
 from app.core.redis import RedisLock
 from app.integrations.tools.sonarqube.config import get_sonar_runtime_config
+from app.paths import REPOS_DIR, WORKTREES_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,7 @@ class SonarCommitRunner:
             if repo_path.exists():
                 return
 
-            from app.services.repository_service import is_org_repo
+            from app.services.model_repository_service import is_org_repo
 
             clone_url = f"https://github.com/{full_name}.git"
 
@@ -199,30 +199,22 @@ class SonarCommitRunner:
                 # Use shared worktree infrastructure
                 worktree = self.ensure_shared_worktree(commit_sha, full_name)
                 if not worktree:
-                    raise ValueError(
-                        f"Failed to create shared worktree for {commit_sha}"
-                    )
+                    raise ValueError(f"Failed to create shared worktree for {commit_sha}")
                 logger.info(f"Using shared worktree at {worktree} for scan")
             else:
-                raise ValueError(
-                    "Either shared_worktree_path or raw_repo_id + full_name required"
-                )
+                raise ValueError("Either shared_worktree_path or raw_repo_id + full_name required")
 
             # Write custom config if provided
             if sonar_config_content:
                 config_path = worktree / "sonar-project.properties"
                 with open(config_path, "w") as f:
                     f.write(sonar_config_content)
-                logger.info(
-                    f"Wrote custom sonar-project.properties for {component_key}"
-                )
+                logger.info(f"Wrote custom sonar-project.properties for {component_key}")
 
             cmd = self.build_scan_command(component_key, worktree)
             logger.info(f"Scanning {component_key}...")
 
-            subprocess.run(
-                cmd, cwd=worktree, check=True, capture_output=True, text=True
-            )
+            subprocess.run(cmd, cwd=worktree, check=True, capture_output=True, text=True)
 
             return component_key
 

@@ -1,28 +1,27 @@
-from app.config import settings
 import logging
 from typing import List, Optional
-from app.entities.enums import ModelImportStatus
 
 from bson import ObjectId
 from fastapi import HTTPException, status
 from pymongo.database import Database
 
+from app.config import settings
 from app.dtos import (
     RepoDetailResponse,
     RepoImportRequest,
     RepoListResponse,
     RepoResponse,
+    RepoSearchResponse,
     RepoSuggestionListResponse,
     RepoUpdateRequest,
-    RepoSearchResponse,
 )
+from app.entities.enums import ModelImportStatus
 from app.repositories.model_repo_config import ModelRepoConfigRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.services.github.github_client import (
     get_user_github_client,
 )
 from app.tasks.model_processing import start_model_processing
-
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +104,7 @@ class RepositoryService:
 
                 is_org_owned = is_org_repo(payload.full_name)
                 if is_org_owned:
-                    client_ctx = get_app_github_client(
-                        self.db, settings.GITHUB_INSTALLATION_ID
-                    )
+                    client_ctx = get_app_github_client(self.db, settings.GITHUB_INSTALLATION_ID)
                 else:
                     client_ctx = get_user_github_client(self.db, user_id)
 
@@ -344,9 +341,7 @@ class RepositoryService:
             public_matches=public_matches,  # "Public GitHub Repositories"
         )
 
-    def get_repository_detail(
-        self, repo_id: str, current_user: dict
-    ) -> RepoDetailResponse:
+    def get_repository_detail(self, repo_id: str, current_user: dict) -> RepoDetailResponse:
         repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
         if not repo_doc:
             raise HTTPException(
@@ -519,9 +514,7 @@ class RepositoryService:
                 stats = gh.list_languages(full_name) or {}
                 languages = [
                     lang.lower()
-                    for lang, _ in sorted(
-                        stats.items(), key=lambda kv: kv[1], reverse=True
-                    )[:5]
+                    for lang, _ in sorted(stats.items(), key=lambda kv: kv[1], reverse=True)[:5]
                 ]
         except Exception as e:
             logger.warning("Failed to detect languages for %s: %s", full_name, e)
@@ -547,9 +540,7 @@ class RepositoryService:
             "languages": registry.get_languages(),
         }
 
-    def reprocess_build(
-        self, repo_id: str, raw_build_run_id: str, current_user: dict
-    ) -> dict:
+    def reprocess_build(self, repo_id: str, raw_build_run_id: str, current_user: dict) -> dict:
         """
         Reprocess a build using the DAG-based feature pipeline.
 
@@ -568,12 +559,13 @@ class RepositoryService:
             - model_training_build_id: The ModelTrainingBuild._id needed by the task
             - ci_run_id: CI provider's workflow ID (e.g., GitHub run ID like "20349163111")
         """
+        from backend.app.services.model_build_service import BuildService
+
+        from app.entities.enums import ExtractionStatus
+        from app.repositories.model_training_build import ModelTrainingBuildRepository
         from app.tasks.model_processing import (
             reprocess_build as reprocess_build_task,
         )
-        from app.entities.enums import ExtractionStatus
-        from app.repositories.model_training_build import ModelTrainingBuildRepository
-        from app.services.build_service import BuildService
 
         # Validate raw build exists
         build_service = BuildService(self.db)
@@ -583,9 +575,7 @@ class RepositoryService:
 
         # Find corresponding ModelTrainingBuild by raw_build_run_id
         build_repo = ModelTrainingBuildRepository(self.db)
-        model_training_build = build_repo.find_one(
-            {"raw_build_run_id": ObjectId(raw_build_run_id)}
-        )
+        model_training_build = build_repo.find_one({"raw_build_run_id": ObjectId(raw_build_run_id)})
 
         if not model_training_build:
             raise HTTPException(

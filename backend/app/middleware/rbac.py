@@ -24,59 +24,66 @@ class Permission(str, Enum):
     ADMIN_FULL = "admin:full"
     MANAGE_USERS = "manage:users"
     MANAGE_REPOS = "manage:repos"
-    MANAGE_DATASETS = "manage:datasets"
-    START_SCANS = "start:scans"
     DELETE_DATA = "delete:data"
 
-    # Viewer permissions (Admin + Guest)
+    # Viewer permissions (Admin + User) - Repos/Builds
     VIEW_DASHBOARD = "view:dashboard"
     VIEW_REPOS = "view:repos"
     VIEW_BUILDS = "view:builds"
-    VIEW_DATASETS = "view:datasets"
-    VIEW_DATASET_VERSIONS = "view:dataset_versions"
-    VIEW_SCANS = "view:scans"
+
+    # Dataset permissions (Admin + Guest)
+    VIEW_DATASETS = "view:datasets"  # Includes versions & scans
+    MANAGE_DATASETS = "manage:datasets"
+    START_SCANS = "start:scans"
     EXPORT_DATA = "export:data"
 
-    # User permissions (org member)
-    VIEW_OWN_REPOS = "view:own_repos"
+    # User's own dashboard
     VIEW_OWN_DASHBOARD = "view:own_dashboard"
+
+    # Notification permissions (all authenticated users)
+    VIEW_NOTIFICATIONS = "view:notifications"
+    MANAGE_NOTIFICATIONS = "manage:notifications"
 
 
 # Role to permissions mapping
 ROLE_PERMISSIONS: dict[str, Set[Permission]] = {
     "admin": {
-        # Admin has all permissions
+        # Admin has ALL permissions
         Permission.ADMIN_FULL,
         Permission.MANAGE_USERS,
         Permission.MANAGE_REPOS,
-        Permission.MANAGE_DATASETS,
-        Permission.START_SCANS,
         Permission.DELETE_DATA,
         Permission.VIEW_DASHBOARD,
         Permission.VIEW_REPOS,
         Permission.VIEW_BUILDS,
         Permission.VIEW_DATASETS,
-        Permission.VIEW_DATASET_VERSIONS,
-        Permission.VIEW_SCANS,
+        Permission.MANAGE_DATASETS,
+        Permission.START_SCANS,
         Permission.EXPORT_DATA,
-        Permission.VIEW_OWN_REPOS,
         Permission.VIEW_OWN_DASHBOARD,
-    },
-    "guest": {
-        # Guest focuses on dataset enrichment - FULL capabilities
-        # Can upload datasets, create/delete/cancel versions, start/cancel scans
-        # Cannot access repositories or builds outside of dataset context
-        Permission.VIEW_DATASETS,
-        Permission.VIEW_DATASET_VERSIONS,
-        Permission.VIEW_SCANS,
-        Permission.EXPORT_DATA,
-        Permission.MANAGE_DATASETS,  # Full dataset management
-        Permission.START_SCANS,  # Start/cancel scans
+        Permission.VIEW_NOTIFICATIONS,
+        Permission.MANAGE_NOTIFICATIONS,
     },
     "user": {
-        # User can only see their own repos
-        Permission.VIEW_OWN_REPOS,
+        # User: repos họ thuộc về + dashboard + notifications
+        # VIEW_REPOS filtered by github_accessible_repos in repository layer
+        Permission.VIEW_DASHBOARD,
+        Permission.VIEW_REPOS,
+        Permission.VIEW_BUILDS,
         Permission.VIEW_OWN_DASHBOARD,
+        Permission.VIEW_NOTIFICATIONS,
+        Permission.MANAGE_NOTIFICATIONS,
+    },
+    "guest": {
+        # Guest: CHỈ datasets + own dashboard + notifications
+        # KHÔNG có VIEW_REPOS, VIEW_BUILDS
+        Permission.VIEW_DATASETS,
+        Permission.MANAGE_DATASETS,
+        Permission.START_SCANS,
+        Permission.EXPORT_DATA,
+        Permission.VIEW_OWN_DASHBOARD,
+        Permission.VIEW_NOTIFICATIONS,
+        Permission.MANAGE_NOTIFICATIONS,
     },
 }
 
@@ -153,7 +160,6 @@ require_viewer = RequirePermission(Permission.VIEW_DATASETS, Permission.VIEW_REP
 require_manage_users = RequirePermission(Permission.MANAGE_USERS)
 require_manage_repos = RequirePermission(Permission.MANAGE_REPOS)
 require_manage_datasets = RequirePermission(Permission.MANAGE_DATASETS)
-require_view_scans = RequirePermission(Permission.VIEW_SCANS)
 require_start_scans = RequirePermission(Permission.START_SCANS)
 require_export = RequirePermission(Permission.EXPORT_DATA)
 

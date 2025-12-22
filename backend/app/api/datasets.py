@@ -19,8 +19,7 @@ from app.dtos import (
     DatasetResponse,
     DatasetUpdateRequest,
 )
-from app.middleware.auth import get_current_user
-from app.middleware.require_dataset_manager import require_dataset_manager
+from app.middleware.rbac import Permission, RequirePermission
 from app.services.dataset_service import DatasetService
 
 router = APIRouter(prefix="/datasets", tags=["Datasets"])
@@ -32,13 +31,12 @@ def list_datasets(
     limit: int = Query(default=20, ge=1, le=100),
     q: str | None = Query(default=None, description="Search by name, file, or tag"),
     db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
-    """List datasets for the signed-in user."""
+    """List datasets for the signed-in user (Admin and Guest only)."""
     user_id = str(current_user["_id"])
-    role = current_user.get("role", "user")
     service = DatasetService(db)
-    return service.list_datasets(user_id, role=role, skip=skip, limit=limit, q=q)
+    return service.list_datasets(user_id, skip=skip, limit=limit, q=q)
 
 
 @router.post(
@@ -52,7 +50,7 @@ async def upload_dataset(
     name: str | None = Form(default=None),
     description: str | None = Form(default=None),
     db: Database = Depends(get_db),
-    current_user: dict = Depends(require_dataset_manager),
+    current_user: dict = Depends(RequirePermission(Permission.MANAGE_DATASETS)),
 ):
     """Upload a CSV file and create dataset (Admin and Guest)."""
     user_id = str(current_user["_id"])
@@ -80,13 +78,12 @@ async def upload_dataset(
 def get_dataset(
     dataset_id: str = PathParam(..., description="Dataset id (Mongo ObjectId)"),
     db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
-    """Get dataset details."""
+    """Get dataset details (Admin and Guest only)."""
     user_id = str(current_user["_id"])
-    role = current_user.get("role", "user")
     service = DatasetService(db)
-    return service.get_dataset(dataset_id, user_id, role=role)
+    return service.get_dataset(dataset_id, user_id)
 
 
 @router.patch(
@@ -98,7 +95,7 @@ def update_dataset(
     dataset_id: str = PathParam(..., description="Dataset id (Mongo ObjectId)"),
     payload: DatasetUpdateRequest = Body(...),
     db: Database = Depends(get_db),
-    current_user: dict = Depends(require_dataset_manager),
+    current_user: dict = Depends(RequirePermission(Permission.MANAGE_DATASETS)),
 ):
     """Update dataset metadata (Admin and Guest)."""
     user_id = str(current_user["_id"])
@@ -113,7 +110,7 @@ def update_dataset(
 def delete_dataset(
     dataset_id: str = PathParam(..., description="Dataset id (Mongo ObjectId)"),
     db: Database = Depends(get_db),
-    current_user: dict = Depends(require_dataset_manager),
+    current_user: dict = Depends(RequirePermission(Permission.MANAGE_DATASETS)),
 ):
     """Delete a dataset and all associated data (Admin and Guest)."""
     user_id = str(current_user["_id"])
@@ -131,17 +128,15 @@ def list_dataset_builds(
         default=None, description="Filter by status: found/not_found/error"
     ),
     db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
     """List builds for a dataset with enriched details from RawBuildRun."""
     service = DatasetService(db)
     user_id = str(current_user["_id"])
-    role = current_user.get("role", "user")
 
     return service.get_dataset_builds(
         dataset_id=dataset_id,
         user_id=user_id,
-        role=role,
         skip=skip,
         limit=limit,
         status_filter=status_filter,
@@ -152,15 +147,13 @@ def list_dataset_builds(
 def get_dataset_builds_stats(
     dataset_id: str = PathParam(..., description="Dataset id"),
     db: Database = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
     """Get aggregated build stats for charts."""
     service = DatasetService(db)
     user_id = str(current_user["_id"])
-    role = current_user.get("role", "user")
 
     return service.get_dataset_builds_stats(
         dataset_id=dataset_id,
         user_id=user_id,
-        role=role,
     )

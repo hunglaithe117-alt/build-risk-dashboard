@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Repository for RawBuildRun entities (shared raw build run data)."""
 
 from datetime import datetime
@@ -50,11 +52,11 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
 
     def find_by_repo_and_build_id(
         self,
-        repo_id: str,
+        repo_id: str | ObjectId,
         build_id: str,
     ) -> Optional[RawBuildRun]:
         """Convenience method - accepts string repo_id for compatibility."""
-        return self.find_by_build_id(ObjectId(repo_id), build_id)
+        return self.find_by_build_id(self.ensure_object_id(repo_id), build_id)
 
     def find_by_commit_or_effective_sha(
         self,

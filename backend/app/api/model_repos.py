@@ -9,15 +9,15 @@ from app.dtos import (
     RepoImportRequest,
     RepoListResponse,
     RepoResponse,
-    RepoSuggestionListResponse,
     RepoSearchResponse,
+    RepoSuggestionListResponse,
     RepoUpdateRequest,
 )
-from app.dtos.build import BuildListResponse, BuildDetail
+from app.dtos.build import BuildDetail, BuildListResponse
 from app.middleware.auth import get_current_user
-from app.middleware.require_admin import require_admin
-from app.services.build_service import BuildService
-from app.services.repository_service import RepositoryService
+from app.middleware.rbac import Permission, RequirePermission
+from app.services.model_build_service import BuildService
+from app.services.model_repository_service import RepositoryService
 
 router = APIRouter(prefix="/repos", tags=["Repositories"])
 
@@ -31,7 +31,7 @@ router = APIRouter(prefix="/repos", tags=["Repositories"])
 def bulk_import_repositories(
     payloads: List[RepoImportRequest],
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),  # Admin only
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
 ):
     """Register multiple repositories for ingestion (Admin only)."""
     user_id = str(_admin["_id"])
@@ -98,9 +98,7 @@ def discover_repositories(
     return service.discover_repositories(user_id, q, limit)
 
 
-@router.get(
-    "/{repo_id}", response_model=RepoDetailResponse, response_model_by_alias=False
-)
+@router.get("/{repo_id}", response_model=RepoDetailResponse, response_model_by_alias=False)
 def get_repository_detail(
     repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
     db: Database = Depends(get_db),
@@ -110,14 +108,12 @@ def get_repository_detail(
     return service.get_repository_detail(repo_id, current_user)
 
 
-@router.patch(
-    "/{repo_id}", response_model=RepoDetailResponse, response_model_by_alias=False
-)
+@router.patch("/{repo_id}", response_model=RepoDetailResponse, response_model_by_alias=False)
 def update_repository_settings(
     repo_id: str,
     payload: RepoUpdateRequest,
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),  # Admin only
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
 ):
     """Update repository settings (Admin only)."""
     service = RepositoryService(db)
@@ -128,7 +124,7 @@ def update_repository_settings(
 def delete_repository(
     repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),  # Admin only
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
 ):
     """
     Delete (soft delete) a repository configuration (Admin only).
@@ -143,7 +139,7 @@ def delete_repository(
 def trigger_sync(
     repo_id: str,
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),  # Admin only
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
 ):
     """Trigger a manual sync for the repository (Admin only)."""
     user_id = str(_admin["_id"])
@@ -155,7 +151,7 @@ def trigger_sync(
 def trigger_reprocess_features(
     repo_id: str,
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
 ):
     """Reprocess features for all builds in the repository (Admin only)."""
     service = RepositoryService(db)
@@ -218,7 +214,7 @@ def reprocess_build(
     repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
     build_id: str = Path(..., description="Build id (Mongo ObjectId)"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
 ):
     """
     Reprocess a build using the new DAG-based feature pipeline (Admin only).

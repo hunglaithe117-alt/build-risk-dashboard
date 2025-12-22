@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Repository for ModelTrainingBuild entities (builds for ML model training)."""
 
 from datetime import datetime
@@ -5,8 +7,8 @@ from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 
-from app.entities.model_training_build import ModelTrainingBuild
 from app.entities.enums import ExtractionStatus
+from app.entities.model_training_build import ModelTrainingBuild
 from app.repositories.base import BaseRepository
 
 
@@ -39,7 +41,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         # Query by raw_repo_id and looking for matching build_number/workflow reference
         doc = self.collection.find_one(
             {
-                "model_repo_config_id": ObjectId(repo_id),
+                "model_repo_config_id": self.ensure_object_id(repo_id),
             }
         )
         # For backward compatibility, look up in raw_workflow_runs to find the actual build
@@ -55,12 +57,12 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
     ) -> tuple[List[ModelTrainingBuild], int]:
         """Convenience method - list by model_repo_config_id (string)."""
         return self.find_by_config(
-            ObjectId(repo_id), skip, limit if limit > 0 else 10000
+            self.ensure_object_id(repo_id), skip, limit if limit > 0 else 10000
         )
 
-    def count_by_repo_id(self, repo_id: str) -> int:
+    def count_by_repo_id(self, repo_id: str | ObjectId) -> int:
         """Convenience method - count by model_repo_config_id (string)."""
-        return self.count_by_config(ObjectId(repo_id))
+        return self.count_by_config(self.ensure_object_id(repo_id))
 
     def find_by_status(
         self,
@@ -70,7 +72,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
     ) -> List[ModelTrainingBuild]:
         """Find builds by extraction status for a repo."""
         query = {
-            "model_repo_config_id": ObjectId(repo_id),
+            "model_repo_config_id": self.ensure_object_id(repo_id),
             "extraction_status": status.value if hasattr(status, "value") else status,
         }
         cursor = self.collection.find(query).limit(limit)
@@ -84,9 +86,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
     ) -> tuple[List[ModelTrainingBuild], int]:
         """List builds for a model repo config with pagination."""
         query = {"model_repo_config_id": model_repo_config_id}
-        return self.paginate(
-            query, sort=[("build_created_at", -1)], skip=skip, limit=limit
-        )
+        return self.paginate(query, sort=[("build_created_at", -1)], skip=skip, limit=limit)
 
     def find_by_repo(
         self,
@@ -96,9 +96,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
     ) -> tuple[List[ModelTrainingBuild], int]:
         """List builds for a raw repository with pagination."""
         query = {"raw_repo_id": raw_repo_id}
-        return self.paginate(
-            query, sort=[("build_created_at", -1)], skip=skip, limit=limit
-        )
+        return self.paginate(query, sort=[("build_created_at", -1)], skip=skip, limit=limit)
 
     def update_extraction_status(
         self,
@@ -145,9 +143,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         """Count builds for a config, optionally filtered by status."""
         query: Dict[str, Any] = {"model_repo_config_id": model_repo_config_id}
         if status:
-            query["extraction_status"] = (
-                status.value if hasattr(status, "value") else status
-            )
+            query["extraction_status"] = status.value if hasattr(status, "value") else status
         return self.collection.count_documents(query)
 
     def get_for_training(
@@ -175,7 +171,5 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         Returns:
             Number of documents deleted.
         """
-        result = self.collection.delete_many(
-            {"model_repo_config_id": model_repo_config_id}
-        )
+        result = self.collection.delete_many({"model_repo_config_id": model_repo_config_id})
         return result.deleted_count

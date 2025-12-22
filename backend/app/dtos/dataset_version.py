@@ -55,3 +55,5 @@ class VersionListResponse(BaseModel):
 
     versions: List[VersionResponse]
     total: int
+    skip: int = 0
+    limit: int = 10

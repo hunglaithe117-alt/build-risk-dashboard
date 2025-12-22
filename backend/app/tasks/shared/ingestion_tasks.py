@@ -113,7 +113,7 @@ def clone_repo(
     with RedisLock(f"clone:{raw_repo_id}", timeout=700, blocking_timeout=60):
         try:
             # Check if this repo belongs to the configured organization
-            from app.services.repository_service import is_org_repo
+            from app.services.model_repository_service import is_org_repo
 
             use_installation_token = is_org_repo(full_name) and settings.GITHUB_INSTALLATION_ID
 

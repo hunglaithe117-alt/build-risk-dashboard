@@ -12,8 +12,8 @@ from app.dtos.dashboard import (
     WidgetDefinition,
 )
 from app.middleware.auth import get_current_user
-from app.services.build_service import BuildService
 from app.services.dashboard_service import DashboardService
+from app.services.model_build_service import BuildService
 
 router = APIRouter()
 

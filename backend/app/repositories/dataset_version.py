@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 DatasetVersion Repository - CRUD operations for dataset versions.
 """
@@ -10,18 +12,18 @@ from bson import ObjectId
 from pymongo.database import Database
 
 from app.entities.dataset_version import DatasetVersion, VersionStatus
+from app.repositories.base import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class DatasetVersionRepository:
+class DatasetVersionRepository(BaseRepository[DatasetVersion]):
     """Repository for DatasetVersion entities."""
 
     COLLECTION_NAME = "dataset_versions"
 
     def __init__(self, db: Database):
-        self.db = db
-        self.collection = db[self.COLLECTION_NAME]
+        super().__init__(db, self.COLLECTION_NAME, DatasetVersion)
 
     def create(self, version: DatasetVersion) -> DatasetVersion:
         """Create a new dataset version."""
@@ -30,24 +32,24 @@ class DatasetVersionRepository:
         version.id = result.inserted_id
         return version
 
-    def find_by_id(self, version_id: str) -> Optional[DatasetVersion]:
+    def find_by_id(self, version_id: str | ObjectId) -> Optional[DatasetVersion]:
         """Find version by ID."""
         try:
-            doc = self.collection.find_one({"_id": ObjectId(version_id)})
+            doc = self.collection.find_one({"_id": self.ensure_object_id(version_id)})
             if doc:
                 return DatasetVersion(**doc)
             return None
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
-    def find_by_dataset(self, dataset_id: str, limit: int = 50) -> List[DatasetVersion]:
-        """Find all versions for a dataset, newest first."""
-        docs = (
-            self.collection.find({"dataset_id": dataset_id})
-            .sort("version_number", -1)
-            .limit(limit)
-        )
-        return [DatasetVersion(**doc) for doc in docs]
+    def find_by_dataset(
+        self, dataset_id: str, skip: int = 0, limit: int = 10
+    ) -> tuple[List[DatasetVersion], int]:
+        """Find all versions for a dataset, newest first, with pagination."""
+        query = {"dataset_id": dataset_id}
+        total = self.collection.count_documents(query)
+        docs = self.collection.find(query).sort("version_number", -1).skip(skip).limit(limit)
+        return [DatasetVersion(**doc) for doc in docs], total
 
     def find_active_by_dataset(self, dataset_id: str) -> Optional[DatasetVersion]:
         """Find running or pending version for a dataset."""
@@ -73,9 +75,7 @@ class DatasetVersionRepository:
 
     def get_next_version_number(self, dataset_id: str) -> int:
         """Get the next version number for a dataset."""
-        latest = self.collection.find_one(
-            {"dataset_id": dataset_id}, sort=[("version_number", -1)]
-        )
+        latest = self.collection.find_one({"dataset_id": dataset_id}, sort=[("version_number", -1)])
         if latest:
             return latest.get("version_number", 0) + 1
         return 1
@@ -95,17 +95,17 @@ class DatasetVersionRepository:
         )
         return [DatasetVersion(**doc) for doc in docs]
 
-    def update_one(self, version_id: str, updates: Dict[str, Any]) -> bool:
+    def update_one(self, version_id: str | ObjectId, updates: Dict[str, Any]) -> bool:
         """Update a version by ID."""
         updates["updated_at"] = datetime.now(timezone.utc)
         result = self.collection.update_one(
-            {"_id": ObjectId(version_id)}, {"$set": updates}
+            {"_id": self.ensure_object_id(version_id)}, {"$set": updates}
         )
         return result.modified_count > 0
 
     def update_progress(
         self,
-        version_id: str,
+        version_id: str | ObjectId,
         processed_rows: int,
         enriched_rows: int,
         failed_rows: int,
@@ -124,10 +124,10 @@ class DatasetVersionRepository:
         if row_error:
             update_ops["$push"] = {"row_errors": row_error}
 
-        result = self.collection.update_one({"_id": ObjectId(version_id)}, update_ops)
+        result = self.collection.update_one({"_id": self.ensure_object_id(version_id)}, update_ops)
         return result.modified_count > 0
 
-    def mark_started(self, version_id: str, task_id: Optional[str] = None) -> bool:
+    def mark_started(self, version_id: str | ObjectId, task_id: Optional[str] = None) -> bool:
         """Mark version as started processing."""
         updates: Dict[str, Any] = {
             "status": VersionStatus.PROCESSING,
@@ -138,14 +138,14 @@ class DatasetVersionRepository:
             updates["task_id"] = task_id
 
         result = self.collection.update_one(
-            {"_id": ObjectId(version_id)}, {"$set": updates}
+            {"_id": self.ensure_object_id(version_id)}, {"$set": updates}
         )
         return result.modified_count > 0
 
-    def mark_completed(self, version_id: str) -> bool:
+    def mark_completed(self, version_id: str | ObjectId) -> bool:
         """Mark version as completed."""
         result = self.collection.update_one(
-            {"_id": ObjectId(version_id)},
+            {"_id": self.ensure_object_id(version_id)},
             {
                 "$set": {
                     "status": VersionStatus.COMPLETED,
@@ -156,10 +156,10 @@ class DatasetVersionRepository:
         )
         return result.modified_count > 0
 
-    def mark_failed(self, version_id: str, error: str) -> bool:
+    def mark_failed(self, version_id: str | ObjectId, error: str) -> bool:
         """Mark version as failed."""
         result = self.collection.update_one(
-            {"_id": ObjectId(version_id)},
+            {"_id": self.ensure_object_id(version_id)},
             {
                 "$set": {
                     "status": VersionStatus.FAILED,
@@ -171,10 +171,10 @@ class DatasetVersionRepository:
         )
         return result.modified_count > 0
 
-    def mark_cancelled(self, version_id: str) -> bool:
+    def mark_cancelled(self, version_id: str | ObjectId) -> bool:
         """Mark version as cancelled."""
         result = self.collection.update_one(
-            {"_id": ObjectId(version_id)},
+            {"_id": self.ensure_object_id(version_id)},
             {
                 "$set": {
                     "status": VersionStatus.CANCELLED,
@@ -185,10 +185,10 @@ class DatasetVersionRepository:
         )
         return result.modified_count > 0
 
-    def add_auto_imported_repo(self, version_id: str, repo_name: str) -> bool:
+    def add_auto_imported_repo(self, version_id: str | ObjectId, repo_name: str) -> bool:
         """Add a repo to the auto-imported list."""
         result = self.collection.update_one(
-            {"_id": ObjectId(version_id)},
+            {"_id": self.ensure_object_id(version_id)},
             {
                 "$push": {"repos_auto_imported": repo_name},
                 "$set": {"updated_at": datetime.now(timezone.utc)},
@@ -196,9 +196,9 @@ class DatasetVersionRepository:
         )
         return result.modified_count > 0
 
-    def delete(self, version_id: str) -> bool:
+    def delete(self, version_id: str | ObjectId) -> bool:
         """Delete a version."""
-        result = self.collection.delete_one({"_id": ObjectId(version_id)})
+        result = self.collection.delete_one({"_id": self.ensure_object_id(version_id)})
         return result.deleted_count > 0
 
     def delete_by_dataset(self, dataset_id: str) -> int:

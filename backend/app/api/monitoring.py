@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from pymongo.database import Database
 
 from app.database.mongo import get_db
-from app.middleware.require_admin import require_admin
+from app.middleware.rbac import Permission, RequirePermission
 from app.services.monitoring_service import MonitoringService
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/monitoring", tags=["Monitoring"])
 @router.get("/system")
 def get_system_stats(
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
 ):
     """
     Get comprehensive system statistics.
@@ -46,7 +46,7 @@ def get_pipeline_runs(
     skip: int = Query(0, ge=0),
     status: Optional[str] = Query(None, description="Filter by status"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
 ):
     """
     Get recent pipeline runs with pagination.
@@ -63,7 +63,7 @@ def get_pipeline_runs_cursor(
     cursor: Optional[str] = Query(None, description="Cursor from previous page"),
     status: Optional[str] = Query(None, description="Filter by status"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
 ):
     """
     Get pipeline runs with cursor-based pagination for infinite scroll.
@@ -77,7 +77,7 @@ def get_pipeline_runs_cursor(
 @router.get("/jobs")
 def get_background_jobs(
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
 ):
     """
     Get active background jobs overview.
@@ -94,7 +94,7 @@ def get_background_jobs(
 @router.get("/queues")
 def get_queue_stats(
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
 ):
     """
     Get detailed Celery queue statistics.
@@ -118,7 +118,7 @@ def get_system_logs(
     ),
     source: Optional[str] = Query(None, description="Filter by source/component"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
 ):
     """
     Get system logs with pagination and filtering.
@@ -135,17 +135,18 @@ def export_system_logs(
     source: Optional[str] = Query(None),
     format: str = Query("json", description="Export format: json or csv"),
     db: Database = Depends(get_db),
-    _admin: dict = Depends(require_admin),
+    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
 ):
     """
     Export system logs as JSON or CSV.
 
     Admin only. Returns up to 10,000 logs for download.
     """
-    from fastapi.responses import StreamingResponse
     import csv
     import io
     import json
+
+    from fastapi.responses import StreamingResponse
 
     service = MonitoringService(db)
     logs = service.get_logs_for_export(level=level, source=source)
@@ -159,9 +160,7 @@ def export_system_logs(
             )
             writer.writeheader()
             for log in logs:
-                log["details"] = (
-                    json.dumps(log.get("details")) if log.get("details") else ""
-                )
+                log["details"] = json.dumps(log.get("details")) if log.get("details") else ""
                 writer.writerow(log)
 
         output.seek(0)

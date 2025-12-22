@@ -333,8 +333,6 @@ def ensure_worktree(github_repo_id: int, commit_sha: str, full_name: str) -> Opt
                 return None
 
         # Ensure commit exists (handles fork commits via replay if needed)
-        from backend.app.utils.git import ensure_commit_exists
-
         from app.services.github.github_client import GitHubClient
 
         github_client = GitHubClient()

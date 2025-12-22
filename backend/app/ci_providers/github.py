@@ -99,13 +99,12 @@ class GitHubActionsProvider(CIProviderInterface):
             repo_name: Repository full name (owner/repo) to check org membership
             installation_id: Explicit installation ID override (bypasses org check)
         """
-        from backend.app.services.model_repository_service import is_org_repo
-
         from app.services.github.github_client import (
             GitHubClient,
             get_app_github_client,
             get_public_github_client,
         )
+        from app.services.model_repository_service import is_org_repo
 
         # If explicit installation_id provided, use it directly
         if installation_id:

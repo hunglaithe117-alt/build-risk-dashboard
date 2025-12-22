@@ -103,6 +103,7 @@ def clone_repo(
     github_repo_id: int = 0,
     full_name: str = "",
     publish_status: bool = False,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
     Clone or update git repository.
@@ -111,6 +112,11 @@ def clone_repo(
     Supports installation token for private repos.
     Uses github_repo_id for folder path (stable across renames).
     """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    log_ctx = f"{corr_prefix}[clone][repo={full_name}]"
+
+    logger.info(f"{log_ctx} Starting clone/update")
+
     if publish_status and raw_repo_id:
         _publish_status(raw_repo_id, "importing", "Cloning repository...")
 
@@ -124,7 +130,7 @@ def clone_repo(
             use_installation_token = is_org_repo(full_name) and settings.GITHUB_INSTALLATION_ID
 
             if repo_path.exists():
-                logger.info(f"Updating existing clone for {full_name}")
+                logger.info(f"{log_ctx} Updating existing clone")
 
                 # For org repos, update remote URL with fresh token before fetching
                 if use_installation_token:
@@ -148,7 +154,7 @@ def clone_repo(
                     timeout=300,
                 )
             else:
-                logger.info(f"Cloning {full_name} to {repo_path}")
+                logger.info(f"{log_ctx} Cloning to {repo_path}")
                 clone_url = f"https://github.com/{full_name}.git"
 
                 # For org repos, use installation token
@@ -165,6 +171,8 @@ def clone_repo(
                     timeout=600,
                 )
 
+            logger.info(f"{log_ctx} Clone/update completed successfully")
+
             if publish_status and raw_repo_id:
                 _publish_status(raw_repo_id, "importing", "Repository cloned successfully")
 
@@ -173,6 +181,7 @@ def clone_repo(
                 "github_repo_id": github_repo_id,
                 "status": "cloned",
                 "path": str(repo_path),
+                "correlation_id": correlation_id,
             }
 
             # Preserve previous result data for chaining
@@ -181,119 +190,50 @@ def clone_repo(
             return result
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"Git operation failed for {full_name}: {e.stderr}")
+            logger.error(f"{log_ctx} Git operation failed: {e.stderr}")
             raise
 
 
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.shared.create_worktrees",
+    name="app.tasks.shared.create_worktree_chunk",
     queue="ingestion",
-    soft_time_limit=1800,  # 30 min (sequential chunks take longer)
-    time_limit=1860,
+    soft_time_limit=300,  # 5 min per chunk
+    time_limit=360,
+    autoretry_for=(subprocess.CalledProcessError, subprocess.TimeoutExpired),
+    retry_kwargs={"max_retries": 2, "countdown": 30},
 )
-def create_worktrees(
+def create_worktree_chunk(
     self: PipelineTask,
+    prev_result: Any = None,  # Allow chaining
     raw_repo_id: str = "",
     github_repo_id: int = 0,
-    commit_shas: List[str] = [],
-    publish_status: bool = False,
-) -> Dict[str, Any]:
-    """
-    Orchestrator: Create worktrees in chunks SEQUENTIALLY.
-
-    Runs chunks one by one to avoid Git/disk contention.
-    This ensures worktrees are ready before feature extraction begins.
-
-    NOTE: We call _create_worktree_chunk_impl directly (not via Celery)
-    to avoid 'Never call result.get() within a task!' error.
-    """
-    if not commit_shas:
-        return {"worktrees_created": 0, "worktrees_skipped": 0}
-
-    # Deduplicate
-    unique_shas = list(dict.fromkeys(commit_shas))
-
-    if publish_status and raw_repo_id:
-        _publish_status(
-            raw_repo_id,
-            "importing",
-            f"Creating worktrees for {len(unique_shas)} commits...",
-        )
-
-    # Build chunk parameters
-    chunk_size = getattr(settings, "WORKTREE_BATCH_SIZE", 50)
-    total_chunks = (len(unique_shas) + chunk_size - 1) // chunk_size
-
-    logger.info(
-        f"Creating worktrees for github_repo_id={github_repo_id}: "
-        f"{len(unique_shas)} commits in {total_chunks} sequential chunks"
-    )
-
-    # Execute chunks SEQUENTIALLY by calling implementation directly
-    # (not via Celery to avoid subtask blocking error)
-    results = []
-    for i in range(0, len(unique_shas), chunk_size):
-        chunk = unique_shas[i : i + chunk_size]
-        chunk_index = i // chunk_size
-
-        result = _create_worktree_chunk_impl(
-            db=self.db,
-            raw_repo_id=raw_repo_id,
-            github_repo_id=github_repo_id,
-            commit_shas=chunk,
-            publish_status=publish_status,
-            chunk_index=chunk_index,
-            total_chunks=total_chunks,
-        )
-        results.append(result)
-
-    # Aggregate results
-    total_created = sum(r.get("worktrees_created", 0) for r in results if r)
-    total_skipped = sum(r.get("worktrees_skipped", 0) for r in results if r)
-    total_failed = sum(r.get("worktrees_failed", 0) for r in results if r)
-    total_replayed = sum(r.get("fork_commits_replayed", 0) for r in results if r)
-
-    logger.info(
-        f"Worktree creation completed for {raw_repo_id}: "
-        f"created={total_created}, skipped={total_skipped}, failed={total_failed}"
-    )
-
-    if publish_status and raw_repo_id:
-        _publish_status(
-            raw_repo_id,
-            "importing",
-            f"Worktrees ready: {total_created} created, {total_skipped} skipped",
-        )
-
-    return {
-        "worktrees_created": total_created,
-        "worktrees_skipped": total_skipped,
-        "worktrees_failed": total_failed,
-        "fork_commits_replayed": total_replayed,
-        "chunks_completed": len(results),
-    }
-
-
-def _create_worktree_chunk_impl(
-    db,
-    raw_repo_id: str,
-    github_repo_id: int,
-    commit_shas: List[str],
+    commit_shas: List[str] | None = None,
     publish_status: bool = False,
     chunk_index: int = 0,
     total_chunks: int = 1,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
-    Implementation: Create worktrees for a chunk of commits.
+    Worker: Create worktrees for a chunk of commits.
 
-    This is the actual implementation that can be called directly or from the Celery task.
-    Extracting this allows create_worktrees to call it directly without going through Celery,
-    avoiding the 'Never call result.get() within a task!' error.
+    Runs as part of a chain, each chunk executes sequentially.
     """
-    build_run_repo = RawBuildRunRepository(db)
-    raw_repo_repo = RawRepositoryRepository(db)
+    task_id = self.request.id or "unknown"
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    log_ctx = (
+        f"{corr_prefix}[worktree][task={task_id}]"
+        f"[repo={raw_repo_id}][chunk={chunk_index + 1}/{total_chunks}]"
+    )
+
+    logger.info(f"{log_ctx} Starting with {len(commit_shas or [])} commits")
+
+    if commit_shas is None:
+        commit_shas = []
+
+    build_run_repo = RawBuildRunRepository(self.db)
+    raw_repo_repo = RawRepositoryRepository(self.db)
     raw_repo = raw_repo_repo.find_by_id(raw_repo_id)
 
     # Use github_repo_id for paths
@@ -352,7 +292,7 @@ def _create_worktree_chunk_impl(
                     # Attempt fork replay
                     if github_client and raw_repo:
                         try:
-                            from backend.app.utils.git import ensure_commit_exists
+                            from app.utils.git import ensure_commit_exists
 
                             synthetic_sha = ensure_commit_exists(
                                 repo_path=repo_path,
@@ -388,18 +328,29 @@ def _create_worktree_chunk_impl(
                 worktrees_created += 1
 
         except subprocess.CalledProcessError as e:
-            logger.warning(f"Failed to create worktree for {sha[:8]}: {e}")
+            logger.error(
+                f"{log_ctx} Failed to create worktree for {sha[:8]}: "
+                f"cmd={e.cmd}, returncode={e.returncode}, stderr={e.stderr}"
+            )
             worktrees_failed += 1
-        except subprocess.TimeoutExpired:
-            logger.warning(f"Timeout creating worktree for {sha[:8]}")
+        except subprocess.TimeoutExpired as e:
+            logger.error(f"{log_ctx} Timeout creating worktree for {sha[:8]}: {e}")
+            worktrees_failed += 1
+        except Exception as e:
+            logger.exception(f"{log_ctx} Unexpected error creating worktree for {sha[:8]}: {e}")
             worktrees_failed += 1
 
     if publish_status and raw_repo_id:
-        _publish_status(
-            raw_repo_id,
-            "importing",
-            f"Chunk {chunk_index + 1}/{total_chunks}: {worktrees_created} created, {worktrees_skipped} skipped",
+        msg = (
+            f"Chunk {chunk_index + 1}/{total_chunks}: "
+            f"{worktrees_created} created, {worktrees_skipped} skipped"
         )
+        _publish_status(raw_repo_id, "importing", msg)
+
+    logger.info(
+        f"{log_ctx} Completed: created={worktrees_created}, "
+        f"skipped={worktrees_skipped}, failed={worktrees_failed}"
+    )
 
     return {
         "chunk_index": chunk_index,
@@ -407,132 +358,114 @@ def _create_worktree_chunk_impl(
         "worktrees_skipped": worktrees_skipped,
         "worktrees_failed": worktrees_failed,
         "fork_commits_replayed": fork_commits_replayed,
+        "correlation_id": correlation_id,
     }
 
 
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.shared.create_worktree_chunk",
+    name="app.tasks.shared.finalize_worktrees",
     queue="ingestion",
-    soft_time_limit=300,  # 5 min per chunk
-    time_limit=360,
-    autoretry_for=(subprocess.CalledProcessError, subprocess.TimeoutExpired),
-    retry_kwargs={"max_retries": 2, "countdown": 30},
+    soft_time_limit=60,
+    time_limit=120,
 )
-def create_worktree_chunk(
+def finalize_worktrees(
     self: PipelineTask,
-    raw_repo_id: str,
-    github_repo_id: int,
-    commit_shas: List[str],
-    publish_status: bool = False,
-    chunk_index: int = 0,
-    total_chunks: int = 1,
-) -> Dict[str, Any]:
-    """
-    Worker: Create worktrees for a chunk of commits.
-
-    Delegates to _create_worktree_chunk_impl for the actual work.
-    This task is used when called from outside (e.g., standalone chunk processing).
-    """
-    return _create_worktree_chunk_impl(
-        db=self.db,
-        raw_repo_id=raw_repo_id,
-        github_repo_id=github_repo_id,
-        commit_shas=commit_shas,
-        publish_status=publish_status,
-        chunk_index=chunk_index,
-        total_chunks=total_chunks,
-    )
-
-
-@celery_app.task(
-    bind=True,
-    base=PipelineTask,
-    name="app.tasks.shared.download_build_logs",
-    queue="ingestion",
-    soft_time_limit=1800,  # 30 min (sequential chunks)
-    time_limit=1860,
-)
-def download_build_logs(
-    self: PipelineTask,
+    prev_results: Any = None,  # Results from chained chunk tasks
     raw_repo_id: str = "",
     github_repo_id: int = 0,
-    full_name: str = "",
-    build_ids: List[str] = [],
-    ci_provider: str = CIProvider.GITHUB_ACTIONS.value,
-    max_consecutive_expired: int = 10,
+    total_chunks: int = 0,
     publish_status: bool = False,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
-    Orchestrator: Download logs in chunks SEQUENTIALLY.
+    Finalize worktree creation after chain completes.
 
-    Runs chunks one by one and calls implementation directly to avoid
-    'Never call result.get() within a task!' error.
-    This ensures logs are ready before feature extraction begins.
+    Aggregates results from chunk tasks and publishes completion status.
+    This task is the last step in the worktree creation chain.
     """
-    import redis
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    log_ctx = f"{corr_prefix}[worktree_finalize][repo={raw_repo_id}]"
 
-    unique_build_ids = list(dict.fromkeys(build_ids))
+    # Aggregate results if prev_results is a list from chain
+    if isinstance(prev_results, list):
+        total_created = sum(
+            r.get("worktrees_created", 0) for r in prev_results if isinstance(r, dict)
+        )
+        total_skipped = sum(
+            r.get("worktrees_skipped", 0) for r in prev_results if isinstance(r, dict)
+        )
+        total_failed = sum(
+            r.get("worktrees_failed", 0) for r in prev_results if isinstance(r, dict)
+        )
+    elif isinstance(prev_results, dict):
+        total_created = prev_results.get("worktrees_created", 0)
+        total_skipped = prev_results.get("worktrees_skipped", 0)
+        total_failed = prev_results.get("worktrees_failed", 0)
+    else:
+        total_created = 0
+        total_skipped = 0
+        total_failed = 0
 
-    if not unique_build_ids:
-        return {"logs_downloaded": 0, "logs_expired": 0, "logs_skipped": 0}
+    logger.info(
+        f"{log_ctx} Finalized: created={total_created}, "
+        f"skipped={total_skipped}, failed={total_failed}"
+    )
 
     if publish_status and raw_repo_id:
         _publish_status(
             raw_repo_id,
             "importing",
-            f"Downloading logs for {len(unique_build_ids)} builds...",
+            f"Worktrees ready: {total_created} created, {total_skipped} skipped",
         )
 
-    # Initialize Redis state for this download session
-    redis_client = redis.from_url(settings.REDIS_URL)
-    session_key = f"logs_session:{raw_repo_id}"
-    redis_client.delete(f"{session_key}:consecutive")
-    redis_client.delete(f"{session_key}:stop")
-    redis_client.set(f"{session_key}:max_expired", max_consecutive_expired, ex=3600)
+    return {
+        "status": "completed",
+        "worktrees_created": total_created,
+        "worktrees_skipped": total_skipped,
+        "worktrees_failed": total_failed,
+        "chunks_completed": total_chunks,
+        "correlation_id": correlation_id,
+    }
 
-    # Process chunks SEQUENTIALLY
-    chunk_size = getattr(settings, "DOWNLOAD_LOGS_BATCH_SIZE", 50)
-    total_chunks = (len(unique_build_ids) + chunk_size - 1) // chunk_size
 
-    logger.info(
-        f"Downloading logs for repo {raw_repo_id}: "
-        f"{len(unique_build_ids)} builds in {total_chunks} sequential chunks"
+@celery_app.task(
+    bind=True,
+    base=PipelineTask,
+    name="app.tasks.shared.aggregate_logs_results",
+    queue="ingestion",
+    soft_time_limit=60,
+    time_limit=120,
+)
+def aggregate_logs_results(
+    self: PipelineTask,
+    chunk_results: List[Dict[str, Any]],  # Results from chord
+    raw_repo_id: str = "",
+    github_repo_id: int = 0,
+    total_chunks: int = 0,
+    publish_status: bool = False,
+    correlation_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Chord callback: Aggregate results from parallel log download chunks.
+
+    This task receives results from all chunk tasks after they complete.
+    Publishes final status update.
+    """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    log_ctx = f"{corr_prefix}[logs_aggregate][repo={raw_repo_id}]"
+
+    # Aggregate results from all chunks
+    total_downloaded = sum(
+        r.get("logs_downloaded", 0) for r in chunk_results if isinstance(r, dict)
     )
-
-    results = []
-    for i in range(0, len(unique_build_ids), chunk_size):
-        chunk = unique_build_ids[i : i + chunk_size]
-        chunk_index = i // chunk_size
-
-        # Call implementation directly (not via Celery)
-        result = _download_logs_chunk_impl(
-            db=self.db,
-            raw_repo_id=raw_repo_id,
-            github_repo_id=github_repo_id,
-            full_name=full_name,
-            build_ids=chunk,
-            ci_provider=ci_provider,
-            publish_status=publish_status,
-            chunk_index=chunk_index,
-            total_chunks=total_chunks,
-        )
-        results.append(result)
-
-        # Check if stop flag was set (max consecutive expired reached)
-        if redis_client.get(f"{session_key}:stop"):
-            logger.info("Stopping log download early: max consecutive expired reached")
-            break
-
-    # Aggregate results
-    total_downloaded = sum(r.get("logs_downloaded", 0) for r in results if r)
-    total_expired = sum(r.get("logs_expired", 0) for r in results if r)
-    total_skipped = sum(r.get("logs_skipped", 0) for r in results if r)
+    total_expired = sum(r.get("logs_expired", 0) for r in chunk_results if isinstance(r, dict))
+    total_skipped = sum(r.get("logs_skipped", 0) for r in chunk_results if isinstance(r, dict))
 
     logger.info(
-        f"Log download completed for {raw_repo_id}: "
-        f"downloaded={total_downloaded}, expired={total_expired}, skipped={total_skipped}"
+        f"{log_ctx} Aggregated: downloaded={total_downloaded}, "
+        f"expired={total_expired}, skipped={total_skipped}"
     )
 
     if publish_status and raw_repo_id:
@@ -543,34 +476,58 @@ def download_build_logs(
         )
 
     return {
+        "status": "completed",
         "logs_downloaded": total_downloaded,
         "logs_expired": total_expired,
         "logs_skipped": total_skipped,
-        "chunks_completed": len(results),
+        "chunks_completed": total_chunks,
+        "correlation_id": correlation_id,
     }
 
 
-def _download_logs_chunk_impl(
-    db,
-    raw_repo_id: str,
-    github_repo_id: int,
-    full_name: str,
-    build_ids: List[str],
+@celery_app.task(
+    bind=True,
+    base=PipelineTask,
+    name="app.tasks.shared.download_logs_chunk",
+    queue="ingestion",
+    soft_time_limit=600,  # 10 min per chunk
+    time_limit=660,
+    autoretry_for=(GithubRateLimitError, GithubRetryableError),
+    retry_kwargs={"max_retries": 2, "countdown": 60},
+)
+def download_logs_chunk(
+    self: PipelineTask,
+    raw_repo_id: str = "",
+    github_repo_id: int = 0,
+    full_name: str = "",
+    build_ids: List[str] | None = None,
     ci_provider: str = CIProvider.GITHUB_ACTIONS.value,
     publish_status: bool = False,
     chunk_index: int = 0,
     total_chunks: int = 1,
+    force_download: bool = False,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
-    Implementation: Download logs for a chunk of builds.
+    Worker: Download logs for a chunk of builds.
 
-    This is the actual implementation that can be called directly or from the Celery task.
-    Extracting this allows download_build_logs to call it directly without going through Celery,
-    avoiding the 'Never call result.get() within a task!' error.
+    Runs as part of a chord, all chunks execute in parallel.
     """
     import redis
 
     from app.services.github.exceptions import GithubLogsUnavailableError
+
+    task_id = self.request.id or "unknown"
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    log_ctx = (
+        f"{corr_prefix}[logs][task={task_id}]"
+        f"[repo={raw_repo_id}][chunk={chunk_index + 1}/{total_chunks}]"
+    )
+
+    logger.info(f"{log_ctx} Starting with {len(build_ids or [])} builds")
+
+    if build_ids is None:
+        build_ids = []
 
     # Check if we should stop (other chunk hit max expired)
     redis_client = redis.from_url(settings.REDIS_URL)
@@ -580,10 +537,10 @@ def _download_logs_chunk_impl(
         logger.info(f"Chunk {chunk_index} skipped: stop flag set by another chunk")
         return {"chunk_index": chunk_index, "skipped": True, "reason": "early_stop"}
 
-    build_run_repo = RawBuildRunRepository(db)
+    build_run_repo = RawBuildRunRepository(self.db)
     ci_provider_enum = CIProvider(ci_provider)
     provider_config = get_provider_config(ci_provider_enum)
-    ci_instance = get_ci_provider(ci_provider_enum, provider_config, db=db)
+    ci_instance = get_ci_provider(ci_provider_enum, provider_config, db=self.db)
 
     logs_downloaded = 0
     logs_expired = 0
@@ -676,7 +633,7 @@ def _download_logs_chunk_impl(
                 redis_client.set(f"{session_key}:stop", 1, ex=3600)
             return "expired"
         except Exception as e:
-            logger.warning(f"Failed to download logs for build {build_id}: {e}")
+            logger.exception(f"{log_ctx} Failed to download logs for build {build_id}: {e}")
             return "failed"
 
     loop = asyncio.new_event_loop()
@@ -690,53 +647,21 @@ def _download_logs_chunk_impl(
         loop.close()
 
     if publish_status and raw_repo_id:
-        _publish_status(
-            raw_repo_id,
-            "importing",
-            f"Logs chunk {chunk_index + 1}/{total_chunks}: {logs_downloaded} downloaded, {logs_expired} expired",
+        msg = (
+            f"Logs chunk {chunk_index + 1}/{total_chunks}: "
+            f"{logs_downloaded} downloaded, {logs_expired} expired"
         )
+        _publish_status(raw_repo_id, "importing", msg)
+
+    logger.info(
+        f"{log_ctx} Completed: downloaded={logs_downloaded}, "
+        f"expired={logs_expired}, skipped={logs_skipped}"
+    )
 
     return {
         "chunk_index": chunk_index,
         "logs_downloaded": logs_downloaded,
         "logs_expired": logs_expired,
         "logs_skipped": logs_skipped,
+        "correlation_id": correlation_id,
     }
-
-
-@celery_app.task(
-    bind=True,
-    base=PipelineTask,
-    name="app.tasks.shared.download_logs_chunk",
-    queue="ingestion",
-    soft_time_limit=600,  # 10 min per chunk
-    time_limit=660,
-    autoretry_for=(GithubRateLimitError, GithubRetryableError),
-    retry_kwargs={"max_retries": 2, "countdown": 60},
-)
-def download_logs_chunk(
-    self: PipelineTask,
-    raw_repo_id: str,
-    full_name: str,
-    build_ids: List[str],
-    ci_provider: str = CIProvider.GITHUB_ACTIONS.value,
-    publish_status: bool = False,
-    chunk_index: int = 0,
-    total_chunks: int = 1,
-) -> Dict[str, Any]:
-    """
-    Worker: Download logs for a chunk of builds.
-
-    Delegates to _download_logs_chunk_impl for the actual work.
-    This task is used when called from outside (e.g., standalone chunk processing).
-    """
-    return _download_logs_chunk_impl(
-        db=self.db,
-        raw_repo_id=raw_repo_id,
-        full_name=full_name,
-        build_ids=build_ids,
-        ci_provider=ci_provider,
-        publish_status=publish_status,
-        chunk_index=chunk_index,
-        total_chunks=total_chunks,
-    )

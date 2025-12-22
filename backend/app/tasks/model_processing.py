@@ -1,7 +1,5 @@
 """
-Build Processing Tasks using the new DAG-based Feature Pipeline.
-
-This module uses the Hamilton-based pipeline directly for feature extraction.
+Build Processing Tasks
 """
 
 import json

@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional, Set
 from hamilton import driver
 
 from app.config import settings
+from app.paths import HAMILTON_CACHE_DIR
 from app.tasks.pipeline.constants import DEFAULT_FEATURES
 from app.tasks.pipeline.execution_tracker import ExecutionResult, ExecutionTracker
 from app.tasks.pipeline.feature_dag import (
@@ -113,7 +114,7 @@ class HamiltonPipeline:
             return None
         else:
             # File-based persistent cache (default)
-            cache_dir = Path(settings.HAMILTON_CACHE_DIR)
+            cache_dir = Path(HAMILTON_CACHE_DIR)
             cache_dir.mkdir(parents=True, exist_ok=True)
             return cache_dir
 
@@ -381,7 +382,7 @@ class HamiltonPipeline:
             logger.info("In-memory cache clears automatically on restart")
             return False
 
-        cache_dir = Path(settings.HAMILTON_CACHE_DIR)
+        cache_dir = Path(HAMILTON_CACHE_DIR)
         if cache_dir.exists():
             shutil.rmtree(cache_dir)
             cache_dir.mkdir(parents=True, exist_ok=True)

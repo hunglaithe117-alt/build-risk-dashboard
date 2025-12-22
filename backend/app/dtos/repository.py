@@ -2,10 +2,11 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.entities import TestFramework
 from app.ci_providers.models import CIProvider
+from app.entities import TestFramework
 from app.entities.base import PyObjectIdStr
 
 
@@ -59,6 +60,7 @@ class RepoResponse(BaseModel):
         description="Import status: queued, importing, imported, failed",
     )
     last_sync_error: Optional[str] = None
+    last_synced_at: Optional[datetime] = None
     notes: Optional[str] = None
     max_builds_to_ingest: Optional[int] = None
     # Always detect languages; no toggle exposed

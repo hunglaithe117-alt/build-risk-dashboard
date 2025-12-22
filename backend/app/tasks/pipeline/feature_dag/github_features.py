@@ -7,7 +7,6 @@ Features extracted from GitHub API:
 - Description complexity
 """
 
-from app.tasks.pipeline.feature_dag._inputs import BuildRunInput
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -15,14 +14,15 @@ from typing import Any, Dict, List, Optional
 from hamilton.function_modifiers import extract_fields, tag
 
 from app.tasks.pipeline.feature_dag._inputs import (
+    BuildRunInput,
     GitHubClientInput,
     RepoInput,
 )
 from app.tasks.pipeline.feature_dag._metadata import (
-    feature_metadata,
     FeatureCategory,
     FeatureDataType,
     FeatureResource,
+    feature_metadata,
 )
 from app.tasks.pipeline.feature_dag._retry import with_retry
 
@@ -111,9 +111,7 @@ def github_discussion_features(
             # PR created time
             pr_created_str = pr_details.get("created_at")
             if pr_created_str:
-                pr_created_at = datetime.fromisoformat(
-                    pr_created_str.replace("Z", "+00:00")
-                )
+                pr_created_at = datetime.fromisoformat(pr_created_str.replace("Z", "+00:00"))
 
             # gh_num_issue_comments: Discussion comments on THIS PR
             # TravisTorrent: from PR creation to build start
@@ -151,23 +149,18 @@ def _get_previous_build_start_time(
     current_ci_run_id: str,
     current_build_time: Optional[datetime],
 ) -> Optional[datetime]:
-    """Get the start time of the previous build for this repo.
-
-    Note: Query uses MongoDB field names (raw_repo_id, build_id), not Python entity names.
-    build_id in MongoDB = ci_run_id in RawBuildRun entity.
-    """
+    """Get the start time of the previous build for this repo."""
     from bson import ObjectId
 
     if not current_build_time:
         return None
 
     try:
-        # Note: build_id is the MongoDB field name (= ci_run_id in entity)
         prev_build = raw_build_runs.find_one(
             {
                 "raw_repo_id": ObjectId(repo_id),
                 "created_at": {"$lt": current_build_time},
-                "build_id": {"$ne": current_ci_run_id},
+                "ci_run_id": {"$ne": current_ci_run_id},
             },
             sort=[("created_at", -1)],
         )

@@ -153,7 +153,7 @@ class BuildService:
         return BuildDetail(
             _id=str(raw.id),
             build_number=raw.build_number,
-            build_id=raw.build_id or "",
+            build_id=raw.ci_run_id or "",
             conclusion=raw.conclusion or "unknown",
             commit_sha=raw.commit_sha or "",
             branch=raw.branch or "",

@@ -403,7 +403,7 @@ export default function AdminReposPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">
-                        {formatTimestamp(repo.last_scanned_at)}
+                        {formatTimestamp(repo.last_synced_at)}
                       </td>
                       <td className="px-6 py-4">
                         <div className="space-y-1">

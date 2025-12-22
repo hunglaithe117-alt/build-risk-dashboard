@@ -340,7 +340,7 @@ def build_hamilton_inputs(
     if build_run.logs_path:
         logs_dir = Path(build_run.logs_path)
     elif logs_base:
-        logs_dir = logs_base / str(raw_repo.id) / str(build_run.ci_run_id)
+        logs_dir = logs_base / str(raw_repo.github_repo_id) / str(build_run.ci_run_id)
     build_logs = BuildLogsInput.from_path(logs_dir)
 
     # Log warnings for unavailable inputs

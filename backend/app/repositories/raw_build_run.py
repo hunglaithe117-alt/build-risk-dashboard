@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-"""Repository for RawBuildRun entities (shared raw build run data)."""
-
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -31,7 +29,7 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
         doc = self.collection.find_one(
             {
                 "raw_repo_id": oid,
-                "build_id": build_id,
+                "ci_run_id": build_id,
                 "provider": provider,
             }
         )
@@ -45,7 +43,7 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
         doc = self.collection.find_one(
             {
                 "raw_repo_id": raw_repo_id,
-                "build_id": build_id,
+                "ci_run_id": build_id,
             }
         )
         return RawBuildRun(**doc) if doc else None
@@ -105,7 +103,7 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
         cursor = self.collection.find(
             {
                 "raw_repo_id": raw_repo_id,
-                "build_id": {"$in": build_ids},
+                "ci_run_id": {"$in": build_ids},
                 "provider": provider,
             },
             {
@@ -132,13 +130,13 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
         """
         update_data = {
             "raw_repo_id": raw_repo_id,
-            "build_id": build_id,
+            "ci_run_id": build_id,
             "provider": provider,
             **{k: v for k, v in kwargs.items() if v is not None},
         }
 
         doc = self.collection.find_one_and_update(
-            {"raw_repo_id": raw_repo_id, "build_id": build_id, "provider": provider},
+            {"raw_repo_id": raw_repo_id, "ci_run_id": build_id, "provider": provider},
             {"$set": update_data},
             upsert=True,
             return_document=ReturnDocument.AFTER,
@@ -165,12 +163,12 @@ class RawBuildRunRepository(BaseRepository[RawBuildRun]):
         # Legacy behavior: upsert by (raw_repo_id, build_id) only
         update_data = {
             "raw_repo_id": raw_repo_id,
-            "build_id": build_id,
+            "ci_run_id": build_id,
             **{k: v for k, v in kwargs.items() if v is not None},
         }
 
         doc = self.collection.find_one_and_update(
-            {"raw_repo_id": raw_repo_id, "build_id": build_id},
+            {"raw_repo_id": raw_repo_id, "ci_run_id": build_id},
             {"$set": update_data},
             upsert=True,
             return_document=ReturnDocument.AFTER,

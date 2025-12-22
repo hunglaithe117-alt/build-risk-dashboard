@@ -196,7 +196,8 @@ def extract_features_for_build(
         if skipped_features:
             result["status"] = "partial"
             result["warnings"].append(
-                f"Skipped {len(skipped_features)} features due to missing resources"
+                f"Skipped {len(skipped_features)} features: {skipped_features}. "
+                f"Missing resources: {missing_resources}"
             )
 
         if not prepared.is_commit_available:

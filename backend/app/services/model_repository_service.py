@@ -563,10 +563,9 @@ class RepositoryService:
             - model_training_build_id: The ModelTrainingBuild._id needed by the task
             - ci_run_id: CI provider's workflow ID (e.g., GitHub run ID like "20349163111")
         """
-        from backend.app.services.model_build_service import BuildService
-
         from app.entities.enums import ExtractionStatus
         from app.repositories.model_training_build import ModelTrainingBuildRepository
+        from app.services.model_build_service import BuildService
         from app.tasks.model_processing import (
             reprocess_build as reprocess_build_task,
         )

@@ -465,6 +465,7 @@ export interface DashboardSummaryResponse {
   metrics: DashboardMetrics;
   trends: DashboardTrendPoint[];
   repo_distribution: RepoDistributionEntry[];
+  dataset_count: number;
 }
 
 export interface GithubAuthorizeResponse {
@@ -801,41 +802,31 @@ export interface StartValidationResponse {
 
 // Settings types
 export interface CircleCISettings {
-  enabled: boolean;
   base_url: string;
   token?: string | null;
 }
 
 export interface TravisCISettings {
-  enabled: boolean;
   base_url: string;
   token?: string | null;
 }
 
 export interface SonarQubeSettings {
-  enabled: boolean;
   host_url: string;
   token?: string | null;
-  default_project_key: string;
   webhook_secret?: string | null;
   webhook_url?: string | null;
-  enabled_metrics: string[];
+  default_config?: string | null;
 }
 
 export interface TrivySettings {
-  enabled: boolean;
-  severity: string;
-  timeout: number;
-  skip_dirs: string;
-  async_threshold: number;
-  enabled_metrics: string[];
+  server_url?: string | null;
+  default_config?: string | null;
 }
 
 export interface NotificationSettings {
   email_enabled: boolean;
   email_recipients: string;
-  slack_enabled: boolean;
-  slack_webhook_url?: string | null;
 }
 
 export interface ApplicationSettings {
@@ -885,8 +876,6 @@ export type NotificationType =
   | "dataset_import_completed"
   | "dataset_validation_completed"
   | "dataset_enrichment_completed"
-  | "scan_completed"
-  | "scan_vulnerabilities_found"
   | "rate_limit_warning"
   | "rate_limit_exhausted"
   | "system";

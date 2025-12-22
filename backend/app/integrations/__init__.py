@@ -13,7 +13,6 @@ from .base import (
     MetricCategory,
     MetricDataType,
     MetricDefinition,
-    ScanMode,
     ToolType,
 )
 from .registry import (
@@ -27,7 +26,6 @@ from .registry import (
 __all__ = [
     "IntegrationTool",
     "ToolType",
-    "ScanMode",
     "MetricCategory",
     "MetricDataType",
     "MetricDefinition",

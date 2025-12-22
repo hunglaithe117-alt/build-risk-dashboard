@@ -16,8 +16,6 @@ class NotificationType(str, Enum):
     DATASET_IMPORT_COMPLETED = "dataset_import_completed"
     DATASET_VALIDATION_COMPLETED = "dataset_validation_completed"
     DATASET_ENRICHMENT_COMPLETED = "dataset_enrichment_completed"
-    SCAN_COMPLETED = "scan_completed"
-    SCAN_VULNERABILITIES_FOUND = "scan_vulnerabilities_found"
     RATE_LIMIT_WARNING = "rate_limit_warning"
     RATE_LIMIT_EXHAUSTED = "rate_limit_exhausted"
     SYSTEM = "system"
@@ -30,8 +28,6 @@ class Notification(BaseEntity):
     type: NotificationType = Field(..., description="Type of notification")
     title: str = Field(..., description="Notification title")
     message: str = Field(..., description="Notification message body")
-    is_read: bool = Field(
-        default=False, description="Whether notification has been read"
-    )
+    is_read: bool = Field(default=False, description="Whether notification has been read")
     link: Optional[str] = Field(default=None, description="URL to navigate on click")
     metadata: Optional[dict] = Field(default=None, description="Extra context data")

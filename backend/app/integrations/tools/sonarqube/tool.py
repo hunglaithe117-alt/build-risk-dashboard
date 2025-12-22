@@ -6,562 +6,23 @@ Uses async scan mode - results are delivered via webhook after scan completes.
 """
 
 import logging
+import subprocess
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import requests
 
 from app.config import settings
 from app.integrations.base import (
     IntegrationTool,
     MetricCategory,
-    MetricDataType,
     MetricDefinition,
-    ScanMode,
     ToolType,
 )
+from app.integrations.tools.sonarqube.metrics import SONARQUBE_METRICS
+from app.utils.git import ensure_worktree
 
 logger = logging.getLogger(__name__)
-
-
-# SONARQUBE METRICS DEFINITIONS
-SONARQUBE_METRICS: List[MetricDefinition] = [
-    # -------------------------------------------------------------------------
-    # Reliability Metrics (Bugs)
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="bugs",
-        display_name="Bugs",
-        description="Number of bug issues detected by SonarQube",
-        category=MetricCategory.RELIABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="5",
-    ),
-    MetricDefinition(
-        key="reliability_issues",
-        display_name="Reliability Issues",
-        description="Total number of reliability issues",
-        category=MetricCategory.RELIABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="8",
-    ),
-    MetricDefinition(
-        key="reliability_rating",
-        display_name="Reliability Rating",
-        description="Reliability rating (A-E) based on bug severity",
-        category=MetricCategory.RELIABILITY,
-        data_type=MetricDataType.STRING,
-        example_value="A",
-    ),
-    MetricDefinition(
-        key="reliability_remediation_effort",
-        display_name="Reliability Remediation Effort",
-        description="Estimated time to fix all reliability issues",
-        category=MetricCategory.RELIABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="120",
-        unit="minutes",
-    ),
-    MetricDefinition(
-        key="software_quality_reliability_rating",
-        display_name="SW Quality Reliability Rating",
-        description="Software quality reliability rating",
-        category=MetricCategory.RELIABILITY,
-        data_type=MetricDataType.STRING,
-        example_value="B",
-    ),
-    MetricDefinition(
-        key="software_quality_reliability_issues",
-        display_name="SW Quality Reliability Issues",
-        description="Software quality reliability issues count",
-        category=MetricCategory.RELIABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="3",
-    ),
-    MetricDefinition(
-        key="software_quality_reliability_remediation_effort",
-        display_name="SW Quality Reliability Remediation",
-        description="Software quality reliability remediation effort",
-        category=MetricCategory.RELIABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="60",
-        unit="minutes",
-    ),
-    # -------------------------------------------------------------------------
-    # Security Metrics (Vulnerabilities)
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="vulnerabilities",
-        display_name="Vulnerabilities",
-        description="Number of security vulnerabilities detected",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="2",
-    ),
-    MetricDefinition(
-        key="security_issues",
-        display_name="Security Issues",
-        description="Total number of security issues",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="4",
-    ),
-    MetricDefinition(
-        key="security_rating",
-        display_name="Security Rating",
-        description="Security rating (A-E) based on vulnerability severity",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.STRING,
-        example_value="A",
-    ),
-    MetricDefinition(
-        key="security_hotspots",
-        display_name="Security Hotspots",
-        description="Number of security hotspots that need review",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="3",
-    ),
-    MetricDefinition(
-        key="security_remediation_effort",
-        display_name="Security Remediation Effort",
-        description="Estimated time to fix all security issues",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="180",
-        unit="minutes",
-    ),
-    MetricDefinition(
-        key="security_review_rating",
-        display_name="Security Review Rating",
-        description="Rating based on reviewed security hotspots",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.STRING,
-        example_value="B",
-    ),
-    MetricDefinition(
-        key="security_hotspots_to_review_status",
-        display_name="Hotspots Review Status",
-        description="Percentage of security hotspots that have been reviewed",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.FLOAT,
-        example_value="75.0",
-        unit="percent",
-    ),
-    MetricDefinition(
-        key="software_quality_security_rating",
-        display_name="SW Quality Security Rating",
-        description="Software quality security rating",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.STRING,
-        example_value="A",
-    ),
-    MetricDefinition(
-        key="software_quality_security_issues",
-        display_name="SW Quality Security Issues",
-        description="Software quality security issues count",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="1",
-    ),
-    MetricDefinition(
-        key="software_quality_security_remediation_effort",
-        display_name="SW Quality Security Remediation",
-        description="Software quality security remediation effort",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="30",
-        unit="minutes",
-    ),
-    # -------------------------------------------------------------------------
-    # Maintainability Metrics (Code Smells, Technical Debt)
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="code_smells",
-        display_name="Code Smells",
-        description="Number of code smell issues detected",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="42",
-    ),
-    MetricDefinition(
-        key="sqale_index",
-        display_name="Technical Debt",
-        description="Total technical debt in minutes (SQALE index)",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="1200",
-        unit="minutes",
-    ),
-    MetricDefinition(
-        key="sqale_debt_ratio",
-        display_name="Technical Debt Ratio",
-        description="Ratio of technical debt to development cost",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.FLOAT,
-        example_value="2.5",
-        unit="percent",
-    ),
-    MetricDefinition(
-        key="sqale_rating",
-        display_name="Maintainability Rating",
-        description="Maintainability rating (A-E) based on technical debt ratio",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.STRING,
-        example_value="A",
-    ),
-    MetricDefinition(
-        key="maintainability_issues",
-        display_name="Maintainability Issues",
-        description="Total number of maintainability issues",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="25",
-    ),
-    MetricDefinition(
-        key="development_cost",
-        display_name="Development Cost",
-        description="Estimated development cost of the project",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.STRING,
-        example_value="50000",
-    ),
-    MetricDefinition(
-        key="effort_to_reach_maintainability_rating_a",
-        display_name="Effort to Reach A Rating",
-        description="Effort needed to reach maintainability rating A",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="480",
-        unit="minutes",
-    ),
-    MetricDefinition(
-        key="software_quality_maintainability_debt_ratio",
-        display_name="SW Quality Debt Ratio",
-        description="Software quality maintainability debt ratio",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.FLOAT,
-        example_value="1.8",
-        unit="percent",
-    ),
-    MetricDefinition(
-        key="software_quality_maintainability_remediation_effort",
-        display_name="SW Quality Maintainability Remediation",
-        description="Software quality maintainability remediation effort",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="960",
-        unit="minutes",
-    ),
-    MetricDefinition(
-        key="software_quality_maintainability_rating",
-        display_name="SW Quality Maintainability Rating",
-        description="Software quality maintainability rating",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.STRING,
-        example_value="B",
-    ),
-    MetricDefinition(
-        key="effort_to_reach_software_quality_maintainability_rating_a",
-        display_name="Effort to Reach SW Quality A Rating",
-        description="Effort to reach software quality maintainability rating A",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="720",
-        unit="minutes",
-    ),
-    MetricDefinition(
-        key="software_quality_maintainability_issues",
-        display_name="SW Quality Maintainability Issues",
-        description="Software quality maintainability issues count",
-        category=MetricCategory.MAINTAINABILITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="18",
-    ),
-    # -------------------------------------------------------------------------
-    # Coverage Metrics
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="coverage",
-        display_name="Code Coverage",
-        description="Overall code coverage percentage",
-        category=MetricCategory.COVERAGE,
-        data_type=MetricDataType.FLOAT,
-        example_value="78.5",
-        unit="percent",
-    ),
-    MetricDefinition(
-        key="line_coverage",
-        display_name="Line Coverage",
-        description="Percentage of lines covered by tests",
-        category=MetricCategory.COVERAGE,
-        data_type=MetricDataType.FLOAT,
-        example_value="82.3",
-        unit="percent",
-    ),
-    MetricDefinition(
-        key="lines_to_cover",
-        display_name="Lines to Cover",
-        description="Number of lines that should be covered by tests",
-        category=MetricCategory.COVERAGE,
-        data_type=MetricDataType.INTEGER,
-        example_value="5000",
-    ),
-    MetricDefinition(
-        key="uncovered_lines",
-        display_name="Uncovered Lines",
-        description="Number of lines not covered by tests",
-        category=MetricCategory.COVERAGE,
-        data_type=MetricDataType.INTEGER,
-        example_value="885",
-    ),
-    # -------------------------------------------------------------------------
-    # Duplication Metrics
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="duplicated_lines_density",
-        display_name="Duplicated Lines %",
-        description="Percentage of duplicated lines in the codebase",
-        category=MetricCategory.DUPLICATION,
-        data_type=MetricDataType.FLOAT,
-        example_value="3.2",
-        unit="percent",
-    ),
-    MetricDefinition(
-        key="duplicated_lines",
-        display_name="Duplicated Lines",
-        description="Total number of duplicated lines",
-        category=MetricCategory.DUPLICATION,
-        data_type=MetricDataType.INTEGER,
-        example_value="450",
-    ),
-    MetricDefinition(
-        key="duplicated_blocks",
-        display_name="Duplicated Blocks",
-        description="Number of duplicated code blocks",
-        category=MetricCategory.DUPLICATION,
-        data_type=MetricDataType.INTEGER,
-        example_value="12",
-    ),
-    MetricDefinition(
-        key="duplicated_files",
-        display_name="Duplicated Files",
-        description="Number of files containing duplicated code",
-        category=MetricCategory.DUPLICATION,
-        data_type=MetricDataType.INTEGER,
-        example_value="8",
-    ),
-    # -------------------------------------------------------------------------
-    # Complexity Metrics
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="cognitive_complexity",
-        display_name="Cognitive Complexity",
-        description="Total cognitive complexity of the codebase",
-        category=MetricCategory.COMPLEXITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="1250",
-    ),
-    MetricDefinition(
-        key="complexity",
-        display_name="Cyclomatic Complexity",
-        description="Total cyclomatic complexity of the codebase",
-        category=MetricCategory.COMPLEXITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="890",
-    ),
-    # -------------------------------------------------------------------------
-    # Size Metrics
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="ncloc",
-        display_name="Lines of Code (No Comments)",
-        description="Number of physical lines containing code (excluding comments)",
-        category=MetricCategory.SIZE,
-        data_type=MetricDataType.INTEGER,
-        example_value="25000",
-    ),
-    MetricDefinition(
-        key="lines",
-        display_name="Total Lines",
-        description="Total number of lines in the project",
-        category=MetricCategory.SIZE,
-        data_type=MetricDataType.INTEGER,
-        example_value="35000",
-    ),
-    MetricDefinition(
-        key="files",
-        display_name="Files Count",
-        description="Total number of files analyzed",
-        category=MetricCategory.SIZE,
-        data_type=MetricDataType.INTEGER,
-        example_value="150",
-    ),
-    MetricDefinition(
-        key="classes",
-        display_name="Classes Count",
-        description="Total number of classes",
-        category=MetricCategory.SIZE,
-        data_type=MetricDataType.INTEGER,
-        example_value="85",
-    ),
-    MetricDefinition(
-        key="functions",
-        display_name="Functions Count",
-        description="Total number of functions",
-        category=MetricCategory.SIZE,
-        data_type=MetricDataType.INTEGER,
-        example_value="420",
-    ),
-    MetricDefinition(
-        key="statements",
-        display_name="Statements Count",
-        description="Total number of statements",
-        category=MetricCategory.SIZE,
-        data_type=MetricDataType.INTEGER,
-        example_value="12500",
-    ),
-    MetricDefinition(
-        key="ncloc_language_distribution",
-        display_name="Language Distribution",
-        description="Distribution of lines of code by language",
-        category=MetricCategory.SIZE,
-        data_type=MetricDataType.STRING,
-        example_value="py=15000;js=10000",
-    ),
-    MetricDefinition(
-        key="comment_lines_density",
-        display_name="Comment Density",
-        description="Percentage of comment lines",
-        category=MetricCategory.SIZE,
-        data_type=MetricDataType.FLOAT,
-        example_value="18.5",
-        unit="percent",
-    ),
-    MetricDefinition(
-        key="comment_lines",
-        display_name="Comment Lines",
-        description="Total number of comment lines",
-        category=MetricCategory.SIZE,
-        data_type=MetricDataType.INTEGER,
-        example_value="5500",
-    ),
-    # -------------------------------------------------------------------------
-    # Quality Gate Metrics
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="alert_status",
-        display_name="Quality Gate Status",
-        description="Overall quality gate status (OK, WARN, ERROR)",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.STRING,
-        example_value="OK",
-    ),
-    MetricDefinition(
-        key="quality_gate_details",
-        display_name="Quality Gate Details",
-        description="Detailed quality gate conditions and their status",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.STRING,
-        example_value='{"level":"OK","conditions":[...]}',
-    ),
-    # -------------------------------------------------------------------------
-    # Issue Severity Metrics
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="software_quality_blocker_issues",
-        display_name="Blocker Issues",
-        description="Number of blocker severity issues",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="0",
-    ),
-    MetricDefinition(
-        key="critical_violations",
-        display_name="Critical Violations",
-        description="Number of critical severity violations",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="2",
-    ),
-    MetricDefinition(
-        key="violations",
-        display_name="Total Violations",
-        description="Total number of all violations",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="47",
-    ),
-    MetricDefinition(
-        key="software_quality_high_issues",
-        display_name="High Severity Issues",
-        description="Number of high severity issues",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="5",
-    ),
-    MetricDefinition(
-        key="info_violations",
-        display_name="Info Violations",
-        description="Number of info severity violations",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="10",
-    ),
-    MetricDefinition(
-        key="software_quality_low_issues",
-        display_name="Low Severity Issues",
-        description="Number of low severity issues",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="15",
-    ),
-    MetricDefinition(
-        key="software_quality_info_issues",
-        display_name="Info Level Issues",
-        description="Number of info level quality issues",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="8",
-    ),
-    MetricDefinition(
-        key="minor_violations",
-        display_name="Minor Violations",
-        description="Number of minor severity violations",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="20",
-    ),
-    MetricDefinition(
-        key="major_violations",
-        display_name="Major Violations",
-        description="Number of major severity violations",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="12",
-    ),
-    MetricDefinition(
-        key="software_quality_medium_issues",
-        display_name="Medium Severity Issues",
-        description="Number of medium severity issues",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="10",
-    ),
-    MetricDefinition(
-        key="open_issues",
-        display_name="Open Issues",
-        description="Number of currently open issues",
-        category=MetricCategory.CODE_QUALITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="35",
-    ),
-    MetricDefinition(
-        key="last_commit_date",
-        display_name="Last Commit Date",
-        description="Date of the last commit analyzed by SonarQube",
-        category=MetricCategory.METADATA,
-        data_type=MetricDataType.DATETIME,
-        example_value="2024-01-15T10:30:00Z",
-    ),
-]
 
 
 class SonarQubeTool(IntegrationTool):
@@ -569,10 +30,64 @@ class SonarQubeTool(IntegrationTool):
     SonarQube integration for code quality analysis.
 
     Uses async mode - scans are initiated and results are delivered via webhook.
+    Configuration loaded from DB settings (initialized from ENV on first run).
     """
 
-    def __init__(self):
+    def __init__(self, project_key: Optional[str] = None, github_repo_id: Optional[int] = None):
+        """
+        Initialize SonarQube tool.
+
+        Args:
+            project_key: SonarQube project key (for scanning)
+            github_repo_id: GitHub repo ID (for shared worktree lookup)
+        """
         self._metrics = SONARQUBE_METRICS
+        self.project_key = project_key
+        self.github_repo_id = github_repo_id
+
+        # Load settings from DB
+        db_settings = self._get_db_settings()
+        self.host = db_settings["host_url"]
+        self.token = db_settings["token"]
+        self._default_config = db_settings["default_config"]
+
+        self._session: Optional[requests.Session] = None
+
+    def _get_db_settings(self) -> Dict[str, Any]:
+        """Load SonarQube settings from database."""
+        try:
+            from app.database.mongo import get_database
+            from app.services.settings_service import SettingsService
+
+            db = get_database()
+            service = SettingsService(db)
+            app_settings = service.get_settings()
+
+            # Get decrypted token for actual use
+            token = service.get_decrypted_token("sonarqube") or ""
+
+            return {
+                "host_url": app_settings.sonarqube.host_url.rstrip("/"),
+                "token": token,
+                "default_config": app_settings.sonarqube.default_config or "",
+            }
+        except Exception as e:
+            logger.warning(f"Could not load SonarQube settings from DB: {e}")
+
+        # Fallback to ENV vars
+        return {
+            "host_url": settings.SONAR_HOST_URL.rstrip("/"),
+            "token": settings.SONAR_TOKEN or "",
+            "default_config": "",
+        }
+
+    @property
+    def session(self) -> requests.Session:
+        """Lazy-load requests session."""
+        if self._session is None:
+            self._session = requests.Session()
+            self._session.auth = (self.token, "")
+        return self._session
 
     @property
     def tool_type(self) -> ToolType:
@@ -586,80 +101,157 @@ class SonarQubeTool(IntegrationTool):
     def description(self) -> str:
         return "Code quality and security analysis"
 
-    @property
-    def scan_mode(self) -> ScanMode:
-        return ScanMode.ASYNC  # Results via webhook
-
     def is_available(self) -> bool:
-        """Check if SonarQube is configured."""
-        return bool(
-            getattr(settings, "SONAR_HOST_URL", None) and getattr(settings, "SONAR_TOKEN", None)
-        )
+        """Check if SonarQube is configured and Docker is available."""
+        if not self.host or not self.token:
+            return False
+
+        try:
+            result = subprocess.run(
+                ["docker", "--version"],
+                capture_output=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
 
     def get_config(self) -> Dict[str, Any]:
         """Return SonarQube configuration (without secrets)."""
-        host_url = getattr(settings, "SONAR_HOST_URL", "")
         return {
-            "host_url": host_url,
+            "host_url": self.host,
+            "has_default_config": bool(self._default_config),
             "configured": self.is_available(),
             "webhook_required": True,
         }
 
     def get_scan_types(self) -> List[str]:
-        """Return supported scan types."""
-        return [
-            "code_quality",
-            "security",
-            "maintainability",
-            "reliability",
-            "coverage",
-        ]
+        return ["code_quality", "security", "maintainability", "reliability"]
 
     def get_metrics(self) -> List[MetricDefinition]:
-        """Return all metric definitions."""
         return self._metrics
 
     def get_metric_keys(self) -> List[str]:
-        """Return list of metric keys."""
         return [m.key for m in self._metrics]
 
     def get_metrics_by_category(self, category: MetricCategory) -> List[MetricDefinition]:
-        """Get metrics filtered by category."""
         return [m for m in self._metrics if m.category == category]
 
-    def start_scan(
+    # =========================================================================
+    # Scanning Methods
+    # =========================================================================
+
+    def scan_commit(
         self,
-        repo_url: str,
         commit_sha: str,
-        project_key: str,
-        worktree_path: Optional[str] = None,
-        config_content: Optional[str] = None,
-        raw_repo_id: Optional[str] = None,
+        full_name: str,
+        sonar_config_content: Optional[str] = None,
+        shared_worktree_path: Optional[Path] = None,
     ) -> str:
         """
-        Start an async SonarQube scan.
+        Run SonarQube scan on a commit.
 
-        Returns component_key for tracking the scan.
-        Results will be delivered via webhook.
+        Args:
+            commit_sha: Commit SHA to scan
+            full_name: Repo full name (owner/repo)
+            sonar_config_content: Optional custom sonar-project.properties content
+            shared_worktree_path: Optional path to shared worktree from pipeline
+
+        Returns:
+            component_key: SonarQube component key for this scan
         """
-        from app.integrations.tools.sonarqube.runner import SonarCommitRunner
+        if not self.project_key:
+            raise ValueError("project_key is required for scanning")
 
-        runner = SonarCommitRunner(project_key, raw_repo_id=raw_repo_id)
-        component_key = runner.scan_commit(
-            repo_url=repo_url,
-            commit_sha=commit_sha,
-            sonar_config_content=config_content,
-            shared_worktree_path=worktree_path,
-        )
-        return component_key
+        component_key = f"{self.project_key}_{commit_sha}"
 
-    def fetch_metrics(self, component_key: str) -> Dict[str, Any]:
-        """
-        Fetch metrics from SonarQube API for a given component.
+        # Check if already exists
+        if self._project_exists(component_key):
+            logger.info(f"Component {component_key} already exists, skipping scan.")
+            return component_key
 
-        Usually called after webhook notification indicates scan is complete.
-        """
+        try:
+            # Use provided worktree or ensure one exists
+            if shared_worktree_path:
+                worktree = Path(shared_worktree_path)
+                if not worktree.exists():
+                    raise ValueError(f"Shared worktree path does not exist: {worktree}")
+            elif self.github_repo_id and full_name:
+                worktree = ensure_worktree(self.github_repo_id, commit_sha, full_name)
+                if not worktree:
+                    raise ValueError(f"Failed to create worktree for {commit_sha}")
+            else:
+                raise ValueError("Shared worktree path or github_repo_id + full_name required")
+
+            # Use custom config if provided, otherwise use default from settings
+            effective_config = sonar_config_content or self._default_config
+            if effective_config:
+                config_path = worktree / "sonar-project.properties"
+                with open(config_path, "w") as f:
+                    f.write(effective_config)
+                logger.info(f"Wrote sonar-project.properties for {component_key}")
+
+            cmd = self._build_scan_command(component_key, worktree)
+            logger.info(f"Scanning {component_key}...")
+
+            subprocess.run(cmd, cwd=worktree, check=True, capture_output=True, text=True)
+
+            return component_key
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Scan failed: {e.stderr}")
+            raise
+
+    def fetch_metrics(
+        self, component_key: str, selected_metrics: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """Fetch metrics from SonarQube API for a given component."""
         from app.integrations.tools.sonarqube.exporter import MetricsExporter
 
         exporter = MetricsExporter()
-        return exporter.collect_metrics(component_key)
+        return exporter.collect_metrics(component_key, selected_metrics=selected_metrics)
+
+    # =========================================================================
+    # Private Methods
+    # =========================================================================
+
+    def _build_scan_command(self, component_key: str, source_dir: Path) -> List[str]:
+        """Build sonar-scanner command using Docker image."""
+        scanner_args = [
+            f"-Dsonar.projectKey={component_key}",
+            f"-Dsonar.projectName={component_key}",
+            "-Dsonar.sources=.",
+            f"-Dsonar.host.url={self.host}",
+            f"-Dsonar.token={self.token}",
+            "-Dsonar.sourceEncoding=UTF-8",
+            "-Dsonar.scm.exclusions.disabled=true",
+            "-Dsonar.java.binaries=.",
+        ]
+
+        source_dir_str = str(source_dir.absolute())
+        return [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{source_dir_str}:/usr/src",
+            "-w",
+            "/usr/src",
+            "--network",
+            "host",
+            "sonarsource/sonar-scanner-cli:latest",
+            *scanner_args,
+        ]
+
+    def _project_exists(self, component_key: str) -> bool:
+        """Check if a SonarQube project already exists."""
+        url = f"{self.host}/api/projects/search"
+        try:
+            resp = self.session.get(url, params={"projects": component_key}, timeout=10)
+            if resp.status_code != 200:
+                return False
+            data = resp.json()
+            components = data.get("components") or []
+            return any(comp.get("key") == component_key for comp in components)
+        except Exception:
+            return False

@@ -51,7 +51,9 @@ def start_trivy_scan_for_version_commit(
         repo_full_name: Repository full name (owner/repo)
         raw_repo_id: RawRepository MongoDB ID
         github_repo_id: GitHub's internal repository ID for paths
-        trivy_config: Optional scan config (scanners, severity, extraArgs)
+        trivy_config: Optional config override containing:
+            - config_content: trivy.yaml content from UI (optional)
+            - scanners: comma-separated list like "vuln,config,secret" (optional)
         selected_metrics: Optional list of metrics to filter
     """
     logger.info(f"Starting Trivy scan for commit {commit_sha[:8]} in version {version_id[:8]}")
@@ -89,18 +91,13 @@ def start_trivy_scan_for_version_commit(
     start_time = time.time()
 
     try:
-        # Parse config
-        scan_types = _parse_scan_types(trivy_config)
-        severity = trivy_config.get("severity", "CRITICAL,HIGH,MEDIUM,LOW")
-        extra_args = trivy_config.get("extraArgs", "")
-
-        # Run Trivy scan
+        # Run Trivy scan with optional config override
+        # If user provides trivy.yaml content, it will be written to worktree
         trivy_tool = TrivyTool()
         scan_result = trivy_tool.scan(
             target_path=worktree_path_str,
-            scan_types=scan_types,
-            severity=severity,
-            extra_args=extra_args,
+            scan_types=_parse_scan_types(trivy_config),
+            config_content=trivy_config.get("config_content"),  # trivy.yaml content from UI
         )
 
         scan_duration_ms = scan_result.get(

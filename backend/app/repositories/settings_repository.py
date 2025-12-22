@@ -1,9 +1,11 @@
 """Repository for application settings."""
 
 from typing import Optional
+
 from pymongo.database import Database
 
 from app.entities.settings import ApplicationSettings
+
 from .base import BaseRepository
 
 

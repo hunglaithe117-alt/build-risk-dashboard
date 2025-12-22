@@ -1,6 +1,7 @@
 """Database index management for MongoDB collections."""
 
 import logging
+
 from pymongo.database import Database
 from pymongo.errors import OperationFailure
 
@@ -38,9 +39,7 @@ def _ensure_raw_build_runs_indexes(db: Database) -> None:
     except OperationFailure as e:
         # Index may already exist with different options
         if "already exists" not in str(e):
-            logger.warning(
-                f"Failed to create raw_repo_build_provider_unique index: {e}"
-            )
+            logger.warning(f"Failed to create raw_repo_build_provider_unique index: {e}")
 
     # Index for listing builds by repo (most common query)
     try:

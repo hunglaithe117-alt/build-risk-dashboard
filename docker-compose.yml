@@ -35,7 +35,7 @@ services:
 
   # Redis Cache
   redis:
-    image: redis:latest
+    image: redis:7-alpine
     container_name: build-risk-redis
     ports:
       - "6379:6379"
@@ -66,6 +66,18 @@ services:
     depends_on:
       - sonar-db
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/system/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   # PostgreSQL Database for SonarQube
   sonar-db:
@@ -80,15 +92,31 @@ services:
     restart: unless-stopped
 
   # Trivy Vulnerability Scanner Server
+  # NOTE: First run downloads ~600MB vulnerability DB (cached in volume)
   trivy:
     image: aquasec/trivy:latest
     container_name: build-risk-trivy
-    command: server --listen 0.0.0.0:4954
+    command: server --listen 0.0.0.0:4954 --cache-dir /root/.cache/trivy
+    environment:
+      # Set GitHub token to avoid rate limiting when fetching GHSA advisories
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     ports:
       - "4954:4954"
     volumes:
       - trivy_cache:/root/.cache/trivy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:4954/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # Celery Worker for Data Processing
   celery-worker:
@@ -96,7 +124,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: build-risk-celery-worker
-    command: uv run celery -A app.celery_app worker -Q pipeline.default,ingestion,processing,sonar_scan,trivy_scan --loglevel=info -c 4
+    command: uv run celery -A app.celery_app worker -Q pipeline.default,ingestion,processing,validation,sonar_scan,trivy_scan --loglevel=info -c 4
     user: "${APP_UID:-1000}:${APP_GID:-1000}"
     restart: unless-stopped
     environment:
@@ -105,6 +133,8 @@ services:
       CELERY_BROKER_URL: amqp://myuser:mypass@rabbitmq:5672//
       REDIS_URL: redis://redis:6379/0
       HOME: /tmp  # Required for git operations
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
       # SonarQube Scanner JVM options
       SONAR_SCANNER_OPTS: "-Xmx2g -Xms512m"
       # SonarQube settings
@@ -112,6 +142,12 @@ services:
       SONAR_TOKEN: ${SONAR_TOKEN:-}
       SONAR_DEFAULT_PROJECT_KEY: build-risk-ui
       SONAR_WEBHOOK_SECRET: ${SONAR_WEBHOOK_SECRET:-change-me}
+      # Trivy settings
+      TRIVY_SERVER_URL: http://trivy:4954
+      # GitHub settings
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
     volumes:
       - ./backend:/app
       - shared_data:/app/data
@@ -139,6 +175,7 @@ services:
       MONGODB_DB_NAME: buildguard
       CELERY_BROKER_URL: amqp://myuser:mypass@rabbitmq:5672//
       REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
       HOME: /tmp
     volumes:
       - ./backend:/app

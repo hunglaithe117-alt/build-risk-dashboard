@@ -52,9 +52,6 @@ sonar.exclusions=**/test/**,**/tests/**,**/__tests__/**
 # Language-specific (uncomment as needed)
 # sonar.java.binaries=target/classes
 # sonar.python.version=3.11
-
-# Coverage (if available)
-# sonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
 `;
 
 const TRIVY_TEMPLATE = `# Trivy Configuration

@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 class CircleCISettingsDto(BaseModel):
     """CircleCI integration settings."""
 
-    enabled: bool = False
     base_url: str = "https://circleci.com/api/v2"
     token: Optional[str] = Field(None, description="Token (write-only, returns masked on read)")
 
@@ -16,7 +15,6 @@ class CircleCISettingsDto(BaseModel):
 class TravisCISettingsDto(BaseModel):
     """Travis CI integration settings."""
 
-    enabled: bool = False
     base_url: str = "https://api.travis-ci.com"
     token: Optional[str] = Field(None, description="Token (write-only, returns masked on read)")
 
@@ -24,10 +22,8 @@ class TravisCISettingsDto(BaseModel):
 class SonarQubeSettingsDto(BaseModel):
     """SonarQube code quality settings."""
 
-    enabled: bool = False
     host_url: str = "http://localhost:9000"
     token: Optional[str] = Field(None, description="Token (write-only, returns masked on read)")
-    default_project_key: str = "build-risk-ui"
     # Webhook settings
     webhook_secret: Optional[str] = Field(
         None, description="Webhook secret (write-only, returns masked on read)"
@@ -35,23 +31,18 @@ class SonarQubeSettingsDto(BaseModel):
     webhook_url: Optional[str] = Field(
         None, description="Webhook URL (readonly, computed from backend URL)"
     )
-    enabled_metrics: list[str] = Field(
-        default_factory=list,
-        description="Enabled metric keys (empty = all metrics)",
+    # Default config content (sonar-project.properties)
+    default_config: Optional[str] = Field(
+        None, description="Default sonar-project.properties content"
     )
 
 
 class TrivySettingsDto(BaseModel):
     """Trivy security scanner settings."""
 
-    enabled: bool = False
-    severity: str = "CRITICAL,HIGH,MEDIUM"
-    timeout: int = 300
-    skip_dirs: str = "node_modules,vendor,.git"
-    enabled_metrics: list[str] = Field(
-        default_factory=list,
-        description="Enabled metric keys (empty = all metrics)",
-    )
+    server_url: Optional[str] = Field(None, description="Trivy server URL for client/server mode")
+    # Default config content (trivy.yaml)
+    default_config: Optional[str] = Field(None, description="Default trivy.yaml config content")
 
 
 class NotificationSettingsDto(BaseModel):

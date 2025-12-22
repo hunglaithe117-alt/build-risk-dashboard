@@ -1,12 +1,14 @@
 from __future__ import annotations
-from app.services.github.github_client import GitHubClient
 
 import logging
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
+from app.config import settings
+from app.paths import get_repo_path, get_worktree_path
+from app.services.github.github_client import GitHubClient
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +67,7 @@ def ensure_commit_exists(
     except subprocess.CalledProcessError:
         pass
 
-    logger.info(
-        f"Direct fetch failed. Attempting to replay fork commit {commit_sha}..."
-    )
+    logger.info(f"Direct fetch failed. Attempting to replay fork commit {commit_sha}...")
 
     try:
         plan = build_replay_plan(
@@ -89,7 +89,7 @@ def ensure_commit_exists(
 def build_replay_plan(
     repo_slug: str,
     target_sha: str,
-    commit_exists: callable,
+    commit_exists: Callable[[str], bool],
     github_client: GitHubClient,
     max_depth: int = -1,
 ) -> ReplayPlan:
@@ -168,8 +168,8 @@ def apply_replay_plan(repo_path: Path, plan: ReplayPlan, target_sha: str) -> str
     Applies the replay plan using a temporary worktree (for bare repos).
     Returns SHA of the final synthetic commit.
     """
-    import shutil
     import os
+    import shutil
 
     # Create temporary worktree for replay (bare repos don't have working tree)
     worktree_base = repo_path.parent.parent / "worktrees" / repo_path.name
@@ -213,9 +213,7 @@ def apply_replay_plan(repo_path: Path, plan: ReplayPlan, target_sha: str) -> str
                     check=True,
                 )
             except subprocess.CalledProcessError as e:
-                raise RuntimeError(
-                    f"Failed to apply patch for {commit.sha}: {e.stderr}"
-                )
+                raise RuntimeError(f"Failed to apply patch for {commit.sha}: {e.stderr}")
 
             # Commit with original author info
             env = os.environ.copy()
@@ -250,9 +248,7 @@ def apply_replay_plan(repo_path: Path, plan: ReplayPlan, target_sha: str) -> str
             # Get the new SHA
             last_sha = _run_git(replay_worktree, ["rev-parse", "HEAD"])
 
-        logger.info(
-            f"Replay complete. Synthetic commit: {last_sha} (from {target_sha})"
-        )
+        logger.info(f"Replay complete. Synthetic commit: {last_sha} (from {target_sha})")
         return last_sha
 
     finally:
@@ -288,3 +284,141 @@ def _commit_exists(cwd: Path, sha: str) -> bool:
         return True
     except subprocess.CalledProcessError:
         return False
+
+
+def ensure_worktree(github_repo_id: int, commit_sha: str, full_name: str) -> Optional[Path]:
+    """
+    Ensure worktree exists for a specific commit.
+
+    Uses RedisLock to coordinate with other workers.
+    Creates bare repo if not exists, handles fork commits via replay, then creates worktree.
+
+    Args:
+        github_repo_id: GitHub's internal repository ID
+        commit_sha: Full commit SHA
+        full_name: Repository full name (owner/repo)
+
+    Returns:
+        Path to worktree if successful, None otherwise
+    """
+    from app.core.redis import RedisLock
+
+    if not github_repo_id:
+        logger.warning("No github_repo_id provided, cannot create worktree")
+        return None
+
+    worktree_path = get_worktree_path(github_repo_id, commit_sha)
+    repo_path = get_repo_path(github_repo_id)
+
+    # Quick check - already exists
+    if worktree_path.exists() and (worktree_path / ".git").exists():
+        logger.debug(f"Using existing worktree: {worktree_path}")
+        return worktree_path
+
+    with RedisLock(
+        f"worktree:{github_repo_id}:{commit_sha[:12]}",
+        timeout=180,  # Increased for potential replay
+        blocking_timeout=60,
+    ):
+        # Double-check after acquiring lock
+        if worktree_path.exists() and (worktree_path / ".git").exists():
+            return worktree_path
+
+        # Ensure bare repo exists
+        if not repo_path.exists():
+            logger.info(f"Bare repo not found, cloning {full_name}")
+            clone_bare_repo(github_repo_id, full_name)
+            if not repo_path.exists():
+                logger.error(f"Failed to clone bare repo for {full_name}")
+                return None
+
+        # Ensure commit exists (handles fork commits via replay if needed)
+        from backend.app.utils.git import ensure_commit_exists
+
+        from app.services.github.github_client import GitHubClient
+
+        github_client = GitHubClient()
+        effective_sha = ensure_commit_exists(repo_path, commit_sha, full_name, github_client)
+
+        if not effective_sha:
+            logger.warning(f"Commit {commit_sha[:8]} not found and could not be replayed")
+            return None
+
+        # Use effective_sha for worktree (may be synthetic commit from replay)
+        target_sha = effective_sha
+
+        # Create worktree
+        try:
+            worktree_path.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["git", "worktree", "add", "--detach", str(worktree_path), target_sha],
+                cwd=str(repo_path),
+                check=True,
+                capture_output=True,
+                timeout=60,
+            )
+            logger.info(f"Created worktree at {worktree_path} (commit: {target_sha[:8]})")
+            return worktree_path
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to create worktree: {e.stderr}")
+            return None
+        except subprocess.TimeoutExpired:
+            logger.error("Timeout creating worktree")
+            return None
+
+
+def clone_bare_repo(github_repo_id: int, full_name: str) -> bool:
+    """
+    Clone repository as bare repo.
+
+    Uses RedisLock to prevent concurrent clones.
+
+    Args:
+        github_repo_id: GitHub's internal repository ID
+        full_name: Repository full name (owner/repo)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    from app.core.redis import RedisLock
+
+    if not github_repo_id:
+        return False
+
+    repo_path = get_repo_path(github_repo_id)
+
+    with RedisLock(f"clone:{github_repo_id}", timeout=700, blocking_timeout=60):
+        # Already cloned
+        if repo_path.exists():
+            return True
+
+        # Build clone URL (with auth if needed)
+        clone_url = f"https://github.com/{full_name}.git"
+
+        try:
+            from app.services.model_repository_service import is_org_repo
+
+            if is_org_repo(full_name) and settings.GITHUB_INSTALLATION_ID:
+                from app.services.github.github_app import get_installation_token
+
+                token = get_installation_token()
+                clone_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
+        except Exception as e:
+            logger.warning(f"Could not get installation token: {e}")
+
+        try:
+            logger.info(f"Cloning {full_name} to {repo_path}")
+            repo_path.parent.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["git", "clone", "--bare", clone_url, str(repo_path)],
+                check=True,
+                capture_output=True,
+                timeout=600,
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to clone {full_name}: {e.stderr}")
+            return False
+        except subprocess.TimeoutExpired:
+            logger.error(f"Timeout cloning {full_name}")
+            return False

@@ -352,7 +352,7 @@ def _create_worktree_chunk_impl(
                     # Attempt fork replay
                     if github_client and raw_repo:
                         try:
-                            from app.services.commit_replay import ensure_commit_exists
+                            from backend.app.utils.git import ensure_commit_exists
 
                             synthetic_sha = ensure_commit_exists(
                                 repo_path=repo_path,

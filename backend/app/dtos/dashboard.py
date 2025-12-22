@@ -27,6 +27,7 @@ class DashboardSummaryResponse(BaseModel):
     metrics: DashboardMetrics
     trends: List[DashboardTrendPoint]
     repo_distribution: List[RepoDistributionEntry]
+    dataset_count: int = 0
 
 
 # Dashboard Layout DTOs

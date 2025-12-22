@@ -95,7 +95,6 @@ class Settings(BaseSettings):
 
     # Hamilton Pipeline Caching
     HAMILTON_CACHE_ENABLED: bool = True  # Enable/disable DAG result caching
-    HAMILTON_CACHE_DIR: str = "../repo-data/hamilton_cache"  # Directory for cache files
     HAMILTON_CACHE_TYPE: str = "file"  # "file" (persistent) or "memory" (dev only)
 
     DATA_DIR: str = "../repo-data/data"
@@ -113,12 +112,8 @@ class Settings(BaseSettings):
     SONAR_WEBHOOK_SECRET: str = "change-me-change-me"
     SONAR_WEBHOOK_PUBLIC_URL: str = "http://localhost:8000/api/sonar/webhook"
 
-    # Trivy (security scanner)
-    TRIVY_ENABLED: bool = False
-    TRIVY_SEVERITY: str = "CRITICAL,HIGH,MEDIUM"
-    TRIVY_TIMEOUT: int = 300  # Seconds
-    TRIVY_SKIP_DIRS: str = "node_modules,vendor,.git"
-    TRIVY_ASYNC_THRESHOLD: int = 1000
+    # Trivy Security Scanner
+    TRIVY_SERVER_URL: Optional[str] = None  # For client/server mode
 
     # Gmail API (OAuth2) Notifications
     GMAIL_TOKEN_JSON: Optional[str] = None  # Paste gmail token JSON content

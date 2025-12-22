@@ -3,9 +3,9 @@ Base classes for integration tools.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 
 class ToolType(str, Enum):
@@ -13,13 +13,6 @@ class ToolType(str, Enum):
 
     SONARQUBE = "sonarqube"
     TRIVY = "trivy"
-
-
-class ScanMode(str, Enum):
-    """How the tool returns scan results."""
-
-    SYNC = "sync"  # Results returned directly after scan
-    ASYNC = "async"  # Results delivered via webhook/callback
 
 
 class MetricCategory(str, Enum):
@@ -90,12 +83,6 @@ class IntegrationTool(ABC):
         """Brief description of what the tool does."""
         ...
 
-    @property
-    @abstractmethod
-    def scan_mode(self) -> ScanMode:
-        """How this tool returns results (sync or async)."""
-        ...
-
     @abstractmethod
     def is_available(self) -> bool:
         """Check if tool is configured and ready to use."""
@@ -127,7 +114,6 @@ class IntegrationTool(ABC):
             "type": self.tool_type.value,
             "display_name": self.display_name,
             "description": self.description,
-            "scan_mode": self.scan_mode.value,
             "is_available": self.is_available(),
             "config": self.get_config(),
             "scan_types": self.get_scan_types(),

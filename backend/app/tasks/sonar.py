@@ -13,7 +13,7 @@ from bson import ObjectId
 from app.celery_app import celery_app
 from app.database.mongo import get_database
 from app.integrations.tools.sonarqube.exporter import MetricsExporter
-from app.integrations.tools.sonarqube.runner import SonarCommitRunner
+from app.integrations.tools.sonarqube.tool import SonarQubeTool
 from app.paths import get_worktree_path
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.dataset_version import DatasetVersionRepository
@@ -89,13 +89,12 @@ def start_sonar_scan_for_version_commit(
 
     try:
         project_key = component_key.rsplit("_", 1)[0]
-        runner = SonarCommitRunner(project_key, github_repo_id=github_repo_id)
-        runner.scan_commit(
-            repo_url=f"https://github.com/{repo_full_name}.git",
+        sonar_tool = SonarQubeTool(project_key=project_key, github_repo_id=github_repo_id)
+        sonar_tool.scan_commit(
             commit_sha=commit_sha,
+            full_name=repo_full_name,
             sonar_config_content=config_content,
             shared_worktree_path=worktree_path_str,
-            full_name=repo_full_name,
         )
 
         logger.info(f"SonarQube scan initiated for {component_key}, waiting for webhook")
@@ -152,66 +151,51 @@ def export_metrics_from_webhook(
             scan_repo.mark_failed(scan_record.id, f"Analysis failed: {analysis_status}")
             return {"status": "failed", "component_key": component_key}
 
-        # Export metrics from SonarQube API
-        exporter = MetricsExporter()
-        raw_metrics = exporter.collect_metrics(component_key)
-
-        if not raw_metrics:
-            logger.warning(f"No metrics available for {component_key}")
-            scan_repo.mark_failed(scan_record.id, "No metrics available")
-            return {"status": "no_metrics", "component_key": component_key}
-
-        # Get version to filter metrics
+        # Get version to determine which metrics to fetch
         version = version_repo.find_by_id(str(scan_record.dataset_version_id))
         if not version:
             logger.error(f"Version {scan_record.dataset_version_id} not found")
             scan_repo.mark_failed(scan_record.id, "Version not found")
             return {"status": "version_not_found", "component_key": component_key}
 
-        # Filter metrics based on user selection
+        # Get user's selected metrics (only fetch these from SonarQube API)
         selected_metrics = version.scan_metrics.get("sonarqube", [])
-        filtered_metrics = _filter_metrics_by_selection(raw_metrics, selected_metrics)
+
+        # Export only selected metrics from SonarQube API (not all then filter)
+        exporter = MetricsExporter()
+        metrics = exporter.collect_metrics(
+            component_key,
+            selected_metrics=selected_metrics if selected_metrics else None,
+        )
+
+        if not metrics:
+            logger.warning(f"No metrics available for {component_key}")
+            scan_repo.mark_failed(scan_record.id, "No metrics available")
+            return {"status": "no_metrics", "component_key": component_key}
 
         # Backfill to all builds in version with matching commit
         updated_count = enrichment_build_repo.backfill_by_commit_in_version(
             version_id=scan_record.dataset_version_id,
             commit_sha=scan_record.commit_sha,
-            scan_features=filtered_metrics,
+            scan_features=metrics,
             prefix="sonar_",
         )
 
-        # Mark completed
-        scan_repo.mark_completed(scan_record.id, raw_metrics, updated_count)
+        # Mark completed (store raw metrics for debugging)
+        scan_repo.mark_completed(scan_record.id, metrics, updated_count)
 
         logger.info(
             f"SonarQube metrics backfilled to {updated_count} builds "
-            f"for commit {scan_record.commit_sha[:8]} ({len(filtered_metrics)} metrics)"
+            f"for commit {scan_record.commit_sha[:8]} ({len(metrics)} metrics)"
         )
 
         return {
             "status": "success",
             "builds_updated": updated_count,
-            "metrics_count": len(filtered_metrics),
+            "metrics_count": len(metrics),
         }
 
     except Exception as exc:
         logger.error(f"Failed to export metrics for {component_key}: {exc}")
         scan_repo.mark_failed(scan_record.id, str(exc))
         raise
-
-
-def _filter_metrics_by_selection(
-    raw_metrics: dict,
-    selected_metrics: list,
-) -> dict:
-    """Filter raw metrics based on user's selected metric list."""
-    if not selected_metrics:
-        return raw_metrics
-
-    filtered = {}
-    for key, value in raw_metrics.items():
-        if key in selected_metrics or f"sonar_{key}" in selected_metrics:
-            filtered[key] = value
-
-    logger.debug(f"Filtered {len(raw_metrics)} -> {len(filtered)} metrics")
-    return filtered

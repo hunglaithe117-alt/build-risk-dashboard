@@ -19,8 +19,6 @@ const NOTIFICATION_TYPE_ICONS: Record<string, string> = {
     dataset_import_completed: '📥',
     dataset_validation_completed: '✔️',
     dataset_enrichment_completed: '🔧',
-    scan_completed: '🔍',
-    scan_vulnerabilities_found: '⚠️',
     rate_limit_warning: '⏰',
     rate_limit_exhausted: '🚨',
     system: '💬',

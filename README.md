@@ -190,6 +190,61 @@ This starts:
 - Celery Worker and Beat
 - SonarQube (port 9000) and Trivy (port 4954)
 
+## Remote Server Development
+
+For resource-intensive tasks (SonarQube, Trivy, Celery workers), you can run all backend services on a remote server while developing API and Frontend locally.
+
+### Server Setup
+
+1. **On the remote server:**
+   ```bash
+   # Clone and setup
+   git clone <repo-url>
+   cd build-risk-dashboard
+   ./scripts/setup-server.sh
+   
+   # Configure
+   cp .env.server.example .env.server
+   nano .env.server  # Fill in values
+   
+   # Start all services
+   docker compose -f docker-compose.server.yml --env-file .env.server up -d
+   ```
+
+2. **On your local machine:**
+   ```bash
+   # Terminal 1: SSH port forward (keep open)
+   ./scripts/ssh-forward-server.sh user@server-ip
+   
+   # Terminal 2: Backend API
+   cd backend
+   uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   
+   # Terminal 3: Frontend
+   cd frontend
+   npm run dev
+   ```
+
+3. **Configure local `backend/.env`:**
+   ```env
+   MONGODB_URI=mongodb://localhost:27017
+   CELERY_BROKER_URL=amqp://myuser:mypass@localhost:5672//
+   REDIS_URL=redis://localhost:6379/0
+   SONAR_HOST_URL=http://localhost:9000
+   TRIVY_SERVER_URL=http://localhost:4954
+   ```
+
+### Ports Forwarded
+
+| Local Port | Service |
+|------------|---------|
+| 27017 | MongoDB |
+| 5672 | RabbitMQ (AMQP) |
+| 15672 | RabbitMQ Management UI |
+| 6379 | Redis |
+| 9000 | SonarQube |
+| 4954 | Trivy Server |
+
 ## Usage
 
 ### Initial Setup

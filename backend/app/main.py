@@ -3,34 +3,10 @@
 import logging
 import os
 
-# Configure logging based on ENV environment variable
-# ENV=dev: INFO level with detailed format (default)
-# ENV=prod/staging: WARNING level, minimal logs
-_env = os.getenv("ENV", "dev").lower()
-_is_dev = _env == "dev"
-_log_level = logging.INFO if _is_dev else logging.WARNING
-
-logging.basicConfig(
-    level=_log_level,
-    format=(
-        "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
-        if _is_dev
-        else "%(levelname)s | %(message)s"
-    ),
-    datefmt="%H:%M:%S",
-)
-
-# Enable request/exception loggers in dev mode only
-if _is_dev:
-    logging.getLogger("app.request").setLevel(logging.INFO)
-    logging.getLogger("app.exception").setLevel(logging.INFO)
-
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
-# ResponseWrapperMiddleware disabled - has issues with StreamingResponse
-# from app.middleware.response_wrapper import ResponseWrapperMiddleware
 from app.api import (
     admin_invitations,
     admin_users,
@@ -60,6 +36,28 @@ from app.middleware.exception_handlers import (
     validation_exception_handler,
 )
 from app.middleware.request_logging import RequestLoggingMiddleware
+
+# Configure logging based on ENV environment variable
+# ENV=dev: INFO level with detailed format (default)
+# ENV=prod/staging: WARNING level, minimal logs
+_env = os.getenv("ENV", "dev").lower()
+_is_dev = _env == "dev"
+_log_level = logging.INFO if _is_dev else logging.WARNING
+
+logging.basicConfig(
+    level=_log_level,
+    format=(
+        "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+        if _is_dev
+        else "%(levelname)s | %(message)s"
+    ),
+    datefmt="%H:%M:%S",
+)
+
+# Enable request/exception loggers in dev mode only
+if _is_dev:
+    logging.getLogger("app.request").setLevel(logging.INFO)
+    logging.getLogger("app.exception").setLevel(logging.INFO)
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +95,6 @@ app.include_router(users.router, prefix="/api", tags=["Users"])
 app.include_router(webhook.router, prefix="/api", tags=["Webhooks"])
 app.include_router(websocket.router, prefix="/api", tags=["WebSocket"])
 app.include_router(logs.router, prefix="/api", tags=["Logs"])
-# sonar.router removed - merged into integrations.py
 app.include_router(features.router, prefix="/api", tags=["Feature Definitions"])
 app.include_router(datasets.router, prefix="/api", tags=["Datasets"])
 app.include_router(tokens.router, prefix="/api", tags=["GitHub Tokens"])
@@ -136,6 +133,17 @@ async def startup_event():
         ensure_indexes(db)
     except Exception as e:
         logger.warning(f"Failed to ensure database indexes: {e}")
+
+    try:
+        from app.database.mongo import get_database
+        from app.services.settings_service import SettingsService
+
+        db = get_database()
+        settings_service = SettingsService(db)
+        if settings_service.initialize_from_env():
+            logger.info("Application settings initialized from ENV")
+    except Exception as e:
+        logger.warning(f"Failed to initialize settings: {e}")
 
     # Initialize GitHub token pool
     try:

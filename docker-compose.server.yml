@@ -1,70 +1,291 @@
-version: "3.8"
+# =============================================================================
+# Docker Compose - Server Deployment
+# Run all backend services on a remote server (MongoDB, Redis, RabbitMQ,
+# Celery Workers, SonarQube, Trivy)
+#
+# Local machine runs only: API (uvicorn) + Frontend (npm run dev)
+# =============================================================================
+#
+# Setup:
+#   1. Copy .env.server.example to .env.server on your server
+#   2. Run: docker compose -f docker-compose.server.yml --env-file .env.server up -d
+#   3. SSH forward ports to local: ./scripts/ssh-forward-server.sh user@server-ip
+#   4. Local: Configure backend/.env to use localhost URLs
+#   5. Local: uvicorn + npm run dev
+#
+# Architecture:
+#   ┌─────────────────────────────────────────────────────────────────────────┐
+#   │                         Remote Server                                    │
+#   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐       │
+#   │  │ MongoDB  │ │ RabbitMQ │ │  Redis   │ │SonarQube │ │  Trivy   │       │
+#   │  │  :27017  │ │  :5672   │ │  :6379   │ │  :9000   │ │  :4954   │       │
+#   │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘       │
+#   │       │             │            │                                       │
+#   │       └─────────────┼────────────┘                                       │
+#   │                     ▼                                                    │
+#   │  ┌─────────────────────────────────────────────────────────────────┐    │
+#   │  │              Celery Workers (all queues)                         │    │
+#   │  │  ingestion | processing | validation | sonar_scan | trivy_scan   │    │
+#   │  └─────────────────────────────────────────────────────────────────┘    │
+#   └─────────────────────────────────────────────────────────────────────────┘
+#                                    │
+#                          SSH Port Forward
+#                                    │
+#   ┌─────────────────────────────────────────────────────────────────────────┐
+#   │                         Local Machine                                    │
+#   │  ┌─────────────────────┐    ┌─────────────────────┐                     │
+#   │  │   Backend API       │    │     Frontend        │                     │
+#   │  │   uvicorn :8000     │    │   npm run dev :3000 │                     │
+#   │  └─────────────────────┘    └─────────────────────┘                     │
+#   └─────────────────────────────────────────────────────────────────────────┘
 
 services:
   # =========================================
-  # INFRASTRUCTURE (Databases & Brokers)
+  # MongoDB Database (Replica Set)
   # =========================================
-
-  # MongoDB - Shared Database
   mongo:
     image: mongo:6
-    container_name: build-risk-mongo
+    container_name: server-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
-      - "27017:27017" # Expose for Local Backend
+      - "27017:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: >
+        mongosh --quiet --eval "
+          try { 
+            rs.status().ok 
+          } catch(e) { 
+            rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'localhost:27017'}]}); 
+            1 
+          }"
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
-  # RabbitMQ - Message Broker for Celery
+  # =========================================
+  # RabbitMQ Message Broker
+  # =========================================
   rabbitmq:
     image: rabbitmq:3.12-management
-    container_name: build-risk-rabbitmq
+    container_name: server-rabbitmq
     ports:
-      - "5672:5672"   # Expose for Local Backend
-      - "15672:15672" # Management UI
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-myuser}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-mypass}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     restart: unless-stopped
 
-  # Redis - Cache & Broker Result Backend
+  # =========================================
+  # Redis Cache & Result Backend
+  # =========================================
   redis:
-    image: redis:latest
-    container_name: build-risk-redis
+    image: redis:7-alpine
+    container_name: server-redis
     ports:
-      - "6379:6379" # Expose for Local Backend
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      start_period: 20s
       retries: 5
     restart: unless-stopped
 
   # =========================================
-  # MONITORING STACK (Loki, Alloy, Grafana)
+  # PostgreSQL for SonarQube
+  # =========================================
+  sonar-db:
+    image: postgres:15-alpine
+    container_name: server-sonar-db
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonar
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # =========================================
+  # SonarQube Server
+  # =========================================
+  sonarqube:
+    image: sonarqube:latest
+    container_name: server-sonarqube
+    ports:
+      - "9000:9000"
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      SONAR_WEB_JAVAADDITIONALOPTS: "-Dsonar.web.http.maxThreads=50"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    depends_on:
+      sonar-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/system/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    restart: unless-stopped
+
+  # =========================================
+  # Trivy Vulnerability Scanner (Server Mode)
+  # =========================================
+  trivy:
+    image: aquasec/trivy:latest
+    container_name: server-trivy
+    command: server --listen 0.0.0.0:4954 --cache-dir /root/.cache/trivy
+    ports:
+      - "4954:4954"
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    volumes:
+      - trivy_cache:/root/.cache/trivy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:4954/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    restart: unless-stopped
+
+  # =========================================
+  # Celery Worker (All Queues)
+  # =========================================
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: server-celery-worker
+    command: >
+      uv run celery -A app.celery_app worker 
+      --loglevel=info 
+      --concurrency=${CELERY_CONCURRENCY:-4}
+      -Q pipeline.default,ingestion,processing,validation,sonar_scan,trivy_scan
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    environment:
+      # Database
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buildguard}
+      # Message Broker
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-myuser}:${RABBITMQ_PASS:-mypass}@rabbitmq:5672//
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
+      # SonarQube
+      SONAR_HOST_URL: http://sonarqube:9000
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+      SONAR_DEFAULT_PROJECT_KEY: ${SONAR_DEFAULT_PROJECT_KEY:-build-risk}
+      SONAR_WEBHOOK_SECRET: ${SONAR_WEBHOOK_SECRET:-change-me}
+      # Trivy
+      TRIVY_ENABLED: "true"
+      TRIVY_SERVER_URL: http://trivy:4954
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      # Git
+      HOME: /tmp
+      # GitHub
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
+    volumes:
+      - ./backend:/app
+      - repo_data:/app/repo-data
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================
+  # Celery Beat Scheduler
+  # =========================================
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: server-celery-beat
+    command: uv run celery -A app.celery_app beat --loglevel=info --schedule=/app/data/celerybeat-schedule
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-buildguard}
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-myuser}:${RABBITMQ_PASS:-mypass}@rabbitmq:5672//
+      REDIS_URL: redis://redis:6379/0
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-your-secret-key-change-in-production}
+      HOME: /tmp
+    volumes:
+      - ./backend:/app
+      - repo_data:/app/repo-data
+    depends_on:
+      mongo:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================================
+  # Monitoring Stack
   # =========================================
 
+  # Loki - Log aggregation
   loki:
     image: grafana/loki:3.0.0
-    container_name: build-risk-loki
+    container_name: server-loki
     ports:
       - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
-      # Use custom config if provided, otherwise default
-      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml
+      - ./monitoring/loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki_data:/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
+  # Alloy - Log collector (sends Docker logs to Loki)
   alloy:
     image: grafana/alloy:latest
-    container_name: build-risk-alloy
+    container_name: server-alloy
     volumes:
       - ./monitoring/alloy-config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -73,136 +294,38 @@ services:
     ports:
       - "12345:12345"
     depends_on:
-      - loki
+      loki:
+        condition: service_healthy
     restart: unless-stopped
 
+  # Grafana - Visualization
   grafana:
     image: grafana/grafana:10.2.3
-    container_name: build-risk-grafana
+    container_name: server-grafana
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
+      - ./monitoring/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - grafana_data:/var/lib/grafana
-      # Provision datasources automatically
-      - ./monitoring/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
     depends_on:
-      - loki
-    restart: unless-stopped
-
-  # =========================================
-  # HEAVY TOOLS (SonarQube)
-  # =========================================
-
-  # SonarQube Server
-  sonarqube:
-    image: sonarqube:lts-community
-    container_name: build-risk-sonarqube
-    environment:
-      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonar
-      SONAR_JDBC_USERNAME: sonar
-      SONAR_JDBC_PASSWORD: sonar
-      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
-      SONAR_WEB_JAVAADDITIONALOPTS: "-Dsonar.web.http.maxThreads=100"
-    volumes:
-      - sonarqube_data:/opt/sonarqube/data
-      - sonarqube_extensions:/opt/sonarqube/extensions
-      - sonarqube_logs:/opt/sonarqube/logs
-    ports:
-      - "9000:9000" # Expose for Local Backend & Browser
-    depends_on:
-      - sonar-db
-    restart: unless-stopped
-
-  # PostgreSQL for SonarQube
-  sonar-db:
-    image: postgres:15-alpine
-    container_name: build-risk-sonar-db
-    environment:
-      POSTGRES_USER: sonar
-      POSTGRES_PASSWORD: sonar
-      POSTGRES_DB: sonar
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-
-  # =========================================
-  # WORKERS (Heavy Processing)
-  # =========================================
-
-  # Celery Worker - Runs Heavy Scans (Sonar, Trivy)
-  # Uses Dockerfile.scanner which includes Trivy + SonarScanner
-  celery-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.scanner
-    container_name: build-risk-celery-worker
-    # Consumes queues tailored for heavy tasks + default
-    command: uv run celery -A app.celery_app worker -Q pipeline.default,ingestion,processing,sonar_scan,trivy_scan --loglevel=info -c 4
-    environment:
-      # Internal Docker Network Connections
-      MONGODB_URI: mongodb://mongo:27017
-      MONGODB_DB_NAME: buildguard
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-myuser}:${RABBITMQ_PASS:-mypass}@rabbitmq:5672//
-      REDIS_URL: redis://redis:6379/0
-      HOME: /tmp
-      DATA_DIR: /app/repo-data/data
-      
-      # Tool Configs
-      SONAR_HOST_URL: http://sonarqube:9000
-      SONAR_TOKEN: ${SONAR_TOKEN:-}
-      SONAR_DEFAULT_PROJECT_KEY: build-risk-ui
-      TRIVY_ENABLED: "true"
-
-      # Secrets (Must match Local Backend)
-      SONAR_WEBHOOK_SECRET: ${SONAR_WEBHOOK_SECRET:-change-me}
-    volumes:
-      - ./backend:/app
-      # IMPORTANT: Mount repo-data here for worker access
-      - ./repo-data:/app/repo-data
-    depends_on:
-      mongo:
+      loki:
         condition: service_healthy
-      rabbitmq:
-        condition: service_started
-      redis:
-        condition: service_healthy
-      sonarqube:
-        condition: service_started
-    restart: unless-stopped
-
-  # Celery Beat - Scheduler (Can live on server reliably)
-  celery-beat:
-    build:
-      context: .
-      dockerfile: Dockerfile.scanner
-    container_name: build-risk-celery-beat
-    command: uv run celery -A app.celery_app beat --loglevel=info --schedule=/app/repo-data/celerybeat-schedule
-    environment:
-      MONGODB_URI: mongodb://mongo:27017
-      MONGODB_DB_NAME: buildguard
-      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-myuser}:${RABBITMQ_PASS:-mypass}@rabbitmq:5672//
-      REDIS_URL: redis://redis:6379/0
-      HOME: /tmp
-      DATA_DIR: /app/repo-data/data
-    volumes:
-      - ./backend:/app
-      - ./repo-data:/app/repo-data
-    depends_on:
-      mongo:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_started
     restart: unless-stopped
 
 volumes:
   mongo_data:
+  rabbitmq_data:
+  redis_data:
   postgres_data:
   sonarqube_data:
-  sonarqube_extensions:
   sonarqube_logs:
+  sonarqube_extensions:
+  trivy_cache:
+  repo_data:
   loki_data:
-  grafana_data:
   alloy_data:
+  grafana_data:

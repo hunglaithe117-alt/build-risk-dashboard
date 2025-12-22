@@ -65,8 +65,26 @@ def save_dashboard_layout(
 def get_available_widgets(
     current_user: dict = Depends(get_current_user),
 ):
-    """Get list of available widgets that can be added to the dashboard."""
-    return [
+    """Get list of available widgets that can be added to the dashboard.
+
+    Widgets are filtered based on user's role permissions.
+    """
+    from app.middleware.rbac import Permission, has_permission
+
+    # Map widget_id to required permission
+    WIDGET_PERMISSIONS = {
+        "total_builds": Permission.VIEW_BUILDS,
+        "success_rate": Permission.VIEW_BUILDS,
+        "avg_duration": Permission.VIEW_BUILDS,
+        "active_repos": Permission.VIEW_REPOS,
+        "repo_distribution": Permission.VIEW_REPOS,
+        "recent_builds": Permission.VIEW_BUILDS,
+        "dataset_summary": Permission.VIEW_DATASETS,
+        "risk_trend": Permission.VIEW_BUILDS,
+        "failure_heatmap": Permission.VIEW_BUILDS,
+    }
+
+    all_widgets = [
         WidgetDefinition(
             widget_id="total_builds",
             widget_type="stat",
@@ -116,14 +134,6 @@ def get_available_widgets(
             default_h=2,
         ),
         WidgetDefinition(
-            widget_id="active_tasks",
-            widget_type="table",
-            title="Active Pipeline Tasks",
-            description="Currently running tasks",
-            default_w=2,
-            default_h=2,
-        ),
-        WidgetDefinition(
             widget_id="dataset_summary",
             widget_type="stat",
             title="Datasets",
@@ -147,4 +157,12 @@ def get_available_widgets(
             default_w=2,
             default_h=2,
         ),
+    ]
+
+    # Filter widgets by user role
+    role = current_user.get("role", "guest")
+    return [
+        widget
+        for widget in all_widgets
+        if has_permission(role, WIDGET_PERMISSIONS.get(widget.widget_id))
     ]

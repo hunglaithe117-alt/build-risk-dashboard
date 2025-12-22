@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Bell, Check, Loader2, Save, User } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -10,55 +10,63 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/auth-context';
 import { useToast } from '@/components/ui/use-toast';
+import { userSettingsApi, UserNotificationPreferences } from '@/lib/api';
 
-interface NotificationPreferences {
-    emailOnVersionComplete: boolean;
-    emailOnScanComplete: boolean;
-    emailOnVersionFailed: boolean;
-    browserNotifications: boolean;
-}
-
-interface UserSettingsState {
-    notificationPreferences: NotificationPreferences;
+interface SettingsState {
+    notificationPreferences: UserNotificationPreferences;
+    timezone: string;
+    language: string;
     isLoading: boolean;
     isSaving: boolean;
     hasChanges: boolean;
 }
 
-const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
-    emailOnVersionComplete: true,
-    emailOnScanComplete: true,
-    emailOnVersionFailed: true,
-    browserNotifications: true,
+const DEFAULT_NOTIFICATION_PREFERENCES: UserNotificationPreferences = {
+    email_on_version_complete: true,
+    email_on_scan_complete: true,
+    email_on_version_failed: true,
+    browser_notifications: true,
 };
 
 export default function SettingsPage() {
     const { user } = useAuth();
     const { toast } = useToast();
 
-    const [settingsState, setSettingsState] = useState<UserSettingsState>({
+    const [settingsState, setSettingsState] = useState<SettingsState>({
         notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
+        timezone: 'UTC',
+        language: 'en',
         isLoading: true,
         isSaving: false,
         hasChanges: false,
     });
 
     // Load user settings on mount
-    useEffect(() => {
-        const loadSettings = async () => {
-            // TODO: Fetch from API when backend endpoint is ready
-            // For now, use defaults
+    const loadSettings = useCallback(async () => {
+        try {
+            const data = await userSettingsApi.get();
+            setSettingsState(prev => ({
+                ...prev,
+                notificationPreferences: data.notification_preferences,
+                timezone: data.timezone,
+                language: data.language,
+                isLoading: false,
+            }));
+        } catch {
+            // Use defaults if API fails
             setSettingsState(prev => ({
                 ...prev,
                 isLoading: false,
             }));
-        };
-
-        loadSettings();
+        }
     }, []);
 
+    useEffect(() => {
+        loadSettings();
+    }, [loadSettings]);
+
     const updateNotificationPreference = (
-        preferenceKey: keyof NotificationPreferences,
+        preferenceKey: keyof UserNotificationPreferences,
         enabled: boolean
     ) => {
         setSettingsState(prev => ({
@@ -75,15 +83,15 @@ export default function SettingsPage() {
         setSettingsState(prev => ({ ...prev, isSaving: true }));
 
         try {
-            // TODO: Call API to save settings when backend endpoint is ready
-            // await api.updateUserSettings(settingsState.notificationPreferences);
-
-            // Simulate API call
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await userSettingsApi.update({
+                notification_preferences: settingsState.notificationPreferences,
+                timezone: settingsState.timezone,
+                language: settingsState.language,
+            });
 
             toast({
                 title: 'Settings saved',
-                description: 'Your notification preferences have been updated.',
+                description: 'Your preferences have been updated.',
             });
 
             setSettingsState(prev => ({
@@ -91,7 +99,7 @@ export default function SettingsPage() {
                 isSaving: false,
                 hasChanges: false,
             }));
-        } catch (error) {
+        } catch {
             toast({
                 title: 'Error saving settings',
                 description: 'Please try again later.',
@@ -117,7 +125,7 @@ export default function SettingsPage() {
             <div className="mb-8">
                 <h1 className="text-3xl font-bold">Settings</h1>
                 <p className="text-muted-foreground mt-2">
-                    Manage your notification preferences and account settings.
+                    Manage your notification preferences and view your profile.
                 </p>
             </div>
 
@@ -151,9 +159,9 @@ export default function SettingsPage() {
                                 </div>
                                 <Switch
                                     id="email-version-complete"
-                                    checked={settingsState.notificationPreferences.emailOnVersionComplete}
+                                    checked={settingsState.notificationPreferences.email_on_version_complete}
                                     onCheckedChange={(checked) =>
-                                        updateNotificationPreference('emailOnVersionComplete', checked)
+                                        updateNotificationPreference('email_on_version_complete', checked)
                                     }
                                 />
                             </div>
@@ -167,9 +175,9 @@ export default function SettingsPage() {
                                 </div>
                                 <Switch
                                     id="email-scan-complete"
-                                    checked={settingsState.notificationPreferences.emailOnScanComplete}
+                                    checked={settingsState.notificationPreferences.email_on_scan_complete}
                                     onCheckedChange={(checked) =>
-                                        updateNotificationPreference('emailOnScanComplete', checked)
+                                        updateNotificationPreference('email_on_scan_complete', checked)
                                     }
                                 />
                             </div>
@@ -183,9 +191,9 @@ export default function SettingsPage() {
                                 </div>
                                 <Switch
                                     id="email-version-failed"
-                                    checked={settingsState.notificationPreferences.emailOnVersionFailed}
+                                    checked={settingsState.notificationPreferences.email_on_version_failed}
                                     onCheckedChange={(checked) =>
-                                        updateNotificationPreference('emailOnVersionFailed', checked)
+                                        updateNotificationPreference('email_on_version_failed', checked)
                                     }
                                 />
                             </div>
@@ -209,9 +217,9 @@ export default function SettingsPage() {
                                 </div>
                                 <Switch
                                     id="browser-notifications"
-                                    checked={settingsState.notificationPreferences.browserNotifications}
+                                    checked={settingsState.notificationPreferences.browser_notifications}
                                     onCheckedChange={(checked) =>
-                                        updateNotificationPreference('browserNotifications', checked)
+                                        updateNotificationPreference('browser_notifications', checked)
                                     }
                                 />
                             </div>
@@ -265,19 +273,7 @@ export default function SettingsPage() {
                                         <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">
                                             {user?.role?.toUpperCase() || 'GUEST'}
                                         </span>
-                                        {user?.role === 'guest' && (
-                                            <span className="text-sm text-muted-foreground">
-                                                – Full access to dataset enrichment features
-                                            </span>
-                                        )}
                                     </div>
-                                </div>
-                            </div>
-
-                            <div className="pt-4 border-t">
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Check className="h-4 w-4 text-green-500" />
-                                    <span>Signed in via Google OAuth</span>
                                 </div>
                             </div>
                         </CardContent>

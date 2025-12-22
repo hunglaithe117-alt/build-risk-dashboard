@@ -77,6 +77,14 @@ class DashboardService:
         # Sort by builds desc
         repo_distribution.sort(key=lambda x: x.builds, reverse=True)
 
+        # 6. Count datasets (admin and guest see all, user sees only their own)
+        dataset_filter: dict = {"is_deleted": {"$ne": True}}
+        if user_role not in ("admin", "guest") and current_user:
+            user_id = current_user.get("_id")
+            if user_id:
+                dataset_filter["user_id"] = user_id
+        dataset_count = self.db["datasets"].count_documents(dataset_filter)
+
         return DashboardSummaryResponse(
             metrics=DashboardMetrics(
                 total_builds=total_builds,
@@ -85,6 +93,7 @@ class DashboardService:
             ),
             trends=[],  # Can be implemented later
             repo_distribution=repo_distribution,
+            dataset_count=dataset_count,
         )
 
     def _widget_config_to_dto(self, widget: WidgetConfig) -> WidgetConfigDto:

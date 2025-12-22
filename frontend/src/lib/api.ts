@@ -1406,3 +1406,38 @@ export const qualityApi = {
   },
 };
 
+// User Settings types
+export interface UserNotificationPreferences {
+  email_on_version_complete: boolean;
+  email_on_scan_complete: boolean;
+  email_on_version_failed: boolean;
+  browser_notifications: boolean;
+}
+
+export interface UserSettingsResponse {
+  user_id: string;
+  notification_preferences: UserNotificationPreferences;
+  timezone: string;
+  language: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateUserSettingsRequest {
+  notification_preferences?: Partial<UserNotificationPreferences>;
+  timezone?: string;
+  language?: string;
+}
+
+// User Settings API (personal preferences for each user)
+export const userSettingsApi = {
+  get: async (): Promise<UserSettingsResponse> => {
+    const response = await api.get<UserSettingsResponse>("/user-settings");
+    return response.data;
+  },
+
+  update: async (request: UpdateUserSettingsRequest): Promise<UserSettingsResponse> => {
+    const response = await api.patch<UserSettingsResponse>("/user-settings", request);
+    return response.data;
+  },
+};

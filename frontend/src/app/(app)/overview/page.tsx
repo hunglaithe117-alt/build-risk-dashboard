@@ -54,7 +54,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { dashboardApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
-import type { DashboardSummaryResponse, WidgetConfig, WidgetDefinition } from "@/types";
+import type { Build, DashboardSummaryResponse, WidgetConfig, WidgetDefinition } from "@/types";
 import { useAuth } from "@/contexts/auth-context";
 import { formatDuration, cn } from "@/lib/utils";
 
@@ -96,9 +96,12 @@ const PRESET_LAYOUTS = {
     { widget_id: "success_rate", x: 3, y: 0, w: 3, h: 1 },
     { widget_id: "avg_duration", x: 6, y: 0, w: 3, h: 1 },
     { widget_id: "active_repos", x: 9, y: 0, w: 3, h: 1 },
-    { widget_id: "repo_distribution", x: 0, y: 1, w: 4, h: 2 },
-    { widget_id: "recent_builds", x: 4, y: 1, w: 4, h: 2 },
-    { widget_id: "active_tasks", x: 8, y: 1, w: 4, h: 2 },
+    { widget_id: "repo_distribution", x: 0, y: 1, w: 6, h: 2 },
+    { widget_id: "recent_builds", x: 6, y: 1, w: 6, h: 2 },
+  ],
+  // Guest layout: only dataset_summary
+  guestCompact: [
+    { widget_id: "dataset_summary", x: 0, y: 0, w: 12, h: 1 },
   ],
 };
 
@@ -114,6 +117,7 @@ export default function OverviewPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [containerWidth, setContainerWidth] = useState(1200);
+  const [recentBuilds, setRecentBuilds] = useState<Build[]>([]);
 
   // Measure container width
   useEffect(() => {
@@ -140,10 +144,11 @@ export default function OverviewPage() {
       setError(null);
 
       try {
-        const [summaryResult, layoutResult, widgetsResult] = await Promise.all([
+        const [summaryResult, layoutResult, widgetsResult, buildsResult] = await Promise.all([
           dashboardApi.getSummary(),
           dashboardApi.getLayout(),
           dashboardApi.getAvailableWidgets(),
+          dashboardApi.getRecentBuilds(10),
         ]);
 
         if (!isActive) {
@@ -151,6 +156,7 @@ export default function OverviewPage() {
         }
 
         setSummary(summaryResult);
+        setRecentBuilds(buildsResult);
         // Convert from old 4-col to new 12-col if needed
         const convertedWidgets = layoutResult.widgets.map((w: WidgetConfig) => ({
           ...w,
@@ -475,31 +481,47 @@ export default function OverviewPage() {
                 Latest build runs
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">
-                Recent builds list will appear here.
-              </p>
-            </CardContent>
-          </Card>
-        );
-      case "active_tasks":
-        return (
-          <Card className={commonCardClass}>
-            {isEditing && (
-              <div className="absolute top-2 left-2 z-10">
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
-              </div>
-            )}
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm truncate">{widget.title}</CardTitle>
-              <CardDescription className="text-xs truncate">
-                Currently running tasks
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">
-                Pipeline tasks will appear here.
-              </p>
+            <CardContent className="p-0 overflow-auto flex-1">
+              <table className="min-w-full divide-y divide-slate-200 text-xs dark:divide-slate-800">
+                <thead className="bg-slate-50 dark:bg-slate-900/40">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold">Build</th>
+                    <th className="px-3 py-2 text-left font-semibold">Status</th>
+                    <th className="px-3 py-2 text-left font-semibold">Branch</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {recentBuilds.length === 0 ? (
+                    <tr>
+                      <td className="px-3 py-4 text-center text-muted-foreground" colSpan={3}>
+                        No recent builds.
+                      </td>
+                    </tr>
+                  ) : (
+                    recentBuilds.slice(0, 5).map((build) => (
+                      <tr
+                        key={build.id}
+                        className="transition hover:bg-slate-50 dark:hover:bg-slate-900/50"
+                      >
+                        <td className="px-3 py-2 font-medium truncate max-w-[100px]">
+                          #{build.build_number || build.commit_sha?.slice(0, 7)}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${build.conclusion === "success" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                            build.conclusion === "failure" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+                              "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                            }`}>
+                            {build.conclusion}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground truncate max-w-[100px]">
+                          {build.branch}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </CardContent>
           </Card>
         );
@@ -509,7 +531,7 @@ export default function OverviewPage() {
             className={commonCardClass}
             icon={<Workflow className="h-5 w-5 text-indigo-500 flex-shrink-0" />}
             title={widget.title}
-            value={0}
+            value={summary.dataset_count}
             sublabel="Total datasets"
             isEditing={isEditing}
           />

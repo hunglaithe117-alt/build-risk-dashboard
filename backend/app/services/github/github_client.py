@@ -32,10 +32,10 @@ logger = logging.getLogger(__name__)
 class GitHubClient:
     def __init__(
         self,
-        token: str,
-        api_url: str | None = None,
-        redis_pool: RedisTokenPool | None = None,
-        current_token_hash: str | None = None,
+        token: Optional[str] = None,
+        api_url: Optional[str] = None,
+        redis_pool: Optional[RedisTokenPool] = None,
+        current_token_hash: Optional[str] = None,
     ) -> None:
         """
         Initialize GitHubClient.

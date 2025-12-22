@@ -2,7 +2,7 @@
 Trivy Integration Tool
 
 Provides vulnerability and security scanning via Trivy.
-Uses sync mode - results are returned directly after scan completes.
+Supports both standalone CLI mode and server mode (client/server).
 """
 
 import json
@@ -15,184 +15,66 @@ from typing import Any, Dict, List, Optional
 from app.config import settings
 from app.integrations.base import (
     IntegrationTool,
-    MetricCategory,
-    MetricDataType,
     MetricDefinition,
-    ScanMode,
     ToolType,
 )
+from app.integrations.tools.trivy.metrics import TRIVY_METRICS
+from app.utils.git import ensure_worktree
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# TRIVY METRICS DEFINITIONS
-# =============================================================================
-# Preserved from pipeline/feature_metadata/trivy.py
-
-TRIVY_METRICS: List[MetricDefinition] = [
-    # -------------------------------------------------------------------------
-    # Vulnerability Metrics
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="vuln_critical",
-        display_name="Critical Vulnerabilities",
-        description="Number of critical severity vulnerabilities found",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="2",
-    ),
-    MetricDefinition(
-        key="vuln_high",
-        display_name="High Vulnerabilities",
-        description="Number of high severity vulnerabilities found",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="5",
-    ),
-    MetricDefinition(
-        key="vuln_medium",
-        display_name="Medium Vulnerabilities",
-        description="Number of medium severity vulnerabilities found",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="12",
-    ),
-    MetricDefinition(
-        key="vuln_low",
-        display_name="Low Vulnerabilities",
-        description="Number of low severity vulnerabilities found",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="8",
-    ),
-    MetricDefinition(
-        key="vuln_total",
-        display_name="Total Vulnerabilities",
-        description="Total number of vulnerabilities found across all severity levels",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="27",
-    ),
-    # -------------------------------------------------------------------------
-    # Misconfiguration Metrics
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="misconfig_critical",
-        display_name="Critical Misconfigurations",
-        description="Number of critical IaC misconfigurations (Terraform, Kubernetes, etc.)",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="1",
-    ),
-    MetricDefinition(
-        key="misconfig_high",
-        display_name="High Misconfigurations",
-        description="Number of high severity IaC misconfigurations",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="3",
-    ),
-    MetricDefinition(
-        key="misconfig_medium",
-        display_name="Medium Misconfigurations",
-        description="Number of medium severity IaC misconfigurations",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="7",
-    ),
-    MetricDefinition(
-        key="misconfig_low",
-        display_name="Low Misconfigurations",
-        description="Number of low severity IaC misconfigurations",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="4",
-    ),
-    MetricDefinition(
-        key="misconfig_total",
-        display_name="Total Misconfigurations",
-        description="Total number of IaC misconfigurations found",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="15",
-    ),
-    # -------------------------------------------------------------------------
-    # Other Metrics
-    # -------------------------------------------------------------------------
-    MetricDefinition(
-        key="secrets_count",
-        display_name="Secrets Found",
-        description="Number of exposed secrets detected (API keys, passwords, tokens)",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.INTEGER,
-        example_value="0",
-    ),
-    MetricDefinition(
-        key="scan_duration_ms",
-        display_name="Scan Duration",
-        description="Time taken to complete Trivy scan",
-        category=MetricCategory.METADATA,
-        data_type=MetricDataType.INTEGER,
-        example_value="2340",
-        unit="ms",
-    ),
-    MetricDefinition(
-        key="packages_scanned",
-        display_name="Packages Scanned",
-        description="Number of packages analyzed for vulnerabilities",
-        category=MetricCategory.METADATA,
-        data_type=MetricDataType.INTEGER,
-        example_value="156",
-    ),
-    MetricDefinition(
-        key="files_scanned",
-        display_name="Files Scanned",
-        description="Number of files analyzed for security issues",
-        category=MetricCategory.METADATA,
-        data_type=MetricDataType.INTEGER,
-        example_value="42",
-    ),
-    MetricDefinition(
-        key="has_critical",
-        display_name="Has Critical Vulnerabilities",
-        description="Whether any critical vulnerabilities were found",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.BOOLEAN,
-        example_value="true",
-    ),
-    MetricDefinition(
-        key="has_high",
-        display_name="Has High Vulnerabilities",
-        description="Whether any high severity vulnerabilities were found",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.BOOLEAN,
-        example_value="true",
-    ),
-    MetricDefinition(
-        key="top_vulnerable_packages",
-        display_name="Top Vulnerable Packages",
-        description="List of top 10 vulnerable packages with severity and CVE details",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.JSON,
-        nullable=True,
-        example_value='[{"name": "lodash", "severity": "high", "cve": "CVE-2021-23337"}]',
-    ),
-]
 
 
 class TrivyTool(IntegrationTool):
     """
     Trivy integration for vulnerability scanning.
 
-    Uses sync mode - scans are executed and results returned directly.
+    Supports two modes:
+    - Server mode: Uses Trivy server via --server flag (recommended)
+    - Standalone: Runs trivy Docker image directly
+
+    Configuration:
+    - Connection: server_url from DB settings
+    - Scan config: default_config from DB settings (trivy.yaml content)
     """
 
-    def __init__(self):
+    def __init__(self, github_repo_id: Optional[int] = None):
+        """
+        Initialize Trivy tool.
+
+        Args:
+            github_repo_id: GitHub repo ID (for shared worktree lookup in scan_commit)
+        """
         self._metrics = TRIVY_METRICS
-        self._severity = getattr(settings, "TRIVY_SEVERITY", "CRITICAL,HIGH,MEDIUM")
-        self._timeout = getattr(settings, "TRIVY_TIMEOUT", 300)
-        self._skip_dirs = getattr(settings, "TRIVY_SKIP_DIRS", "node_modules,vendor,.git")
+        self.github_repo_id = github_repo_id
+
+        # Load settings from DB
+        trivy_settings = self._get_db_settings()
+        self._server_url = trivy_settings.get("server_url")
+        self._default_config = trivy_settings.get("default_config", "")
+
+    def _get_db_settings(self) -> Dict[str, Any]:
+        """Load Trivy settings from database."""
+        try:
+            from app.database.mongo import get_database
+            from app.services.settings_service import SettingsService
+
+            db = get_database()
+            service = SettingsService(db)
+            app_settings = service.get_settings()
+
+            if app_settings and app_settings.trivy:
+                return {
+                    "server_url": app_settings.trivy.server_url,
+                    "default_config": app_settings.trivy.default_config,
+                }
+        except Exception as e:
+            logger.warning(f"Could not load Trivy settings from DB: {e}")
+
+        # Fallback to env vars
+        return {
+            "server_url": getattr(settings, "TRIVY_SERVER_URL", None),
+            "default_config": "",
+        }
 
     @property
     def tool_type(self) -> ToolType:
@@ -206,34 +88,48 @@ class TrivyTool(IntegrationTool):
     def description(self) -> str:
         return "Container and dependency vulnerability scanning"
 
-    @property
-    def scan_mode(self) -> ScanMode:
-        return ScanMode.SYNC  # Results returned directly
-
     def is_available(self) -> bool:
-        """Check if Trivy is enabled and the binary is accessible."""
-        if not getattr(settings, "TRIVY_ENABLED", False):
-            return False
-
+        """Check if Trivy is enabled and Docker is available."""
+        # Check Docker is available
         try:
             result = subprocess.run(
-                ["trivy", "--version"],
+                ["docker", "--version"],
                 capture_output=True,
                 timeout=10,
             )
-            return result.returncode == 0
+            if result.returncode != 0:
+                return False
         except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+        # If server URL is configured, also check server health
+        if self._server_url:
+            return self._check_server_health()
+
+        return True
+
+    def _check_server_health(self) -> bool:
+        """Check if Trivy server is healthy."""
+        import requests
+
+        try:
+            resp = requests.get(f"{self._server_url}/healthz", timeout=5)
+            return resp.status_code == 200
+        except Exception:
             return False
 
     def get_config(self) -> Dict[str, Any]:
         """Return Trivy configuration."""
         return {
-            "enabled": getattr(settings, "TRIVY_ENABLED", False),
-            "severity": self._severity,
-            "timeout": self._timeout,
-            "skip_dirs": self._skip_dirs,
+            "server_url": self._server_url,
+            "server_mode": bool(self._server_url),
+            "has_default_config": bool(self._default_config),
             "configured": self.is_available(),
         }
+
+    def get_default_config(self) -> str:
+        """Return default trivy.yaml config content from settings."""
+        return self._default_config
 
     def get_scan_types(self) -> List[str]:
         """Return supported scan types."""
@@ -256,6 +152,9 @@ class TrivyTool(IntegrationTool):
         """
         Run Trivy scan on a filesystem path.
 
+        If TRIVY_SERVER_URL is configured, uses server mode (--server flag).
+        Otherwise, runs Trivy CLI directly.
+
         Args:
             target_path: Path to scan (usually a cloned git repo or worktree)
             scan_types: Types of scans to run (vuln, config, secret, license)
@@ -269,42 +168,27 @@ class TrivyTool(IntegrationTool):
 
         start_time = time.time()
 
-        # Write custom config if provided
+        # Use custom config if provided, otherwise use default from settings
+        effective_config = config_content or self._default_config
         config_file_path = None
-        if config_content:
+        if effective_config:
             config_file_path = Path(target_path) / "trivy.yaml"
             with open(config_file_path, "w") as f:
-                f.write(config_content)
-            logger.info("Wrote custom trivy.yaml for scan")
+                f.write(effective_config)
+            logger.info("Wrote trivy.yaml for scan")
 
-        cmd = [
-            "trivy",
-            "fs",
-            "--format",
-            "json",
-            "--severity",
-            self._severity,
-            "--timeout",
-            f"{self._timeout}s",
-        ]
-
-        # Use custom config if provided
-        if config_file_path:
-            cmd.extend(["--config", str(config_file_path)])
-
-        # Add skip dirs
-        if self._skip_dirs:
-            for skip_dir in self._skip_dirs.split(","):
-                cmd.extend(["--skip-dirs", skip_dir.strip()])
-
-        # Add scan types
-        cmd.extend(["--scanners", ",".join(scan_types)])
-
-        # Add target path
-        cmd.append(target_path)
+        # Build command
+        cmd = self._build_scan_command(
+            target_path=target_path,
+            scan_types=scan_types,
+            config_file_path=config_file_path,
+        )
 
         try:
-            logger.info(f"Running Trivy scan on {target_path}")
+            mode = "server" if self._server_url else "standalone"
+            logger.info(f"Running Trivy scan ({mode} mode) on {target_path}")
+            logger.debug(f"Command: {' '.join(cmd)}")
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
@@ -346,7 +230,7 @@ class TrivyTool(IntegrationTool):
                 "scan_duration_ms": int((time.time() - start_time) * 1000),
             }
         except FileNotFoundError:
-            logger.error("Trivy not found. Please install trivy.")
+            logger.error("Trivy not found. Please install trivy CLI.")
             return {
                 "error": "Trivy not installed",
                 "status": "failed",
@@ -357,6 +241,134 @@ class TrivyTool(IntegrationTool):
                 "error": f"JSON parse error: {e}",
                 "status": "failed",
             }
+
+    def scan_commit(
+        self,
+        commit_sha: str,
+        full_name: str,
+        scan_types: Optional[List[str]] = None,
+        config_content: Optional[str] = None,
+        shared_worktree_path: Optional[Path] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run Trivy scan on a specific commit.
+
+        Creates or uses existing worktree for the commit.
+
+        Args:
+            commit_sha: Commit SHA to scan
+            full_name: Repo full name (owner/repo)
+            scan_types: Types of scans to run
+            config_content: Optional trivy.yaml config content
+            shared_worktree_path: Optional path to shared worktree from pipeline
+
+        Returns:
+            Dict with scan results and metrics
+        """
+
+        try:
+            if shared_worktree_path:
+                worktree = Path(shared_worktree_path)
+                if not worktree.exists():
+                    return {
+                        "error": f"Shared worktree path does not exist: {worktree}",
+                        "status": "failed",
+                    }
+            elif self.github_repo_id and full_name:
+                worktree = ensure_worktree(self.github_repo_id, commit_sha, full_name)
+                if not worktree:
+                    return {
+                        "error": f"Failed to create worktree for {commit_sha}",
+                        "status": "failed",
+                    }
+            else:
+                return {
+                    "error": "Shared worktree path or github_repo_id + full_name required",
+                    "status": "failed",
+                }
+
+            # Use the regular scan method with the worktree path
+            return self.scan(
+                target_path=str(worktree),
+                scan_types=scan_types,
+                config_content=config_content,
+            )
+
+        except Exception as e:
+            logger.error(f"scan_commit failed: {e}")
+            return {
+                "error": str(e),
+                "status": "failed",
+            }
+
+    def _build_scan_command(
+        self,
+        target_path: str,
+        scan_types: List[str],
+        config_file_path: Optional[Path] = None,
+    ) -> List[str]:
+        """
+        Build trivy scan command using Docker image.
+
+        Uses aquasec/trivy Docker image. Requires Docker to be installed.
+        If TRIVY_SERVER_URL is configured, connects to Trivy server.
+        """
+        from pathlib import Path as PathLib
+
+        target_path_abs = str(PathLib(target_path).absolute())
+
+        # Build trivy args
+        trivy_args = [
+            "fs",
+            "--format",
+            "json",
+            "--severity",
+            self._severity,
+            "--timeout",
+            f"{self._timeout}s",
+        ]
+
+        # Add server flag if configured (client/server mode)
+        if self._server_url:
+            trivy_args.extend(["--server", self._server_url])
+
+        # Add skip dirs
+        if self._skip_dirs:
+            for skip_dir in self._skip_dirs.split(","):
+                trivy_args.extend(["--skip-dirs", skip_dir.strip()])
+
+        # Add scan types
+        trivy_args.extend(["--scanners", ",".join(scan_types)])
+
+        # Target path inside container
+        trivy_args.append("/work")
+
+        # Build docker command
+        docker_cmd = [
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{target_path_abs}:/work:ro",  # Mount as read-only
+        ]
+
+        # Mount config file if provided
+        if config_file_path:
+            config_abs = str(config_file_path.absolute())
+            docker_cmd.extend(["-v", f"{config_abs}:/work/trivy.yaml:ro"])
+            trivy_args.extend(["--config", "/work/trivy.yaml"])
+
+        # Use host network to access Trivy server via localhost
+        docker_cmd.extend(["--network", "host"])
+
+        # Add trivy cache volume for DB
+        docker_cmd.extend(["-v", "trivy_cache:/root/.cache/trivy"])
+
+        # Add image and args
+        docker_cmd.append("aquasec/trivy:latest")
+        docker_cmd.extend(trivy_args)
+
+        return docker_cmd
 
     def _parse_results(self, raw_results: Dict[str, Any], scan_duration_ms: int) -> Dict[str, Any]:
         """Parse Trivy JSON output into structured metrics."""

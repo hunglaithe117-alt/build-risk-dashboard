@@ -1,9 +1,7 @@
 import logging
-from pathlib import Path
 from typing import Dict, List
 
 import requests
-import yaml
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -13,50 +11,13 @@ logger = logging.getLogger(__name__)
 
 
 class MetricsExporter:
+    """Export metrics from SonarQube API for a given component."""
+
     def __init__(self):
         self.host = settings.SONAR_HOST_URL.rstrip("/")
         self.token = settings.SONAR_TOKEN
         self.session = self._build_session()
         self.chunk_size = 25
-        self.metrics = self._load_metrics_config()
-
-    def _load_metrics_config(self) -> List[str]:
-        """Load metrics keys from sonar_metrics.yml"""
-        default_metrics = [
-            "ncloc",
-            "complexity",
-            "cognitive_complexity",
-            "duplicated_lines_density",
-            "violations",
-            "bugs",
-            "vulnerabilities",
-            "code_smells",
-            "sqale_index",
-            "reliability_rating",
-            "security_rating",
-            "sqale_rating",
-        ]
-
-        try:
-            config_path = Path(__file__).resolve().parents[5] / "sonar_metrics.yml"
-
-            if not config_path.exists():
-                logger.warning(f"Metrics config not found at {config_path}, using defaults")
-                return default_metrics
-
-            with open(config_path, "r") as f:
-                config = yaml.safe_load(f)
-
-            metrics = config.get("sonarqube", {}).get("measures", {}).get("keys", [])
-            if not metrics:
-                logger.warning("No metrics found in config, using defaults")
-                return default_metrics
-
-            return metrics
-
-        except Exception as e:
-            logger.error(f"Failed to load metrics config: {e}")
-            return default_metrics
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()
@@ -80,8 +41,10 @@ class MetricsExporter:
             yield items[idx : idx + self.chunk_size]
 
     def _fetch_measures(self, project_key: str, metrics: List[str]) -> Dict[str, str]:
+        """Fetch specific metrics from SonarQube API."""
         url = f"{self.host}/api/measures/component"
         payload: Dict[str, str] = {}
+
         for chunk in self._chunks(metrics):
             resp = self.session.get(
                 url,
@@ -92,7 +55,28 @@ class MetricsExporter:
             component = resp.json().get("component", {})
             for measure in component.get("measures", []):
                 payload[measure.get("metric")] = measure.get("value")
+
         return payload
 
-    def collect_metrics(self, component_key: str) -> Dict[str, str]:
-        return self._fetch_measures(component_key, self.metrics)
+    def collect_metrics(
+        self,
+        component_key: str,
+        selected_metrics: List[str],
+    ) -> Dict[str, str]:
+        """
+        Collect metrics from SonarQube for a component.
+
+        Args:
+            component_key: SonarQube project/component key
+            selected_metrics: List of metric keys to fetch. Metric keys can have 'sonar_' prefix which will be stripped.
+
+        Returns:
+            Dict mapping metric key to value
+        """
+        # Strip 'sonar_' prefix if present (user selection may have it)
+        metrics_to_fetch = [
+            m.replace("sonar_", "") if m.startswith("sonar_") else m for m in selected_metrics
+        ]
+
+        logger.debug(f"Fetching {len(metrics_to_fetch)} metrics for {component_key}")
+        return self._fetch_measures(component_key, metrics_to_fetch)

@@ -5,9 +5,12 @@ All paths are relative to settings.DATA_DIR as the root.
 This module ensures directories exist when the module is imported.
 """
 
+import logging
 from pathlib import Path
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Base data directory (absolute)
 DATA_DIR = Path(settings.DATA_DIR).resolve()
@@ -21,14 +24,21 @@ WORKTREES_DIR = DATA_DIR / "worktrees"
 # CI/CD build logs downloaded from providers
 LOGS_DIR = DATA_DIR / "logs"
 
+# Hamilton pipeline cache directory
+HAMILTON_CACHE_DIR = DATA_DIR / "hamilton_cache"
+
 
 def ensure_data_dirs() -> None:
     """Create all required data directories if they don't exist."""
-    for d in [DATA_DIR, REPOS_DIR, WORKTREES_DIR, LOGS_DIR]:
+    for d in [DATA_DIR, REPOS_DIR, WORKTREES_DIR, LOGS_DIR, HAMILTON_CACHE_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
 
-# Helper functions to get paths by github_repo_id
+# =============================================================================
+# Path Helper Functions
+# =============================================================================
+
+
 def get_repo_path(github_repo_id: int) -> Path:
     """Get bare repo path for a repository by its GitHub ID."""
     return REPOS_DIR / str(github_repo_id)

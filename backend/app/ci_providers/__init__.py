@@ -1,20 +1,17 @@
 # Core exports
+from . import circleci, github, travis
+from .base import CIProviderInterface
+from .config import get_configured_provider, get_provider_config
+from .factory import CIProviderRegistry, get_ci_provider
 from .models import (
-    CIProvider,
-    BuildStatus,
     BuildConclusion,
     BuildData,
+    BuildStatus,
+    CIProvider,
     JobData,
     LogFile,
     ProviderConfig,
 )
-from .base import CIProviderInterface
-from .factory import CIProviderRegistry, get_ci_provider
-from .config import get_provider_config, get_configured_provider
-
-from . import github
-from . import circleci
-from . import travis
 
 __all__ = [
     # Enums

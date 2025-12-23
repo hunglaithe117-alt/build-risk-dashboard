@@ -26,14 +26,13 @@ from app.entities.dataset_build import DatasetBuild
 from app.entities.dataset_enrichment_build import DatasetEnrichmentBuild
 from app.entities.dataset_version import DatasetVersion
 from app.entities.enums import ExtractionStatus
-from app.entities.pipeline_run import PipelineRun, PipelineStatus, PipelineType
+from app.entities.feature_audit_log import AuditLogCategory
 from app.entities.raw_repository import RawRepository
 from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.dataset_repo_stats import DatasetRepoStatsRepository
 from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.dataset_version import DatasetVersionRepository
-from app.repositories.pipeline_run_repository import PipelineRunRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.tasks.base import PipelineTask
@@ -79,7 +78,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
     TracingContext.set(
         correlation_id=correlation_id,
         version_id=version_id,
-        pipeline_type=PipelineType.DATASET_ENRICHMENT.value,
+        pipeline_type="dataset_enrichment",
     )
 
     version_repo = DatasetVersionRepository(self.db)
@@ -88,25 +87,12 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
     dataset_repo_stats_repo = DatasetRepoStatsRepository(self.db)
     raw_repo_repo = RawRepositoryRepository(self.db)
     raw_build_run_repo = RawBuildRunRepository(self.db)
-    pipeline_run_repo = PipelineRunRepository(self.db)
 
     # Load version
     dataset_version = version_repo.find_by_id(version_id)
     if not dataset_version:
         logger.error(f"Version {version_id} not found")
         return {"status": "error", "error": "Version not found"}
-
-    # Create PipelineRun record for tracing
-    pipeline_run = PipelineRun(
-        correlation_id=correlation_id,
-        pipeline_type=PipelineType.DATASET_ENRICHMENT,
-        version_id=dataset_version.id,
-        dataset_id=dataset_version.dataset_id,
-        triggered_by="system",
-        request_id=self.request.id,
-    )
-    pipeline_run.start()
-    pipeline_run_repo.insert_one(pipeline_run)
 
     # Mark as started
     version_repo.mark_started(version_id, task_id=self.request.id)
@@ -239,7 +225,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
         if not ingestion_chains:
             # No ingestion needed (no tasks required for features)
             logger.info("[start_enrichment] No ingestion chains needed, proceeding to processing")
-            dispatch_scans_and_processing.delay(version_id)
+            dispatch_scans_and_processing.delay(version_id, correlation_id=correlation_id)
             return {"status": "dispatched", "message": "No ingestion needed, dispatched processing"}
 
         # Use chord: run all repo ingestion chains in parallel → aggregate → process
@@ -354,6 +340,9 @@ def dispatch_scans_and_processing(self: PipelineTask, version_id: str) -> Dict[s
     Scans run independently without blocking feature extraction.
     Scan results are backfilled to DatasetEnrichmentBuild.features later.
     """
+    # Get correlation_id for propagation to child tasks
+    correlation_id = TracingContext.get_correlation_id()
+
     version_repo = DatasetVersionRepository(self.db)
 
     version = version_repo.find_by_id(version_id)
@@ -369,10 +358,10 @@ def dispatch_scans_and_processing(self: PipelineTask, version_id: str) -> Dict[s
             f"[dispatch_scans_and_processing] Dispatching scans: "
             f"sonar={has_sonar}, trivy={has_trivy}"
         )
-        dispatch_version_scans.delay(version_id)
+        dispatch_version_scans.delay(version_id, correlation_id=correlation_id)
 
     # Dispatch processing immediately (doesn't wait for scans)
-    dispatch_enrichment_batches.delay(version_id)
+    dispatch_enrichment_batches.delay(version_id, correlation_id=correlation_id)
 
     logger.info(f"[dispatch_scans_and_processing] Processing dispatched for {version_id}")
 
@@ -649,7 +638,6 @@ def finalize_enrichment(
     Aggregate results from all batch enrichments and update version status.
     """
     version_repo = DatasetVersionRepository(self.db)
-    pipeline_run_repo = PipelineRunRepository(self.db)
 
     # Aggregate stats
     total_enriched = 0
@@ -671,22 +659,6 @@ def finalize_enrichment(
 
     # Mark completed
     version_repo.mark_completed(version_id)
-
-    # Complete PipelineRun record
-    # Find by version_id since we don't have correlation_id in callback
-    pipeline_runs = pipeline_run_repo.find_by_version(version_id, limit=1)
-    if pipeline_runs:
-        pipeline_run = pipeline_runs[0]
-        status = PipelineStatus.COMPLETED if total_failed == 0 else PipelineStatus.PARTIAL
-        pipeline_run_repo.update_status(
-            correlation_id=pipeline_run.correlation_id,
-            status=status,
-            result_summary={
-                "enriched_rows": total_enriched,
-                "failed_rows": total_failed,
-                "total_rows": total_processed,
-            },
-        )
 
     logger.info(
         f"Version enrichment completed: {version_id}, "
@@ -756,6 +728,9 @@ def _extract_features_for_enrichment(
         raw_build_run=raw_build_run,
         selected_features=selected_features,
         github_client=github_client_input,
+        category=AuditLogCategory.DATASET_ENRICHMENT,
+        version_id=str(dataset_version.id),
+        dataset_id=str(dataset_version.dataset_id),
     )
 
 

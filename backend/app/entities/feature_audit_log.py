@@ -98,10 +98,10 @@ class FeatureAuditLog(BaseEntity):
         collection = "feature_audit_logs"
         use_enum_values = True
 
-    # === Link to PipelineRun ===
+    # === Correlation ID for tracing ===
     correlation_id: Optional[str] = Field(
         None,
-        description="Links this audit log to a PipelineRun for end-to-end tracing",
+        description="Correlation ID for end-to-end tracing via logs",
     )
 
     # Audit log category
@@ -128,6 +128,16 @@ class FeatureAuditLog(BaseEntity):
     enrichment_build_id: Optional[PyObjectId] = Field(
         None,
         description="Reference to dataset_enrichment_builds (for DATASET_ENRICHMENT)",
+    )
+
+    # Direct references for easier querying (denormalized from enrichment_build)
+    version_id: Optional[PyObjectId] = Field(
+        None,
+        description="DatasetVersion ID (for DATASET_ENRICHMENT category)",
+    )
+    dataset_id: Optional[PyObjectId] = Field(
+        None,
+        description="Dataset ID (for DATASET_ENRICHMENT category)",
     )
 
     # Execution metadata

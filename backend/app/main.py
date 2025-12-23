@@ -15,7 +15,6 @@ from app.api import (
     dataset_validation,
     dataset_versions,
     datasets,
-    enrichment_logs,
     features,
     health,
     integrations,
@@ -23,7 +22,6 @@ from app.api import (
     model_repos,
     monitoring,
     notifications,
-    pipeline_runs,
     settings,
     statistics,
     templates,
@@ -108,9 +106,7 @@ app.include_router(settings.router, prefix="/api", tags=["Settings"])
 app.include_router(monitoring.router, prefix="/api", tags=["Monitoring"])
 app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
 app.include_router(user_settings.router, prefix="/api", tags=["User Settings"])
-app.include_router(pipeline_runs.router, prefix="/api", tags=["Pipeline Runs"])
 app.include_router(statistics.router, prefix="/api", tags=["Statistics"])
-app.include_router(enrichment_logs.router, prefix="/api", tags=["Enrichment Logs"])
 
 # Admin-only routes
 app.include_router(admin_users.router, prefix="/api", tags=["Admin - Users"])

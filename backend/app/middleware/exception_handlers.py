@@ -16,7 +16,6 @@ from fastapi.responses import JSONResponse
 
 from app.middleware.error_codes import ErrorCode, get_error_code
 
-
 logger = logging.getLogger("app.exception")
 
 

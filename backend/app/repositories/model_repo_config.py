@@ -29,7 +29,6 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
             {
                 "user_id": self.ensure_object_id(user_id),
                 "raw_repo_id": self.ensure_object_id(raw_repo_id),
-                "is_deleted": {"$ne": True},
             }
         )
         return ModelRepoConfig(**doc) if doc else None
@@ -39,15 +38,14 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         raw_repo_id: ObjectId,
     ) -> Optional[ModelRepoConfig]:
         """
-        Find the active (non-deleted) config for a raw repository.
+        Find the config for a raw repository.
 
         Used by webhook to find the 1:1 mapped config for processing.
-        Returns None if no active config exists.
+        Returns None if no config exists.
         """
         doc = self.collection.find_one(
             {
                 "raw_repo_id": raw_repo_id,
-                "is_deleted": {"$ne": True},
             }
         )
         return ModelRepoConfig(**doc) if doc else None
@@ -58,14 +56,11 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         skip: int = 0,
         limit: int = 100,
         query: Optional[dict] = None,
-        include_deleted: bool = False,
     ) -> tuple[List[ModelRepoConfig], int]:
         """List all configs for a user with pagination."""
         if query is None:
             query = {}
         query["user_id"] = user_id
-        if not include_deleted:
-            query["is_deleted"] = {"$ne": True}
 
         return self.paginate(query, sort=[("created_at", -1)], skip=skip, limit=limit)
 
@@ -76,7 +71,6 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         skip: int = 0,
         limit: int = 100,
         search_query: Optional[str] = None,
-        include_deleted: bool = False,
         github_accessible_repos: Optional[List[str]] = None,
     ) -> tuple[List[ModelRepoConfig], int]:
         """
@@ -91,9 +85,6 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
                                     (synced during login)
         """
         base_query: dict = {}
-
-        if not include_deleted:
-            base_query["is_deleted"] = {"$ne": True}
 
         if search_query:
             base_query["full_name"] = {"$regex": search_query, "$options": "i"}
@@ -162,16 +153,6 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
 
     def find_by_full_name(self, full_name: str) -> Optional[ModelRepoConfig]:
         """Find config by full_name (e.g., 'owner/repo')."""
-        doc = self.collection.find_one({"full_name": full_name, "is_deleted": {"$ne": True}})
-        return ModelRepoConfig(**doc) if doc else None
-
-    def find_by_full_name_include_deleted(self, full_name: str) -> Optional[ModelRepoConfig]:
-        """
-        Find config by full_name including soft-deleted records.
-
-        Used for upsert logic when re-importing a previously deleted repo.
-        This ensures we update existing records instead of creating duplicates.
-        """
         doc = self.collection.find_one({"full_name": full_name})
         return ModelRepoConfig(**doc) if doc else None
 
@@ -263,21 +244,16 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         )
         return ModelRepoConfig(**doc) if doc else None
 
-    def soft_delete(self, config_id: ObjectId, session: "ClientSession | None" = None) -> None:
-        """Soft delete a config.
+    def hard_delete(self, config_id: ObjectId, session: "ClientSession | None" = None) -> int:
+        """
+        Hard delete a config (permanently removes from DB).
 
         Args:
-            config_id: Config ID to soft delete
+            config_id: Config ID to delete
             session: Optional MongoDB session for transaction support
+
+        Returns:
+            Number of documents deleted (0 or 1).
         """
-        self.collection.update_one(
-            {"_id": config_id},
-            {
-                "$set": {
-                    "is_deleted": True,
-                    "deleted_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow(),
-                }
-            },
-            session=session,
-        )
+        result = self.collection.delete_one({"_id": config_id}, session=session)
+        return result.deleted_count

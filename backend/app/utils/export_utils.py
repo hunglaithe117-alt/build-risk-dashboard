@@ -221,6 +221,7 @@ def format_feature_row(
     Format a build document to a feature row for export.
 
     Used by ModelRepositoryService and DatasetVersionService.
+    Merges both 'features' and 'scan_metrics' fields for export.
 
     Args:
         doc: MongoDB document (ModelTrainingBuild or EnrichmentBuild)
@@ -230,17 +231,21 @@ def format_feature_row(
     Returns:
         Dict mapping feature names to values
     """
+    # Merge features and scan_metrics for export
     feature_dict = doc.get("features", {})
+    scan_metrics = doc.get("scan_metrics", {})
+    merged = {**feature_dict, **scan_metrics}
+
     row: Dict[str, Any] = {}
 
     if features:
         for f in features:
-            row[f] = feature_dict.get(f)
+            row[f] = merged.get(f)
     elif all_feature_keys:
         for f in all_feature_keys:
-            row[f] = feature_dict.get(f)
+            row[f] = merged.get(f)
     else:
-        row.update(feature_dict)
+        row.update(merged)
 
     return row
 

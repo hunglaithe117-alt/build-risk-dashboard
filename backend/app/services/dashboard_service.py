@@ -32,7 +32,7 @@ class DashboardService:
         accessible_repos = current_user.get("github_accessible_repos", []) if current_user else []
 
         # Base repo filter
-        repo_filter = {"import_status": "imported", "is_deleted": {"$ne": True}}
+        repo_filter: dict = {"import_status": "imported"}
 
         # For non-viewer users (regular users), filter by accessible repos
         # Admin and guest see all data
@@ -78,7 +78,7 @@ class DashboardService:
         repo_distribution.sort(key=lambda x: x.builds, reverse=True)
 
         # 6. Count datasets (admin and guest see all, user sees only their own)
-        dataset_filter: dict = {"is_deleted": {"$ne": True}}
+        dataset_filter: dict = {}
         if user_role not in ("admin", "guest") and current_user:
             user_id = current_user.get("_id")
             if user_id:

@@ -41,9 +41,7 @@ import {
 } from "lucide-react";
 import {
     enrichmentLogsApi,
-    type PipelineRunDto,
     type FeatureAuditLogDto,
-    type PhaseResult,
     type NodeExecutionResult,
 } from "@/lib/api";
 
@@ -110,7 +108,6 @@ export function EnrichmentLogsModal({
     open,
     onOpenChange,
 }: EnrichmentLogsModalProps) {
-    const [pipelineRun, setPipelineRun] = useState<PipelineRunDto | null>(null);
     const [auditLogs, setAuditLogs] = useState<FeatureAuditLogDto[]>([]);
     const [selectedLog, setSelectedLog] = useState<FeatureAuditLogDto | null>(null);
     const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -124,11 +121,7 @@ export function EnrichmentLogsModal({
         setError(null);
 
         try {
-            // Fetch pipeline run
-            const runData = await enrichmentLogsApi.getPipelineRun(datasetId, versionId);
-            setPipelineRun(runData);
-
-            // Fetch audit logs
+            // Fetch audit logs only (pipeline run was removed)
             const logsData = await enrichmentLogsApi.getAuditLogs(datasetId, versionId, {
                 limit: 100,
                 status: statusFilter !== "all" ? statusFilter : undefined,
@@ -172,7 +165,7 @@ export function EnrichmentLogsModal({
                     </Button>
                 </DialogHeader>
 
-                {isLoading && !pipelineRun ? (
+                {isLoading && auditLogs.length === 0 ? (
                     <div className="flex items-center justify-center py-12">
                         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                     </div>
@@ -187,8 +180,6 @@ export function EnrichmentLogsModal({
                     </div>
                 ) : (
                     <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-                        {/* Pipeline Run Summary */}
-                        {pipelineRun && <PipelineRunSummary run={pipelineRun} />}
 
                         {/* Filters */}
                         <div className="flex items-center gap-4">
@@ -222,8 +213,8 @@ export function EnrichmentLogsModal({
                                             key={log.id}
                                             onClick={() => setSelectedLog(log)}
                                             className={`w-full text-left p-2 rounded-md transition-colors ${selectedLog?.id === log.id
-                                                    ? "bg-primary/10 border border-primary/30"
-                                                    : "hover:bg-muted"
+                                                ? "bg-primary/10 border border-primary/30"
+                                                : "hover:bg-muted"
                                                 }`}
                                         >
                                             <div className="flex items-center gap-2">
@@ -268,84 +259,6 @@ export function EnrichmentLogsModal({
 // =============================================================================
 // Sub-components
 // =============================================================================
-
-interface PipelineRunSummaryProps {
-    run: PipelineRunDto;
-}
-
-function PipelineRunSummary({ run }: PipelineRunSummaryProps) {
-    const progressPct = run.total_builds > 0
-        ? ((run.processed_builds + run.failed_builds) / run.total_builds) * 100
-        : 0;
-
-    return (
-        <Card>
-            <CardHeader className="py-3">
-                <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                        <Server className="h-4 w-4" />
-                        Pipeline Run
-                    </CardTitle>
-                    <Badge className={getStatusColor(run.status)}>{run.status}</Badge>
-                </div>
-            </CardHeader>
-            <CardContent className="py-2">
-                {/* Progress Bar */}
-                <div className="space-y-1 mb-4">
-                    <div className="flex justify-between text-xs">
-                        <span>Progress</span>
-                        <span>
-                            {run.processed_builds + run.failed_builds} / {run.total_builds} builds
-                        </span>
-                    </div>
-                    <Progress value={progressPct} className="h-2" />
-                </div>
-
-                {/* Stats Grid */}
-                <div className="grid grid-cols-4 md:grid-cols-6 gap-4 text-center text-sm">
-                    <div>
-                        <p className="text-muted-foreground text-xs">Repos</p>
-                        <p className="font-medium">{run.processed_repos}/{run.total_repos}</p>
-                    </div>
-                    <div>
-                        <p className="text-muted-foreground text-xs">Builds</p>
-                        <p className="font-medium">{run.processed_builds}/{run.total_builds}</p>
-                    </div>
-                    <div>
-                        <p className="text-muted-foreground text-xs">Failed</p>
-                        <p className="font-medium text-red-600">{run.failed_builds}</p>
-                    </div>
-                    <div>
-                        <p className="text-muted-foreground text-xs">Duration</p>
-                        <p className="font-medium">{formatDuration(run.duration_seconds)}</p>
-                    </div>
-                </div>
-
-                {/* Phases */}
-                {run.phases.length > 0 && (
-                    <div className="mt-4">
-                        <p className="text-xs text-muted-foreground mb-2">Phases</p>
-                        <div className="flex gap-2 flex-wrap">
-                            {run.phases.map((phase) => (
-                                <Badge key={phase.phase_name} variant="outline" className="text-xs">
-                                    {getStatusIcon(phase.status)}
-                                    <span className="ml-1">{phase.phase_name}</span>
-                                </Badge>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Error */}
-                {run.error_message && (
-                    <div className="mt-4 p-2 bg-red-50 dark:bg-red-900/20 rounded text-sm text-red-600">
-                        {run.error_message}
-                    </div>
-                )}
-            </CardContent>
-        </Card>
-    );
-}
 
 interface AuditLogDetailProps {
     log: FeatureAuditLogDto;

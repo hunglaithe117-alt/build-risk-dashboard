@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from hamilton.lifecycle import base
 from hamilton.graph import node
+from hamilton.lifecycle import base
 
 logger = logging.getLogger(__name__)
 

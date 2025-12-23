@@ -131,6 +131,60 @@ class TrivyTool(IntegrationTool):
         """Return default trivy.yaml config content from settings."""
         return self._default_config
 
+    def get_health_status(self) -> Dict[str, Any]:
+        """
+        Check Trivy tool health and return detailed status.
+
+        Returns:
+            Dict with connected, server_mode, status, etc.
+        """
+        import requests
+
+        result = {
+            "connected": False,
+            "server_mode": bool(self._server_url),
+            "server_url": self._server_url or "",
+            "docker_available": False,
+        }
+
+        # Check Docker availability
+        try:
+            docker_result = subprocess.run(
+                ["docker", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            result["docker_available"] = docker_result.returncode == 0
+            if docker_result.returncode == 0:
+                docker_version = docker_result.stdout.strip()
+                result["docker_version"] = docker_version
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            result["error"] = "Docker not available"
+            return result
+
+        # If server mode, check server health
+        if self._server_url:
+            try:
+                resp = requests.get(f"{self._server_url}/healthz", timeout=5)
+                if resp.status_code == 200:
+                    result["connected"] = True
+                    result["status"] = "healthy"
+                else:
+                    result["error"] = f"Server returned HTTP {resp.status_code}"
+            except requests.exceptions.Timeout:
+                result["error"] = "Server connection timeout"
+            except requests.exceptions.ConnectionError:
+                result["error"] = "Server connection refused"
+            except Exception as e:
+                result["error"] = str(e)
+        else:
+            # Standalone mode - connected if Docker is available
+            result["connected"] = result["docker_available"]
+            result["status"] = "standalone"
+
+        return result
+
     def get_scan_types(self) -> List[str]:
         """Return supported scan types."""
         return ["vulnerability", "misconfiguration", "secret", "license"]

@@ -1,5 +1,5 @@
-from .base import ParsedLog, FrameworkParser
-from .registry import TestLogParser, LogParserRegistry
+from .base import FrameworkParser, ParsedLog
+from .registry import LogParserRegistry, TestLogParser
 
 __all__ = [
     "ParsedLog",

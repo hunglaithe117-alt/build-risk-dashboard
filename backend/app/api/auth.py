@@ -1,12 +1,12 @@
 from fastapi import (
     APIRouter,
     Body,
-    Depends,
-    Query,
-    status,
     Cookie,
+    Depends,
     HTTPException,
+    Query,
     Response,
+    status,
 )
 from fastapi.responses import RedirectResponse
 from pymongo.database import Database
@@ -15,9 +15,9 @@ from app.config import settings
 from app.database.mongo import get_db
 from app.dtos.auth import (
     AuthVerifyResponse,
+    GoogleAuthorizeResponse,
     TokenResponse,
     UserDetailResponse,
-    GoogleAuthorizeResponse,
 )
 from app.dtos.github import (
     GithubAuthorizeResponse,

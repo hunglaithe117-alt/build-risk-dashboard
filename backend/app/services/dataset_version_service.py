@@ -610,7 +610,7 @@ class DatasetVersionService:
         if method == NormalizationMethod.NONE:
             return {}
 
-        # Collect all values for each feature
+        # Collect all values for each feature (from both features and scan_metrics)
         feature_values: Dict[str, list] = {f: [] for f in features}
 
         cursor = self._enrichment_build_repo.get_enriched_for_export(
@@ -619,10 +619,14 @@ class DatasetVersionService:
         )
 
         for doc in cursor:
+            # Merge features and scan_metrics
             feature_dict = doc.get("features", {})
+            scan_metrics = doc.get("scan_metrics", {})
+            merged = {**feature_dict, **scan_metrics}
+
             for feature_name in features:
-                if feature_name in feature_dict:
-                    feature_values[feature_name].append(feature_dict[feature_name])
+                if feature_name in merged:
+                    feature_values[feature_name].append(merged[feature_name])
 
         # Calculate params
         return NormalizationService.calculate_params_batch(feature_values, method)

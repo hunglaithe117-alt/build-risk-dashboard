@@ -117,13 +117,3 @@ class ModelRepoConfig(FeatureConfigBase):
         default_factory=list,
         description="Specific feature extractors to run (empty = all)",
     )
-
-    # Soft delete
-    is_deleted: bool = Field(
-        default=False,
-        description="Soft delete flag (keep history)",
-    )
-    deleted_at: Optional[datetime] = Field(
-        None,
-        description="When this config was deleted",
-    )

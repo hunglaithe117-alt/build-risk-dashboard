@@ -41,10 +41,10 @@ class ModelTrainingBuild(BaseEntity):
         description="Reference to raw_build_run table",
     )
 
-    # Config reference
-    model_repo_config_id: PyObjectId = Field(
+    # Import session reference (via ModelImportBuild)
+    model_import_build_id: PyObjectId = Field(
         ...,
-        description="Reference to model_repo_configs table",
+        description="Reference to model_import_builds",
     )
 
     # Build metadata (denormalized for quick access)

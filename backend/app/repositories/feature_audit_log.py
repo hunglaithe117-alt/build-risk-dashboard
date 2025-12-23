@@ -123,3 +123,73 @@ class FeatureAuditLogRepository(BaseRepository[FeatureAuditLog]):
             skip=skip,
             limit=limit,
         )
+
+    def find_by_dataset_cursor(
+        self,
+        dataset_id: str,
+        limit: int = 20,
+        cursor: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Tuple[List[FeatureAuditLog], Optional[str], bool]:
+        """
+        Find audit logs for a specific dataset with cursor-based pagination.
+
+        This queries through the chain: FeatureAuditLog.enrichment_build_id
+        → DatasetEnrichmentBuild.version_id → DatasetVersion.dataset_id
+
+        Args:
+            dataset_id: The dataset ID to filter by
+            limit: Maximum number of logs to return
+            cursor: Last item ID from previous page
+            status: Optional status filter
+
+        Returns:
+            Tuple of (list of logs, next_cursor, has_more)
+        """
+        # Step 1: Get all version IDs for this dataset
+        version_ids = [
+            doc["_id"]
+            for doc in self.db["dataset_versions"].find(
+                {"dataset_id": self._to_object_id(dataset_id)},
+                {"_id": 1},
+            )
+        ]
+
+        if not version_ids:
+            return [], None, False
+
+        # Step 2: Get all enrichment build IDs for these versions
+        enrichment_build_ids = [
+            doc["_id"]
+            for doc in self.db["dataset_enrichment_builds"].find(
+                {"version_id": {"$in": version_ids}},
+                {"_id": 1},
+            )
+        ]
+
+        if not enrichment_build_ids:
+            return [], None, False
+
+        # Step 3: Query audit logs with these enrichment build IDs
+        query: Dict[str, Any] = {"enrichment_build_id": {"$in": enrichment_build_ids}}
+
+        if status:
+            query["status"] = status
+
+        if cursor:
+            query["_id"] = {"$lt": self._to_object_id(cursor)}
+
+        # Fetch limit + 1 to check if there are more items
+        logs = self.find_many(
+            query,
+            sort=[("_id", -1)],
+            limit=limit + 1,
+        )
+
+        has_more = len(logs) > limit
+        if has_more:
+            logs = logs[:limit]
+
+        next_cursor = str(logs[-1].id) if logs and has_more else None
+
+        return logs, next_cursor, has_more

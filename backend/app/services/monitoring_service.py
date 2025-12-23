@@ -34,6 +34,8 @@ class MonitoringService:
             "celery": self._get_celery_stats(),
             "redis": self._get_redis_stats(),
             "mongodb": self._get_mongodb_stats(),
+            "trivy": self._get_trivy_stats(),
+            "sonarqube": self._get_sonarqube_stats(),
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -144,6 +146,34 @@ class MonitoringService:
             }
         except Exception as e:
             logger.error(f"Failed to get MongoDB stats: {e}")
+            return {
+                "connected": False,
+                "error": str(e),
+            }
+
+    def _get_trivy_stats(self) -> Dict[str, Any]:
+        """Get Trivy tool health status."""
+        try:
+            from app.integrations.tools.trivy import TrivyTool
+
+            tool = TrivyTool()
+            return tool.get_health_status()
+        except Exception as e:
+            logger.error(f"Failed to get Trivy stats: {e}")
+            return {
+                "connected": False,
+                "error": str(e),
+            }
+
+    def _get_sonarqube_stats(self) -> Dict[str, Any]:
+        """Get SonarQube tool health status."""
+        try:
+            from app.integrations.tools.sonarqube import SonarQubeTool
+
+            tool = SonarQubeTool()
+            return tool.get_health_status()
+        except Exception as e:
+            logger.error(f"Failed to get SonarQube stats: {e}")
             return {
                 "connected": False,
                 "error": str(e),
@@ -267,94 +297,82 @@ class MonitoringService:
             "has_more": has_more,
         }
 
-    def get_pipeline_runs_cursor(
+    def get_feature_audit_logs_by_dataset_cursor(
         self,
+        dataset_id: str,
         limit: int = 20,
         cursor: Optional[str] = None,
-        pipeline_type: Optional[str] = None,
         status: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get pipeline runs with cursor-based pagination for infinite scroll."""
+        """Get audit logs for a specific dataset with cursor-based pagination."""
         from bson import ObjectId
 
-        from app.entities.pipeline_run import PhaseStatus, PipelineStatus, PipelineType
-        from app.repositories.pipeline_run_repository import PipelineRunRepository
+        from app.repositories.feature_audit_log import FeatureAuditLogRepository
 
-        repo = PipelineRunRepository(self.db)
+        audit_log_repo = FeatureAuditLogRepository(self.db)
 
-        # Build query
-        query: Dict[str, Any] = {}
-        if pipeline_type:
-            query["pipeline_type"] = pipeline_type
-        if status:
-            query["status"] = status
+        logs, next_cursor, has_more = audit_log_repo.find_by_dataset_cursor(
+            dataset_id=dataset_id,
+            limit=limit,
+            cursor=cursor,
+            status=status,
+        )
 
-        # Add cursor condition
-        if cursor:
-            try:
-                query["_id"] = {"$lt": ObjectId(cursor)}
-            except Exception:
-                pass
+        # Collect unique repo_ids and build_run_ids to batch lookup
+        repo_ids = set()
+        build_ids = set()
+        for log in logs:
+            repo_ids.add(log.raw_repo_id)
+            build_ids.add(log.raw_build_run_id)
 
-        # Find pipeline runs
-        runs = repo.find_many(query, sort=[("created_at", -1)], limit=limit + 1)
-
-        # Determine if there are more
-        has_more = len(runs) > limit
-        if has_more:
-            runs = runs[:limit]
-
-        next_cursor = str(runs[-1].id) if runs and has_more else None
-
-        def format_phase(phase: Any) -> Dict[str, Any]:
-            """Format phase for API response."""
-            if isinstance(phase, dict):
-                return {
-                    "phase_name": phase.get("phase_name", ""),
-                    "status": phase.get("status", "pending"),
-                    "processed_items": phase.get("processed_items", 0),
-                    "total_items": phase.get("total_items", 0),
-                    "failed_items": phase.get("failed_items", 0),
-                    "duration_seconds": phase.get("duration_seconds"),
+        # Batch lookup repositories
+        repo_map: Dict[str, Dict[str, Any]] = {}
+        if repo_ids:
+            repos_cursor = self.db["raw_repositories"].find(
+                {"_id": {"$in": [ObjectId(str(rid)) for rid in repo_ids]}},
+                {"full_name": 1, "name": 1},
+            )
+            for r in repos_cursor:
+                repo_map[str(r["_id"])] = {
+                    "full_name": r.get("full_name", ""),
+                    "name": r.get("name", ""),
                 }
-            return {
-                "phase_name": getattr(phase, "phase_name", ""),
-                "status": (
-                    phase.status.value
-                    if isinstance(getattr(phase, "status", None), PhaseStatus)
-                    else getattr(phase, "status", "pending")
-                ),
-                "processed_items": getattr(phase, "processed_items", 0),
-                "total_items": getattr(phase, "total_items", 0),
-                "failed_items": getattr(phase, "failed_items", 0),
-                "duration_seconds": getattr(phase, "duration_seconds", None),
-            }
+
+        # Batch lookup build runs
+        build_map: Dict[str, Dict[str, Any]] = {}
+        if build_ids:
+            builds_cursor = self.db["raw_build_runs"].find(
+                {"_id": {"$in": [ObjectId(str(bid)) for bid in build_ids]}},
+                {"run_number": 1, "event": 1, "head_branch": 1, "workflow_name": 1},
+            )
+            for b in builds_cursor:
+                build_map[str(b["_id"])] = {
+                    "run_number": b.get("run_number"),
+                    "event": b.get("event", ""),
+                    "head_branch": b.get("head_branch", ""),
+                    "workflow_name": b.get("workflow_name", ""),
+                }
 
         return {
-            "runs": [
+            "logs": [
                 {
-                    "correlation_id": run.correlation_id,
-                    "pipeline_type": (
-                        run.pipeline_type.value
-                        if isinstance(run.pipeline_type, PipelineType)
-                        else run.pipeline_type
-                    ),
-                    "status": (
-                        run.status.value if isinstance(run.status, PipelineStatus) else run.status
-                    ),
-                    "started_at": run.started_at.isoformat() if run.started_at else None,
-                    "completed_at": run.completed_at.isoformat() if run.completed_at else None,
-                    "duration_seconds": run.duration_seconds,
-                    "total_repos": run.total_repos,
-                    "processed_repos": run.processed_repos,
-                    "total_builds": run.total_builds,
-                    "processed_builds": run.processed_builds,
-                    "failed_builds": run.failed_builds,
-                    "phases": [format_phase(p) for p in (run.phases or [])],
-                    "error_message": run.error_message,
-                    "triggered_by": run.triggered_by,
+                    "id": str(log.id),
+                    "category": log.category,
+                    "raw_repo_id": str(log.raw_repo_id),
+                    "raw_build_run_id": str(log.raw_build_run_id),
+                    "repo": repo_map.get(str(log.raw_repo_id), {}),
+                    "build": build_map.get(str(log.raw_build_run_id), {}),
+                    "status": log.status,
+                    "started_at": (log.started_at.isoformat() if log.started_at else None),
+                    "completed_at": (log.completed_at.isoformat() if log.completed_at else None),
+                    "duration_ms": log.duration_ms,
+                    "feature_count": log.feature_count,
+                    "nodes_executed": log.nodes_executed,
+                    "nodes_succeeded": log.nodes_succeeded,
+                    "nodes_failed": log.nodes_failed,
+                    "errors": log.errors[:3] if log.errors else [],
                 }
-                for run in runs
+                for log in logs
             ],
             "next_cursor": next_cursor,
             "has_more": has_more,

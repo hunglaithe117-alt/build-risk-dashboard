@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from typing import Generator
 
 import redis
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)

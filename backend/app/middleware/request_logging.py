@@ -20,7 +20,6 @@ from starlette.responses import Response
 
 from app.config import settings
 
-
 logger = logging.getLogger("app.request")
 
 

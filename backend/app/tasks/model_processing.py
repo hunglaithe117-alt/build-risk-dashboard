@@ -15,11 +15,9 @@ from app.config import settings
 from app.core.tracing import TracingContext
 from app.entities.enums import ExtractionStatus
 from app.entities.model_training_build import ModelTrainingBuild
-from app.entities.pipeline_run import PipelineRun, PipelineStatus, PipelineType
 from app.repositories.dataset_template_repository import DatasetTemplateRepository
 from app.repositories.model_repo_config import ModelRepoConfigRepository
 from app.repositories.model_training_build import ModelTrainingBuildRepository
-from app.repositories.pipeline_run_repository import PipelineRunRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.tasks.base import PipelineTask
@@ -105,28 +103,16 @@ def start_model_processing(
     TracingContext.set(
         correlation_id=correlation_id,
         repo_id=repo_config_id,
-        pipeline_type=PipelineType.MODEL_PROCESSING.value,
+        pipeline_type="model_processing",
     )
 
     model_repo_config_repo = ModelRepoConfigRepository(self.db)
-    pipeline_run_repo = PipelineRunRepository(self.db)
 
     # Validate repo exists
     repo = model_repo_config_repo.find_by_id(repo_config_id)
     if not repo:
         logger.error(f"Repository {repo_config_id} not found")
         return {"status": "error", "error": "Repository not found"}
-
-    # Create PipelineRun record for tracing
-    pipeline_run = PipelineRun(
-        correlation_id=correlation_id,
-        pipeline_type=PipelineType.MODEL_PROCESSING,
-        repo_config_id=repo.id,
-        triggered_by="system",
-        request_id=self.request.id,
-    )
-    pipeline_run.start()
-    pipeline_run_repo.insert_one(pipeline_run)
 
     # Mark as started
     model_repo_config_repo.update_repository(
@@ -142,6 +128,7 @@ def start_model_processing(
             max_builds=max_builds,
             since_days=since_days,
             only_with_logs=only_with_logs,
+            correlation_id=correlation_id,
         )
 
         logger.info(f"Dispatched model processing workflow for {repo.full_name}")
@@ -184,16 +171,18 @@ def dispatch_build_processing(
     """
     Create ModelTrainingBuild docs and dispatch feature extraction tasks.
 
-    Called by prepare_and_dispatch_processing with the list of raw_build_run IDs.
+    Looks up ModelImportBuild for each raw_build_run_id to get the
+    model_import_build_id reference.
 
     Flow:
     1. Create ModelTrainingBuild for each raw_build_run (with PENDING status)
     2. Dispatch process_workflow_run tasks in batches
     """
 
-    from celery import group
+    from celery import chord, group
 
     from app.entities.enums import ExtractionStatus, ModelImportStatus
+    from app.repositories.model_import_build import ModelImportBuildRepository
     from app.repositories.model_repo_config import ModelRepoConfigRepository
     from app.repositories.model_training_build import ModelTrainingBuildRepository
     from app.repositories.raw_build_run import RawBuildRunRepository
@@ -204,6 +193,7 @@ def dispatch_build_processing(
     model_build_repo = ModelTrainingBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
     raw_build_run_repo = RawBuildRunRepository(self.db)
+    import_build_repo = ModelImportBuildRepository(self.db)
 
     if not raw_build_run_ids:
         logger.info(f"No builds to process for repo config {repo_config_id}")
@@ -227,6 +217,12 @@ def dispatch_build_processing(
             logger.warning(f"RawBuildRun {run_id_str} not found, skipping")
             continue
 
+        # Find ModelImportBuild for this raw_build_run
+        import_build = import_build_repo.find_by_business_key(repo_config_id, run_id_str)
+        if not import_build:
+            logger.warning(f"ModelImportBuild not found for {run_id_str}, skipping")
+            continue
+
         # Check if ModelTrainingBuild already exists
         existing = model_build_repo.find_by_workflow_run(ObjectId(raw_repo_id), run_id)
         if existing:
@@ -234,11 +230,11 @@ def dispatch_build_processing(
             model_build_ids.append(existing.id)
             continue
 
-        # Create new ModelTrainingBuild with PENDING status
+        # Create new ModelTrainingBuild with model_import_build_id reference
         model_build = ModelTrainingBuild(
             raw_repo_id=ObjectId(raw_repo_id),
             raw_build_run_id=run_id,
-            model_repo_config_id=ObjectId(repo_config_id),
+            model_import_build_id=import_build.id,  # Link to import build
             head_sha=raw_build_run.commit_sha,
             build_number=raw_build_run.build_number,
             build_created_at=raw_build_run.created_at,
@@ -257,9 +253,6 @@ def dispatch_build_processing(
     )
 
     # Step 2: Dispatch all processing tasks with chord for accurate completion tracking
-    # Uses chord: group of process_workflow_run tasks → finalize_model_processing callback
-    from celery import chord
-
     processing_tasks = [
         process_workflow_run.s(
             repo_config_id=repo_config_id,
@@ -304,8 +297,6 @@ def finalize_model_processing(
     """
     Chord callback: Finalize model processing after all builds are processed.
 
-    Aggregates results and completes the MODEL_PROCESSING PipelineRun.
-
     Args:
         results: List of results from all process_workflow_run tasks
         repo_config_id: The repository config ID
@@ -323,6 +314,14 @@ def finalize_model_processing(
     skipped_count = sum(1 for r in results if r and r.get("status") == "skipped")
     total_count = len(results)
 
+    # Determine final status
+    if failed_count > 0 and success_count == 0:
+        final_status = "failed"
+    elif failed_count > 0 and success_count > 0:
+        final_status = "partial"
+    else:
+        final_status = "completed"
+
     # Mark import as complete
     repo_config_repo = ModelRepoConfigRepository(self.db)
     repo_config_repo.update_repository(
@@ -334,39 +333,9 @@ def finalize_model_processing(
         },
     )
 
-    # Determine final status
-    final_status = PipelineStatus.COMPLETED
-    if failed_count > 0 and success_count > 0:
-        final_status = PipelineStatus.PARTIAL
-    elif failed_count > 0 and success_count == 0:
-        final_status = PipelineStatus.FAILED
-
-    # Complete MODEL_PROCESSING PipelineRun
-    pipeline_run_repo = PipelineRunRepository(self.db)
-    pipeline_runs = pipeline_run_repo.find_many(
-        {
-            "repo_config_id": ObjectId(repo_config_id),
-            "pipeline_type": PipelineType.MODEL_PROCESSING.value,
-            "status": PipelineStatus.RUNNING.value,
-        },
-        limit=1,
-    )
-    if pipeline_runs:
-        pipeline_run_repo.update_status(
-            correlation_id=pipeline_runs[0].correlation_id,
-            status=final_status,
-            result_summary={
-                "created": created_count,
-                "processed": total_count,
-                "success": success_count,
-                "failed": failed_count,
-                "skipped": skipped_count,
-            },
-        )
-
     publish_status(
         repo_config_id,
-        "imported" if final_status != PipelineStatus.FAILED else "failed",
+        "imported" if final_status != "failed" else "failed",
         f"Processed {success_count}/{total_count} builds successfully",
     )
 
@@ -377,7 +346,7 @@ def finalize_model_processing(
         "success": success_count,
         "failed": failed_count,
         "skipped": skipped_count,
-        "status": final_status.value,
+        "status": final_status,
     }
 
 
@@ -611,6 +580,13 @@ def reprocess_build(self: PipelineTask, build_id: str) -> Dict[str, Any]:
     - Extracting new features after pipeline updates
     - Testing pipeline changes on existing data
     """
+    # Generate new correlation_id for reprocessing
+    correlation_id = str(uuid.uuid4())
+    TracingContext.set(
+        correlation_id=correlation_id,
+        pipeline_type="model_reprocess",
+    )
+
     model_build_repo = ModelTrainingBuildRepository(self.db)
     model_build = model_build_repo.find_by_id(ObjectId(build_id))
     if not model_build:
@@ -627,11 +603,14 @@ def reprocess_build(self: PipelineTask, build_id: str) -> Dict[str, Any]:
     )
 
     repo_config_id = str(model_build.model_repo_config_id)
-    process_workflow_run.delay(repo_config_id, build_id, is_reprocess=True)
+    process_workflow_run.delay(
+        repo_config_id, build_id, is_reprocess=True, correlation_id=correlation_id
+    )
 
     return {
         "status": "queued",
         "build_id": build_id,
+        "correlation_id": correlation_id,
         "message": f"Build {build_id} queued for reprocessing",
     }
 
@@ -654,6 +633,14 @@ def reprocess_repo_builds(self: PipelineTask, repo_config_id: str) -> Dict[str, 
     Unlike import_repo (which fetches new workflow runs from GitHub),
     this task only reprocesses existing builds in the database.
     """
+    # Generate new correlation_id for this batch reprocessing
+    correlation_id = str(uuid.uuid4())
+    TracingContext.set(
+        correlation_id=correlation_id,
+        repo_id=repo_config_id,
+        pipeline_type="model_batch_reprocess",
+    )
+
     model_build_repo = ModelTrainingBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
 
@@ -685,7 +672,7 @@ def reprocess_repo_builds(self: PipelineTask, repo_config_id: str) -> Dict[str, 
                     "extraction_error": None,
                 },
             )
-            process_workflow_run.delay(repo_config_id, str(build.id))
+            process_workflow_run.delay(repo_config_id, str(build.id), correlation_id=correlation_id)
             queued_count += 1
         except Exception as e:
             logger.warning(f"Failed to queue build {build.id} for reprocessing: {e}")
@@ -696,4 +683,5 @@ def reprocess_repo_builds(self: PipelineTask, repo_config_id: str) -> Dict[str, 
         "status": "queued",
         "builds_queued": queued_count,
         "total_builds": len(builds),
+        "correlation_id": correlation_id,
     }

@@ -36,6 +36,8 @@ def _save_audit_log(
     category: AuditLogCategory,
     output_build_id: Optional[str] = None,
     correlation_id: Optional[str] = None,
+    version_id: Optional[str] = None,
+    dataset_id: Optional[str] = None,
 ) -> None:
     """
     Save pipeline execution results to database.
@@ -50,7 +52,9 @@ def _save_audit_log(
         errors: List of error messages
         category: Pipeline category (model_training or dataset_enrichment)
         output_build_id: ID of the output entity (ModelTrainingBuild or DatasetEnrichmentBuild)
-        correlation_id: Correlation ID for linking to PipelineRun
+        correlation_id: Correlation ID for tracing
+        version_id: DatasetVersion ID (for dataset_enrichment category)
+        dataset_id: Dataset ID (for dataset_enrichment category)
     """
     try:
         # Get correlation_id from context if not provided
@@ -85,6 +89,16 @@ def _save_audit_log(
                 audit_log.training_build_id = ObjectId(output_build_id)
             else:
                 audit_log.enrichment_build_id = ObjectId(output_build_id)
+
+        # Set version_id and dataset_id for enrichment category
+        if version_id:
+            from bson import ObjectId
+
+            audit_log.version_id = ObjectId(version_id)
+        if dataset_id:
+            from bson import ObjectId
+
+            audit_log.dataset_id = ObjectId(dataset_id)
 
         if execution_result:
             audit_log.started_at = execution_result.started_at
@@ -140,6 +154,8 @@ def extract_features_for_build(
     save_run: bool = True,
     category: AuditLogCategory = AuditLogCategory.MODEL_TRAINING,
     output_build_id: Optional[str] = None,
+    version_id: Optional[str] = None,
+    dataset_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Extract features for a single build using HamiltonPipeline.
@@ -162,6 +178,8 @@ def extract_features_for_build(
         save_run: Whether to save pipeline run to database (default: True)
         category: Pipeline category for tracking (default: MODEL_TRAINING)
         output_build_id: ID of the output entity
+        version_id: DatasetVersion ID (for DATASET_ENRICHMENT category)
+        dataset_id: Dataset ID (for DATASET_ENRICHMENT category)
 
     Returns:
         Dictionary with status, features, errors, warnings, etc.
@@ -224,6 +242,8 @@ def extract_features_for_build(
                 errors=[],
                 category=category,
                 output_build_id=output_build_id,
+                version_id=version_id,
+                dataset_id=dataset_id,
             )
 
         return result
@@ -246,6 +266,8 @@ def extract_features_for_build(
                 errors=[str(e)],
                 category=category,
                 output_build_id=output_build_id,
+                version_id=version_id,
+                dataset_id=dataset_id,
             )
 
         return {

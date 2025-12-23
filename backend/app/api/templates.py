@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Path as PathParam
+from fastapi import APIRouter, Depends
+from fastapi import Path as PathParam
 from pymongo.database import Database
 
 from app.database.mongo import get_db

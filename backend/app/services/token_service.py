@@ -4,15 +4,15 @@ from typing import Optional
 
 from fastapi import HTTPException, status
 
-from app.services.github.redis_token_pool import (
-    get_redis_token_pool,
-    TOKEN_STATUS_ACTIVE,
-    TOKEN_STATUS_DISABLED,
-)
 from app.services.github.github_token_manager import (
-    verify_github_token,
     get_token_rate_limit,
     hash_token,
+    verify_github_token,
+)
+from app.services.github.redis_token_pool import (
+    TOKEN_STATUS_ACTIVE,
+    TOKEN_STATUS_DISABLED,
+    get_redis_token_pool,
 )
 
 

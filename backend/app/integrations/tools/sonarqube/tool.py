@@ -125,6 +125,54 @@ class SonarQubeTool(IntegrationTool):
             "webhook_required": True,
         }
 
+    def get_health_status(self) -> Dict[str, Any]:
+        """
+        Check SonarQube server health and return detailed status.
+
+        Returns:
+            Dict with connected, version, status, etc.
+        """
+        result = {
+            "connected": False,
+            "configured": bool(self.host and self.token),
+            "host_url": self.host or "",
+        }
+
+        if not self.host:
+            result["error"] = "Host URL not configured"
+            return result
+
+        if not self.token:
+            result["error"] = "Token not configured"
+            return result
+
+        try:
+            # Check server health via system/health API
+            health_resp = self.session.get(f"{self.host}/api/system/health", timeout=10)
+            if health_resp.status_code == 200:
+                health_data = health_resp.json()
+                result["connected"] = health_data.get("health") == "GREEN"
+                result["status"] = health_data.get("health", "UNKNOWN")
+            else:
+                # Try system/status as fallback
+                status_resp = self.session.get(f"{self.host}/api/system/status", timeout=10)
+                if status_resp.status_code == 200:
+                    status_data = status_resp.json()
+                    result["connected"] = status_data.get("status") == "UP"
+                    result["status"] = status_data.get("status", "UNKNOWN")
+                    result["version"] = status_data.get("version", "unknown")
+                else:
+                    result["error"] = f"HTTP {status_resp.status_code}"
+
+        except requests.exceptions.Timeout:
+            result["error"] = "Connection timeout"
+        except requests.exceptions.ConnectionError:
+            result["error"] = "Connection refused"
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result
+
     def get_scan_types(self) -> List[str]:
         return ["code_quality", "security", "maintainability", "reliability"]
 

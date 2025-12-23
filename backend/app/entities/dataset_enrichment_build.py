@@ -78,20 +78,22 @@ class DatasetEnrichmentBuild(BaseEntity):
         description="Features skipped due to missing resources",
     )
 
-    # ** FEATURES - DAG features + scan metrics merged together **
+    # ** DAG FEATURES - Features extracted by Hamilton pipeline **
     features: Dict[str, Any] = Field(
         default_factory=dict,
-        description="""
-        All extracted features as key-value pairs.
-        Includes: DAG features (gh_*, tr_*) + scan metrics (sonar_*, trivy_*).
-        This is the main data payload for dataset enrichment/export.
-        """,
+        description="DAG extracted features (gh_*, tr_*, etc.). Main pipeline output.",
     )
 
-    # Feature metadata - counts ALL features (DAG + scan metrics)
+    # ** SCAN METRICS - Results from scan tools (backfilled asynchronously) **
+    scan_metrics: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Scan tool metrics (sonar_*, trivy_*). Backfilled after scan completion.",
+    )
+
+    # Feature metadata - counts ONLY DAG features (not scan metrics)
     feature_count: int = Field(
         default=0,
-        description="Total number of features (DAG features + scan metrics)",
+        description="Number of DAG features extracted",
     )
 
     enriched_at: Optional[datetime] = Field(

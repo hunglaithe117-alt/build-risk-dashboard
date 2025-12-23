@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from typing import Dict, List, Tuple
-from app.tasks.pipeline.feature_dag.languages import LanguageRegistry
 
+from app.tasks.pipeline.feature_dag.languages import LanguageRegistry
 
 DOC_PREFIXES = ("docs/", "doc/", "documentation/")
 DOC_EXTENSIONS = (".md", ".rst", ".adoc", ".txt")

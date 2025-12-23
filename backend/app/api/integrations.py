@@ -24,6 +24,7 @@ from pymongo.database import Database
 
 from app.database.mongo import get_db
 from app.dtos import ToolsListResponse
+from app.integrations.registry import get_available_tools
 from app.middleware.auth import get_current_user
 from app.services.sonar_webhook_service import SonarWebhookService
 

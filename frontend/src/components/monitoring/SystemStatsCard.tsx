@@ -11,6 +11,8 @@ import {
     HardDrive,
     Users,
     Zap,
+    Shield,
+    Bug,
 } from "lucide-react";
 
 interface WorkerInfo {
@@ -42,6 +44,23 @@ interface SystemStatsProps {
         collections?: number;
         error?: string;
     };
+    trivy?: {
+        connected: boolean;
+        server_mode?: boolean;
+        server_url?: string;
+        docker_available?: boolean;
+        docker_version?: string;
+        status?: string;
+        error?: string;
+    };
+    sonarqube?: {
+        connected: boolean;
+        configured?: boolean;
+        host_url?: string;
+        status?: string;
+        version?: string;
+        error?: string;
+    };
     timestamp: string;
 }
 
@@ -53,8 +72,8 @@ interface SystemStatsCardProps {
 export function SystemStatsCard({ stats, isLoading }: SystemStatsCardProps) {
     if (isLoading) {
         return (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[1, 2, 3].map((i) => (
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {[1, 2, 3, 4, 5].map((i) => (
                     <Card key={i} className="animate-pulse">
                         <CardHeader className="pb-2">
                             <div className="h-4 bg-muted rounded w-24" />
@@ -87,7 +106,7 @@ export function SystemStatsCard({ stats, isLoading }: SystemStatsCardProps) {
     );
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {/* Celery Card */}
             <Card>
                 <CardHeader className="pb-2">
@@ -200,6 +219,87 @@ export function SystemStatsCard({ stats, isLoading }: SystemStatsCardProps) {
                     )}
                 </CardContent>
             </Card>
+
+            {/* Trivy Card */}
+            <Card>
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Shield className="h-4 w-4" />
+                        Trivy
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex items-baseline gap-2">
+                        <Badge
+                            variant={stats.trivy?.connected ? "default" : "destructive"}
+                        >
+                            {stats.trivy?.connected ? "Connected" : "Disconnected"}
+                        </Badge>
+                    </div>
+                    {stats.trivy?.connected ? (
+                        <>
+                            <p className="text-xs text-muted-foreground mt-2">
+                                Mode: {stats.trivy.server_mode ? "Server" : "Standalone"}
+                            </p>
+                            {stats.trivy.server_url && (
+                                <p className="text-xs text-muted-foreground truncate" title={stats.trivy.server_url}>
+                                    URL: {stats.trivy.server_url}
+                                </p>
+                            )}
+                            {stats.trivy.docker_version && (
+                                <p className="text-xs text-muted-foreground truncate">
+                                    Docker: ✓
+                                </p>
+                            )}
+                        </>
+                    ) : (
+                        <p className="text-xs text-destructive mt-2">
+                            {stats.trivy?.error || "Not configured"}
+                        </p>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* SonarQube Card */}
+            <Card>
+                <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Bug className="h-4 w-4" />
+                        SonarQube
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex items-baseline gap-2">
+                        <Badge
+                            variant={stats.sonarqube?.connected ? "default" : "destructive"}
+                        >
+                            {stats.sonarqube?.connected ? "Connected" : "Disconnected"}
+                        </Badge>
+                    </div>
+                    {stats.sonarqube?.connected ? (
+                        <>
+                            <p className="text-xs text-muted-foreground mt-2">
+                                Status: {stats.sonarqube.status}
+                            </p>
+                            {stats.sonarqube.version && (
+                                <p className="text-xs text-muted-foreground">
+                                    Version: {stats.sonarqube.version}
+                                </p>
+                            )}
+                            {stats.sonarqube.host_url && (
+                                <p className="text-xs text-muted-foreground truncate" title={stats.sonarqube.host_url}>
+                                    Host: {new URL(stats.sonarqube.host_url).hostname}
+                                </p>
+                            )}
+                        </>
+                    ) : (
+                        <p className="text-xs text-destructive mt-2">
+                            {stats.sonarqube?.error || "Not configured"}
+                        </p>
+                    )}
+                </CardContent>
+            </Card>
         </div>
     );
 }
+

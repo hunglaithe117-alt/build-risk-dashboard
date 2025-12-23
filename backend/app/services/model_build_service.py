@@ -188,7 +188,6 @@ class BuildService:
             # Get raw_repo_ids for accessible repos
             repo_filter = {
                 "full_name": {"$in": accessible_repos},
-                "is_deleted": {"$ne": True},
             }
             repos = self.db.repositories.find(repo_filter, {"raw_repo_id": 1})
             raw_repo_ids = [r["raw_repo_id"] for r in repos if r.get("raw_repo_id")]

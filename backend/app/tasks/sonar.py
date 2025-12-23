@@ -18,6 +18,7 @@ from app.paths import get_worktree_path
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.sonar_commit_scan import SonarCommitScanRepository
+from app.tasks.base import PipelineTask
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 # SCAN TASK - Runs on dedicated sonar_scan queue
 @celery_app.task(
     bind=True,
+    base=PipelineTask,
     name="app.tasks.sonar.start_sonar_scan_for_version_commit",
     queue="sonar_scan",
     soft_time_limit=1800,
@@ -115,6 +117,7 @@ def start_sonar_scan_for_version_commit(
 # WEBHOOK HANDLER - Processes results when SonarQube analysis completes
 @celery_app.task(
     bind=True,
+    base=PipelineTask,
     name="app.tasks.sonar.export_metrics_from_webhook",
     queue="processing",
 )

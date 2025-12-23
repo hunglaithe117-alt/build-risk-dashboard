@@ -33,11 +33,9 @@ from app.core.tracing import TracingContext
 from app.database.mongo import get_database
 from app.entities import DatasetBuild, DatasetBuildStatus, ValidationStats
 from app.entities.dataset import DatasetValidationStatus
-from app.entities.pipeline_run import PipelineRun, PipelineType
 from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.repositories.dataset_repo_stats import DatasetRepoStatsRepository
 from app.repositories.dataset_repository import DatasetRepository
-from app.repositories.pipeline_run_repository import PipelineRunRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.services.github.github_client import get_public_github_client
@@ -126,12 +124,11 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
     TracingContext.set(
         correlation_id=correlation_id,
         dataset_id=dataset_id,
-        pipeline_type=PipelineType.DATASET_VALIDATION.value,
+        pipeline_type="dataset_validation",
     )
 
     db = get_database()
     dataset_repo = DatasetRepository(db)
-    pipeline_run_repo = PipelineRunRepository(db)
 
     try:
         logger.info(f"{corr_prefix}[dataset_validation] Starting for dataset {dataset_id}")
@@ -140,17 +137,6 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
         dataset = dataset_repo.find_by_id(dataset_id)
         if not dataset:
             raise ValueError(f"Dataset {dataset_id} not found")
-
-        # Create PipelineRun record for tracing
-        pipeline_run = PipelineRun(
-            correlation_id=correlation_id,
-            pipeline_type=PipelineType.DATASET_VALIDATION,
-            dataset_id=dataset.id,
-            triggered_by="system",
-            request_id=self.request.id,
-        )
-        pipeline_run.start()
-        pipeline_run_repo.insert_one(pipeline_run)
 
         # Mark validation started
         dataset_repo.update_one(
@@ -741,14 +727,13 @@ def aggregate_validation_results(
         TracingContext.set(
             correlation_id=correlation_id,
             dataset_id=dataset_id,
-            pipeline_type=PipelineType.DATASET_VALIDATION.value,
+            pipeline_type="dataset_validation",
         )
 
     db = get_database()
     dataset_repo = DatasetRepository(db)
     dataset_build_repo = DatasetBuildRepository(db)
     dataset_repo_stats_repo = DatasetRepoStatsRepository(db)
-    pipeline_run_repo = PipelineRunRepository(db)
 
     # Get final stats from Redis (all tasks have completed at this point)
     stats = get_validation_stats(dataset_id)
@@ -841,23 +826,6 @@ def aggregate_validation_results(
 
     # Cleanup Redis
     cleanup_validation_stats(dataset_id)
-
-    # Complete PipelineRun record
-    if correlation_id:
-        from app.entities.pipeline_run import PipelineStatus
-
-        pipeline_run_repo.update_status(
-            correlation_id=correlation_id,
-            status=PipelineStatus.COMPLETED,
-            result_summary={
-                "repos_valid": repos_valid,
-                "repos_not_found": repos_not_found,
-                "builds_found": builds_found,
-                "builds_not_found": builds_not_found,
-                "builds_filtered": builds_filtered,
-                "build_coverage": build_coverage,
-            },
-        )
 
     logger.info(
         f"Dataset validation completed: {dataset_id}, "

@@ -1,9 +1,11 @@
 """Repository for dataset templates (seeded datasets shared by all users)."""
 
 from typing import Optional
+
 from pymongo.database import Database
 
 from app.entities.dataset_template import DatasetTemplate
+
 from .base import BaseRepository
 
 

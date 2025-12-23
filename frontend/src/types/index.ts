@@ -580,38 +580,6 @@ export interface NodeExecutionResult {
   retry_count: number;
 }
 
-export interface PipelineRun {
-  id: string;
-  build_sample_id: string;
-  repo_id: string;
-  workflow_run_id: number;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-  started_at?: string | null;
-  completed_at?: string | null;
-  duration_ms?: number | null;
-  feature_count: number;
-  nodes_executed: number;
-  nodes_failed: number;
-  nodes_skipped: number;
-  total_retries: number;
-  dag_version?: string | null;
-  errors: string[];
-  warnings: string[];
-  created_at: string;
-}
-
-export interface PipelineRunDetail extends PipelineRun {
-  features_extracted: string[];
-  node_results: NodeExecutionResult[];
-}
-
-export interface PipelineRunListResponse {
-  items: PipelineRun[];
-  total: number;
-  skip: number;
-  limit: number;
-}
-
 export interface PipelineStats {
   total_runs: number;
   completed: number;

@@ -9,9 +9,8 @@ from pymongo.database import Database
 
 from app.database.mongo import get_db
 from app.dtos import UserResponse, UserUpdate
-from app.services.user_service import UserService
-
 from app.middleware.auth import get_current_user as get_current_user_middleware
+from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["Users"])
 

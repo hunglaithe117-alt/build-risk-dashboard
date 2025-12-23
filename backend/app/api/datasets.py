@@ -138,3 +138,33 @@ def get_dataset_builds_stats(
         dataset_id=dataset_id,
         user_id=user_id,
     )
+
+
+@router.get("/{dataset_id}/audit-logs/cursor")
+def get_dataset_audit_logs_cursor(
+    dataset_id: str = PathParam(..., description="Dataset id"),
+    limit: int = Query(20, ge=1, le=100),
+    cursor: str | None = Query(None, description="Cursor from previous page"),
+    status: str | None = Query(None, description="Filter by status"),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
+):
+    """
+    Get feature audit logs for a specific dataset with cursor-based pagination.
+
+    Returns logs from feature extraction pipeline for all versions of this dataset.
+    """
+    from app.services.monitoring_service import MonitoringService
+
+    # Verify dataset access first
+    service = DatasetService(db)
+    service.get_dataset(dataset_id, str(current_user["_id"]))
+
+    # Get audit logs
+    monitoring_service = MonitoringService(db)
+    return monitoring_service.get_feature_audit_logs_by_dataset_cursor(
+        dataset_id=dataset_id,
+        limit=limit,
+        cursor=cursor,
+        status=status,
+    )

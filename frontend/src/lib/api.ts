@@ -360,6 +360,10 @@ export const datasetsApi = {
   delete: async (datasetId: string) => {
     await api.delete(`/datasets/${datasetId}`);
   },
+  update: async (datasetId: string, payload: DatasetUpdatePayload) => {
+    const response = await api.patch<DatasetRecord>(`/datasets/${datasetId}`, payload);
+    return response.data;
+  },
   cancelValidation: async (datasetId: string) => {
     const response = await api.delete<{ message: string; can_resume: boolean }>(
       `/datasets/${datasetId}/validation`
@@ -1244,7 +1248,7 @@ export const datasetVersionApi = {
     datasetId: string,
     versionId: string,
     format: "csv" | "json" = "csv",
-    normalization: "none" | "minmax" | "zscore" = "none"
+    normalization: "none" | "minmax" | "zscore" | "robust" | "maxabs" | "log" | "decimal" = "none"
   ): Promise<Blob> => {
     const response = await api.get(
       `/datasets/${datasetId}/versions/${versionId}/export`,
@@ -1258,7 +1262,7 @@ export const datasetVersionApi = {
     datasetId: string,
     versionId: string,
     format: "csv" | "json" = "csv",
-    normalization: "none" | "minmax" | "zscore" = "none"
+    normalization: "none" | "minmax" | "zscore" | "robust" | "maxabs" | "log" | "decimal" = "none"
   ): Promise<{ job_id: string; status: string; total_rows: number }> => {
     const response = await api.post(
       `/datasets/${datasetId}/versions/${versionId}/export/async`,
@@ -1604,43 +1608,6 @@ export const statisticsApi = {
   },
 };
 
-// =============================================================================
-// Enrichment Logs API Types and Functions
-// =============================================================================
-
-export interface PhaseResult {
-  phase_name: string;
-  status: string;
-  started_at?: string;
-  completed_at?: string;
-  duration_seconds?: number;
-  total_items: number;
-  processed_items: number;
-  failed_items: number;
-  skipped_items: number;
-  errors: string[];
-  metadata: Record<string, unknown>;
-}
-
-export interface PipelineRunDto {
-  id: string;
-  correlation_id: string;
-  pipeline_type: string;
-  status: string;
-  started_at?: string;
-  completed_at?: string;
-  duration_seconds?: number;
-  total_repos: number;
-  processed_repos: number;
-  total_builds: number;
-  processed_builds: number;
-  failed_builds: number;
-  phases: PhaseResult[];
-  result_summary: Record<string, unknown>;
-  error_message?: string;
-  triggered_by?: string;
-}
-
 export interface NodeExecutionResult {
   node_name: string;
   status: string;
@@ -1688,17 +1655,6 @@ export interface AuditLogListResponse {
 
 // Enrichment Logs API
 export const enrichmentLogsApi = {
-  // Get pipeline run for version
-  getPipelineRun: async (
-    datasetId: string,
-    versionId: string
-  ): Promise<PipelineRunDto> => {
-    const response = await api.get<PipelineRunDto>(
-      `/datasets/${datasetId}/versions/${versionId}/pipeline-run`
-    );
-    return response.data;
-  },
-
   // Get audit logs for version
   getAuditLogs: async (
     datasetId: string,

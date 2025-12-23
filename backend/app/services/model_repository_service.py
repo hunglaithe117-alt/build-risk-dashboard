@@ -141,70 +141,35 @@ class RepositoryService:
 
                 from app.entities.model_repo_config import ModelRepoConfig
 
-                # Find by full_name INCLUDING deleted records to avoid duplicates
-                existing_config = self.repo_config.find_by_full_name_include_deleted(
-                    payload.full_name
-                )
+                # Check if repo already exists (with hard delete, this is simple)
+                existing_config = self.repo_config.find_by_full_name(payload.full_name)
 
                 if existing_config:
-                    # Check if it's an active (non-deleted) config
-                    if not existing_config.is_deleted:
-                        raise HTTPException(
-                            status_code=status.HTTP_409_CONFLICT,
-                            detail=(
-                                f"Repository '{payload.full_name}' is already "
-                                "imported. Delete it first to re-import."
-                            ),
-                        )
-
-                    # Build merged feature_configs from payload
-                    merged_feature_configs = (
-                        payload.feature_configs.copy() if payload.feature_configs else {}
+                    # Already imported - reject
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Repository '{payload.full_name}' is already "
+                            "imported. Delete it first to re-import."
+                        ),
                     )
 
-                    # Re-activate deleted config with new settings
-                    repo_doc = self.repo_config.update_one(
-                        existing_config.id,
-                        {
-                            "user_id": ObjectId(target_user_id),
-                            "raw_repo_id": raw_repo.id,
-                            "ci_provider": payload.ci_provider,
-                            "import_status": ModelImportStatus.QUEUED,
-                            "max_builds_to_ingest": payload.max_builds,
-                            "since_days": payload.since_days,
-                            "only_with_logs": payload.only_with_logs or False,
-                            "is_deleted": False,
-                            "deleted_at": None,
-                            "import_error": None,
-                            "import_version": existing_config.import_version + 1,
-                            "feature_configs": merged_feature_configs,
-                            "total_builds_imported": 0,
-                            "total_builds_processed": 0,
-                            "total_builds_failed": 0,
-                            "last_synced_at": None,
-                            "last_sync_status": None,
-                            "last_sync_error": None,
-                            "import_started_at": None,
-                            "import_completed_at": None,
-                        },
+                # Create new config
+                repo_doc = self.repo_config.insert_one(
+                    ModelRepoConfig(
+                        _id=None,
+                        user_id=ObjectId(target_user_id),
+                        full_name=payload.full_name,
+                        raw_repo_id=raw_repo.id,
+                        ci_provider=payload.ci_provider,
+                        import_status=ModelImportStatus.QUEUED,
+                        max_builds_to_ingest=payload.max_builds,
+                        since_days=payload.since_days,
+                        only_with_logs=payload.only_with_logs or False,
+                        feature_configs=payload.feature_configs or {},
+                        feature_extractors=payload.selected_features or [],
                     )
-                else:
-                    # No existing config - create new
-                    repo_doc = self.repo_config.insert_one(
-                        ModelRepoConfig(
-                            _id=None,
-                            user_id=ObjectId(target_user_id),
-                            full_name=payload.full_name,
-                            raw_repo_id=raw_repo.id,
-                            ci_provider=payload.ci_provider,
-                            import_status=ModelImportStatus.QUEUED,
-                            max_builds_to_ingest=payload.max_builds,
-                            since_days=payload.since_days,
-                            only_with_logs=payload.only_with_logs or False,
-                            feature_configs=payload.feature_configs or {},
-                            feature_extractors=payload.selected_features or [],
-                        )
-                    )
+                )
 
                 start_model_processing.delay(
                     repo_config_id=str(repo_doc.id),
@@ -470,12 +435,17 @@ class RepositoryService:
 
     def delete_repository(self, repo_id: str) -> None:
         """
-        Soft delete a repository configuration atomically.
+        Hard delete a repository configuration and all associated builds atomically.
 
-        This allows re-importing the same repository later.
-        Also deletes associated ModelTrainingBuild documents.
+        Cascade deletes:
+        - ModelImportBuild (import tracking)
+        - ModelTrainingBuild (extracted features)
+        - ModelRepoConfig (the config itself)
+
+        Uses MongoDB transaction for atomicity.
         """
         from app.database.mongo import get_transaction
+        from app.repositories.model_import_build import ModelImportBuildRepository
         from app.repositories.model_training_build import ModelTrainingBuildRepository
 
         repo_doc = self.repo_config.find_by_id(repo_id)
@@ -484,26 +454,23 @@ class RepositoryService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
             )
 
-        # Check if already deleted
-        if repo_doc.is_deleted:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Repository is already deleted",
-            )
+        import_build_repo = ModelImportBuildRepository(self.db)
+        training_build_repo = ModelTrainingBuildRepository(self.db)
+        repo_oid = ObjectId(repo_id)
 
-        build_repo = ModelTrainingBuildRepository(self.db)
-
-        # Use transaction for atomic deletion
+        # Use transaction for atomic cascade deletion
         with get_transaction() as session:
-            # Delete associated ModelTrainingBuild documents
-            deleted_count = build_repo.delete_by_repo_config(ObjectId(repo_id), session=session)
-            logger.info(
-                f"Deleted {deleted_count} ModelTrainingBuild documents for repo config {repo_id}"
-            )
+            # 1. Delete ModelImportBuild documents
+            import_deleted = import_build_repo.delete_by_repo_config(repo_oid, session=session)
+            logger.info(f"Deleted {import_deleted} ModelImportBuild for repo config {repo_id}")
 
-            # Soft delete the config
-            self.repo_config.soft_delete(ObjectId(repo_id), session=session)
-            logger.info(f"Soft deleted repository config {repo_id}")
+            # 2. Delete ModelTrainingBuild documents
+            training_deleted = training_build_repo.delete_by_repo_config(repo_oid, session=session)
+            logger.info(f"Deleted {training_deleted} ModelTrainingBuild for repo config {repo_id}")
+
+            # 3. Hard delete the config itself
+            self.repo_config.hard_delete(repo_oid, session=session)
+            logger.info(f"Hard deleted repository config {repo_id}")
 
     def detect_languages(self, full_name: str, current_user: dict) -> dict:
         """

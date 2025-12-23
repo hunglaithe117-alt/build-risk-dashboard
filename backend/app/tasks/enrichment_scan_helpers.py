@@ -90,6 +90,7 @@ def dispatch_scan_for_commit(
                 github_repo_id=github_repo_id,
                 trivy_config=trivy_config,
                 selected_metrics=trivy_metrics,
+                correlation_id=correlation_id,
             )
 
             results["trivy"] = {"status": "dispatched"}
@@ -136,6 +137,7 @@ def dispatch_scan_for_commit(
                 github_repo_id=github_repo_id,
                 component_key=component_key,
                 config_content=config_content,
+                correlation_id=correlation_id,
             )
 
             results["sonarqube"] = {"status": "dispatched", "component_key": component_key}

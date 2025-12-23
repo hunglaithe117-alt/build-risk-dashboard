@@ -1,9 +1,9 @@
 """Feature service for DAG visualization and metadata queries."""
 
-from collections import defaultdict, deque
-from typing import Dict, List, Optional, Set, Any
 import inspect
 import logging
+from collections import defaultdict, deque
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import HTTPException
 

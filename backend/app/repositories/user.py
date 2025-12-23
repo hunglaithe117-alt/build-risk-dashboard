@@ -6,6 +6,7 @@ from typing import Dict, List, Optional
 from pymongo.database import Database
 
 from app.entities.user import User
+
 from .base import BaseRepository
 
 

@@ -145,7 +145,10 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         dataset_id: ObjectId,
         version_id: Optional[ObjectId] = None,
     ) -> set:
-        """Get all unique feature keys for consistent CSV columns."""
+        """Get all unique feature keys for consistent CSV columns.
+
+        Includes keys from both features and scan_metrics fields.
+        """
         query: Dict[str, Any] = {
             "dataset_id": dataset_id,
             "extraction_status": ExtractionStatus.COMPLETED.value,
@@ -153,17 +156,33 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         if version_id:
             query["dataset_version_id"] = version_id
 
-        pipeline = [
+        # Get keys from features field
+        pipeline_features = [
             {"$match": query},
-            {"$project": {"feature_keys": {"$objectToArray": "$features"}}},
+            {"$project": {"feature_keys": {"$objectToArray": {"$ifNull": ["$features", {}]}}}},
             {"$unwind": {"path": "$feature_keys", "preserveNullAndEmptyArrays": False}},
             {"$group": {"_id": None, "keys": {"$addToSet": "$feature_keys.k"}}},
         ]
 
-        result = list(self.collection.aggregate(pipeline))
-        if result:
-            return set(result[0].get("keys", []))
-        return set()
+        # Get keys from scan_metrics field
+        pipeline_scan = [
+            {"$match": query},
+            {"$project": {"scan_keys": {"$objectToArray": {"$ifNull": ["$scan_metrics", {}]}}}},
+            {"$unwind": {"path": "$scan_keys", "preserveNullAndEmptyArrays": False}},
+            {"$group": {"_id": None, "keys": {"$addToSet": "$scan_keys.k"}}},
+        ]
+
+        all_keys = set()
+
+        feature_result = list(self.collection.aggregate(pipeline_features))
+        if feature_result:
+            all_keys.update(feature_result[0].get("keys", []))
+
+        scan_result = list(self.collection.aggregate(pipeline_scan))
+        if scan_result:
+            all_keys.update(scan_result[0].get("keys", []))
+
+        return all_keys
 
     def delete_by_dataset(
         self, dataset_id: ObjectId, session: Optional["ClientSession"] = None
@@ -290,23 +309,18 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         prefix: str = "sonar_",
     ) -> None:
         """
-        Merge scan features into existing features using $set.
-
-        This avoids overwriting existing features by only setting
-        specific keys like features.sonar_* or features.trivy_*.
+        Add scan metrics to the scan_metrics field.
 
         Args:
             build_id: DatasetEnrichmentBuild ID
             scan_features: Raw metrics from scan tool
             prefix: Feature prefix ('sonar_' or 'trivy_')
         """
-        set_ops = {f"features.{prefix}{k}": v for k, v in scan_features.items()}
+        # Write to scan_metrics field with prefix
+        set_ops = {f"scan_metrics.{prefix}{k}": v for k, v in scan_features.items()}
         set_ops["updated_at"] = datetime.utcnow()
 
         self.collection.update_one({"_id": build_id}, {"$set": set_ops})
-
-        # Update feature_count to include new scan metrics
-        self._update_feature_count(build_id)
 
     def backfill_by_commit_in_version(
         self,
@@ -316,7 +330,7 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         prefix: str = "sonar_",
     ) -> int:
         """
-        Backfill scan features to ALL builds in a version matching commit_sha.
+        Backfill scan metrics to ALL builds in a version matching commit_sha.
 
         This is called when a scan completes to update all enrichment builds
         in the same version that were triggered by the same commit.
@@ -330,8 +344,7 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         Returns:
             Number of documents updated.
         """
-
-        # Find all enrichment builds in this version
+        # Find all enrichment builds in this version with matching commit
         pipeline = [
             {"$match": {"dataset_version_id": version_id}},
             {
@@ -352,17 +365,14 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         if not matching_ids:
             return 0
 
-        set_ops = {f"features.{prefix}{k}": v for k, v in scan_features.items()}
+        # Write to scan_metrics field with prefix
+        set_ops = {f"scan_metrics.{prefix}{k}": v for k, v in scan_features.items()}
         set_ops["updated_at"] = datetime.utcnow()
 
         result = self.collection.update_many(
             {"_id": {"$in": matching_ids}},
             {"$set": set_ops},
         )
-
-        # Update feature_count for all affected builds
-        for build_id in matching_ids:
-            self._update_feature_count(build_id)
 
         return result.modified_count
 
@@ -383,7 +393,7 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         """
         Get scan metrics status for a version.
 
-        Counts builds by presence of sonar_*/trivy_* features.
+        Counts builds by presence of sonar_*/trivy_* in scan_metrics field.
         """
         pipeline = [
             {"$match": {"dataset_version_id": version_id}},
@@ -394,7 +404,9 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
                             {
                                 "$size": {
                                     "$filter": {
-                                        "input": {"$objectToArray": "$features"},
+                                        "input": {
+                                            "$objectToArray": {"$ifNull": ["$scan_metrics", {}]}
+                                        },
                                         "cond": {
                                             "$regexMatch": {"input": "$$this.k", "regex": "^sonar_"}
                                         },
@@ -409,7 +421,9 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
                             {
                                 "$size": {
                                     "$filter": {
-                                        "input": {"$objectToArray": "$features"},
+                                        "input": {
+                                            "$objectToArray": {"$ifNull": ["$scan_metrics", {}]}
+                                        },
                                         "cond": {
                                             "$regexMatch": {"input": "$$this.k", "regex": "^trivy_"}
                                         },

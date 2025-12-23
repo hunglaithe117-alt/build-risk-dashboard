@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Database, FolderGit2, Loader2, Plug, Zap } from "lucide-react";
+import { Database, FolderGit2, Loader2, Plug, Zap, ScrollText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,7 +10,7 @@ import { datasetsApi } from "@/lib/api";
 import type { DatasetRecord } from "@/types";
 
 import { DatasetHeader } from "./_components/DatasetHeader";
-import { OverviewTab, DataTab, EnrichmentTab, IntegrationsTab } from "./_components/tabs";
+import { OverviewTab, DataTab, EnrichmentTab, IntegrationsTab, LogsTab } from "./_components/tabs";
 import {
     Card,
     CardDescription,
@@ -102,7 +102,7 @@ export default function DatasetDetailPage() {
 
             {/* Tabs - Full Width */}
             <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-5">
                     <TabsTrigger value="overview" className="gap-2">
                         <Database className="h-4 w-4" />
                         Overview
@@ -119,6 +119,10 @@ export default function DatasetDetailPage() {
                                 Active
                             </Badge>
                         )}
+                    </TabsTrigger>
+                    <TabsTrigger value="logs" className="gap-2">
+                        <ScrollText className="h-4 w-4" />
+                        Logs
                     </TabsTrigger>
                     <TabsTrigger value="integrations" className="gap-2">
                         <Plug className="h-4 w-4" />
@@ -144,6 +148,10 @@ export default function DatasetDetailPage() {
                         dataset={dataset}
                         onEnrichmentStatusChange={setHasActiveEnrichment}
                     />
+                </TabsContent>
+
+                <TabsContent value="logs" className="mt-6">
+                    <LogsTab datasetId={datasetId} />
                 </TabsContent>
 
                 <TabsContent value="integrations" className="mt-6">

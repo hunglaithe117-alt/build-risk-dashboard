@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from bson import ObjectId
-from fastapi import Cookie, Depends, HTTPException, Header, status
+from fastapi import Cookie, Depends, Header, HTTPException, status
 from pymongo.database import Database
 
 from app.database.mongo import get_db

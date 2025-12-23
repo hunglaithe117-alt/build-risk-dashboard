@@ -10,11 +10,11 @@ resources like repository info, workflow runs, etc.
 
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional, Tuple, Any
+from typing import Any, Optional, Tuple
 
 from app.core.redis import get_redis
 

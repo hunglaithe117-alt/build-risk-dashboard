@@ -4,8 +4,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useWebSocket } from "@/contexts/websocket-context";
 import {
     SystemStatsCard,
-    PipelineTracingTable,
-    FeatureAuditLogsTable,
     LogsViewer,
 } from "@/components/monitoring";
 import { Button } from "@/components/ui/button";
@@ -34,19 +32,23 @@ interface SystemStats {
         collections?: number;
         error?: string;
     };
+    trivy?: {
+        connected: boolean;
+        server_mode?: boolean;
+        server_url?: string;
+        docker_available?: boolean;
+        status?: string;
+        error?: string;
+    };
+    sonarqube?: {
+        connected: boolean;
+        configured?: boolean;
+        host_url?: string;
+        status?: string;
+        version?: string;
+        error?: string;
+    };
     timestamp: string;
-}
-
-interface PipelineRunsResponse {
-    runs: any[];
-    next_cursor: string | null;
-    has_more: boolean;
-}
-
-interface AuditLogsResponse {
-    logs: any[];
-    next_cursor: string | null;
-    has_more: boolean;
 }
 
 interface LogEntry {
@@ -61,24 +63,6 @@ export default function MonitoringPage() {
     const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
     const [isLoadingStats, setIsLoadingStats] = useState(true);
 
-    // Pipeline runs (high-level)
-    const [pipelineRuns, setPipelineRuns] = useState<PipelineRunsResponse>({
-        runs: [],
-        next_cursor: null,
-        has_more: false,
-    });
-    const [isLoadingPipelineRuns, setIsLoadingPipelineRuns] = useState(true);
-    const [isLoadingMorePipelineRuns, setIsLoadingMorePipelineRuns] = useState(false);
-
-    // Feature audit logs (per-build)
-    const [auditLogs, setAuditLogs] = useState<AuditLogsResponse>({
-        logs: [],
-        next_cursor: null,
-        has_more: false,
-    });
-    const [isLoadingAuditLogs, setIsLoadingAuditLogs] = useState(true);
-    const [isLoadingMoreAuditLogs, setIsLoadingMoreAuditLogs] = useState(false);
-
     // System logs
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [isLoadingLogs, setIsLoadingLogs] = useState(false);
@@ -88,7 +72,7 @@ export default function MonitoringPage() {
     const [searchQuery, setSearchQuery] = useState("");
 
     // WebSocket
-    const { subscribe, isConnected } = useWebSocket();
+    const { isConnected } = useWebSocket();
 
     // Fetch system stats
     const fetchSystemStats = useCallback(async () => {
@@ -106,88 +90,6 @@ export default function MonitoringPage() {
             setIsLoadingStats(false);
         }
     }, []);
-
-    // Fetch pipeline runs (high-level)
-    const fetchPipelineRuns = useCallback(async () => {
-        try {
-            const res = await fetch(`${API_BASE}/monitoring/pipeline-runs/cursor?limit=20`, {
-                credentials: "include",
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setPipelineRuns(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch pipeline runs:", error);
-        } finally {
-            setIsLoadingPipelineRuns(false);
-        }
-    }, []);
-
-    const loadMorePipelineRuns = useCallback(async () => {
-        if (!pipelineRuns.has_more || !pipelineRuns.next_cursor || isLoadingMorePipelineRuns) return;
-
-        setIsLoadingMorePipelineRuns(true);
-        try {
-            const res = await fetch(
-                `${API_BASE}/monitoring/pipeline-runs/cursor?limit=20&cursor=${pipelineRuns.next_cursor}`,
-                { credentials: "include" }
-            );
-            if (res.ok) {
-                const data = await res.json();
-                setPipelineRuns((prev) => ({
-                    runs: [...prev.runs, ...data.runs],
-                    next_cursor: data.next_cursor,
-                    has_more: data.has_more,
-                }));
-            }
-        } catch (error) {
-            console.error("Failed to load more pipeline runs:", error);
-        } finally {
-            setIsLoadingMorePipelineRuns(false);
-        }
-    }, [pipelineRuns.has_more, pipelineRuns.next_cursor, isLoadingMorePipelineRuns]);
-
-    // Fetch audit logs (per-build)
-    const fetchAuditLogs = useCallback(async () => {
-        try {
-            const res = await fetch(`${API_BASE}/monitoring/audit-logs/cursor?limit=20`, {
-                credentials: "include",
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setAuditLogs(data);
-            }
-        } catch (error) {
-            console.error("Failed to fetch audit logs:", error);
-        } finally {
-            setIsLoadingAuditLogs(false);
-        }
-    }, []);
-
-    const loadMoreAuditLogs = useCallback(async () => {
-        if (!auditLogs.has_more || !auditLogs.next_cursor || isLoadingMoreAuditLogs) return;
-
-        setIsLoadingMoreAuditLogs(true);
-        try {
-            const res = await fetch(
-                `${API_BASE}/monitoring/audit-logs/cursor?limit=20&cursor=${auditLogs.next_cursor}`,
-                { credentials: "include" }
-            );
-            if (res.ok) {
-                const data = await res.json();
-                setAuditLogs((prev) => ({
-                    logs: [...prev.logs, ...data.logs],
-                    next_cursor: data.next_cursor,
-                    has_more: data.has_more,
-                }));
-            }
-        } catch (error) {
-            console.error("Failed to load more audit logs:", error);
-        } finally {
-            setIsLoadingMoreAuditLogs(false);
-        }
-    }, [auditLogs.has_more, auditLogs.next_cursor, isLoadingMoreAuditLogs]);
 
     // Fetch system logs
     const fetchLogs = useCallback(async () => {
@@ -232,10 +134,8 @@ export default function MonitoringPage() {
     // Initial fetch
     useEffect(() => {
         fetchSystemStats();
-        fetchPipelineRuns();
-        fetchAuditLogs();
         fetchLogs();
-    }, [fetchSystemStats, fetchPipelineRuns, fetchAuditLogs, fetchLogs]);
+    }, [fetchSystemStats, fetchLogs]);
 
     // Auto-refresh every 10 seconds
     useEffect(() => {
@@ -243,44 +143,14 @@ export default function MonitoringPage() {
 
         const interval = setInterval(() => {
             fetchSystemStats();
-            fetchPipelineRuns();
-            fetchAuditLogs();
         }, 10000);
 
         return () => clearInterval(interval);
-    }, [isPaused, fetchSystemStats, fetchPipelineRuns, fetchAuditLogs]);
-
-    // WebSocket subscriptions
-    useEffect(() => {
-        const unsubscribePipeline = subscribe("PIPELINE_RUN_UPDATE", () => {
-            fetchPipelineRuns();
-            fetchAuditLogs();
-        });
-
-        const unsubscribeRepo = subscribe("REPO_UPDATE", () => {
-            fetchPipelineRuns();
-            fetchAuditLogs();
-        });
-
-        const unsubscribeBuild = subscribe("BUILD_UPDATE", () => {
-            fetchPipelineRuns();
-            fetchAuditLogs();
-        });
-
-        return () => {
-            unsubscribePipeline();
-            unsubscribeRepo();
-            unsubscribeBuild();
-        };
-    }, [subscribe, fetchPipelineRuns, fetchAuditLogs]);
+    }, [isPaused, fetchSystemStats]);
 
     const handleRefreshAll = () => {
         setIsLoadingStats(true);
-        setIsLoadingPipelineRuns(true);
-        setIsLoadingAuditLogs(true);
         fetchSystemStats();
-        fetchPipelineRuns();
-        fetchAuditLogs();
         fetchLogs();
     };
 
@@ -293,7 +163,7 @@ export default function MonitoringPage() {
                     <div>
                         <h1 className="text-2xl font-bold">System Monitoring</h1>
                         <p className="text-muted-foreground text-sm">
-                            Real-time system stats, pipeline runs, and logs
+                            Real-time system stats and logs
                         </p>
                     </div>
                 </div>
@@ -312,24 +182,6 @@ export default function MonitoringPage() {
             {/* System Stats */}
             <SystemStatsCard stats={systemStats} isLoading={isLoadingStats} />
 
-            {/* Pipeline Runs (High-level) */}
-            <PipelineTracingTable
-                runs={pipelineRuns.runs}
-                hasMore={pipelineRuns.has_more}
-                isLoading={isLoadingPipelineRuns}
-                isLoadingMore={isLoadingMorePipelineRuns}
-                onLoadMore={loadMorePipelineRuns}
-            />
-
-            {/* Feature Audit Logs (Per-build) */}
-            <FeatureAuditLogsTable
-                logs={auditLogs.logs}
-                hasMore={auditLogs.has_more}
-                isLoading={isLoadingAuditLogs}
-                isLoadingMore={isLoadingMoreAuditLogs}
-                onLoadMore={loadMoreAuditLogs}
-            />
-
             {/* System Logs */}
             <LogsViewer
                 logs={logs}
@@ -347,3 +199,4 @@ export default function MonitoringPage() {
         </div>
     );
 }
+

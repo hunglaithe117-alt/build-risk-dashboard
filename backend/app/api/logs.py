@@ -1,6 +1,7 @@
+from typing import Any, Dict, Optional
+
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from typing import Optional, Dict, Any
 
 router = APIRouter()
 

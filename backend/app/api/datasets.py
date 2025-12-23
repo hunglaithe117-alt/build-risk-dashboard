@@ -10,6 +10,7 @@ from fastapi import (
 from fastapi import (
     Path as PathParam,
 )
+from fastapi.exceptions import HTTPException
 from pymongo.database import Database
 
 from app.database.mongo import get_db
@@ -56,7 +57,10 @@ async def upload_dataset(
     try:
         upload_fobj.seek(0)
     except Exception:
-        pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not prepare file for upload: {str(e)}",
+        )
 
     service = DatasetService(db)
     return service.create_from_upload(

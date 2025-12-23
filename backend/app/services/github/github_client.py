@@ -82,8 +82,8 @@ class GitHubClient:
                         int(limit) if limit else 5000,
                         (datetime.fromtimestamp(int(reset), tz=timezone.utc) if reset else None),
                     )
-                except (TypeError, ValueError):
-                    pass
+                except (TypeError, ValueError) as e:
+                    logger.warning(f"Failed to update rate limit from headers: {e}")
 
         if response.status_code == 403:
             text_lower = response.text.lower()
@@ -105,15 +105,15 @@ class GitHubClient:
         if retry_after_header:
             try:
                 wait_seconds = float(retry_after_header)
-            except ValueError:
-                pass
+            except ValueError as e:
+                logger.warning(f"Failed to parse Retry-After header: {e}")
         elif reset_header:
             try:
                 reset_epoch = float(reset_header)
                 now_epoch = datetime.now(timezone.utc).timestamp()
                 wait_seconds = max(reset_epoch - now_epoch, 1.0)
-            except ValueError:
-                pass
+            except ValueError as e:
+                logger.warning(f"Failed to parse X-RateLimit-Reset header: {e}")
 
         # Mark rate limited in Redis pool
         if self._redis_pool and self._current_token_key:
@@ -122,8 +122,8 @@ class GitHubClient:
                 if reset_header:
                     reset_dt = datetime.fromtimestamp(float(reset_header), tz=timezone.utc)
                 self._redis_pool.mark_rate_limited(self._current_token_key, reset_dt)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as e:
+                logger.warning(f"Failed to mark rate limited in Redis: {e}")
 
         raise GithubRateLimitError("GitHub rate limit reached", retry_after=wait_seconds)
 
@@ -143,8 +143,8 @@ class GitHubClient:
         if retry_after_header:
             try:
                 wait_seconds = max(float(retry_after_header), 60.0)
-            except ValueError:
-                pass
+            except ValueError as e:
+                logger.warning(f"Failed to parse Retry-After header for secondary limit: {e}")
 
         logger.warning(
             f"GitHub secondary rate limit (abuse detection) hit, "

@@ -275,7 +275,7 @@ class DataQualityService:
                 try:
                     numeric_values.append(float(v))
                 except (ValueError, TypeError):
-                    pass
+                    logger.debug(f"Skipping non-numeric value '{v}' for feature '{feature_name}'")
 
             if numeric_values:
                 metric.min_value = min(numeric_values)

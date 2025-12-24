@@ -56,7 +56,7 @@ class DatasetBuildRepository(BaseRepository[DatasetBuild]):
         return self.find_many({"dataset_id": oid_ds, "raw_repo_id": oid_repo, "status": "found"})
 
     def find_builds_with_run_ids(self, dataset_id: str) -> list[DatasetBuild]:
-        """Find all validated builds with workflow_run_id populated."""
+        """Find all validated builds with ci_run_id populated."""
         oid = self._to_object_id(dataset_id)
         if not oid:
             return []
@@ -64,7 +64,7 @@ class DatasetBuildRepository(BaseRepository[DatasetBuild]):
             {
                 "dataset_id": oid,
                 "status": "found",
-                "workflow_run_id": {"$ne": None},
+                "ci_run_id": {"$ne": None},
             }
         )
 
@@ -124,7 +124,7 @@ class DatasetBuildRepository(BaseRepository[DatasetBuild]):
         batch_size: int = 1000,
     ):
         """
-        Iterate validated builds with workflow_run_id using cursor pagination.
+        Iterate validated builds with ci_run_id using cursor pagination.
 
         Yields batches of builds to avoid loading all into memory.
         Uses _id-based cursor pagination for efficiency with large datasets.
@@ -143,7 +143,7 @@ class DatasetBuildRepository(BaseRepository[DatasetBuild]):
         base_query = {
             "dataset_id": oid,
             "status": "found",
-            "workflow_run_id": {"$ne": None},
+            "ci_run_id": {"$ne": None},
         }
 
         last_id = None

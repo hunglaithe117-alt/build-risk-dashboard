@@ -169,9 +169,7 @@ def _get_allowed_frameworks(feature_config: FeatureConfigInput) -> Optional[List
     test_frameworks = feature_config.get("test_frameworks", [])
     if not test_frameworks:
         return None
-    return [
-        f.lower() if isinstance(f, str) else str(f).lower() for f in test_frameworks
-    ]
+    return [f.lower() if isinstance(f, str) else str(f).lower() for f in test_frameworks]
 
 
 @feature_metadata(
@@ -194,8 +192,8 @@ def tr_log_num_jobs(build_logs: BuildLogsInput) -> int:
 
 
 @feature_metadata(
-    display_name="Job Names",
-    description="Names of jobs in the CI build, comma-separated (from log file names)",
+    display_name="Job IDs",
+    description="IDs of jobs in the CI build being analyzed, comma-separated",
     category=FeatureCategory.BUILD_LOG,
     data_type=FeatureDataType.STRING,
     required_resources=[FeatureResource.BUILD_LOGS],
@@ -204,20 +202,21 @@ def tr_log_num_jobs(build_logs: BuildLogsInput) -> int:
 @tag(group="build_log")
 def tr_jobs(build_logs: BuildLogsInput) -> str:
     """
-    Get job names from the build logs.
+    Get job IDs from the build logs.
 
-    Extracts job names from log file names (e.g., 'build.log' -> 'build').
-    Returns comma-separated string of job names.
+    Extracts job IDs from log file names (e.g., '223085.log' -> '223085').
+    Each ID corresponds to a specific job in the CI build run.
+    Returns comma-separated string of job IDs.
     """
     if not build_logs.is_available:
         return ""
 
-    job_names = []
+    job_ids = []
     for log_path_str in build_logs.log_files:
         log_path = Path(log_path_str)
-        # Extract job name from file name (remove .log extension)
-        job_name = log_path.stem
-        if job_name:
-            job_names.append(job_name)
+        # Extract job ID from file name (remove .log extension)
+        job_id = log_path.stem
+        if job_id:
+            job_ids.append(job_id)
 
-    return ",".join(job_names)
+    return ",".join(job_ids)

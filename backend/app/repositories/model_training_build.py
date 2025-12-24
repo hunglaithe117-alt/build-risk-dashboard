@@ -36,9 +36,9 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
     def find_by_repo_and_run_id(
         self,
         repo_id: str,
-        workflow_run_id: int,
+        ci_run_id: int,
     ) -> Optional[ModelTrainingBuild]:
-        """Convenience method - finds by repo_id and workflow_run_id (denormalized)."""
+        """Convenience method - finds by repo_id and ci_run_id (denormalized)."""
         # Query by raw_repo_id and looking for matching build_number/workflow reference
         doc = self.collection.find_one(
             {

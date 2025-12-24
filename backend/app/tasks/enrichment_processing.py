@@ -548,7 +548,7 @@ def process_enrichment_batch(
                 new_enrichment_build = DatasetEnrichmentBuild(
                     _id=None,
                     raw_repo_id=ObjectId(raw_repo_id),
-                    raw_build_run_id=ObjectId(dataset_build.workflow_run_id),
+                    raw_build_run_id=ObjectId(dataset_build.ci_run_id),
                     dataset_id=ObjectId(dataset_version.dataset_id),
                     dataset_version_id=ObjectId(version_id),
                     dataset_build_id=dataset_build.id,
@@ -710,18 +710,18 @@ def _extract_features_for_enrichment(
 
     Returns result dict with status, features, errors, warnings.
     """
-    if not dataset_build.workflow_run_id:
-        logger.warning(f"Build {dataset_build.build_id_from_csv} has no workflow_run_id")
+    if not dataset_build.ci_run_id:
+        logger.warning(f"Build {dataset_build.build_id_from_csv} has no ci_run_id")
         return {
             "status": "failed",
             "features": {},
-            "errors": ["No workflow_run_id"],
+            "errors": ["No ci_run_id"],
             "warnings": [],
         }
 
-    raw_build_run = raw_build_run_repo.find_by_id(str(dataset_build.workflow_run_id))
+    raw_build_run = raw_build_run_repo.find_by_id(str(dataset_build.ci_run_id))
     if not raw_build_run:
-        logger.warning(f"RawBuildRun {dataset_build.workflow_run_id} not found")
+        logger.warning(f"RawBuildRun {dataset_build.ci_run_id} not found")
         return {
             "status": "failed",
             "features": {},
@@ -826,7 +826,7 @@ def dispatch_version_scans(
         total_builds_processed += len(build_batch)
 
         # Collect workflow_run_ids from this batch
-        workflow_run_ids = [b.workflow_run_id for b in build_batch if b.workflow_run_id]
+        workflow_run_ids = [b.ci_run_id for b in build_batch if b.ci_run_id]
         if not workflow_run_ids:
             continue
 
@@ -837,9 +837,9 @@ def dispatch_version_scans(
         # Collect unique repo IDs needed for this batch
         repo_ids_needed = set()
         for build in build_batch:
-            if not build.workflow_run_id:
+            if not build.ci_run_id:
                 continue
-            raw_build_run = build_run_map.get(str(build.workflow_run_id))
+            raw_build_run = build_run_map.get(str(build.ci_run_id))
             if raw_build_run:
                 repo_id = str(raw_build_run.raw_repo_id)
                 if repo_id not in repo_cache:
@@ -853,9 +853,9 @@ def dispatch_version_scans(
 
         # Process builds and collect unique commits
         for build in build_batch:
-            if not build.workflow_run_id:
+            if not build.ci_run_id:
                 continue
-            raw_build_run = build_run_map.get(str(build.workflow_run_id))
+            raw_build_run = build_run_map.get(str(build.ci_run_id))
             if not raw_build_run:
                 continue
 

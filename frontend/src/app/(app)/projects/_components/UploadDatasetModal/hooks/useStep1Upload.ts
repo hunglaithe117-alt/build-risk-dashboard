@@ -144,7 +144,7 @@ export function useStep1Upload(): UseStep1UploadReturn {
         };
 
         return {
-            build_id: findMatch(["build_id", "build id", "id", "workflow_run_id", "run_id", "tr_build_id"]),
+            build_id: findMatch(["build_id", "build id", "id", "ci_run_id", "run_id", "tr_build_id"]),
             repo_name: findMatch(["repo", "repository", "repo_name", "full_name", "project", "gh_project_name"]),
         };
     }, []);

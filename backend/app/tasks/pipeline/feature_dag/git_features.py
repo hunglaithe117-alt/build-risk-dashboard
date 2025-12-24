@@ -132,7 +132,7 @@ def git_commit_info(
 
         if existing_build:
             status = "build_found"
-            prev_build_id = existing_build.get("workflow_run_id")
+            prev_build_id = existing_build.get("ci_run_id")
             break
 
         commits_hex.append(hexsha)

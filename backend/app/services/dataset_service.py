@@ -103,7 +103,7 @@ class DatasetService:
             return None
 
         return {
-            "build_id": find_match(["build_id", "build id", "id", "workflow_run_id", "run_id"]),
+            "build_id": find_match(["build_id", "build id", "id", "ci_run_id", "run_id"]),
             "repo_name": find_match(["repo", "repository", "repo_name", "full_name", "project"]),
         }
 
@@ -339,8 +339,8 @@ class DatasetService:
             }
 
             # Enrich with RawBuildRun data if available
-            if build.workflow_run_id:
-                raw_build = raw_build_repo.find_by_id(build.workflow_run_id)
+            if build.ci_run_id:
+                raw_build = raw_build_repo.find_by_id(build.ci_run_id)
                 if raw_build:
                     build_item.update(
                         {
@@ -395,14 +395,12 @@ class DatasetService:
         # Get validated builds for conclusion breakdown
         validated_builds = list(
             self.db.dataset_builds.find(
-                {"dataset_id": dataset_oid, "status": "found", "workflow_run_id": {"$ne": None}},
-                {"workflow_run_id": 1},
+                {"dataset_id": dataset_oid, "status": "found", "ci_run_id": {"$ne": None}},
+                {"ci_run_id": 1},
             )
         )
 
-        workflow_run_ids = [
-            b["workflow_run_id"] for b in validated_builds if b.get("workflow_run_id")
-        ]
+        workflow_run_ids = [b["ci_run_id"] for b in validated_builds if b.get("ci_run_id")]
 
         # Conclusion breakdown from RawBuildRun
         conclusion_breakdown = {}

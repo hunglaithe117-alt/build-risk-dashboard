@@ -711,7 +711,7 @@ def download_logs_chunk(
                 for log_file in log_files:
                     if log_file.size_bytes > max_log_size:
                         continue
-                    log_path = build_logs_dir / f"{log_file.job_name}.log"
+                    log_path = build_logs_dir / f"{log_file.job_id}.log"
                     log_path.write_text(log_file.content)
                     saved_files.append(str(log_path))
 

@@ -440,6 +440,7 @@ class DatasetVersionService:
     def delete_version(self, dataset_id: str, version_id: str, user_id: str) -> None:
         """Delete a version and its enrichment builds atomically. Permission validated at API layer."""
         from app.database.mongo import get_transaction
+        from app.repositories.feature_audit_log import FeatureAuditLogRepository
 
         self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
@@ -447,13 +448,19 @@ class DatasetVersionService:
         if version.status in (VersionStatus.PENDING, VersionStatus.PROCESSING):
             self._revoke_task(version.task_id)
 
+        audit_log_repo = FeatureAuditLogRepository(self._db)
+
         # Use transaction for atomic deletion
         with get_transaction() as session:
-            # Delete associated enrichment builds
+            # 1. Delete associated FeatureAuditLogs
+            audit_deleted = audit_log_repo.delete_by_version_id(version_id, session=session)
+            logger.info(f"Deleted {audit_deleted} audit logs for version {version_id}")
+
+            # 2. Delete associated enrichment builds
             deleted = self._enrichment_build_repo.delete_by_version(version_id, session=session)
             logger.info(f"Deleted {deleted} enrichment builds for version {version_id}")
 
-            # Delete the version
+            # 3. Delete the version
             self._repo.delete(version_id, session=session)
             logger.info(f"Deleted version {version_id} for dataset {dataset_id}")
 

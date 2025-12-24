@@ -569,6 +569,8 @@ def _process_single_build(
     build_id = str(model_build.id)
 
     # Extract features using shared helper
+    from app.entities.feature_audit_log import AuditLogCategory
+
     result = extract_features_for_build(
         db=db,
         raw_repo=raw_repo,
@@ -576,6 +578,8 @@ def _process_single_build(
         raw_build_run=raw_build_run,
         selected_features=feature_names,
         github_client=github_client_input,
+        output_build_id=str(model_build.id),
+        category=AuditLogCategory.MODEL_TRAINING,
     )
 
     # Update build with results

@@ -247,6 +247,7 @@ class DatasetService:
         from app.database.mongo import get_transaction
         from app.repositories.dataset_repo_stats import DatasetRepoStatsRepository
         from app.repositories.dataset_version import DatasetVersionRepository
+        from app.repositories.feature_audit_log import FeatureAuditLogRepository
 
         dataset = self.repo.find_by_id(dataset_id)
         if not dataset or (dataset.user_id and str(dataset.user_id) != user_id):
@@ -255,10 +256,15 @@ class DatasetService:
         dataset_oid = ObjectId(dataset_id)
         repo_stats_repo = DatasetRepoStatsRepository(self.db)
         version_repo = DatasetVersionRepository(self.db)
+        audit_log_repo = FeatureAuditLogRepository(self.db)
 
         # Use transaction to ensure all deletes happen atomically
         with get_transaction() as session:
-            # Delete associated enrichment builds (DatasetEnrichmentBuild)
+            # 1. Delete associated FeatureAuditLogs
+            audit_deleted = audit_log_repo.delete_by_dataset_id(dataset_id, session=session)
+            logger.info(f"Deleted {audit_deleted} audit logs for dataset {dataset_id}")
+
+            # 2. Delete associated enrichment builds (DatasetEnrichmentBuild)
             deleted_enrichment = self.enrichment_build_repo.delete_by_dataset(
                 dataset_oid, session=session
             )

@@ -4,7 +4,7 @@ Feature Audit Log Repository - Database operations for feature extraction audit 
 
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.entities.feature_audit_log import FeatureAuditLog
+from app.entities.feature_audit_log import AuditLogCategory, FeatureAuditLog
 
 from .base import BaseRepository
 
@@ -54,6 +54,32 @@ class FeatureAuditLogRepository(BaseRepository[FeatureAuditLog]):
             sort=[("created_at", -1)],
             limit=limit,
         )
+
+    def delete_by_raw_repo_id(self, raw_repo_id, category: AuditLogCategory, session=None) -> int:
+        result = self.collection.delete_many(
+            {
+                "raw_repo_id": self._to_object_id(raw_repo_id),
+                "category": category.value,
+            },
+            session=session,
+        )
+        return result.deleted_count
+
+    def delete_by_version_id(self, version_id: str, session=None) -> int:
+        """Delete all audit logs for a specific dataset version."""
+        result = self.collection.delete_many(
+            {"version_id": self._to_object_id(version_id)},
+            session=session,
+        )
+        return result.deleted_count
+
+    def delete_by_dataset_id(self, dataset_id: str, session=None) -> int:
+        """Delete all audit logs for a specific dataset."""
+        result = self.collection.delete_many(
+            {"dataset_id": self._to_object_id(dataset_id)},
+            session=session,
+        )
+        return result.deleted_count
 
     def find_by_build(self, raw_build_run_id: str) -> Optional[FeatureAuditLog]:
         """Find an audit log by raw build run ID."""

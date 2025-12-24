@@ -34,6 +34,7 @@ class NodeExecutionInfo:
     success: bool = True
     error: Optional[str] = None
     skipped: bool = False
+    result: Any = None
 
 
 @dataclass
@@ -60,12 +61,6 @@ class ExecutionTracker(base.BasePreNodeExecute, base.BasePostNodeExecute):
     - Success/failure status
     - Error messages if any
     - Overall execution summary
-
-    Example:
-        tracker = ExecutionTracker()
-        driver = driver.Builder().with_modules(...).with_adapters(tracker).build()
-        result = driver.execute(...)
-        info = tracker.get_results()
     """
 
     def __init__(self):
@@ -154,6 +149,7 @@ class ExecutionTracker(base.BasePreNodeExecute, base.BasePostNodeExecute):
             success=success,
             error=str(error) if error else None,
             skipped=False,
+            result=result if success else None,
         )
 
         self._node_results.append(node_info)

@@ -124,6 +124,16 @@ def _save_audit_log(
                     duration_ms=node_info.duration_ms,
                     error=node_info.error,
                 )
+
+                # Populate feature values if this node corresponds to a requested feature
+                if node_info.success and node_info.node_name in features:
+                    node_result.features_extracted = [node_info.node_name]
+                    # Only store result if available (it should be for successful nodes)
+                    if hasattr(node_info, "result") and node_info.result is not None:
+                        # Store as-is (PyMongo handles basic types, convert to str if suspect)
+                        # For now we assume feature values are serializable
+                        node_result.feature_values = {node_info.node_name: node_info.result}
+
                 audit_log.add_node_result(node_result)
         else:
             # If no tracking, just set timestamps

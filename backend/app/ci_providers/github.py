@@ -171,7 +171,7 @@ class GitHubActionsProvider(CIProviderInterface):
                     build_data.logs_available = logs_available
                     if not logs_available:
                         consecutive_unavailable += 1
-                        if consecutive_unavailable >= settings.LOG_UNAVAILABLE_THRESHOLD:
+                        if consecutive_unavailable >= settings.GIT_LOG_UNAVAILABLE_THRESHOLD:
                             logger.warning(
                                 f"Reached {consecutive_unavailable} consecutive unavailable logs "
                                 f"for {repo_name} - may be permission issue, stopping fetch"

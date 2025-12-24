@@ -23,6 +23,8 @@ EXPORT_DIR.mkdir(parents=True, exist_ok=True)
     base=PipelineTask,
     name="app.tasks.export.process_export_job",
     queue="processing",
+    soft_time_limit=600,
+    time_limit=900,
 )
 def process_export_job(self, job_id: str):
     """
@@ -137,6 +139,8 @@ def process_export_job(self, job_id: str):
     base=PipelineTask,
     name="app.tasks.export.cleanup_old_exports",
     queue="processing",
+    soft_time_limit=120,
+    time_limit=180,
 )
 def cleanup_old_exports(self, days: int = 7):
     """

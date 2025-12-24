@@ -141,13 +141,13 @@ def read_csv_chunks(
         repo_name_column: Column name for repo names
         ci_provider_column: Optional column for CI provider
         single_ci_provider: Single CI provider if not using column
-        chunk_size: Rows per chunk (defaults to settings.CSV_CHUNK_SIZE)
+        chunk_size: Rows per chunk (defaults to settings.VALIDATION_CSV_CHUNK_SIZE)
 
     Yields:
         DataFrames with standardized columns (build_id, repo_name, ci_provider)
     """
     if chunk_size is None:
-        chunk_size = settings.CSV_CHUNK_SIZE
+        chunk_size = settings.VALIDATION_CSV_CHUNK_SIZE
 
     # Determine columns to read
     usecols = [build_id_column, repo_name_column]

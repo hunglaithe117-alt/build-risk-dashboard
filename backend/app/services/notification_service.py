@@ -125,6 +125,82 @@ class NotificationService:
         )
         return self.notification_repo.insert_one(notification)
 
+    def notify_rate_limit_exhausted(
+        self,
+        retry_after: Optional[datetime] = None,
+        task_name: Optional[str] = None,
+    ) -> None:
+        """
+        Notify admins when all GitHub tokens are exhausted.
+
+        Called from Celery tasks when GithubAllRateLimitError is raised after max retries.
+        Sends in-app notifications to all admin users and Gmail alert.
+
+        Args:
+            retry_after: datetime when tokens will reset
+            task_name: Name of the task that triggered the notification
+        """
+        from app.repositories.user import UserRepository
+        from app.services.github.redis_token_pool import get_redis_token_pool
+
+        # Get token pool status
+        try:
+            pool = get_redis_token_pool()
+            pool_status = pool.get_pool_status()
+            total_tokens = pool_status.get("total_tokens", 0)
+            rate_limited = pool_status.get("rate_limited_tokens", 0)
+        except Exception:
+            total_tokens = 0
+            rate_limited = 0
+
+        reset_str = retry_after.strftime("%H:%M UTC") if retry_after else "unknown"
+
+        # Find all admin users
+        user_repo = UserRepository(self.db)
+        admin_users = user_repo.find_by_role("admin")
+
+        for admin in admin_users:
+            try:
+                self.create_notification(
+                    user_id=admin.id,
+                    notification_type=NotificationType.RATE_LIMIT_EXHAUSTED,
+                    title="🚨 All GitHub Tokens Exhausted",
+                    message=f"All {rate_limited}/{total_tokens} tokens are rate limited. "
+                    f"Task '{task_name}' failed. Tokens reset at {reset_str}.",
+                    link="/admin/settings",
+                    metadata={
+                        "rate_limited_tokens": rate_limited,
+                        "total_tokens": total_tokens,
+                        "next_reset_at": reset_str,
+                        "task_name": task_name,
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"Failed to create notification for admin {admin.id}: {e}")
+
+        # Send Gmail alert to admins
+        try:
+            manager = get_notification_manager(self.db)
+            admin_emails = [admin.email for admin in admin_users if admin.email]
+            if admin_emails:
+                html_body = render_email(
+                    "rate_limit_exhausted",
+                    {
+                        "exhausted_tokens": rate_limited,
+                        "total_tokens": total_tokens,
+                        "next_reset_at": reset_str,
+                        "task_name": task_name,
+                    },
+                    subject="🚨 CRITICAL: All GitHub Tokens Exhausted",
+                )
+                manager.send_gmail(
+                    subject="🚨 CRITICAL: All GitHub Tokens Exhausted",
+                    html_body=html_body,
+                    to_recipients=admin_emails,
+                )
+        except Exception as e:
+            logger.warning(f"Failed to send Gmail notification: {e}")
+
 
 # =============================================================================
 # Multi-Channel Notification Manager

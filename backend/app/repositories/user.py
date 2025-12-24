@@ -69,3 +69,7 @@ class UserRepository(BaseRepository[User]):
     def count_admins(self) -> int:
         """Count total admin users"""
         return self.collection.count_documents({"role": "admin"})
+
+    def find_by_role(self, role: str) -> List[User]:
+        """Find all users with a specific role."""
+        return self.find_many({"role": role})

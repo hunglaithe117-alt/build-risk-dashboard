@@ -173,7 +173,8 @@ def _build_worktree_chain(
 
     # Deduplicate
     unique_shas = list(dict.fromkeys(commit_shas))
-    chunk_size = getattr(settings, "WORKTREE_BATCH_SIZE", 50)
+
+    chunk_size = settings.INGESTION_WORKTREES_PER_CHUNK
     chunks = [unique_shas[i : i + chunk_size] for i in range(0, len(unique_shas), chunk_size)]
     total_chunks = len(chunks)
 
@@ -230,7 +231,7 @@ def _build_logs_chord(
 
     # Deduplicate
     unique_build_ids = list(dict.fromkeys(build_ids))
-    chunk_size = getattr(settings, "DOWNLOAD_LOGS_BATCH_SIZE", 50)
+    chunk_size = settings.INGESTION_LOGS_PER_CHUNK
     chunks = [
         unique_build_ids[i : i + chunk_size] for i in range(0, len(unique_build_ids), chunk_size)
     ]

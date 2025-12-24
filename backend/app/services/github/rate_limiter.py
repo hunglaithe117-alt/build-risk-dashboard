@@ -249,8 +249,8 @@ def get_rate_limiter() -> RedisRateLimiter:
 
     if _rate_limiter is None:
         _rate_limiter = RedisRateLimiter(
-            requests_per_second=getattr(settings, "API_RATE_LIMIT_PER_SECOND", 10.0),
-            burst_allowance=getattr(settings, "GITHUB_BURST_ALLOWANCE", 5),
+            requests_per_second=getattr(settings, "GITHUB_API_RATE_PER_SECOND", 10.0),
+            burst_allowance=getattr(settings, "GITHUB_API_BURST_ALLOWANCE", 5),
         )
 
     return _rate_limiter

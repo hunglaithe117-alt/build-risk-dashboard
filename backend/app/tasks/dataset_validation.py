@@ -227,7 +227,7 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
         init_validation_stats(dataset_id, total_repos, total_builds)
 
         # Chunk repos for parallel processing
-        repo_chunks = list(chunk_dict(all_repo_builds, settings.REPO_CHUNK_SIZE))
+        repo_chunks = list(chunk_dict(all_repo_builds, settings.VALIDATION_REPOS_PER_TASK))
 
         # Update total chunks in Redis
         increment_validation_stat(dataset_id, "total_chunks", len(repo_chunks))
@@ -244,7 +244,7 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
 
         build_tasks = []
         for repo_name, builds in all_repo_builds.items():
-            build_chunks = list(chunk_list(builds, settings.BUILD_CHUNK_SIZE))
+            build_chunks = list(chunk_list(builds, settings.VALIDATION_BUILDS_PER_TASK))
             for build_chunk in build_chunks:
                 build_tasks.append(
                     validate_builds_chunk.si(
@@ -303,10 +303,8 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
     base=PipelineTask,
     name="app.tasks.dataset_validation.validate_repo_chunk",
     queue="validation",
-    rate_limit=settings.VALIDATION_RATE_LIMIT,
     soft_time_limit=600,
     time_limit=660,
-    max_retries=3,  # Retry up to 3 times on failure, then raise exception
 )
 def validate_repo_chunk(
     self,
@@ -429,10 +427,8 @@ def validate_repo_chunk(
     base=PipelineTask,
     name="app.tasks.dataset_validation.validate_builds_chunk",
     queue="validation",
-    rate_limit=settings.VALIDATION_RATE_LIMIT,
     soft_time_limit=300,
     time_limit=360,
-    max_retries=3,  # Retry up to 3 times on failure, then raise exception
 )
 def validate_builds_chunk(
     self,
@@ -698,7 +694,6 @@ def validate_builds_chunk(
     queue="validation",
     soft_time_limit=300,
     time_limit=360,
-    max_retries=3,  # Retry up to 3 times on failure, then raise exception
 )
 def aggregate_validation_results(
     self,

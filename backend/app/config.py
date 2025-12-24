@@ -63,39 +63,41 @@ class Settings(BaseSettings):
     CELERY_TASK_TIME_LIMIT: int = 900
     CELERY_BROKER_HEARTBEAT: int = 30
 
-    # Pipeline Configurations
-    ENRICHMENT_BATCH_SIZE: int = 50  # Builds per enrichment batch
-    ENRICHMENT_MAX_RETRIES: int = 3  # Auto-retry count for enrichment
-    MAX_LOG_SIZE_MB: int = 10  # Skip logs larger than this size
-    DOWNLOAD_LOGS_BATCH_SIZE: int = 100  # Number of logs to download per batch
-    PROCESSING_BATCH_SIZE: int = 50
-    WORKTREE_BATCH_SIZE: int = 50  # Worktrees to create per chunk
-    MODEL_FETCH_BATCH_SIZE: int = 20  # Builds per fetch batch for model ingestion
-    API_RATE_LIMIT_PER_SECOND: float = 10.0  # GitHub API calls per second
-    GITHUB_BURST_ALLOWANCE: int = 5  # Burst requests before throttling
-    COMMIT_REPLAY_MAX_DEPTH: int = 50  # Max depth to traverse for commit replay
-    LOG_UNAVAILABLE_THRESHOLD: int = 10  # Stop after N consecutive unavailable logs
+    # ==========================================================================
+    # Pipeline Batch Processing
+    # ==========================================================================
 
-    # Ingestion Configuration
-    INGESTION_MAX_RETRIES: int = 2  # Retries per ingestion task
-    INGESTION_RETRY_DELAY: int = 30  # Seconds between retries
+    # --- Ingestion Phase (fetching builds, cloning repos, downloading logs) ---
+    INGESTION_BUILDS_PER_PAGE: int = 40  # Builds fetched per API page
+    INGESTION_WORKTREES_PER_CHUNK: int = 20  # Worktrees created per task
+    INGESTION_LOGS_PER_CHUNK: int = 40  # Logs downloaded per task
 
-    # CSV Dataset Validation
-    CSV_MAX_FILE_SIZE_MB: int = 50  # Maximum CSV file size in MB
-    CSV_MAX_ROWS: int = 100000  # Maximum rows allowed in CSV
-    CSV_BATCH_SIZE: int = 500  # Rows per batch for validation processing
-    CSV_BATCH_PROGRESS_INTERVAL: int = 100  # Rows between WebSocket progress updates
+    # --- Processing Phase (feature extraction) ---
+    PROCESSING_BUILDS_PER_BATCH: int = 50  # Builds processed per enrichment batch
+
+    # --- Validation Phase (CSV/repo validation) ---
+    VALIDATION_CSV_CHUNK_SIZE: int = 1000  # Rows per CSV chunk
+    VALIDATION_REPOS_PER_TASK: int = 20  # Repos per worker task
+    VALIDATION_BUILDS_PER_TASK: int = 40  # Builds per worker task
+
+    # --- Git/Log Constraints ---
+    GIT_MAX_LOG_SIZE_MB: int = 10  # Skip logs larger than this
+    GIT_COMMIT_REPLAY_MAX_DEPTH: int = 50  # Max depth for fork commit replay
+    GIT_LOG_UNAVAILABLE_THRESHOLD: int = 10  # Stop after N consecutive unavailable
+
+    # --- Rate Limiting (GitHub API) ---
+    GITHUB_API_RATE_PER_SECOND: float = 10.0  # Sustained request rate
+    GITHUB_API_BURST_ALLOWANCE: int = 5  # Burst before throttling
+
+    # --- CSV Dataset Limits ---
+    CSV_MAX_FILE_SIZE_MB: int = 50  # Maximum CSV file size
+    CSV_MAX_ROWS: int = 100000  # Maximum rows allowed
+    CSV_MIN_ROWS: int = 1  # Minimum rows required
+    CSV_BATCH_PROGRESS_INTERVAL: int = 100  # Rows between WebSocket updates
     CSV_DUPLICATE_WARN_THRESHOLD: float = 0.1  # Warn if >10% duplicates
     CSV_MISSING_WARN_THRESHOLD: float = 0.05  # Warn if >5% missing values
-    CSV_MIN_ROWS: int = 1  # Minimum rows required
 
-    # Distributed Validation Processing
-    CSV_CHUNK_SIZE: int = 10000  # Rows per CSV chunk for chunked reading
-    REPO_CHUNK_SIZE: int = 20  # Repos per worker task
-    BUILD_CHUNK_SIZE: int = 500  # Builds per worker task
-    VALIDATION_RATE_LIMIT: str = "10/s"  # Celery rate limit for API calls
-
-    # Hamilton Pipeline Caching
+    # --- Hamilton Pipeline Caching ---
     HAMILTON_CACHE_ENABLED: bool = True  # Enable/disable DAG result caching
     HAMILTON_CACHE_TYPE: str = "file"  # "file" (persistent) or "memory" (dev only)
 

@@ -101,7 +101,7 @@ def build_replay_plan(
     if max_depth == -1:
         from app.config import settings
 
-        max_depth = settings.COMMIT_REPLAY_MAX_DEPTH
+        max_depth = settings.GIT_COMMIT_REPLAY_MAX_DEPTH
     if commit_exists(target_sha):
         raise ValueError(f"Commit {target_sha} already exists")
 

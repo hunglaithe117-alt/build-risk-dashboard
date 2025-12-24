@@ -44,7 +44,6 @@ from app.repositories.model_import_build import ModelImportBuildRepository
 from app.repositories.model_repo_config import ModelRepoConfigRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
-from app.services.github.exceptions import GithubRateLimitError, GithubRetryableError
 from app.tasks.base import PipelineTask
 from app.tasks.model_processing import dispatch_build_processing, publish_status
 from app.tasks.pipeline.feature_dag._metadata import get_required_resources_for_features
@@ -107,7 +106,7 @@ def ingest_model_builds(
         correlation_id = str(uuid.uuid4())
     corr_prefix = f"[corr={correlation_id[:8]}]"
 
-    batch_size = batch_size or settings.MODEL_FETCH_BATCH_SIZE
+    batch_size = batch_size or settings.INGESTION_BUILDS_PER_PAGE
 
     # Set tracing context
     TracingContext.set(
@@ -189,10 +188,6 @@ def ingest_model_builds(
     queue="ingestion",
     soft_time_limit=300,
     time_limit=360,
-    max_retries=3,
-    autoretry_for=(GithubRateLimitError, GithubRetryableError),
-    retry_backoff=60,
-    retry_backoff_max=300,
 )
 def fetch_builds_batch(
     self: PipelineTask,
@@ -489,6 +484,7 @@ def dispatch_ingestion(
     name="app.tasks.model_ingestion.aggregate_model_ingestion_results",
     queue="ingestion",
     soft_time_limit=30,
+    time_limit=60,
 )
 def aggregate_model_ingestion_results(
     self: PipelineTask,

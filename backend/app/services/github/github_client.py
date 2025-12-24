@@ -163,10 +163,60 @@ class GitHubClient:
             retry_after=wait_seconds,
         )
 
+    def _rotate_token(self) -> bool:
+        """
+        Attempt to rotate to another available token from the pool.
+
+        Returns:
+            True if successfully rotated to a new token, False if no tokens available
+        """
+        if not self._redis_pool:
+            return False
+
+        try:
+            token_hash, raw_token = self._redis_pool.acquire_token()
+            self._current_token_key = token_hash
+            self._token = raw_token
+            logger.info(f"Rotated to new token: {token_hash[:8]}...")
+            return True
+        except GithubAllRateLimitError:
+            # No tokens available
+            return False
+
     def _retry_on_rate_limit(self, request_func: Callable[[], httpx.Response]) -> httpx.Response:
-        """Execute request. Rate limit errors are raised to caller."""
-        response = request_func()
-        return self._handle_response(response)
+        """
+        Execute request with automatic token rotation on rate limit.
+
+        When a token hits rate limit:
+        1. Mark current token as rate limited in Redis
+        2. Try to acquire another token from pool
+        3. Retry the request with new token
+        4. Only raise GithubAllRateLimitError when ALL tokens exhausted
+
+        GithubRateLimitError is handled internally and NOT propagated.
+        """
+        while True:
+            try:
+                response = request_func()
+                return self._handle_response(response)
+            except GithubRateLimitError as e:
+                # Current token is rate limited, try to rotate to another
+                logger.warning(
+                    f"Token {self._current_token_key[:8] if self._current_token_key else 'N/A'}... "
+                    f"hit rate limit. Attempting rotation..."
+                )
+                if not self._rotate_token():
+                    # No more tokens available, convert to GithubAllRateLimitError
+                    raise GithubAllRateLimitError(
+                        "All GitHub tokens hit rate limits.",
+                        retry_after=e.retry_after,
+                    ) from e
+                # Successfully rotated, retry with new token
+                logger.info("Successfully rotated token, retrying request...")
+                continue
+            except GithubSecondaryRateLimitError:
+                # Secondary rate limit affects ALL tokens (IP-based), don't rotate
+                raise
 
     def _rest_request(self, method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
         # Apply rate limiting to prevent GitHub secondary rate limits

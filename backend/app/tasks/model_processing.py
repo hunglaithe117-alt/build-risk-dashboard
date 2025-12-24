@@ -74,6 +74,8 @@ def publish_status(
     base=PipelineTask,
     name="app.tasks.model_processing.start_model_processing",
     queue="processing",
+    soft_time_limit=120,
+    time_limit=180,
 )
 def start_model_processing(
     self: PipelineTask,
@@ -156,6 +158,8 @@ def start_model_processing(
     base=PipelineTask,
     name="app.tasks.model_processing.dispatch_build_processing",
     queue="processing",
+    soft_time_limit=300,
+    time_limit=360,
 )
 def dispatch_build_processing(
     self: PipelineTask,
@@ -184,7 +188,7 @@ def dispatch_build_processing(
     from app.repositories.raw_build_run import RawBuildRunRepository
 
     if batch_size is None:
-        batch_size = settings.PROCESSING_BATCH_SIZE
+        batch_size = settings.PROCESSING_BUILDS_PER_BATCH
 
     model_build_repo = ModelTrainingBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
@@ -283,6 +287,8 @@ def dispatch_build_processing(
     base=PipelineTask,
     name="app.tasks.processing.finalize_model_processing",
     queue="processing",
+    soft_time_limit=60,
+    time_limit=120,
 )
 def finalize_model_processing(
     self: PipelineTask,
@@ -361,6 +367,8 @@ def finalize_model_processing(
     base=PipelineTask,
     name="app.tasks.processing.process_workflow_run",
     queue="processing",
+    soft_time_limit=600,
+    time_limit=900,
 )
 def process_workflow_run(
     self: PipelineTask,
@@ -576,6 +584,8 @@ def process_workflow_run(
     base=PipelineTask,
     name="app.tasks.processing.reprocess_build",
     queue="processing",
+    soft_time_limit=600,
+    time_limit=900,
 )
 def reprocess_build(self: PipelineTask, build_id: str) -> Dict[str, Any]:
     """
@@ -626,6 +636,8 @@ def reprocess_build(self: PipelineTask, build_id: str) -> Dict[str, Any]:
     base=PipelineTask,
     name="app.tasks.processing.reprocess_repo_builds",
     queue="processing",
+    soft_time_limit=300,
+    time_limit=360,
 )
 def reprocess_repo_builds(self: PipelineTask, repo_config_id: str) -> Dict[str, Any]:
     """

@@ -120,6 +120,8 @@ def start_sonar_scan_for_version_commit(
     base=PipelineTask,
     name="app.tasks.sonar.export_metrics_from_webhook",
     queue="processing",
+    soft_time_limit=120,
+    time_limit=180,
 )
 def export_metrics_from_webhook(
     self,

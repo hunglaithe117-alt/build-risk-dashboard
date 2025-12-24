@@ -5,9 +5,15 @@ All PipelineTask subclasses automatically:
 1. Restore TracingContext from `correlation_id` kwarg (if present)
 2. Set task_name from the Celery task name
 3. Clear TracingContext on task completion
+4. Auto-retry on GithubAllRateLimitError with EXACT countdown from retry_after
+5. Send notification when all GitHub tokens are exhausted
+
+Note: GithubRateLimitError is handled internally by GitHubClient via token rotation.
+Only GithubAllRateLimitError (when ALL tokens exhausted) is propagated to tasks.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from celery import Task
@@ -16,7 +22,7 @@ from pymongo.database import Database
 from app.core.tracing import TracingContext
 from app.database.mongo import get_database
 from app.services.github.exceptions import (
-    GithubRateLimitError,
+    GithubAllRateLimitError,
     GithubRetryableError,
 )
 
@@ -33,17 +39,76 @@ class PipelineTask(Task):
     - version_id: Restored from `version_id` kwarg
     - repo_id: Restored from `repo_id` or `repo_config_id` kwarg
     - task_name: Set from the Celery task name
+
+    Rate Limit Handling:
+    - GithubRateLimitError: Handled INTERNALLY by GitHubClient via token rotation
+    - GithubAllRateLimitError: Auto-retry with EXACT countdown when all tokens exhausted
+    - GithubRetryableError: Uses exponential backoff for transient errors
+    - Sends notification when all tokens are exhausted (after max retries)
     """
 
     abstract = True
-    autoretry_for = (GithubRateLimitError, GithubRetryableError)
+    # GithubRetryableError uses standard exponential backoff
+    autoretry_for = (GithubRetryableError,)
     retry_backoff = True
-    retry_backoff_max = 100
-    retry_kwargs = {"max_retries": 5}
-    default_retry_delay = 20
+    retry_backoff_max = 3600  # 1 hour max for exponential backoff
+    retry_kwargs = {"max_retries": 3}
+    default_retry_delay = 10
 
     def __init__(self) -> None:
         self._db: Database | None = None
+
+    def __call__(self, *args, **kwargs):
+        """
+        Override __call__ to handle GithubAllRateLimitError with exact countdown.
+
+        When all tokens are exhausted (GithubAllRateLimitError), retry with the
+        EXACT countdown from retry_after instead of exponential backoff.
+        """
+        try:
+            return super().__call__(*args, **kwargs)
+        except GithubAllRateLimitError as exc:
+            # All tokens exhausted - calculate exact countdown from retry_after
+            countdown = self._calculate_countdown(exc)
+
+            if countdown is not None:
+                logger.warning(
+                    f"All tokens exhausted for task {self.name}, "
+                    f"retrying in {countdown}s (exact countdown from retry_after)"
+                )
+                raise self.retry(exc=exc, countdown=countdown) from exc
+            else:
+                # No retry_after available, use default delay
+                logger.warning(
+                    f"All tokens exhausted for task {self.name}, "
+                    f"retrying with default delay (no retry_after available)"
+                )
+                raise self.retry(exc=exc, countdown=self.default_retry_delay) from exc
+
+    def _calculate_countdown(self, exc: GithubAllRateLimitError) -> int | None:
+        """
+        Calculate exact countdown seconds from exception's retry_after.
+
+        Args:
+            exc: GithubAllRateLimitError with retry_after attribute
+
+        Returns:
+            Countdown in seconds, or None if retry_after is not available
+        """
+        retry_after = getattr(exc, "retry_after", None)
+
+        if retry_after is None:
+            return None
+
+        # retry_after can be int/float (seconds) or datetime
+        if isinstance(retry_after, (int, float)):
+            return max(1, int(retry_after) + 5)
+        elif isinstance(retry_after, datetime):
+            now = datetime.now(timezone.utc)
+            delta = (retry_after - now).total_seconds()
+            return max(1, int(delta) + 5)
+
+        return None
 
     def before_start(self, task_id: str, args: tuple, kwargs: dict):  # pragma: no cover
         """
@@ -94,4 +159,27 @@ class PipelineTask(Task):
     def on_failure(
         self, exc: Exception, task_id: str, args: tuple, kwargs: dict, einfo
     ):  # pragma: no cover - logging only
+        """Handle task failure - log error and send notification for rate limit exhaustion."""
         logger.error("Task %s failed: %s", self.name, exc, exc_info=exc)
+
+        # Send notification when all GitHub tokens are exhausted (after max retries)
+        if isinstance(exc, GithubAllRateLimitError):
+            self._notify_rate_limit_exhausted(exc)
+
+    def _notify_rate_limit_exhausted(self, exc: GithubAllRateLimitError) -> None:
+        """Send notification when all GitHub tokens are exhausted."""
+        try:
+            from app.services.notification_service import NotificationService
+
+            notification_service = NotificationService(self.db)
+            notification_service.notify_rate_limit_exhausted(
+                retry_after=exc.retry_after,
+                task_name=self.name,
+            )
+            logger.warning(
+                f"All GitHub tokens exhausted. Task {self.name} failed after max retries. "
+                f"Tokens will reset at: {exc.retry_after}"
+            )
+        except Exception as notify_exc:
+            # Don't fail the task if notification fails
+            logger.warning(f"Failed to send rate limit notification: {notify_exc}")

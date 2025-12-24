@@ -27,6 +27,8 @@ logger = logging.getLogger(__name__)
     base=PipelineTask,
     name="app.tasks.enrichment_scan_helpers.dispatch_scan_for_commit",
     queue="processing",
+    soft_time_limit=60,
+    time_limit=120,
 )
 def dispatch_scan_for_commit(
     self: PipelineTask,

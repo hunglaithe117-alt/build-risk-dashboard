@@ -411,7 +411,7 @@ def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str
         return {"status": "completed", "message": "No validated repos to process"}
 
     # Batch settings
-    batch_size = settings.ENRICHMENT_BATCH_SIZE
+    batch_size = settings.PROCESSING_BUILDS_PER_BATCH
     batch_tasks = []
     total_builds = 0
 
@@ -468,10 +468,6 @@ def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str
     base=PipelineTask,
     name="app.tasks.version_enrichment.process_enrichment_batch",
     queue="processing",
-    autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": settings.ENRICHMENT_MAX_RETRIES},
-    retry_backoff=True,
-    retry_backoff_max=600,
     soft_time_limit=600,
     time_limit=900,
 )

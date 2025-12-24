@@ -640,7 +640,7 @@ def download_logs_chunk(
         logs_downloaded = 0
         logs_expired = 0
         logs_skipped = 0
-        max_log_size = settings.MAX_LOG_SIZE_MB * 1024 * 1024
+        max_log_size = settings.GIT_MAX_LOG_SIZE_MB * 1024 * 1024
 
         max_consecutive = int(redis_client.get(f"{session_key}:max_expired") or 10)
 

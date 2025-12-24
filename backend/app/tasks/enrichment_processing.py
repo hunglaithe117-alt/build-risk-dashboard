@@ -272,6 +272,7 @@ def aggregate_ingestion_results(
     self: PipelineTask,
     results: List[Dict[str, Any]],
     version_id: str,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
     Aggregate results from parallel repo ingestion chains.
@@ -280,24 +281,22 @@ def aggregate_ingestion_results(
     Each result is from the last task in each chain (clone/worktree/logs).
     Chains may fail after retries - we count those as failed.
     """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
     version_repo = DatasetVersionRepository(self.db)
 
-    # Count success/failed - chains return status from their last task
-    # A chain is successful if it didn't raise an exception
+    # Domain-specific counting for ingestion status types
     repos_success = 0
     repos_failed = 0
 
     for result in results:
         if result is None:
-            # Task failed completely (returned None or raised exception)
             repos_failed += 1
         elif isinstance(result, dict):
-            # Check various success indicators from ingestion tasks
             status = result.get("status", "")
             if status in ("cloned", "updated", "completed", "skipped"):
                 repos_success += 1
             elif "worktrees_created" in result or "logs_downloaded" in result:
-                # Worktree/logs task completed
                 repos_success += 1
             else:
                 repos_failed += 1
@@ -305,7 +304,7 @@ def aggregate_ingestion_results(
             repos_failed += 1
 
     logger.info(
-        f"[aggregate_ingestion_results] version={version_id}: "
+        f"{corr_prefix}[aggregate_ingestion_results] version={version_id}: "
         f"{repos_success} chains succeeded, {repos_failed} chains failed, "
         f"total results: {len(results)}"
     )
@@ -342,6 +341,7 @@ def dispatch_scans_and_processing(self: PipelineTask, version_id: str) -> Dict[s
     """
     # Get correlation_id for propagation to child tasks
     correlation_id = TracingContext.get_correlation_id()
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
 
     version_repo = DatasetVersionRepository(self.db)
 
@@ -355,7 +355,7 @@ def dispatch_scans_and_processing(self: PipelineTask, version_id: str) -> Dict[s
     # Dispatch scans (async, fire & forget - doesn't block processing)
     if has_sonar or has_trivy:
         logger.info(
-            f"[dispatch_scans_and_processing] Dispatching scans: "
+            f"{corr_prefix}[dispatch_scans_and_processing] Dispatching scans: "
             f"sonar={has_sonar}, trivy={has_trivy}"
         )
         dispatch_version_scans.delay(version_id, correlation_id=correlation_id)
@@ -363,7 +363,9 @@ def dispatch_scans_and_processing(self: PipelineTask, version_id: str) -> Dict[s
     # Dispatch processing immediately (doesn't wait for scans)
     dispatch_enrichment_batches.delay(version_id, correlation_id=correlation_id)
 
-    logger.info(f"[dispatch_scans_and_processing] Processing dispatched for {version_id}")
+    logger.info(
+        f"{corr_prefix}[dispatch_scans_and_processing] Processing dispatched for {version_id}"
+    )
 
     return {
         "status": "dispatched",
@@ -381,13 +383,19 @@ def dispatch_scans_and_processing(self: PipelineTask, version_id: str) -> Dict[s
     soft_time_limit=120,
     time_limit=180,
 )
-def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str, Any]:
+def dispatch_enrichment_batches(
+    self: PipelineTask,
+    version_id: str,
+    correlation_id: str = "",
+) -> Dict[str, Any]:
     """
     After ingestion completes, dispatch enrichment batches grouped by raw_repo_id.
 
     Uses validated repos from dataset_repo_stats for repo grouping.
     Within each repo, splits builds into chunks of ENRICHMENT_BATCH_SIZE.
     """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
     version_repo = DatasetVersionRepository(self.db)
     dataset_repo = DatasetRepository(self.db)
     dataset_repo_stats_repo = DatasetRepoStatsRepository(self.db)
@@ -438,6 +446,7 @@ def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str
                     selected_features=dataset_version.selected_features,
                     batch_index=len(batch_tasks),
                     total_batches=0,  # Will be updated after loop
+                    correlation_id=correlation_id,
                 )
             )
 
@@ -448,11 +457,14 @@ def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str
     # Log dispatch info
     total_batches = len(batch_tasks)
     logger.info(
-        f"Dispatching {total_batches} batches ({total_builds} builds) " f"for version {version_id}"
+        f"{corr_prefix} Dispatching {total_batches} batches ({total_builds} builds) "
+        f"for version {version_id}"
     )
 
     # Use chord to run all batches in parallel, then finalize
-    chord(group(batch_tasks))(finalize_enrichment.s(version_id=version_id))
+    chord(group(batch_tasks))(
+        finalize_enrichment.s(version_id=version_id, correlation_id=correlation_id)
+    )
 
     return {
         "status": "dispatched",
@@ -479,6 +491,7 @@ def process_enrichment_batch(
     selected_features: List[str],
     batch_index: int,
     total_batches: int,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
     Process a batch of validated builds for ONE repo.
@@ -490,9 +503,12 @@ def process_enrichment_batch(
         selected_features: Features to extract
         batch_index: Current batch number
         total_batches: Total number of batches
+        correlation_id: Correlation ID for tracing
 
     Returns stats for this batch to be aggregated by finalize_enrichment.
     """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
     version_repo = DatasetVersionRepository(self.db)
     dataset_build_repo = DatasetBuildRepository(self.db)
     enrichment_build_repo = DatasetEnrichmentBuildRepository(self.db)
@@ -506,7 +522,7 @@ def process_enrichment_batch(
     # Lookup RawRepository once for this batch
     raw_repo = raw_repo_repo.find_by_id(raw_repo_id)
     if not raw_repo:
-        logger.error(f"RawRepository {raw_repo_id} not found")
+        logger.error(f"{corr_prefix} RawRepository {raw_repo_id} not found")
         return {"status": "error", "error": "RawRepository not found"}
 
     enriched_count = 0
@@ -629,10 +645,13 @@ def finalize_enrichment(
     self: PipelineTask,
     batch_results: List[Dict[str, Any]],
     version_id: str,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
     Aggregate results from all batch enrichments and update version status.
     """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
     version_repo = DatasetVersionRepository(self.db)
 
     # Aggregate stats
@@ -657,7 +676,7 @@ def finalize_enrichment(
     version_repo.mark_completed(version_id)
 
     logger.info(
-        f"Version enrichment completed: {version_id}, "
+        f"{corr_prefix} Version enrichment completed: {version_id}, "
         f"{total_enriched}/{total_processed} rows enriched"
     )
 
@@ -736,18 +755,33 @@ def _extract_features_for_enrichment(
     base=PipelineTask,
     name="app.tasks.version_enrichment.dispatch_version_scans",
     queue="processing",
-    soft_time_limit=120,
-    time_limit=180,
+    soft_time_limit=300,
+    time_limit=600,
 )
-def dispatch_version_scans(self: PipelineTask, version_id: str) -> Dict[str, Any]:
+def dispatch_version_scans(
+    self: PipelineTask,
+    version_id: str,
+    correlation_id: str = "",
+) -> Dict[str, Any]:
     """
     Dispatch scans for all unique commits in version's validated builds.
 
-    This task runs in PARALLEL with ingestion chain.
-    Scans are dispatched per unique commit (not per build).
-    Results are backfilled to all builds sharing the same commit.
+    Uses chunked processing to handle:
+    1. Paginate through builds using cursor pagination
+    2. Batch query RawBuildRuns and RawRepositories
+    3. Dispatch scan tasks in configurable batches
+
+    Config settings:
+        SCAN_BUILDS_PER_QUERY: Builds fetched per paginated query (default: 1000)
+        SCAN_COMMITS_PER_BATCH: Commits dispatched per batch (default: 100)
+        SCAN_BATCH_DELAY_SECONDS: Delay between batch dispatches (default: 0.5)
     """
+    import time
+
+    from app.config import settings
     from app.repositories.dataset_build_repository import DatasetBuildRepository
+
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
 
     version_repo = DatasetVersionRepository(self.db)
     dataset_build_repo = DatasetBuildRepository(self.db)
@@ -764,56 +798,155 @@ def dispatch_version_scans(self: PipelineTask, version_id: str) -> Dict[str, Any
     if not has_sonar and not has_trivy:
         return {"status": "skipped", "reason": "No scan metrics selected"}
 
-    # Get validated builds and group by commit
-    validated_builds = dataset_build_repo.find_validated_builds(version.dataset_id)
+    # Track unique commits to scan (avoid duplicates across pages)
+    commits_to_scan = {}  # {(repo_id, commit_sha): commit_info}
+    repo_cache = {}  # Cache RawRepository lookups
 
-    # Group by (repo_id, commit_sha) to avoid duplicate scans
-    commits_to_scan = {}  # {(repo_id, commit_sha): build_info}
-    for build in validated_builds:
-        if not build.workflow_run_id:
+    # Config
+    builds_per_query = settings.SCAN_BUILDS_PER_QUERY
+    commits_per_batch = settings.SCAN_COMMITS_PER_BATCH
+    batch_delay = settings.SCAN_BATCH_DELAY_SECONDS
+
+    total_builds_processed = 0
+    total_batches_dispatched = 0
+
+    logger.info(
+        f"{corr_prefix} Starting chunked scan dispatch for version {version_id[:8]} "
+        f"(builds_per_query={builds_per_query}, commits_per_batch={commits_per_batch})"
+    )
+
+    # Import scan helper here
+    from app.tasks.enrichment_scan_helpers import dispatch_scan_for_commit
+
+    # Iterate through builds using cursor pagination
+    for build_batch in dataset_build_repo.iterate_builds_with_run_ids_paginated(
+        dataset_id=str(version.dataset_id),
+        batch_size=builds_per_query,
+    ):
+        total_builds_processed += len(build_batch)
+
+        # Collect workflow_run_ids from this batch
+        workflow_run_ids = [b.workflow_run_id for b in build_batch if b.workflow_run_id]
+        if not workflow_run_ids:
             continue
-        raw_build_run = raw_build_run_repo.find_by_id(str(build.workflow_run_id))
-        if not raw_build_run:
-            continue
 
-        key = (str(raw_build_run.raw_repo_id), raw_build_run.commit_sha)
-        if key not in commits_to_scan:
-            commits_to_scan[key] = {
-                "raw_repo_id": str(raw_build_run.raw_repo_id),
-                "commit_sha": raw_build_run.commit_sha,
-            }
+        # Batch query RawBuildRuns for this page
+        raw_build_runs = raw_build_run_repo.find_by_ids(workflow_run_ids)
+        build_run_map = {str(r.id): r for r in raw_build_runs}
 
-    logger.info(f"Dispatching scans for {len(commits_to_scan)} unique commits")
+        # Collect unique repo IDs needed for this batch
+        repo_ids_needed = set()
+        for build in build_batch:
+            if not build.workflow_run_id:
+                continue
+            raw_build_run = build_run_map.get(str(build.workflow_run_id))
+            if raw_build_run:
+                repo_id = str(raw_build_run.raw_repo_id)
+                if repo_id not in repo_cache:
+                    repo_ids_needed.add(repo_id)
 
+        # Batch query RawRepositories (only ones not in cache)
+        if repo_ids_needed:
+            raw_repos = raw_repo_repo.find_by_ids(list(repo_ids_needed))
+            for repo in raw_repos:
+                repo_cache[str(repo.id)] = repo
+
+        # Process builds and collect unique commits
+        for build in build_batch:
+            if not build.workflow_run_id:
+                continue
+            raw_build_run = build_run_map.get(str(build.workflow_run_id))
+            if not raw_build_run:
+                continue
+
+            repo_id = str(raw_build_run.raw_repo_id)
+            raw_repo = repo_cache.get(repo_id)
+            if not raw_repo:
+                continue
+
+            key = (repo_id, raw_build_run.commit_sha)
+            if key not in commits_to_scan:
+                commits_to_scan[key] = {
+                    "raw_repo_id": repo_id,
+                    "commit_sha": raw_build_run.commit_sha,
+                    "github_repo_id": raw_repo.github_repo_id,
+                    "repo_full_name": raw_repo.full_name,
+                }
+
+        # Check if we should dispatch a batch
+        if len(commits_to_scan) >= commits_per_batch:
+            batch_count = _dispatch_scan_batch(
+                version_id=version_id,
+                commits=list(commits_to_scan.values())[:commits_per_batch],
+                dispatch_scan_for_commit=dispatch_scan_for_commit,
+                corr_prefix=corr_prefix,
+            )
+            total_batches_dispatched += 1
+
+            # Remove dispatched commits
+            dispatched_keys = list(commits_to_scan.keys())[:commits_per_batch]
+            for k in dispatched_keys:
+                del commits_to_scan[k]
+
+            # Rate limiting between batches
+            if batch_delay > 0:
+                time.sleep(batch_delay)
+
+            logger.info(
+                f"{corr_prefix} Dispatched batch {total_batches_dispatched}: "
+                f"{batch_count} scan tasks "
+                f"(processed {total_builds_processed} builds so far)"
+            )
+
+    # Dispatch remaining commits
+    if commits_to_scan:
+        batch_count = _dispatch_scan_batch(
+            version_id=version_id,
+            commits=list(commits_to_scan.values()),
+            dispatch_scan_for_commit=dispatch_scan_for_commit,
+            corr_prefix=corr_prefix,
+        )
+        total_batches_dispatched += 1
+        logger.info(f"{corr_prefix} Dispatched final batch: {batch_count} scan tasks")
+
+    logger.info(
+        f"{corr_prefix} Scan dispatch complete: "
+        f"{total_builds_processed} builds processed, "
+        f"{total_batches_dispatched} batches dispatched"
+    )
+
+    return {
+        "status": "dispatched",
+        "builds_processed": total_builds_processed,
+        "batches_dispatched": total_batches_dispatched,
+        "has_sonar": has_sonar,
+        "has_trivy": has_trivy,
+    }
+
+
+def _dispatch_scan_batch(
+    version_id: str,
+    commits: List[Dict[str, Any]],
+    dispatch_scan_for_commit,
+    corr_prefix: str,
+) -> int:
+    """Helper to dispatch a batch of scan tasks."""
     scan_tasks = []
-    for commit_info in commits_to_scan.values():
-        raw_repo = raw_repo_repo.find_by_id(commit_info["raw_repo_id"])
-        if not raw_repo:
-            continue
-
-        # Dispatch scan task
-        from app.tasks.enrichment_scan_helpers import dispatch_scan_for_commit
-
+    for commit_info in commits:
         scan_tasks.append(
             dispatch_scan_for_commit.si(
                 version_id=version_id,
                 raw_repo_id=commit_info["raw_repo_id"],
-                github_repo_id=raw_repo.github_repo_id,
+                github_repo_id=commit_info["github_repo_id"],
                 commit_sha=commit_info["commit_sha"],
-                repo_full_name=raw_repo.full_name,
+                repo_full_name=commit_info["repo_full_name"],
             )
         )
 
-    # Execute scan tasks as group
     if scan_tasks:
         group(scan_tasks).apply_async()
 
-    return {
-        "status": "dispatched",
-        "commits": len(commits_to_scan),
-        "has_sonar": has_sonar,
-        "has_trivy": has_trivy,
-    }
+    return len(scan_tasks)
 
 
 # Task 5: Process version export job (for large dataset version exports)

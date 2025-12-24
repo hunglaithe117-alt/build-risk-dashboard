@@ -67,6 +67,35 @@ class BaseRepository(ABC, Generic[T]):
         total = self.count(query)
         return items, total
 
+    def find_by_ids(
+        self,
+        entity_ids: List[str | ObjectId],
+    ) -> List[T]:
+        """
+        Find multiple documents by their IDs using $in operator.
+
+        Args:
+            entity_ids: List of document IDs (str or ObjectId)
+
+        Returns:
+            List of found documents (may be fewer than input if some not found)
+        """
+        if not entity_ids:
+            return []
+
+        # Convert all to ObjectId
+        oids = []
+        for eid in entity_ids:
+            oid = self._to_object_id(eid)
+            if oid:
+                oids.append(oid)
+
+        if not oids:
+            return []
+
+        cursor = self.collection.find({"_id": {"$in": oids}})
+        return [self._to_model(doc) for doc in cursor if doc]
+
     def insert_one(self, document: Union[T, Dict[str, Any]]) -> T:
         """Insert a single document"""
         if isinstance(document, BaseModel):

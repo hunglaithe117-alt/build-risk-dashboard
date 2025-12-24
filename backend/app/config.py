@@ -85,6 +85,11 @@ class Settings(BaseSettings):
     GIT_COMMIT_REPLAY_MAX_DEPTH: int = 50  # Max depth for fork commit replay
     GIT_LOG_UNAVAILABLE_THRESHOLD: int = 10  # Stop after N consecutive unavailable
 
+    # --- Scanning Phase (Trivy, SonarQube) ---
+    SCAN_BUILDS_PER_QUERY: int = 200  # Builds fetched per paginated query
+    SCAN_COMMITS_PER_BATCH: int = 20  # Commits dispatched per batch task
+    SCAN_BATCH_DELAY_SECONDS: float = 0.2  # Delay between batch dispatches
+
     # --- Rate Limiting (GitHub API) ---
     GITHUB_API_RATE_PER_SECOND: float = 10.0  # Sustained request rate
     GITHUB_API_BURST_ALLOWANCE: int = 5  # Burst before throttling

@@ -41,6 +41,7 @@ def start_sonar_scan_for_version_commit(
     github_repo_id: int,
     component_key: str,
     config_content: str = None,
+    correlation_id: str = "",
 ):
     """
     Start SonarQube scan for a commit in a dataset version.
@@ -56,8 +57,12 @@ def start_sonar_scan_for_version_commit(
         github_repo_id: GitHub's internal repository ID for paths
         component_key: SonarQube project key (format: reponame_commithash)
         config_content: Optional sonar-project.properties content
+        correlation_id: Correlation ID for tracing
     """
-    logger.info(f"Starting SonarQube scan for commit {commit_sha[:8]} in version {version_id[:8]}")
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    logger.info(
+        f"{corr_prefix} Starting SonarQube scan for {commit_sha[:8]} in version {version_id[:8]}"
+    )
 
     db = get_database()
     scan_repo = SonarCommitScanRepository(db)
@@ -73,7 +78,7 @@ def start_sonar_scan_for_version_commit(
 
     # Check if already scanning
     if scan_record.status.value == "scanning":
-        logger.info(f"Scan already in progress for {component_key}")
+        logger.info(f"{corr_prefix} Scan already in progress for {component_key}")
         return {"status": "already_scanning", "component_key": component_key}
 
     # Get worktree path using github_repo_id
@@ -99,12 +104,14 @@ def start_sonar_scan_for_version_commit(
             shared_worktree_path=worktree_path_str,
         )
 
-        logger.info(f"SonarQube scan initiated for {component_key}, waiting for webhook")
+        logger.info(
+            f"{corr_prefix} SonarQube scan initiated for {component_key}, waiting for webhook"
+        )
         return {"status": "scanning", "component_key": component_key}
 
     except Exception as exc:
         error_msg = str(exc)
-        logger.error(f"SonarQube scan failed for {component_key}: {error_msg}")
+        logger.error(f"{corr_prefix} SonarQube scan failed for {component_key}: {error_msg}")
         scan_repo.mark_failed(scan_record.id, error_msg)
 
         raise self.retry(

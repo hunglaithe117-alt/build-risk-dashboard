@@ -99,6 +99,35 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         query = {"raw_repo_id": raw_repo_id}
         return self.paginate(query, sort=[("build_created_at", -1)], skip=skip, limit=limit)
 
+    def find_existing_by_raw_build_run_ids(
+        self,
+        raw_repo_id: ObjectId,
+        raw_build_run_ids: List[ObjectId],
+    ) -> Dict[str, "ModelTrainingBuild"]:
+        """
+        Batch query: Find existing builds by raw_build_run_ids.
+
+        Returns a dict mapping raw_build_run_id (str) -> ModelTrainingBuild
+        for efficient O(1) lookup.
+
+        Args:
+            raw_repo_id: RawRepository ObjectId
+            raw_build_run_ids: List of RawBuildRun ObjectIds
+
+        Returns:
+            Dict mapping raw_build_run_id string to ModelTrainingBuild
+        """
+        if not raw_build_run_ids:
+            return {}
+
+        builds = self.find_many(
+            {
+                "raw_repo_id": raw_repo_id,
+                "raw_build_run_id": {"$in": raw_build_run_ids},
+            }
+        )
+        return {str(b.raw_build_run_id): b for b in builds}
+
     def update_extraction_status(
         self,
         build_id: ObjectId,
@@ -168,8 +197,6 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
     ) -> int:
         """
         Delete all builds associated with a model repo config.
-
-        Called when soft-deleting a ModelRepoConfig to clean up related builds.
 
         Args:
             model_repo_config_id: The ModelRepoConfig ID

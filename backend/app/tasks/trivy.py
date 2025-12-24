@@ -40,6 +40,7 @@ def start_trivy_scan_for_version_commit(
     github_repo_id: int,
     trivy_config: Dict[str, Any] = None,
     selected_metrics: List[str] = None,
+    correlation_id: str = "",
 ):
     """
     Run Trivy scan for a commit in a dataset version.
@@ -57,8 +58,12 @@ def start_trivy_scan_for_version_commit(
             - config_content: trivy.yaml content from UI (optional)
             - scanners: comma-separated list like "vuln,config,secret" (optional)
         selected_metrics: Optional list of metrics to filter
+        correlation_id: Correlation ID for tracing
     """
-    logger.info(f"Starting Trivy scan for commit {commit_sha[:8]} in version {version_id[:8]}")
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    logger.info(
+        f"{corr_prefix} Starting Trivy scan for commit {commit_sha[:8]} in version {version_id[:8]}"
+    )
 
     trivy_config = trivy_config or {}
     selected_metrics = selected_metrics or []
@@ -108,7 +113,7 @@ def start_trivy_scan_for_version_commit(
 
         if scan_result.get("status") == "failed":
             error_msg = scan_result.get("error", "Unknown error")
-            logger.error(f"Trivy scan failed for {commit_sha[:8]}: {error_msg}")
+            logger.error(f"{corr_prefix} Trivy scan failed for {commit_sha[:8]}: {error_msg}")
             trivy_scan_repo.mark_failed(scan_record.id, error_msg)
             return {"status": "error", "error": error_msg}
 
@@ -134,7 +139,7 @@ def start_trivy_scan_for_version_commit(
         )
 
         logger.info(
-            f"Trivy scan completed for {commit_sha[:8]}: "
+            f"{corr_prefix} Trivy scan completed for {commit_sha[:8]}: "
             f"{filtered_metrics.get('vuln_total', 0)} vulns, "
             f"backfilled to {updated_count} builds ({scan_duration_ms}ms)"
         )
@@ -148,7 +153,7 @@ def start_trivy_scan_for_version_commit(
 
     except Exception as exc:
         error_msg = str(exc)
-        logger.error(f"Trivy scan failed for {commit_sha[:8]}: {error_msg}")
+        logger.error(f"{corr_prefix} Trivy scan failed for {commit_sha[:8]}: {error_msg}")
         trivy_scan_repo.mark_failed(scan_record.id, error_msg)
 
         raise self.retry(

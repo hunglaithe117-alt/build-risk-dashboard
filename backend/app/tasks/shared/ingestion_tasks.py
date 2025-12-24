@@ -234,7 +234,11 @@ def create_worktree_chunk(
         f"[repo={raw_repo_id}][chunk={chunk_index + 1}/{total_chunks}]"
     )
 
-    logger.info(f"{log_ctx} Starting with {len(commit_shas or [])} commits")
+    # Log all commit SHAs for debugging
+    sha_list = commit_shas or []
+    logger.info(
+        f"{log_ctx} Starting with {len(sha_list)} commits: " f"{[sha[:8] for sha in sha_list]}"
+    )
 
     # Initialize result with defaults - will be returned even on error
     result = {
@@ -310,7 +314,7 @@ def create_worktree_chunk(
                     )
 
                     if git_result.returncode != 0:
-                        # Attempt fork replay
+                        # Commit not in local repo - attempt fork replay
                         if github_client and raw_repo:
                             try:
                                 from app.utils.git import ensure_commit_exists
@@ -321,14 +325,21 @@ def create_worktree_chunk(
                                     repo_slug=raw_repo.full_name,
                                     github_client=github_client,
                                 )
-                                if synthetic_sha and synthetic_sha != sha:
-                                    if build_run:
-                                        build_run_repo.update_effective_sha(
-                                            build_run.id, synthetic_sha
-                                        )
+                                if synthetic_sha:
+                                    # Commit now available (fetched or replayed)
+                                    if synthetic_sha != sha:
+                                        # Fork commit was replayed - update DB
+                                        if build_run:
+                                            build_run_repo.update_effective_sha(
+                                                build_run.id, synthetic_sha
+                                            )
+                                        fork_commits_replayed += 1
                                     sha = synthetic_sha
-                                    fork_commits_replayed += 1
+                                    # Continue to create worktree below
                                 else:
+                                    logger.warning(
+                                        f"{log_ctx} Commit {sha[:8]} not found, skipping"
+                                    )
                                     worktrees_skipped += 1
                                     continue
                             except Exception as e:
@@ -336,6 +347,9 @@ def create_worktree_chunk(
                                 worktrees_skipped += 1
                                 continue
                         else:
+                            logger.warning(
+                                f"{log_ctx} Commit {sha[:8]} not found, no client for replay"
+                            )
                             worktrees_skipped += 1
                             continue
 

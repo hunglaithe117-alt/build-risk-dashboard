@@ -117,3 +117,47 @@ class DatasetBuildRepository(BaseRepository[DatasetBuild]):
         ]
 
         return list(self.collection.aggregate(pipeline))
+
+    def iterate_builds_with_run_ids_paginated(
+        self,
+        dataset_id: str,
+        batch_size: int = 1000,
+    ):
+        """
+        Iterate validated builds with workflow_run_id using cursor pagination.
+
+        Yields batches of builds to avoid loading all into memory.
+        Uses _id-based cursor pagination for efficiency with large datasets.
+
+        Args:
+            dataset_id: Dataset ID to query
+            batch_size: Number of builds per batch
+
+        Yields:
+            List[DatasetBuild]: Batches of builds
+        """
+        oid = self._to_object_id(dataset_id)
+        if not oid:
+            return
+
+        base_query = {
+            "dataset_id": oid,
+            "status": "found",
+            "workflow_run_id": {"$ne": None},
+        }
+
+        last_id = None
+        while True:
+            query = base_query.copy()
+            if last_id:
+                query["_id"] = {"$gt": last_id}
+
+            # Fetch batch with _id sort for cursor pagination
+            cursor = self.collection.find(query).sort("_id", 1).limit(batch_size)
+            batch = [DatasetBuild(**doc) for doc in cursor]
+
+            if not batch:
+                break
+
+            yield batch
+            last_id = batch[-1].id

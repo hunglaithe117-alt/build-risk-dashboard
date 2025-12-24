@@ -2,21 +2,18 @@
 Version-Scoped Scan Dispatch for Enrichment Builds.
 
 Entry point: dispatch_scan_for_commit
-- Creates scan records for tracking
 - Dispatches Trivy scan to trivy_scan queue
 - Dispatches SonarQube scan to sonar_scan queue
+
+Note: Scan record creation is handled by the scan tasks themselves (idempotent).
 """
 
 import logging
 from typing import Any, Dict
 
-from bson import ObjectId
-
 from app.celery_app import celery_app
 from app.core.tracing import TracingContext
 from app.repositories.dataset_version import DatasetVersionRepository
-from app.repositories.sonar_commit_scan import SonarCommitScanRepository
-from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
 from app.tasks.base import PipelineTask
 
 logger = logging.getLogger(__name__)
@@ -55,8 +52,6 @@ def dispatch_scan_for_commit(
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
 
     version_repo = DatasetVersionRepository(self.db)
-    trivy_scan_repo = TrivyCommitScanRepository(self.db)
-    sonar_scan_repo = SonarCommitScanRepository(self.db)
 
     version = version_repo.find_by_id(version_id)
     if not version:
@@ -71,17 +66,6 @@ def dispatch_scan_for_commit(
         try:
             trivy_config = version.scan_config.get("trivy", {})
 
-            # Create tracking record (stores raw_repo_id for retry)
-            trivy_scan_repo.create_or_get(
-                version_id=ObjectId(version_id),
-                commit_sha=commit_sha,
-                repo_full_name=repo_full_name,
-                raw_repo_id=ObjectId(raw_repo_id),
-                scan_config=trivy_config,
-                selected_metrics=trivy_metrics,
-            )
-
-            # Dispatch to queue
             from app.tasks.trivy import start_trivy_scan_for_version_commit
 
             start_trivy_scan_for_version_commit.delay(
@@ -115,20 +99,8 @@ def dispatch_scan_for_commit(
             version_prefix = version_id[:8]
             component_key = f"{version_prefix}_{repo_name_safe}_{commit_sha[:12]}"
 
-            # Create tracking record (stores raw_repo_id for retry)
-            sonar_scan_repo.create_or_get(
-                version_id=ObjectId(version_id),
-                commit_sha=commit_sha,
-                repo_full_name=repo_full_name,
-                raw_repo_id=ObjectId(raw_repo_id),
-                component_key=component_key,
-                scan_config=sonar_config,
-            )
-
-            # Build config content
             config_content = _build_sonar_config_content(sonar_config)
 
-            # Dispatch to queue
             from app.tasks.sonar import start_sonar_scan_for_version_commit
 
             start_sonar_scan_for_version_commit.delay(

@@ -166,7 +166,7 @@ def dispatch_build_processing(
     repo_config_id: str,
     raw_repo_id: str,
     raw_build_run_ids: List[str],
-    batch_size: Optional[int] = None,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
     Create ModelTrainingBuild docs and dispatch feature extraction tasks.
@@ -187,8 +187,9 @@ def dispatch_build_processing(
     from app.repositories.model_training_build import ModelTrainingBuildRepository
     from app.repositories.raw_build_run import RawBuildRunRepository
 
-    if batch_size is None:
-        batch_size = settings.PROCESSING_BUILDS_PER_BATCH
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
+    batch_size = settings.PROCESSING_BUILDS_PER_BATCH
 
     model_build_repo = ModelTrainingBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
@@ -196,7 +197,7 @@ def dispatch_build_processing(
     import_build_repo = ModelImportBuildRepository(self.db)
 
     if not raw_build_run_ids:
-        logger.info(f"No builds to process for repo config {repo_config_id}")
+        logger.info(f"{corr_prefix} No builds to process for repo config {repo_config_id}")
         repo_config_repo.update_repository(
             repo_config_id,
             {"import_status": ModelImportStatus.IMPORTED.value},
@@ -204,27 +205,35 @@ def dispatch_build_processing(
         publish_status(repo_config_id, "imported", "No new builds to process")
         return {"repo_config_id": repo_config_id, "dispatched": 0}
 
+    raw_build_runs = raw_build_run_repo.find_by_ids(raw_build_run_ids)
+    build_run_map = {str(r.id): r for r in raw_build_runs}
+
+    import_builds = import_build_repo.find_by_raw_build_run_ids(repo_config_id, raw_build_run_ids)
+    import_build_map = {str(ib.raw_build_run_id): ib for ib in import_builds}
+
+    run_oids = [ObjectId(rid) for rid in raw_build_run_ids if ObjectId.is_valid(rid)]
+    existing_builds_map = model_build_repo.find_existing_by_raw_build_run_ids(
+        ObjectId(raw_repo_id), run_oids
+    )
+
     # Step 1: Create ModelTrainingBuild for each raw_build_run
     created_count = 0
     model_build_ids = []
 
     for run_id_str in raw_build_run_ids:
-        run_id = ObjectId(run_id_str)
-
-        # Get the build run details
-        raw_build_run = raw_build_run_repo.find_by_id(run_id)
+        # O(1) lookup from maps
+        raw_build_run = build_run_map.get(run_id_str)
         if not raw_build_run:
-            logger.warning(f"RawBuildRun {run_id_str} not found, skipping")
+            logger.warning(f"{corr_prefix} RawBuildRun {run_id_str} not found, skipping")
             continue
 
-        # Find ModelImportBuild for this raw_build_run
-        import_build = import_build_repo.find_by_business_key(repo_config_id, run_id_str)
+        import_build = import_build_map.get(run_id_str)
         if not import_build:
             logger.warning(f"ModelImportBuild not found for {run_id_str}, skipping")
             continue
 
-        # Check if ModelTrainingBuild already exists
-        existing = model_build_repo.find_by_workflow_run(ObjectId(raw_repo_id), run_id)
+        # Check if already exists
+        existing = existing_builds_map.get(run_id_str)
         if existing:
             logger.debug(f"ModelTrainingBuild already exists for {run_id_str}")
             model_build_ids.append(existing.id)
@@ -233,8 +242,9 @@ def dispatch_build_processing(
         # Create new ModelTrainingBuild with model_import_build_id reference
         model_build = ModelTrainingBuild(
             raw_repo_id=ObjectId(raw_repo_id),
-            raw_build_run_id=run_id,
-            model_import_build_id=import_build.id,  # Link to import build
+            raw_build_run_id=ObjectId(run_id_str),
+            model_import_build_id=import_build.id,
+            model_repo_config_id=ObjectId(repo_config_id),
             head_sha=raw_build_run.commit_sha,
             build_number=raw_build_run.build_number,
             build_created_at=raw_build_run.created_at,
@@ -244,7 +254,10 @@ def dispatch_build_processing(
         model_build_ids.append(inserted.id)
         created_count += 1
 
-    logger.info(f"Created {created_count} ModelTrainingBuild documents for repo {repo_config_id}")
+    logger.info(
+        f"{corr_prefix} Created {created_count} ModelTrainingBuild documents "
+        f"for repo {repo_config_id}"
+    )
 
     publish_status(
         repo_config_id,
@@ -252,32 +265,54 @@ def dispatch_build_processing(
         f"Scheduling {len(model_build_ids)} builds for processing...",
     )
 
-    # Step 2: Dispatch all processing tasks with chord for accurate completion tracking
-    processing_tasks = [
-        process_workflow_run.si(
-            repo_config_id=repo_config_id,
-            model_build_id=str(build_id),
-        )
-        for build_id in model_build_ids
-    ]
+    # Step 2: Split builds into batches and dispatch batch tasks
+    batch_tasks = []
+    model_build_id_strs = [str(bid) for bid in model_build_ids]
+    total_builds = len(model_build_id_strs)
 
-    # Dispatch chord: all tasks run in parallel, then finalize is called
+    # Calculate total batches upfront for correct logging
+    import math
+
+    total_batches = math.ceil(total_builds / batch_size) if total_builds > 0 else 0
+
+    for chunk_start in range(0, total_builds, batch_size):
+        chunk = model_build_id_strs[chunk_start : chunk_start + batch_size]
+        batch_tasks.append(
+            process_build_batch.si(
+                repo_config_id=repo_config_id,
+                model_build_ids=chunk,
+                batch_index=len(batch_tasks),
+                total_batches=total_batches,
+                correlation_id=correlation_id,
+            )
+        )
+
+    logger.info(
+        f"{corr_prefix} Dispatching {total_batches} batch tasks "
+        f"({total_builds} builds, batch_size={batch_size})"
+    )
+
+    # Dispatch chord: all batches run in parallel, then finalize is called
     chord(
-        group(processing_tasks),
-        finalize_model_processing.s(repo_config_id=repo_config_id, created_count=created_count),
+        group(batch_tasks),
+        finalize_model_processing.s(
+            repo_config_id=repo_config_id,
+            created_count=created_count,
+            correlation_id=correlation_id,
+        ),
     ).apply_async()
 
-    logger.info(f"Dispatched chord with {len(model_build_ids)} processing tasks")
     publish_status(
         repo_config_id,
         "processing",
-        f"Processing {len(model_build_ids)} builds...",
+        f"Processing {total_builds} builds in {total_batches} batches...",
     )
 
     return {
         "repo_config_id": repo_config_id,
         "created": created_count,
-        "dispatched": len(model_build_ids),
+        "dispatched": total_builds,
+        "batches": total_batches,
         "status": "processing",
     }
 
@@ -295,6 +330,7 @@ def finalize_model_processing(
     results: List[Dict[str, Any]],
     repo_config_id: str,
     created_count: int,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
     Chord callback: Finalize model processing after all builds are processed.
@@ -303,12 +339,14 @@ def finalize_model_processing(
         results: List of results from all process_workflow_run tasks
         repo_config_id: The repository config ID
         created_count: Number of builds created before processing
+        correlation_id: Correlation ID for tracing
     """
     from datetime import datetime
 
     from app.entities.enums import ModelImportStatus
 
-    logger.info(f"Finalizing model processing for {repo_config_id}")
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    logger.info(f"{corr_prefix} Finalizing model processing for {repo_config_id}")
 
     # Aggregate results
     success_count = sum(1 for r in results if r and r.get("status") == "completed")
@@ -362,6 +400,210 @@ def finalize_model_processing(
     }
 
 
+# Task 3: Process a batch of builds (new batch pattern)
+@celery_app.task(
+    bind=True,
+    base=PipelineTask,
+    name="app.tasks.processing.process_build_batch",
+    queue="processing",
+    soft_time_limit=1800,  # 30 min for batch
+    time_limit=2100,
+)
+def process_build_batch(
+    self: PipelineTask,
+    repo_config_id: str,
+    model_build_ids: List[str],
+    batch_index: int = 0,
+    total_batches: int = 1,
+    correlation_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Process a batch of builds for feature extraction.
+
+    This is the batch version of process_workflow_run, matching the
+    enrichment flow pattern (process_enrichment_batch).
+
+    Args:
+        repo_config_id: The model_repo_config_id
+        model_build_ids: List of ModelTrainingBuild ObjectId strings
+        batch_index: Index of this batch (for logging)
+        total_batches: Total number of batches (for logging)
+        correlation_id: Correlation ID for tracing
+    """
+    from app.repositories.dataset_template_repository import DatasetTemplateRepository
+    from app.services.github.github_client import get_public_github_client
+    from app.tasks.pipeline.feature_dag._inputs import GitHubClientInput
+
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    log_ctx = f"{corr_prefix}[batch={batch_index + 1}/{total_batches}]"
+
+    model_build_repo = ModelTrainingBuildRepository(self.db)
+    repo_config_repo = ModelRepoConfigRepository(self.db)
+    raw_build_run_repo = RawBuildRunRepository(self.db)
+    raw_repo_repo = RawRepositoryRepository(self.db)
+
+    # Validate repo config exists
+    repo_config = repo_config_repo.find_by_id(repo_config_id)
+    if not repo_config:
+        logger.error(f"{log_ctx} Repository Config {repo_config_id} not found")
+        return {"status": "error", "error": "Repository Config not found"}
+
+    # Get RawRepository (same for all builds in this batch)
+    raw_repo = raw_repo_repo.find_by_id(repo_config.raw_repo_id)
+    if not raw_repo:
+        logger.error(f"{log_ctx} RawRepository {repo_config.raw_repo_id} not found")
+        return {"status": "error", "error": "RawRepository not found"}
+
+    # Get template features
+    template_repo = DatasetTemplateRepository(self.db)
+    template = template_repo.find_by_name("TravisTorrent Full")
+    feature_names = template.feature_names if template else []
+
+    # Create GitHub client once for the batch
+    github_client_input = None
+    try:
+        client = get_public_github_client()
+        github_client_input = GitHubClientInput(client=client, full_name=raw_repo.full_name)
+    except Exception as e:
+        logger.warning(f"{log_ctx} Failed to create GitHub client: {e}")
+
+    # Process each build in the batch
+    processed = 0
+    succeeded = 0
+    failed = 0
+
+    for build_id_str in model_build_ids:
+        try:
+            result = _process_single_build(
+                db=self.db,
+                model_build_id=build_id_str,
+                repo_config=repo_config,
+                raw_repo=raw_repo,
+                feature_names=feature_names,
+                github_client_input=github_client_input,
+                model_build_repo=model_build_repo,
+                repo_config_repo=repo_config_repo,
+                raw_build_run_repo=raw_build_run_repo,
+                corr_prefix=log_ctx,
+            )
+            processed += 1
+            if result.get("status") in ("completed", "partial"):
+                succeeded += 1
+            else:
+                failed += 1
+
+        except Exception as e:
+            logger.error(f"{log_ctx} Failed to process build {build_id_str}: {e}")
+            failed += 1
+            processed += 1
+
+    logger.info(f"{log_ctx} Batch complete: {succeeded}/{processed} succeeded, {failed} failed")
+
+    return {
+        "status": "completed" if failed == 0 else "partial",
+        "batch_index": batch_index,
+        "processed": processed,
+        "succeeded": succeeded,
+        "failed": failed,
+    }
+
+
+def _process_single_build(
+    db,
+    model_build_id: str,
+    repo_config,
+    raw_repo,
+    feature_names: List[str],
+    github_client_input,
+    model_build_repo,
+    repo_config_repo,
+    raw_build_run_repo,
+    corr_prefix: str = "",
+) -> Dict[str, Any]:
+    """
+    Process a single build within a batch.
+
+    Extracted helper to keep process_build_batch clean.
+    """
+    # Find the ModelTrainingBuild
+    model_build = model_build_repo.find_one(
+        {
+            "_id": ObjectId(model_build_id),
+            "extraction_status": ExtractionStatus.PENDING.value,
+        }
+    )
+    if not model_build:
+        # Already processed or not found
+        return {"status": "skipped", "reason": "not_found_or_processed"}
+
+    # Get the RawBuildRun
+    raw_build_run = raw_build_run_repo.find_by_id(model_build.raw_build_run_id)
+    if not raw_build_run:
+        model_build_repo.update_one(
+            model_build_id,
+            {
+                "extraction_status": ExtractionStatus.FAILED.value,
+                "extraction_error": "RawBuildRun not found",
+            },
+        )
+        return {"status": "failed", "error": "RawBuildRun not found"}
+
+    build_id = str(model_build.id)
+
+    # Extract features using shared helper
+    result = extract_features_for_build(
+        db=db,
+        raw_repo=raw_repo,
+        feature_config=repo_config.feature_configs,
+        raw_build_run=raw_build_run,
+        selected_features=feature_names,
+        github_client=github_client_input,
+    )
+
+    # Update build with results
+    updates = {
+        "features": format_features_for_storage(result.get("features", {})),
+        "feature_count": result.get("feature_count", 0),
+    }
+
+    if result["status"] == "completed":
+        updates["extraction_status"] = ExtractionStatus.COMPLETED.value
+    elif result["status"] == "partial":
+        updates["extraction_status"] = ExtractionStatus.PARTIAL.value
+    else:
+        updates["extraction_status"] = ExtractionStatus.FAILED.value
+
+    if result.get("errors"):
+        updates["extraction_error"] = "; ".join(result["errors"])
+    elif result.get("warnings"):
+        updates["extraction_error"] = "Warning: " + "; ".join(result["warnings"])
+
+    if result.get("is_missing_commit"):
+        updates["is_missing_commit"] = True
+    if result.get("missing_resources"):
+        updates["missing_resources"] = result["missing_resources"]
+    if result.get("skipped_features"):
+        updates["skipped_features"] = result["skipped_features"]
+
+    model_build_repo.update_one(build_id, updates)
+
+    # Update repo config stats (batch mode - update counts)
+    if updates["extraction_status"] in (
+        ExtractionStatus.COMPLETED.value,
+        ExtractionStatus.PARTIAL.value,
+    ):
+        repo_config_repo.increment_builds_processed(ObjectId(repo_config.id))
+    elif updates["extraction_status"] == ExtractionStatus.FAILED.value:
+        repo_config_repo.increment_builds_failed(ObjectId(repo_config.id))
+
+    return {
+        "status": result["status"],
+        "build_id": build_id,
+        "feature_count": result.get("feature_count", 0),
+    }
+
+
+# Task 4: Process a single build (legacy, kept for backward compatibility)
 @celery_app.task(
     bind=True,
     base=PipelineTask,
@@ -375,15 +617,19 @@ def process_workflow_run(
     repo_config_id: str,
     model_build_id: str,
     is_reprocess: bool = False,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
     Process a single build for feature extraction.
 
     Args:
         repo_config_id: The model_repo_config_id
-        model_build_id: The ModelTrainingBuild ObjectId string (already created with PENDING status)
-        is_reprocess: If True, skip incrementing build counters (build was already counted)
+        model_build_id: The ModelTrainingBuild ObjectId string
+        is_reprocess: If True, skip incrementing build counters
+        correlation_id: Correlation ID for tracing
     """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
     model_build_repo = ModelTrainingBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
     raw_build_run_repo = RawBuildRunRepository(self.db)
@@ -396,13 +642,13 @@ def process_workflow_run(
         }
     )
     if not model_build:
-        logger.error(f"ModelTrainingBuild not found for id {model_build_id}")
+        logger.error(f"{corr_prefix} ModelTrainingBuild not found for id {model_build_id}")
         return {"status": "error", "message": "ModelTrainingBuild not found"}
 
     # Get the RawBuildRun
     raw_build_run = raw_build_run_repo.find_by_id(model_build.raw_build_run_id)
     if not raw_build_run:
-        logger.error(f"RawBuildRun not found for id {model_build.raw_build_run_id}")
+        logger.error(f"{corr_prefix} RawBuildRun not found for id {model_build.raw_build_run_id}")
         model_build_repo.update_one(
             model_build_id,
             {
@@ -415,7 +661,7 @@ def process_workflow_run(
     # Validate repository exists
     repo_config = repo_config_repo.find_by_id(repo_config_id)
     if not repo_config:
-        logger.error(f"Repository Config {repo_config_id} not found")
+        logger.error(f"{corr_prefix} Repository Config {repo_config_id} not found")
         return {"status": "error", "message": "Repository Config not found"}
 
     build_id = str(model_build.id)
@@ -428,7 +674,7 @@ def process_workflow_run(
         raw_repo_repo = RawRepositoryRepository(self.db)
         raw_repo = raw_repo_repo.find_by_id(repo_config.raw_repo_id)
         if not raw_repo:
-            logger.error(f"RawRepository {repo_config.raw_repo_id} not found")
+            logger.error(f"{corr_prefix} RawRepository {repo_config.raw_repo_id} not found")
             return {"status": "error", "message": "RawRepository not found"}
 
         # Always use TravisTorrent Full template features
@@ -445,7 +691,7 @@ def process_workflow_run(
             client = get_public_github_client()
             github_client_input = GitHubClientInput(client=client, full_name=raw_repo.full_name)
         except Exception as e:
-            logger.warning(f"Failed to create GitHub client: {e}")
+            logger.warning(f"{corr_prefix} Failed to create GitHub client: {e}")
 
         # Use shared helper for feature extraction with status
         result = extract_features_for_build(
@@ -528,7 +774,7 @@ def process_workflow_run(
         publish_build_update(repo_config_id, build_id, updates["extraction_status"])
 
         logger.info(
-            f"Pipeline completed for build {build_id}: "
+            f"{corr_prefix} Pipeline completed for build {build_id}: "
             f"status={result['status']}, "
             f"features={result.get('feature_count', 0)}"
         )
@@ -542,7 +788,7 @@ def process_workflow_run(
         }
 
     except Exception as e:
-        logger.error(f"Pipeline failed for build {build_id}: {e}", exc_info=True)
+        logger.error(f"{corr_prefix} Pipeline failed for build {build_id}: {e}", exc_info=True)
 
         model_build_repo.update_one(
             build_id,

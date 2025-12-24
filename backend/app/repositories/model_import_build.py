@@ -101,6 +101,35 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             }
         )
 
+    def find_by_raw_build_run_ids(
+        self,
+        config_id: str,
+        raw_build_run_ids: List[str],
+    ) -> List[ModelImportBuild]:
+        """
+        Batch query: Find all import builds by their raw_build_run_ids.
+
+        Args:
+            config_id: ModelRepoConfig ID
+            raw_build_run_ids: List of RawBuildRun IDs
+
+        Returns:
+            List of ModelImportBuild entities
+        """
+        if not raw_build_run_ids:
+            return []
+
+        oids = [ObjectId(rid) for rid in raw_build_run_ids if ObjectId.is_valid(rid)]
+        if not oids:
+            return []
+
+        return self.find_many(
+            {
+                "model_repo_config_id": ObjectId(config_id),
+                "raw_build_run_id": {"$in": oids},
+            }
+        )
+
     def get_commit_shas(self, config_id: str, import_version: Optional[int] = None) -> List[str]:
         """Get unique commit SHAs for ingestion."""
         query = {

@@ -170,6 +170,13 @@ def git_commit_info(
     }
 )
 @tag(group="git")
+@feature_metadata(
+    display_name="Git Diff Features",
+    description="Diff statistics: file counts, churn, test changes",
+    category=FeatureCategory.GIT_HISTORY,
+    data_type=FeatureDataType.JSON,
+    required_resources=[FeatureResource.GIT_HISTORY],
+)
 @requires_config(
     source_languages={
         "type": "list",

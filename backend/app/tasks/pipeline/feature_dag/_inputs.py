@@ -307,12 +307,20 @@ def build_hamilton_inputs(
         except subprocess.CalledProcessError:
             logger.warning(f"Commit {effective_sha[:8]} not found in repo {raw_repo.full_name}")
 
-    # Check worktree availability
+    # Check worktree availability - try effective_sha first, then original_sha
     if is_commit_available and worktrees_base:
+        # Try effective_sha (used when fork was replayed)
         worktree_path = worktrees_base / effective_sha[:12]
         if not worktree_path.exists():
-            logger.warning(f"Worktree not found: {worktree_path}")
-            worktree_path = None
+            # Fallback: try original_sha (normal case, or worktree created before replay)
+            original_worktree_path = worktrees_base / original_sha[:12]
+            if original_worktree_path.exists():
+                worktree_path = original_worktree_path
+            else:
+                logger.warning(
+                    f"Worktree not found: tried {effective_sha[:12]} and {original_sha[:12]}"
+                )
+                worktree_path = None
 
     # Create GitHistoryInput
     git_history = GitHistoryInput(

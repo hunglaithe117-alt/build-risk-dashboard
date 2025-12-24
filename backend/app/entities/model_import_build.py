@@ -38,10 +38,9 @@ class ModelImportBuild(BaseEntity):
         collection = "model_import_builds"
         use_enum_values = True
 
-    # Link to import session
     model_repo_config_id: PyObjectId = Field(
         ...,
-        description="Reference to model_repo_configs - the import session",
+        description="Reference to model_repo_configs",
     )
 
     # Link to raw build data

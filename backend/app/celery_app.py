@@ -16,7 +16,6 @@ celery_app = Celery(
     include=[
         "app.tasks.model_ingestion",
         "app.tasks.model_processing",
-        "app.tasks.dataset_ingestion",
         "app.tasks.dataset_validation",
         "app.tasks.enrichment_processing",
         "app.tasks.export",

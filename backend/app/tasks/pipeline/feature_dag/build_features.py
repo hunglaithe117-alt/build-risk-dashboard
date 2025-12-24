@@ -6,6 +6,7 @@ Features extracted from CI workflow run metadata:
 - Source languages
 """
 
+import logging
 from typing import List, Optional
 
 from hamilton.function_modifiers import tag
@@ -13,6 +14,7 @@ from hamilton.function_modifiers import tag
 from app.tasks.pipeline.feature_dag._inputs import (
     BuildRunInput,
     FeatureConfigInput,
+    GitHubClientInput,
     RepoInput,
 )
 from app.tasks.pipeline.feature_dag._metadata import (
@@ -23,6 +25,8 @@ from app.tasks.pipeline.feature_dag._metadata import (
     feature_metadata,
     requires_config,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @feature_metadata(
@@ -243,8 +247,51 @@ def git_branch(build_run: BuildRunInput) -> Optional[str]:
 def gh_is_pr(build_run: BuildRunInput) -> bool:
     """Whether this build is triggered by a pull request."""
     payload = build_run.raw_data
+    event = payload.get("event", "")
+    return event in ("pull_request", "pull_request_target")
+
+
+def _find_primary_pr(payload: dict) -> Optional[dict]:
+    """
+    Find the PR that was merged INTO this repo (not fork PRs).
+
+    Fork PRs have base.repo.id != repository.id (they merge FROM upstream TO fork).
+    Primary PR has base.repo.id == repository.id (merges INTO this repo).
+    """
     pull_requests = payload.get("pull_requests", [])
-    return len(pull_requests) > 0 or payload.get("event") == "pull_request"
+    repository = payload.get("repository", {})
+    repo_id = repository.get("id")
+    event = payload.get("event", "unknown")
+
+    if not pull_requests:
+        logger.debug(f"No pull_requests in payload (event={event})")
+        return None
+
+    if not repo_id:
+        logger.warning("Cannot find primary PR: repository.id missing from payload")
+        return None
+
+    logger.debug(
+        f"Searching for primary PR among {len(pull_requests)} PRs "
+        f"(event={event}, repo_id={repo_id})"
+    )
+
+    for pr in pull_requests:
+        pr_number = pr.get("number")
+        base_repo_id = pr.get("base", {}).get("repo", {}).get("id")
+        base_repo_name = pr.get("base", {}).get("repo", {}).get("name", "?")
+
+        if base_repo_id == repo_id:
+            logger.info(f"Found primary PR #{pr_number} (base.repo.id matches repository.id)")
+            return pr
+        else:
+            logger.debug(
+                f"Skipping PR #{pr_number}: base.repo={base_repo_name} "
+                f"(id={base_repo_id}) != repo_id={repo_id}"
+            )
+
+    logger.debug(f"No primary PR found among {len(pull_requests)} PRs (all are fork PRs)")
+    return None
 
 
 @feature_metadata(
@@ -258,9 +305,9 @@ def gh_is_pr(build_run: BuildRunInput) -> bool:
 def gh_pull_req_num(build_run: BuildRunInput) -> Optional[int]:
     """Pull request number if this build is PR-triggered."""
     payload = build_run.raw_data
-    pull_requests = payload.get("pull_requests", [])
-    if pull_requests:
-        return pull_requests[0].get("number")
+    primary_pr = _find_primary_pr(payload)
+    if primary_pr:
+        return primary_pr.get("number")
     return None
 
 
@@ -269,13 +316,31 @@ def gh_pull_req_num(build_run: BuildRunInput) -> Optional[int]:
     description="Timestamp when the pull request was created",
     category=FeatureCategory.PR_INFO,
     data_type=FeatureDataType.DATETIME,
-    required_resources=[FeatureResource.BUILD_RUN],
+    required_resources=[FeatureResource.GITHUB_API, FeatureResource.BUILD_RUN],
 )
 @tag(group="metadata")
-def gh_pr_created_at(build_run: BuildRunInput) -> Optional[str]:
-    """Pull request creation timestamp if available."""
+def gh_pr_created_at(
+    build_run: BuildRunInput,
+    github_client: GitHubClientInput,
+) -> Optional[str]:
+    """Pull request creation timestamp fetched from GitHub API."""
     payload = build_run.raw_data
-    pull_requests = payload.get("pull_requests", [])
-    if pull_requests:
-        return pull_requests[0].get("created_at")
-    return None
+    primary_pr = _find_primary_pr(payload)
+
+    if not primary_pr:
+        return None
+
+    pr_number = primary_pr.get("number")
+    if not pr_number:
+        return None
+
+    try:
+        full_name = github_client.full_name
+        logger.debug(f"Fetching PR #{pr_number} details from GitHub API for {full_name}")
+        pr_details = github_client.client.get_pull_request(full_name, pr_number)
+        created_at = pr_details.get("created_at")
+        logger.debug(f"PR #{pr_number} created_at: {created_at}")
+        return created_at
+    except Exception as e:
+        logger.warning(f"Failed to fetch PR #{pr_number} details: {e}")
+        return None

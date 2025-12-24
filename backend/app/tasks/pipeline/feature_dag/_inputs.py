@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 
 from app.entities.raw_build_run import RawBuildRun
 from app.entities.raw_repository import RawRepository
+from app.services.github.github_client import GitHubClient
 
 
 @dataclass
@@ -211,7 +212,7 @@ class BuildRunInput:
 class GitHubClientInput:
     """GitHub API client wrapper."""
 
-    client: Any  # GitHubClient instance
+    client: GitHubClient  # GitHubClient instance
     full_name: str
 
     @classmethod

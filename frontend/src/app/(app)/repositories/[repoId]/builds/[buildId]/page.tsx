@@ -130,6 +130,52 @@ function formatDuration(seconds?: number | null): string {
     return `${mins}m ${secs}s`;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function FeatureValue({ value }: { value: any }) {
+    if (value === null || value === undefined) {
+        return <span className="text-muted-foreground italic">null</span>;
+    }
+
+    if (typeof value === "boolean") {
+        return (
+            <Badge variant={value ? "default" : "secondary"} className="font-mono">
+                {value ? "true" : "false"}
+            </Badge>
+        );
+    }
+
+    if (typeof value === "number") {
+        return <span className="font-mono">{value}</span>;
+    }
+
+    // Handle arrays and objects
+    if (typeof value === "object") {
+        const jsonStr = JSON.stringify(value, null, 2);
+        return (
+            <div className="max-w-[400px] overflow-x-auto">
+                <pre className="font-mono text-xs whitespace-pre bg-slate-50 dark:bg-slate-900/50 rounded px-2 py-1">
+                    {jsonStr}
+                </pre>
+            </div>
+        );
+    }
+
+    const strValue = String(value);
+
+    // Long strings (commit lists, etc.) get horizontal scroll
+    if (strValue.length > 60 || strValue.includes("#")) {
+        return (
+            <div className="max-w-[400px] overflow-x-auto">
+                <code className="font-mono text-xs whitespace-nowrap bg-slate-50 dark:bg-slate-900/50 rounded px-2 py-1 block">
+                    {strValue}
+                </code>
+            </div>
+        );
+    }
+
+    return <span className="font-mono">{strValue}</span>;
+}
+
 export default function BuildDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -357,35 +403,35 @@ export default function BuildDetailPage() {
                             </div>
 
                             {/* Features Table */}
-                            <div className="max-h-[500px] overflow-y-auto rounded-lg border">
-                                <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
-                                    <thead className="bg-slate-50 dark:bg-slate-900/50 sticky top-0">
+                            <div className="rounded-lg border overflow-hidden">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-slate-50 dark:bg-slate-900/50">
                                         <tr>
-                                            <th className="px-4 py-3 text-left font-semibold text-muted-foreground">
+                                            <th className="w-[280px] min-w-[280px] px-4 py-3 text-left font-semibold text-muted-foreground border-r border-slate-200 dark:border-slate-700">
                                                 Feature Name
                                             </th>
-                                            <th className="px-4 py-3 text-right font-semibold text-muted-foreground">
+                                            <th className="px-4 py-3 text-left font-semibold text-muted-foreground">
                                                 Value
                                             </th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                        {featureEntries.map(([key, value]) => (
-                                            <tr key={key} className="hover:bg-slate-50 dark:hover:bg-slate-900/30">
-                                                <td className="px-4 py-3 font-mono text-sm">
-                                                    {key}
-                                                </td>
-                                                <td className="px-4 py-3 text-right font-mono text-sm">
-                                                    {value === null || value === undefined
-                                                        ? <span className="text-muted-foreground">null</span>
-                                                        : typeof value === "boolean"
-                                                            ? value ? "true" : "false"
-                                                            : String(value)}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
                                 </table>
+                                <div className="max-h-[500px] overflow-y-auto">
+                                    <table className="w-full text-sm">
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {featureEntries.map(([key, value]) => (
+                                                <tr key={key} className="hover:bg-slate-50 dark:hover:bg-slate-900/30">
+                                                    <td className="w-[280px] min-w-[280px] px-4 py-3 font-mono text-sm border-r border-slate-100 dark:border-slate-800 align-top">
+                                                        {key}
+                                                    </td>
+                                                    <td className="px-4 py-3 align-top">
+                                                        <FeatureValue value={value} />
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </div>
                     ) : (

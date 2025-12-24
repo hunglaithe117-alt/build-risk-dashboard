@@ -56,6 +56,8 @@ def github_discussion_features(
     build_run: BuildRunInput,
     git_all_built_commits: List[str],
     raw_build_runs: Any,
+    gh_pull_req_num: Optional[int],
+    gh_pr_created_at: Optional[str],
 ) -> Dict[str, Any]:
     client = github_client.client
     full_name = github_client.full_name
@@ -65,17 +67,6 @@ def github_discussion_features(
     if not commits_to_check:
         head_sha = build_run.commit_sha
         commits_to_check = [head_sha] if head_sha else []
-
-    # Extract PR info from payload
-    payload = build_run.raw_data
-    pull_requests = payload.get("pull_requests", [])
-    pr_number = None
-    pr_created_at = None
-    description_complexity = None
-
-    if pull_requests:
-        pr_data = pull_requests[0]
-        pr_number = pr_data.get("number")
 
     # Build timestamps
     build_start_time = build_run.created_at
@@ -97,10 +88,20 @@ def github_discussion_features(
     # 2. PR-specific: Issue comments on the PR + code review comments
     num_issue_comments = 0
     num_pr_comments = 0
+    description_complexity = None
+
+    # Use pr_number and pr_created_at from Hamilton DAG
+    pr_number = gh_pull_req_num
+    pr_created_at: Optional[datetime] = None
+    if gh_pr_created_at:
+        try:
+            pr_created_at = datetime.fromisoformat(gh_pr_created_at.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            pass
 
     if pr_number:
         try:
-            # Fetch PR details for created_at and description complexity
+            # Fetch PR details for description complexity
             pr_details = client.get_pull_request(full_name, pr_number)
 
             # Description complexity
@@ -108,13 +109,7 @@ def github_discussion_features(
             body = pr_details.get("body", "") or ""
             description_complexity = len(title.split()) + len(body.split())
 
-            # PR created time
-            pr_created_str = pr_details.get("created_at")
-            if pr_created_str:
-                pr_created_at = datetime.fromisoformat(pr_created_str.replace("Z", "+00:00"))
-
             # gh_num_issue_comments: Discussion comments on THIS PR
-            # TravisTorrent: from PR creation to build start
             num_issue_comments = _count_pr_issue_comments(
                 client,
                 full_name,
@@ -124,7 +119,6 @@ def github_discussion_features(
             )
 
             # gh_num_pr_comments: Code review comments on THIS PR
-            # TravisTorrent: from prev_build_started_at to current build_started_at
             num_pr_comments = _count_pr_review_comments(
                 client,
                 full_name,

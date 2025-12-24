@@ -80,6 +80,7 @@ def ingest_model_builds(
     since_days: Optional[int] = None,
     only_with_logs: bool = False,
     batch_size: Optional[int] = None,
+    sync_until_existing: bool = False,
     correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
@@ -88,10 +89,11 @@ def ingest_model_builds(
     Args:
         repo_config_id: The model repo config ID
         ci_provider: CI provider to use (e.g., "github_actions")
-        max_builds: Maximum number of builds to fetch
-        since_days: Only fetch builds from the last N days
+        max_builds: Maximum number of builds to fetch (ignored if sync_until_existing=True)
+        since_days: Only fetch builds from the last N days (ignored if sync_until_existing=True)
         only_with_logs: Only fetch builds with logs available
         batch_size: Number of builds per page
+        sync_until_existing: If True, fetch sequentially until hitting existing builds
         correlation_id: Optional correlation ID for tracing (generates new if not provided)
 
     Flow:
@@ -135,6 +137,27 @@ def ingest_model_builds(
     )
     publish_status(repo_config_id, "importing", "Starting fetch...")
 
+    # Route to appropriate fetch strategy
+    if sync_until_existing:
+        # Sequential fetch that stops when hitting existing builds
+        logger.info(f"{corr_prefix} Using sync_until_existing mode")
+        fetch_builds_until_existing.delay(
+            repo_config_id=repo_config_id,
+            ci_provider=ci_provider,
+            batch_size=batch_size,
+            only_with_logs=only_with_logs,
+            import_version=new_version,
+            correlation_id=correlation_id,
+        )
+        return {
+            "status": "dispatched",
+            "repo_config_id": repo_config_id,
+            "correlation_id": correlation_id,
+            "mode": "sync_until_existing",
+            "import_version": new_version,
+        }
+
+    # Original parallel fetch mode
     estimated_pages = (max_builds // batch_size + 1) if max_builds else 10
 
     # Build fetch tasks for each page
@@ -178,6 +201,215 @@ def ingest_model_builds(
         "correlation_id": correlation_id,
         "fetch_tasks": len(fetch_tasks),
         "import_version": new_version,
+    }
+
+
+@celery_app.task(
+    bind=True,
+    base=PipelineTask,
+    name="app.tasks.model_ingestion.fetch_builds_until_existing",
+    queue="ingestion",
+    soft_time_limit=600,
+    time_limit=900,
+)
+def fetch_builds_until_existing(
+    self: PipelineTask,
+    repo_config_id: str,
+    ci_provider: str,
+    batch_size: int,
+    import_version: int,
+    only_with_logs: bool = False,
+    correlation_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Sequential fetch that stops when hitting existing builds.
+
+    Fetches pages one by one from newest to oldest. Stops when
+    all builds on a page already exist in the database (COMPLETED or PARTIAL).
+
+    After fetching, dispatches ingestion for new builds.
+    """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    log_ctx = f"{corr_prefix}[sync_until_existing]"
+
+    repo_config_repo = ModelRepoConfigRepository(self.db)
+    build_run_repo = RawBuildRunRepository(self.db)
+    import_build_repo = ModelImportBuildRepository(self.db)
+    raw_repo_repo = RawRepositoryRepository(self.db)
+
+    repo_config = repo_config_repo.find_by_id(repo_config_id)
+    if not repo_config:
+        return {"status": "error", "error": "Config not found"}
+
+    raw_repo_id = str(repo_config.raw_repo_id)
+    full_name = repo_config.full_name
+
+    # Get CI provider instance
+    ci_provider_enum = CIProvider(ci_provider)
+    provider_config = get_provider_config(ci_provider_enum)
+    ci_instance = get_ci_provider(ci_provider_enum, provider_config, db=self.db)
+
+    # Get RawRepository for later
+    raw_repo = raw_repo_repo.find_by_id(repo_config.raw_repo_id)
+    if not raw_repo:
+        return {"status": "error", "error": "RawRepository not found"}
+
+    page = 1
+    total_new_builds = 0
+    all_commit_shas = []
+    all_ci_run_ids = []
+
+    while True:
+        logger.info(f"{log_ctx} Fetching page {page}")
+
+        fetch_kwargs = {
+            "limit": batch_size,
+            "page": page,
+            "exclude_bots": True,
+            "only_with_logs": only_with_logs,
+            "only_completed": True,
+        }
+
+        # Fetch page
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            builds = loop.run_until_complete(ci_instance.fetch_builds(full_name, **fetch_kwargs))
+        finally:
+            loop.close()
+
+        if not builds:
+            logger.info(f"{log_ctx} Page {page}: No builds returned, stopping")
+            break
+
+        # Process builds and count new ones
+        new_on_page = 0
+        existing_on_page = 0
+
+        for build in builds:
+            if build.status != BuildStatus.COMPLETED:
+                continue
+
+            if not build.build_id:
+                continue
+
+            # Check if RawBuildRun already exists
+            existing_run = build_run_repo.find_by_ci_run_id(ObjectId(raw_repo_id), build.build_id)
+
+            if existing_run:
+                # Check if ModelTrainingBuild exists and is processed
+                from app.repositories.model_training_build import ModelTrainingBuildRepository
+
+                training_repo = ModelTrainingBuildRepository(self.db)
+                training_build = training_repo.find_by_raw_build_run_id(
+                    ObjectId(raw_repo_id), existing_run.id
+                )
+
+                if training_build and training_build.extraction_status.value in (
+                    "completed",
+                    "partial",
+                ):
+                    existing_on_page += 1
+                    continue
+
+            # Save to RawBuildRun
+            raw_build_run = build_run_repo.upsert_by_business_key(
+                raw_repo_id=ObjectId(raw_repo_id),
+                build_id=build.build_id,
+                provider=ci_provider_enum.value,
+                build_number=build.build_number,
+                repo_name=full_name,
+                branch=build.branch or "",
+                commit_sha=build.commit_sha,
+                commit_message=None,
+                commit_author=None,
+                status=build.status,
+                conclusion=build.conclusion,
+                created_at=build.created_at or datetime.now(timezone.utc),
+                started_at=None,
+                completed_at=build.created_at or datetime.now(timezone.utc),
+                duration_seconds=build.duration_seconds,
+                web_url=build.web_url,
+                logs_url=None,
+                logs_available=build.logs_available or False,
+                logs_path=None,
+                raw_data=build.raw_data or {},
+                is_bot_commit=build.is_bot_commit or False,
+            )
+
+            # Create ModelImportBuild
+            existing_import = import_build_repo.find_by_business_key(
+                repo_config_id, str(raw_build_run.id)
+            )
+            if not existing_import or existing_import.import_version != import_version:
+                import_build = ModelImportBuild(
+                    model_repo_config_id=ObjectId(repo_config_id),
+                    raw_build_run_id=raw_build_run.id,
+                    import_version=import_version,
+                    status=ModelImportBuildStatus.FETCHED,
+                    ci_run_id=raw_build_run.ci_run_id,
+                    commit_sha=build.commit_sha or "",
+                )
+                import_build_repo.insert_one(import_build)
+
+            new_on_page += 1
+            all_commit_shas.append(build.commit_sha)
+            all_ci_run_ids.append(build.build_id)
+
+        total_new_builds += new_on_page
+        logger.info(f"{log_ctx} Page {page}: {new_on_page} new, {existing_on_page} existing")
+
+        # Stop if all builds on this page already exist
+        if new_on_page == 0 and len(builds) > 0:
+            logger.info(f"{log_ctx} All builds on page {page} already exist, stopping sync")
+            break
+
+        # Stop if no more pages
+        if len(builds) < batch_size:
+            logger.info(f"{log_ctx} No more pages (got {len(builds)} < {batch_size})")
+            break
+
+        page += 1
+
+    logger.info(f"{log_ctx} Sync complete: {total_new_builds} new builds found")
+
+    # Update repo config
+    repo_config_repo.update_repository(
+        repo_config_id,
+        {"total_builds_imported": total_new_builds},
+    )
+
+    if total_new_builds == 0:
+        publish_status(repo_config_id, "imported", "No new builds found")
+        repo_config_repo.update_repository(
+            repo_config_id,
+            {"import_status": ModelImportStatus.IMPORTED.value},
+        )
+        return {"status": "completed", "new_builds": 0, "pages": page}
+
+    # Dispatch ingestion for new builds
+    dispatch_ingestion.delay(
+        repo_config_id=repo_config_id,
+        raw_repo_id=raw_repo_id,
+        github_repo_id=raw_repo.github_repo_id,
+        full_name=full_name,
+        ci_provider=ci_provider,
+        commit_shas=list(set(all_commit_shas)),
+        ci_run_ids=list(set(all_ci_run_ids)),
+        import_version=import_version,
+        correlation_id=correlation_id,
+    )
+
+    publish_status(
+        repo_config_id,
+        "importing",
+        f"Preparing resources for {total_new_builds} new builds...",
+    )
+
+    return {
+        "status": "dispatched",
+        "new_builds": total_new_builds,
+        "pages": page,
     }
 
 

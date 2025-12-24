@@ -377,7 +377,12 @@ class RepositoryService:
         return _serialize_repo_detail(updated)
 
     def trigger_sync(self, repo_id: str, user_id: str):
-        """Trigger a full sync for a specific repository."""
+        """
+        Trigger a sync to fetch new builds for a repository.
+
+        Uses sync_until_existing mode: fetches from newest builds until
+        hitting existing processed builds, then stops.
+        """
         repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
         if not repo_doc:
             raise HTTPException(
@@ -396,7 +401,7 @@ class RepositoryService:
             repo_id, {"import_status": ModelImportStatus.QUEUED.value}
         )
 
-        # Trigger import task
+        # Trigger import task with sync_until_existing mode
         start_model_processing.delay(
             repo_config_id=repo_id,
             ci_provider=(
@@ -404,8 +409,7 @@ class RepositoryService:
                 if hasattr(repo_doc.ci_provider, "value")
                 else repo_doc.ci_provider
             ),
-            max_builds=getattr(repo_doc, "max_builds_to_ingest", None),
-            since_days=getattr(repo_doc, "since_days", None),
+            sync_until_existing=True,
             only_with_logs=getattr(repo_doc, "only_with_logs", False),
         )
 

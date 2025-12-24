@@ -218,6 +218,7 @@ def dispatch_build_processing(
 
     # Step 1: Create ModelTrainingBuild for each raw_build_run
     created_count = 0
+    skipped_existing = 0
     model_build_ids = []
 
     for run_id_str in raw_build_run_ids:
@@ -235,8 +236,16 @@ def dispatch_build_processing(
         # Check if already exists
         existing = existing_builds_map.get(run_id_str)
         if existing:
-            logger.debug(f"ModelTrainingBuild already exists for {run_id_str}")
-            model_build_ids.append(existing.id)
+            # Only re-process if still PENDING
+            if existing.extraction_status == ExtractionStatus.PENDING:
+                logger.debug(f"ModelTrainingBuild exists but PENDING, will reprocess: {run_id_str}")
+                model_build_ids.append(existing.id)
+            else:
+                logger.debug(
+                    f"ModelTrainingBuild already processed ({existing.extraction_status}), "
+                    f"skipping: {run_id_str}"
+                )
+                skipped_existing += 1
             continue
 
         # Create new ModelTrainingBuild with model_import_build_id reference
@@ -255,8 +264,9 @@ def dispatch_build_processing(
         created_count += 1
 
     logger.info(
-        f"{corr_prefix} Created {created_count} ModelTrainingBuild documents "
-        f"for repo {repo_config_id}"
+        f"{corr_prefix} Created {created_count} new builds, "
+        f"skipped {skipped_existing} already processed, "
+        f"dispatching {len(model_build_ids)} for processing"
     )
 
     publish_status(
@@ -471,6 +481,7 @@ def process_build_batch(
     processed = 0
     succeeded = 0
     failed = 0
+    skipped = 0
 
     for build_id_str in model_build_ids:
         try:
@@ -487,8 +498,11 @@ def process_build_batch(
                 corr_prefix=log_ctx,
             )
             processed += 1
-            if result.get("status") in ("completed", "partial"):
+            status = result.get("status")
+            if status in ("completed", "partial"):
                 succeeded += 1
+            elif status == "skipped":
+                skipped += 1
             else:
                 failed += 1
 
@@ -497,13 +511,17 @@ def process_build_batch(
             failed += 1
             processed += 1
 
-    logger.info(f"{log_ctx} Batch complete: {succeeded}/{processed} succeeded, {failed} failed")
+    logger.info(
+        f"{log_ctx} Batch complete: {succeeded}/{processed} succeeded, "
+        f"{skipped} skipped, {failed} failed"
+    )
 
     return {
         "status": "completed" if failed == 0 else "partial",
         "batch_index": batch_index,
         "processed": processed,
         "succeeded": succeeded,
+        "skipped": skipped,
         "failed": failed,
     }
 

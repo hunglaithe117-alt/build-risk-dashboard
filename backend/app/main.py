@@ -126,15 +126,6 @@ async def root():
 @app.on_event("startup")
 async def startup_event():
     """Application startup tasks."""
-    # Ensure MongoDB indexes exist
-    try:
-        from app.database.ensure_indexes import ensure_indexes
-        from app.database.mongo import get_database
-
-        db = get_database()
-        ensure_indexes(db)
-    except Exception as e:
-        logger.warning(f"Failed to ensure database indexes: {e}")
 
     try:
         from app.database.mongo import get_database

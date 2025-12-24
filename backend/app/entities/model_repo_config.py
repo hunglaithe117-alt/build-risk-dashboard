@@ -6,7 +6,7 @@ for ML model training purposes (Flow 1: GitHub import → Model training).
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from pydantic import Field
 
@@ -111,9 +111,4 @@ class ModelRepoConfig(FeatureConfigBase):
     latest_synced_run_created_at: Optional[datetime] = Field(
         None,
         description="Creation time of the latest workflow run we've synced",
-    )
-
-    feature_extractors: List[str] = Field(
-        default_factory=list,
-        description="Specific feature extractors to run (empty = all)",
     )

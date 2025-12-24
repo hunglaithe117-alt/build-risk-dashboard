@@ -49,7 +49,7 @@ class TrivyTool(IntegrationTool):
 
         # Load settings from DB
         trivy_settings = self._get_db_settings()
-        self._server_url = trivy_settings.get("server_url")
+        self._server_url = trivy_settings.get("server_url") or "http://localhost:4954"
         self._default_config = trivy_settings.get("default_config", "")
 
     def _get_db_settings(self) -> Dict[str, Any]:
@@ -89,24 +89,9 @@ class TrivyTool(IntegrationTool):
         return "Container and dependency vulnerability scanning"
 
     def is_available(self) -> bool:
-        """Check if Trivy is enabled and Docker is available."""
-        # Check Docker is available
-        try:
-            result = subprocess.run(
-                ["docker", "--version"],
-                capture_output=True,
-                timeout=10,
-            )
-            if result.returncode != 0:
-                return False
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
-
-        # If server URL is configured, also check server health
-        if self._server_url:
-            return self._check_server_health()
-
-        return True
+        """Check if Trivy Server is available."""
+        # Only check server health, no standalone fallback
+        return self._check_server_health()
 
     def _check_server_health(self) -> bool:
         """Check if Trivy server is healthy."""
@@ -142,28 +127,12 @@ class TrivyTool(IntegrationTool):
 
         result = {
             "connected": False,
-            "server_mode": bool(self._server_url),
+            "configured": bool(self._server_url),
             "server_url": self._server_url or "",
-            "docker_available": False,
+            "server_mode": bool(self._server_url),
         }
 
-        # Check Docker availability
-        try:
-            docker_result = subprocess.run(
-                ["docker", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            result["docker_available"] = docker_result.returncode == 0
-            if docker_result.returncode == 0:
-                docker_version = docker_result.stdout.strip()
-                result["docker_version"] = docker_version
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            result["error"] = "Docker not available"
-            return result
-
-        # If server mode, check server health
+        # 1. Server Mode: If URL is configured, check server health
         if self._server_url:
             try:
                 resp = requests.get(f"{self._server_url}/healthz", timeout=5)
@@ -178,10 +147,31 @@ class TrivyTool(IntegrationTool):
                 result["error"] = "Server connection refused"
             except Exception as e:
                 result["error"] = str(e)
-        else:
-            # Standalone mode - connected if Docker is available
-            result["connected"] = result["docker_available"]
-            result["status"] = "standalone"
+
+            return result
+
+        # 2. Standalone Mode: If NO URL configured, check Docker availability
+        # This mirrors "not configured" in SonarQube but falls back to Docker
+        result["status"] = "standalone"
+
+        try:
+            docker_result = subprocess.run(
+                ["docker", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            result["docker_available"] = docker_result.returncode == 0
+            result["connected"] = docker_result.returncode == 0
+
+            if docker_result.returncode == 0:
+                result["docker_version"] = docker_result.stdout.strip()
+            else:
+                result["error"] = "Docker command failed"
+
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            result["error"] = "Docker not available"
+            result["connected"] = False
 
         return result
 

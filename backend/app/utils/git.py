@@ -65,6 +65,7 @@ def ensure_commit_exists(
         if _commit_exists(repo_path, commit_sha):
             return commit_sha
     except subprocess.CalledProcessError:
+        logger.warning(f"Failed to fetch commit {commit_sha}")
         pass
 
     logger.info(f"Direct fetch failed. Attempting to replay fork commit {commit_sha}...")
@@ -120,7 +121,7 @@ def build_replay_plan(
         try:
             data = github_client.get_commit(repo_slug, current)
         except Exception as e:
-            raise MissingForkCommitError(current, f"GitHub API error: {e}")
+            raise MissingForkCommitError(current, f"GitHub API error: {e}") from e
 
         parents = data.get("parents", [])
         if len(parents) != 1:
@@ -134,7 +135,7 @@ def build_replay_plan(
         try:
             patch_content = github_client.get_commit_patch(repo_slug, current)
         except Exception as e:
-            raise MissingForkCommitError(current, f"Failed to download patch: {e}")
+            raise MissingForkCommitError(current, f"Failed to download patch: {e}") from e
 
         commit_info = data.get("commit", {})
         author_info = commit_info.get("author", {})
@@ -211,7 +212,10 @@ def apply_replay_plan(repo_path: Path, plan: ReplayPlan, target_sha: str) -> str
                     text=True,
                     capture_output=True,
                     check=True,
+                    timeout=60,  # Prevent hanging on large patches
                 )
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(f"Timeout applying patch for {commit.sha}")
             except subprocess.CalledProcessError as e:
                 raise RuntimeError(f"Failed to apply patch for {commit.sha}: {e.stderr}")
 
@@ -234,7 +238,10 @@ def apply_replay_plan(repo_path: Path, plan: ReplayPlan, target_sha: str) -> str
                     env=env,
                     check=True,
                     capture_output=True,
+                    timeout=30,  # Prevent hanging on commit
                 )
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(f"Timeout committing {commit.sha}")
             except subprocess.CalledProcessError:
                 # Try with --allow-empty if no changes
                 subprocess.run(
@@ -243,6 +250,7 @@ def apply_replay_plan(repo_path: Path, plan: ReplayPlan, target_sha: str) -> str
                     env=env,
                     check=True,
                     capture_output=True,
+                    timeout=30,
                 )
 
             # Get the new SHA

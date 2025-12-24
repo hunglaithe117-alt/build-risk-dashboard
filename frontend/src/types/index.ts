@@ -780,7 +780,6 @@ export interface SonarQubeSettings {
   host_url: string;
   token?: string | null;
   webhook_secret?: string | null;
-  webhook_url?: string | null;
   default_config?: string | null;
 }
 

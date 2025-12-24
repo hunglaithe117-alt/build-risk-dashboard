@@ -15,13 +15,15 @@ import {
     CollapsibleContent,
     CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { api } from "@/lib/api";
+import { api, settingsApi } from "@/lib/api";
+import type { ApplicationSettings } from "@/types";
 import {
     AlertCircle,
     CheckCircle2,
     ChevronDown,
     ChevronUp,
     Clock,
+    ExternalLink,
     Loader2,
     RefreshCw,
     RotateCcw,
@@ -93,6 +95,25 @@ function countFailedScans(scans: CommitScansResponse | null): number {
     return allScans.filter(s => s.status === "failed").length;
 }
 
+/** Get scan statistics */
+function getScanStats(scans: CommitScansResponse | null): {
+    total: number;
+    completed: number;
+    pending: number;
+    failed: number;
+    scanning: number;
+} {
+    if (!scans) return { total: 0, completed: 0, pending: 0, failed: 0, scanning: 0 };
+    const allScans = [...scans.trivy, ...scans.sonarqube];
+    return {
+        total: allScans.length,
+        completed: allScans.filter(s => s.status === "completed").length,
+        pending: allScans.filter(s => s.status === "pending").length,
+        failed: allScans.filter(s => s.status === "failed").length,
+        scanning: allScans.filter(s => s.status === "scanning").length,
+    };
+}
+
 // =============================================================================
 // Component
 // =============================================================================
@@ -106,9 +127,28 @@ export function IntegrationsTab({ datasetId }: IntegrationsTabProps) {
     const [retryingCommit, setRetryingCommit] = useState<string | null>(null);
     const [bulkRetrying, setBulkRetrying] = useState(false);
     const [expandedErrors, setExpandedErrors] = useState<Set<string>>(new Set());
+    const [settings, setSettings] = useState<ApplicationSettings | null>(null);
 
     // Auto-refresh ref
     const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // URL helpers using settings
+    const getSonarQubeUrl = useCallback((componentKey: string | undefined): string | null => {
+        if (!componentKey) return null;
+        const baseUrl = settings?.sonarqube?.host_url || "http://localhost:9000";
+        return `${baseUrl}/dashboard?id=${encodeURIComponent(componentKey)}`;
+    }, [settings]);
+
+    const getTrivyReportUrl = useCallback((commitSha: string): string | null => {
+        // Trivy doesn't have a web dashboard, but we could show the server URL if configured
+        // For now, return null - could be extended to show local report files
+        return null;
+    }, []);
+
+    // Load settings on mount
+    useEffect(() => {
+        settingsApi.get().then(setSettings).catch(() => setSettings(null));
+    }, []);
 
     // Load versions with scan_metrics
     const loadVersions = useCallback(async () => {
@@ -304,24 +344,45 @@ export function IntegrationsTab({ datasetId }: IntegrationsTabProps) {
                     </td>
                     <td className="px-3 py-2">{scan.builds_affected}</td>
                     <td className="px-3 py-2">
-                        {scan.status === "failed" && (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRetry(versionId, scan.commit_sha, toolType);
-                                }}
-                                disabled={retryingCommit === `${scan.commit_sha}-${toolType}`}
-                            >
-                                {retryingCommit === `${scan.commit_sha}-${toolType}` ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                    <RotateCcw className="h-3 w-3" />
-                                )}
-                                <span className="ml-1">Retry</span>
-                            </Button>
-                        )}
+                        <div className="flex items-center gap-2">
+                            {/* SonarQube link for completed scans */}
+                            {toolType === "sonarqube" && scan.status === "completed" && scan.component_key && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    asChild
+                                    title="View in SonarQube"
+                                >
+                                    <a
+                                        href={getSonarQubeUrl(scan.component_key) || "#"}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <ExternalLink className="h-3 w-3" />
+                                    </a>
+                                </Button>
+                            )}
+                            {/* Retry button for failed scans */}
+                            {scan.status === "failed" && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRetry(versionId, scan.commit_sha, toolType);
+                                    }}
+                                    disabled={retryingCommit === `${scan.commit_sha}-${toolType}`}
+                                >
+                                    {retryingCommit === `${scan.commit_sha}-${toolType}` ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                        <RotateCcw className="h-3 w-3" />
+                                    )}
+                                    <span className="ml-1">Retry</span>
+                                </Button>
+                            )}
+                        </div>
                     </td>
                 </tr>
                 {/* Expandable error row */}
@@ -452,59 +513,92 @@ export function IntegrationsTab({ datasetId }: IntegrationsTabProps) {
                     </CardHeader>
 
                     {/* Expanded Content */}
-                    {expandedVersionId === version.id && commitScans && (
-                        <CardContent className="pt-0">
-                            {/* Bulk retry header */}
-                            {failedCount > 0 && (
-                                <div className="flex items-center justify-end mb-4 pb-4 border-b">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => handleBulkRetry(version.id)}
-                                        disabled={bulkRetrying}
-                                    >
-                                        {bulkRetrying ? (
-                                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                        ) : (
-                                            <RotateCcw className="h-4 w-4 mr-2" />
-                                        )}
-                                        Retry All Failed ({failedCount})
-                                    </Button>
+                    {expandedVersionId === version.id && commitScans && (() => {
+                        const stats = getScanStats(commitScans);
+                        return (
+                            <CardContent className="pt-0">
+                                {/* Summary stats bar */}
+                                <div className="flex items-center gap-4 mb-4 pb-4 border-b">
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <span className="text-muted-foreground">Total:</span>
+                                        <span className="font-medium">{stats.total}</span>
+                                    </div>
+                                    {stats.completed > 0 && (
+                                        <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+                                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                                            {stats.completed} completed
+                                        </Badge>
+                                    )}
+                                    {stats.scanning > 0 && (
+                                        <Badge className="bg-blue-500">
+                                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                            {stats.scanning} scanning
+                                        </Badge>
+                                    )}
+                                    {stats.pending > 0 && (
+                                        <Badge variant="secondary">
+                                            <Clock className="h-3 w-3 mr-1" />
+                                            {stats.pending} pending
+                                        </Badge>
+                                    )}
+                                    {stats.failed > 0 && (
+                                        <Badge variant="destructive">
+                                            <XCircle className="h-3 w-3 mr-1" />
+                                            {stats.failed} failed
+                                        </Badge>
+                                    )}
+                                    {/* Bulk retry button */}
+                                    {failedCount > 0 && (
+                                        <div className="ml-auto">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => handleBulkRetry(version.id)}
+                                                disabled={bulkRetrying}
+                                            >
+                                                {bulkRetrying ? (
+                                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                                ) : (
+                                                    <RotateCcw className="h-4 w-4 mr-2" />
+                                                )}
+                                                Retry All Failed
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-
-                            <div className="space-y-6">
-                                {/* Trivy Scans */}
-                                {version.scan_metrics?.trivy?.length ? (
-                                    <div>
-                                        <h4 className="font-medium mb-2 flex items-center gap-2">
-                                            <Shield className="h-4 w-4" />
-                                            Trivy Scans ({commitScans.trivy.length})
-                                        </h4>
-                                        <div className="border rounded-lg overflow-hidden">
-                                            {renderScanTable(commitScans.trivy, "trivy", version.id)}
+                                {/* Scan Tables */}
+                                <div className="space-y-6">
+                                    {/* Trivy Scans */}
+                                    {version.scan_metrics?.trivy?.length ? (
+                                        <div>
+                                            <h4 className="font-medium mb-2 flex items-center gap-2">
+                                                <Shield className="h-4 w-4" />
+                                                Trivy Scans ({commitScans.trivy.length})
+                                            </h4>
+                                            <div className="border rounded-lg overflow-hidden">
+                                                {renderScanTable(commitScans.trivy, "trivy", version.id)}
+                                            </div>
                                         </div>
-                                    </div>
-                                ) : null}
+                                    ) : null}
 
-                                {/* SonarQube Scans */}
-                                {version.scan_metrics?.sonarqube?.length ? (
-                                    <div>
-                                        <h4 className="font-medium mb-2 flex items-center gap-2">
-                                            <Settings className="h-4 w-4" />
-                                            SonarQube Scans ({commitScans.sonarqube.length})
-                                        </h4>
-                                        <div className="border rounded-lg overflow-hidden">
-                                            {renderScanTable(commitScans.sonarqube, "sonarqube", version.id)}
+                                    {/* SonarQube Scans */}
+                                    {version.scan_metrics?.sonarqube?.length ? (
+                                        <div>
+                                            <h4 className="font-medium mb-2 flex items-center gap-2">
+                                                <Settings className="h-4 w-4" />
+                                                SonarQube Scans ({commitScans.sonarqube.length})
+                                            </h4>
+                                            <div className="border rounded-lg overflow-hidden">
+                                                {renderScanTable(commitScans.sonarqube, "sonarqube", version.id)}
+                                            </div>
                                         </div>
-                                    </div>
-                                ) : null}
-                            </div>
-                        </CardContent>
-                    )}
+                                    ) : null}
+                                </div>
+                            </CardContent>
+                        );
+                    })()}
                 </Card>
             ))}
         </div>
     );
 }
-

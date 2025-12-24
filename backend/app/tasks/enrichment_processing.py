@@ -431,7 +431,7 @@ def dispatch_enrichment_batches(self: PipelineTask, version_id: str) -> Dict[str
         for chunk_start in range(0, len(build_ids), batch_size):
             chunk = build_ids[chunk_start : chunk_start + batch_size]
             batch_tasks.append(
-                process_enrichment_batch.s(
+                process_enrichment_batch.si(
                     version_id=version_id,
                     raw_repo_id=str(raw_repo_id),
                     validated_build_ids=chunk,

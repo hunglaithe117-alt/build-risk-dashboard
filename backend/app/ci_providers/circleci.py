@@ -55,6 +55,14 @@ class CircleCIProvider(CIProviderInterface):
         if not self.config.token:
             logger.warning("CircleCI token not provided - API access may be limited")
 
+    def wait_rate_limit(self) -> None:
+        """Wait for CircleCI API rate limit."""
+        import time
+
+        # CircleCI rate limit: ~300 requests/minute = 5/second
+        # Simple sleep-based throttle (no cross-worker coordination needed)
+        time.sleep(0.2)  # 5 req/sec
+
     def _get_headers(self) -> dict:
         headers = {"Content-Type": "application/json"}
         if self.config.token:

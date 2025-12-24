@@ -54,6 +54,13 @@ class TravisCIProvider(CIProviderInterface):
         if not self.config.token:
             logger.warning("Travis CI token not provided - API access may be limited")
 
+    def wait_rate_limit(self) -> None:
+        """Wait for Travis CI API rate limit."""
+        import time
+
+        # Travis CI has generous rate limits but still throttle to be safe
+        time.sleep(0.1)  # ~10 req/sec
+
     def _get_headers(self) -> dict:
         """Get HTTP headers for Travis CI API requests."""
         headers = {

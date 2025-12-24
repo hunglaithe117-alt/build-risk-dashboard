@@ -1,7 +1,3 @@
-"""
-Build Processing Tasks
-"""
-
 import json
 import logging
 import uuid
@@ -254,7 +250,7 @@ def dispatch_build_processing(
 
     # Step 2: Dispatch all processing tasks with chord for accurate completion tracking
     processing_tasks = [
-        process_workflow_run.s(
+        process_workflow_run.si(
             repo_config_id=repo_config_id,
             model_build_id=str(build_id),
         )
@@ -323,6 +319,9 @@ def finalize_model_processing(
         final_status = "completed"
 
     # Mark import as complete
+    model_build_repo = ModelTrainingBuildRepository(self.db)
+    aggregated_stats = model_build_repo.aggregate_stats_by_repo_config(ObjectId(repo_config_id))
+
     repo_config_repo = ModelRepoConfigRepository(self.db)
     repo_config_repo.update_repository(
         repo_config_id,
@@ -330,6 +329,8 @@ def finalize_model_processing(
             "import_status": ModelImportStatus.IMPORTED.value,
             "last_sync_status": "success",
             "last_synced_at": datetime.utcnow(),
+            "total_builds_processed": aggregated_stats["total_builds_processed"],
+            "total_builds_failed": aggregated_stats["total_builds_failed"],
         },
     )
 
@@ -337,6 +338,10 @@ def finalize_model_processing(
         repo_config_id,
         "imported" if final_status != "failed" else "failed",
         f"Processed {success_count}/{total_count} builds successfully",
+        stats={
+            "total_builds_processed": aggregated_stats["total_builds_processed"],
+            "total_builds_failed": aggregated_stats["total_builds_failed"],
+        },
     )
 
     return {
@@ -347,6 +352,7 @@ def finalize_model_processing(
         "failed": failed_count,
         "skipped": skipped_count,
         "status": final_status,
+        "aggregated_stats": aggregated_stats,
     }
 
 

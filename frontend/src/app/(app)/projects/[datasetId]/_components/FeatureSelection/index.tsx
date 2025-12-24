@@ -18,19 +18,14 @@ import {
     SelectedFeaturesPanel,
     ViewToggle,
     TemplateSelector,
-} from "@/components/features/FeatureSelection";
-import { FeatureConfigForm } from "./FeatureConfigForm";
+} from "@/components/features/selection";
+import { FeatureConfigForm, type FeatureConfigsData } from "@/components/features/config/FeatureConfigForm";
 import {
     ScanConfigPanel,
     DEFAULT_SCAN_CONFIG,
     type ScanConfig,
 } from "@/components/sonar/scan-config-panel";
 
-/** Structure for configs from FeatureConfigForm */
-interface FeatureConfigsData {
-    global: Record<string, unknown>;
-    repos: Record<string, Record<string, string[]>>;
-}
 
 /** Scan metrics selection */
 interface ScanMetricsData {

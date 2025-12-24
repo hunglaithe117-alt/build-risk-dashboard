@@ -167,7 +167,6 @@ class RepositoryService:
                         since_days=payload.since_days,
                         only_with_logs=payload.only_with_logs or False,
                         feature_configs=payload.feature_configs or {},
-                        feature_extractors=payload.selected_features or [],
                     )
                 )
 

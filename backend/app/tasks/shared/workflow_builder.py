@@ -247,7 +247,7 @@ def _build_logs_chord(
 
     # Build chord: parallel chunk tasks → aggregate callback
     chunk_tasks = [
-        download_logs_chunk.s(
+        download_logs_chunk.si(
             raw_repo_id=raw_repo_id,
             github_repo_id=github_repo_id,
             full_name=full_name,

@@ -208,7 +208,6 @@ services:
   #     SONAR_TOKEN: ${SONAR_TOKEN:-}
   #     SONAR_DEFAULT_PROJECT_KEY: build-risk-ui
   #     SONAR_WEBHOOK_SECRET: ${SONAR_WEBHOOK_SECRET:-change-me}
-  #     SONAR_WEBHOOK_PUBLIC_URL: ${SONAR_WEBHOOK_PUBLIC_URL:-http://localhost:8000/api/sonar/webhook}
   #     # GitHub settings
   #     GITHUB_APP_ID: ${GITHUB_APP_ID:-}
   #     GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}

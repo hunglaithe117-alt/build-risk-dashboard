@@ -132,3 +132,15 @@ class CIProviderInterface(ABC):
 
         # Completed status means the build has finished (regardless of conclusion)
         return build_data.status == BuildStatus.COMPLETED
+
+    def wait_rate_limit(self) -> None:
+        """
+        Wait if necessary to respect provider-specific rate limits.
+
+        Subclasses should override this to implement provider-specific
+        rate limiting. Default implementation is a no-op.
+
+        This should be called before making API requests that could
+        trigger rate limits.
+        """
+        pass  # No-op by default - providers override as needed

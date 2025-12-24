@@ -134,6 +134,9 @@ class NotificationSettings(BaseEntity):
 class ApplicationSettings(BaseEntity):
     """Main application settings document - UI-editable configs only."""
 
+    # Override id to allow string ID for singleton document
+    id: str = Field("app_settings_v1", alias="_id")
+
     settings_version: int = 1
 
     # CI Provider settings

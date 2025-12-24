@@ -169,6 +169,11 @@ class GitHubClient:
         return self._handle_response(response)
 
     def _rest_request(self, method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
+        # Apply rate limiting to prevent GitHub secondary rate limits
+        from app.services.github.rate_limiter import get_rate_limiter
+
+        get_rate_limiter().wait()
+
         def _do_request():
             return self._rest.request(method, path, headers=self._headers(), **kwargs)
 
@@ -253,24 +258,6 @@ class GitHubClient:
             cache.set_cached(url, data, new_etag, new_last_modified, ttl)
 
         return data
-
-    def _throttled_request(
-        self,
-        method: str,
-        path: str,
-        **kwargs: Any,
-    ) -> Dict[str, Any]:
-        """
-        Make a throttled request to avoid secondary rate limits.
-
-        Uses sliding window rate limiter to spread requests over time.
-        """
-        from app.services.github.rate_limiter import get_rate_limiter
-
-        # Wait if needed to respect rate limit
-        get_rate_limiter().wait()
-
-        return self._rest_request(method, path, **kwargs)
 
     def _paginate(
         self, path: str, params: Optional[Dict[str, Any]] = None

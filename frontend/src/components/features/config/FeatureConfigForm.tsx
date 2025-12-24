@@ -47,16 +47,17 @@ interface RepoInfo {
 }
 
 // Dynamic config: field name -> array of selected values
-type RepoConfig = Record<string, string[]>;
+export type RepoConfig = Record<string, string[]>;
 
 /** Structure for configs: { global: {...}, repos: {...} } */
-interface FeatureConfigsData {
+export interface FeatureConfigsData {
     global: Record<string, unknown>;
     repos: Record<string, RepoConfig>;
 }
 
 interface FeatureConfigFormProps {
-    datasetId: string;
+    datasetId?: string; // Optional if repos provided directly
+    repos?: RepoInfo[]; // Direct shuffle for ImportRepoModal
     selectedFeatures: Set<string>;
     onChange: (configs: FeatureConfigsData) => void;
     disabled?: boolean;
@@ -64,6 +65,7 @@ interface FeatureConfigFormProps {
 
 export function FeatureConfigForm({
     datasetId,
+    repos: providedRepos,
     selectedFeatures,
     onChange,
     disabled = false,
@@ -72,10 +74,17 @@ export function FeatureConfigForm({
     const [globalConfigs, setGlobalConfigs] = useState<Record<string, unknown>>({});
     const [repoConfigs, setRepoConfigs] = useState<Record<string, RepoConfig>>({});
     const [configFields, setConfigFields] = useState<ConfigFieldSpec[]>([]);
-    const [repos, setRepos] = useState<RepoInfo[]>([]);
+    const [repos, setRepos] = useState<RepoInfo[]>(providedRepos || []);
     const [isLoading, setIsLoading] = useState(false);
     const [isLoadingRepos, setIsLoadingRepos] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Update repos if provided directly
+    useEffect(() => {
+        if (providedRepos) {
+            setRepos(providedRepos);
+        }
+    }, [providedRepos]);
 
     // Memoize selected features array
     const selectedFeaturesArray = useMemo(
@@ -90,16 +99,16 @@ export function FeatureConfigForm({
         return { globalFields: global, repoFields: repo };
     }, [configFields]);
 
-    // Fetch repos from dataset
+    // Fetch repos from dataset (only if datasetId used and no direct repos)
     useEffect(() => {
-        if (!datasetId) return;
+        if (!datasetId || providedRepos) return;
 
         let isCancelled = false;
 
         async function fetchRepos() {
             setIsLoadingRepos(true);
             try {
-                const summary = await datasetsApi.getValidationSummary(datasetId);
+                const summary = await datasetsApi.getValidationSummary(datasetId!);
                 if (!isCancelled && summary.repos) {
                     setRepos(summary.repos.map(r => ({
                         id: r.id,
@@ -117,7 +126,7 @@ export function FeatureConfigForm({
 
         fetchRepos();
         return () => { isCancelled = true; };
-    }, [datasetId]);
+    }, [datasetId, providedRepos]);
 
     // Fetch config requirements when selected features change
     useEffect(() => {

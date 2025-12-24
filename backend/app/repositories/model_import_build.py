@@ -20,7 +20,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
     """Repository for ModelImportBuild operations."""
 
     def __init__(self, db):
-        super().__init__(db, ModelImportBuild)
+        super().__init__(db, "model_import_builds", ModelImportBuild)
 
     def find_by_repo_config(
         self,

@@ -81,9 +81,19 @@ def ingest_model_builds(
     since_days: Optional[int] = None,
     only_with_logs: bool = False,
     batch_size: Optional[int] = None,
+    correlation_id: str = "",
 ) -> Dict[str, Any]:
     """
     Orchestrator: Dispatch fetch batch tasks as chord.
+
+    Args:
+        repo_config_id: The model repo config ID
+        ci_provider: CI provider to use (e.g., "github_actions")
+        max_builds: Maximum number of builds to fetch
+        since_days: Only fetch builds from the last N days
+        only_with_logs: Only fetch builds with logs available
+        batch_size: Number of builds per page
+        correlation_id: Optional correlation ID for tracing (generates new if not provided)
 
     Flow:
         ingest_model_builds
@@ -92,8 +102,9 @@ def ingest_model_builds(
                     aggregate_fetch_results
                 )
     """
-    # Generate correlation_id for tracing entire flow
-    correlation_id = str(uuid.uuid4())
+    # Use provided correlation_id or generate new one
+    if not correlation_id:
+        correlation_id = str(uuid.uuid4())
     corr_prefix = f"[corr={correlation_id[:8]}]"
 
     batch_size = batch_size or settings.MODEL_FETCH_BATCH_SIZE
@@ -125,25 +136,29 @@ def ingest_model_builds(
     )
     publish_status(repo_config_id, "importing", "Starting fetch...")
 
-    # Estimate pages needed (we'll dispatch tasks for pages 1..N)
-    # For simplicity, dispatch first page and let it chain more if needed
-    # OR dispatch multiple pages in parallel if we know max_builds
-    estimated_pages = (max_builds // batch_size + 1) if max_builds else 10  # Default 10 pages
+    estimated_pages = (max_builds // batch_size + 1) if max_builds else 10
 
     # Build fetch tasks for each page
-    fetch_tasks = [
-        fetch_builds_batch.s(
-            repo_config_id=repo_config_id,
-            ci_provider=ci_provider,
-            page=page,
-            batch_size=batch_size,
-            since_days=since_days,
-            only_with_logs=only_with_logs,
-            import_version=new_version,
-            correlation_id=correlation_id,
+    fetch_tasks = []
+    remaining = max_builds
+    for page in range(1, estimated_pages + 1):
+        api_limit = min(batch_size, remaining) if remaining else batch_size
+        fetch_tasks.append(
+            fetch_builds_batch.si(
+                repo_config_id=repo_config_id,
+                ci_provider=ci_provider,
+                page=page,
+                batch_size=api_limit,
+                since_days=since_days,
+                only_with_logs=only_with_logs,
+                import_version=new_version,
+                correlation_id=correlation_id,
+            )
         )
-        for page in range(1, estimated_pages + 1)
-    ]
+        if remaining:
+            remaining = max(0, remaining - api_limit)
+            if remaining == 0:
+                break
 
     # Dispatch chord: fetch all pages → aggregate results
     workflow = chord(
@@ -240,8 +255,20 @@ def fetch_builds_batch(
 
     # Save builds and create ModelImportBuild records
     import_builds_to_insert = []
+
     for build in builds:
         if build.status != BuildStatus.COMPLETED:
+            continue
+
+        if not build.build_id:
+            logger.warning(
+                f"{log_ctx} Skipping build with null build_id: "
+                f"build_number={build.build_number}, "
+                f"status={build.status}, "
+                f"commit_sha={build.commit_sha}, "
+                f"web_url={build.web_url}, "
+                f"raw_data_keys={list(build.raw_data.keys()) if build.raw_data else []}"
+            )
             continue
 
         # Save to RawBuildRun

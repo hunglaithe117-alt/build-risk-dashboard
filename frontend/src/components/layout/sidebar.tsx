@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
-import { Activity, BadgeCheck, Database, GitBranch, Home, Users } from "lucide-react";
+import { Activity, BadgeCheck, Database, GitBranch, Home, Settings, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -51,6 +51,14 @@ const navigation = [
     label: "Users",
     href: "/admin/users",
     icon: Users,
+    adminOnly: true, // Admin only
+    guestOnly: false,
+    userOnly: false,
+  },
+  {
+    label: "App Settings",
+    href: "/admin/settings",
+    icon: Settings,
     adminOnly: true, // Admin only
     guestOnly: false,
     userOnly: false,

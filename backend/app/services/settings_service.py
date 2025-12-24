@@ -69,13 +69,6 @@ class SettingsService:
             return "****"
         return f"****{token[-4:]}"
 
-    def _get_webhook_url(self) -> str:
-        """Get the webhook URL for SonarQube to call back."""
-        public_url = getattr(app_config, "SONAR_WEBHOOK_PUBLIC_URL", None)
-        if public_url:
-            return public_url
-        return "http://localhost:8000/api/sonar/webhook"
-
     def get_settings(self) -> ApplicationSettingsResponse:
         """Get current application settings (merge env + db).
 
@@ -109,7 +102,6 @@ class SettingsService:
                 webhook_secret=self._mask_token(
                     self._decrypt_token(db_settings.sonarqube.webhook_secret_encrypted or "")
                 ),
-                webhook_url=self._get_webhook_url(),
                 default_config=db_settings.sonarqube.default_config,
             ),
             trivy=TrivySettingsDto(
@@ -140,7 +132,6 @@ class SettingsService:
                 host_url=app_config.SONAR_HOST_URL,
                 token=self._mask_token(app_config.SONAR_TOKEN),
                 webhook_secret=self._mask_token(getattr(app_config, "SONAR_WEBHOOK_SECRET", None)),
-                webhook_url=self._get_webhook_url(),
                 default_config=DEFAULT_SONARQUBE_CONFIG,
             ),
             trivy=TrivySettingsDto(
@@ -203,7 +194,6 @@ class SettingsService:
                 )
             else:
                 sonar_data.pop("webhook_secret", None)
-            sonar_data.pop("webhook_url", None)  # Readonly field
 
             existing.sonarqube = SonarQubeSettings(
                 host_url=sonar_data.get("host_url", existing.sonarqube.host_url),

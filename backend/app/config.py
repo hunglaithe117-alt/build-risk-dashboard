@@ -70,9 +70,10 @@ class Settings(BaseSettings):
     DOWNLOAD_LOGS_BATCH_SIZE: int = 100  # Number of logs to download per batch
     PROCESSING_BATCH_SIZE: int = 50
     WORKTREE_BATCH_SIZE: int = 50  # Worktrees to create per chunk
-    MODEL_FETCH_BATCH_SIZE: int = 100  # Builds per fetch batch for model ingestion
+    MODEL_FETCH_BATCH_SIZE: int = 20  # Builds per fetch batch for model ingestion
     API_RATE_LIMIT_PER_SECOND: float = 10.0  # GitHub API calls per second
-    COMMIT_REPLAY_MAX_DEPTH: int = 100  # Max depth to traverse for commit replay
+    GITHUB_BURST_ALLOWANCE: int = 5  # Burst requests before throttling
+    COMMIT_REPLAY_MAX_DEPTH: int = 50  # Max depth to traverse for commit replay
     LOG_UNAVAILABLE_THRESHOLD: int = 10  # Stop after N consecutive unavailable logs
 
     # Ingestion Configuration
@@ -111,7 +112,6 @@ class Settings(BaseSettings):
     SONAR_TOKEN: str = ""
     SONAR_DEFAULT_PROJECT_KEY: str = "build-risk-ui"
     SONAR_WEBHOOK_SECRET: str = "change-me-change-me"
-    SONAR_WEBHOOK_PUBLIC_URL: str = "http://localhost:8000/api/sonar/webhook"
 
     # Trivy Security Scanner
     TRIVY_SERVER_URL: Optional[str] = None  # For client/server mode

@@ -24,12 +24,8 @@ class SonarQubeSettingsDto(BaseModel):
 
     host_url: str = "http://localhost:9000"
     token: Optional[str] = Field(None, description="Token (write-only, returns masked on read)")
-    # Webhook settings
     webhook_secret: Optional[str] = Field(
         None, description="Webhook secret (write-only, returns masked on read)"
-    )
-    webhook_url: Optional[str] = Field(
-        None, description="Webhook URL (readonly, computed from backend URL)"
     )
     # Default config content (sonar-project.properties)
     default_config: Optional[str] = Field(

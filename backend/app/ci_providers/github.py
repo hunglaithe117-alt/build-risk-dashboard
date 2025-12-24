@@ -84,6 +84,12 @@ class GitHubActionsProvider(CIProviderInterface):
                     "GitHub token not provided and no DB for pool - API rate limits will apply"
                 )
 
+    def wait_rate_limit(self) -> None:
+        """Wait for GitHub API rate limit using Redis-based rate limiter."""
+        from app.services.github.rate_limiter import get_rate_limiter
+
+        get_rate_limiter().wait()
+
     def _get_github_client(
         self, repo_name: Optional[str] = None, installation_id: Optional[str] = None
     ):

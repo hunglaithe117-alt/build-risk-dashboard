@@ -36,8 +36,10 @@ import {
     Check,
     ArrowRight,
     Settings,
+    Loader2,
 } from "lucide-react";
 import { ScanConfigOverrideModal, RepoScanConfig } from "./ScanConfigOverrideModal";
+import { reposApi } from "@/lib/api";
 
 interface RepoInfo {
     id: string;
@@ -104,6 +106,57 @@ export function RepoConfigSection({
     // Edit dialog state
     const [editingRepo, setEditingRepo] = useState<string | null>(null);
     const [editValues, setEditValues] = useState<RepoConfig>({});
+
+    // Language detection state
+    const [repoLanguages, setRepoLanguages] = useState<Record<string, string[]>>({});
+    const [languageLoading, setLanguageLoading] = useState<Record<string, boolean>>({});
+
+    // Detect languages for repos when they change
+    useEffect(() => {
+        if (repos.length === 0) return;
+
+        const detectLanguagesForRepos = async () => {
+            for (const repo of repos) {
+                // Skip if already loaded or loading
+                if (repoLanguages[repo.id] !== undefined || languageLoading[repo.id]) {
+                    continue;
+                }
+
+                setLanguageLoading(prev => ({ ...prev, [repo.id]: true }));
+                try {
+                    const result = await reposApi.detectLanguages(repo.full_name);
+                    setRepoLanguages(prev => ({
+                        ...prev,
+                        [repo.id]: result.languages.map(l => l.toLowerCase()),
+                    }));
+                } catch (err) {
+                    console.error(`Failed to detect languages for ${repo.full_name}:`, err);
+                    // Set empty array to prevent re-fetching
+                    setRepoLanguages(prev => ({ ...prev, [repo.id]: [] }));
+                } finally {
+                    setLanguageLoading(prev => ({ ...prev, [repo.id]: false }));
+                }
+            }
+        };
+
+        detectLanguagesForRepos();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [repos]);
+
+    // Get union of all detected languages (for "Apply to All" section)
+    const allDetectedLanguages = useMemo(() => {
+        const languages = new Set<string>();
+        Object.values(repoLanguages).forEach(langs => {
+            langs.forEach(l => languages.add(l));
+        });
+        return Array.from(languages);
+    }, [repoLanguages]);
+
+    // Check if any repo is still loading languages
+    const isLoadingLanguages = useMemo(() =>
+        Object.values(languageLoading).some(Boolean),
+        [languageLoading]
+    );
 
     // Initialize when repoFields change
     useEffect(() => {
@@ -242,6 +295,40 @@ export function RepoConfigSection({
         return config[fieldName].join(", ");
     };
 
+    // Filter source_languages options based on detected languages
+    const filterSourceLanguages = useCallback((options: string[], languages: string[]): string[] => {
+        if (languages.length === 0) return options; // Show all if no languages detected
+        const langSet = new Set(languages.map(l => l.toLowerCase()));
+        return options.filter(opt => langSet.has(opt.toLowerCase()));
+    }, []);
+
+    // Filter test_frameworks options based on detected languages
+    const filterTestFrameworks = useCallback((
+        options: Record<string, string[]>,
+        languages: string[]
+    ): Record<string, string[]> => {
+        if (languages.length === 0) return options; // Show all if no languages detected
+        const langSet = new Set(languages.map(l => l.toLowerCase()));
+        const filtered: Record<string, string[]> = {};
+        for (const [lang, frameworks] of Object.entries(options)) {
+            if (langSet.has(lang.toLowerCase())) {
+                filtered[lang] = frameworks;
+            }
+        }
+        return filtered;
+    }, []);
+
+    // Get filtered options for a field based on languages
+    const getFilteredOptions = useCallback((field: ConfigFieldSpec, languages: string[]) => {
+        if (field.name === "source_languages" && Array.isArray(field.options)) {
+            return filterSourceLanguages(field.options as string[], languages);
+        }
+        if (field.name === "test_frameworks" && typeof field.options === "object" && !Array.isArray(field.options)) {
+            return filterTestFrameworks(field.options as Record<string, string[]>, languages);
+        }
+        return field.options;
+    }, [filterSourceLanguages, filterTestFrameworks]);
+
     // If no list fields with options, don't render
     if (listFields.length === 0) {
         return null;
@@ -342,10 +429,14 @@ export function RepoConfigSection({
             <div className="space-y-3">
                 <div className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
                     📋 Apply to All Repositories
+                    {isLoadingLanguages && (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                    )}
                 </div>
 
                 {listFields.map(field => {
-                    // All options are flat arrays - render based on field.name for custom UI
+                    // Get filtered options based on all detected languages
+                    const filteredOptions = getFilteredOptions(field, allDetectedLanguages);
 
                     return (
                         <div key={field.name} className="border rounded-lg p-4 bg-muted/30">
@@ -365,9 +456,9 @@ export function RepoConfigSection({
                             </div>
 
                             {field.name === "test_frameworks" ? (
-                                // Render grouped by language
+                                // Render grouped by language - filtered
                                 <div className="space-y-2">
-                                    {Object.entries(field.options as Record<string, string[]>).map(([group, options]) => (
+                                    {Object.entries(filteredOptions as Record<string, string[]>).map(([group, options]) => (
                                         <div key={group} className="flex flex-wrap items-center gap-2">
                                             <span className="text-xs text-muted-foreground w-24 capitalize font-medium">
                                                 {group}:
@@ -390,9 +481,37 @@ export function RepoConfigSection({
                                             </div>
                                         </div>
                                     ))}
+                                    {Object.keys(filteredOptions as Record<string, string[]>).length === 0 && (
+                                        <div className="text-xs text-muted-foreground italic">
+                                            No matching frameworks for detected languages
+                                        </div>
+                                    )}
+                                </div>
+                            ) : field.name === "source_languages" ? (
+                                // Filtered source languages
+                                <div className="flex flex-wrap gap-1">
+                                    {(filteredOptions as string[]).map((option: string) => {
+                                        const isSelected = (applyAllValues[field.name] || []).includes(option);
+                                        return (
+                                            <Badge
+                                                key={option}
+                                                variant={isSelected ? "default" : "outline"}
+                                                className={`cursor-pointer transition-colors ${disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-primary/80"
+                                                    }`}
+                                                onClick={() => !disabled && toggleApplyAllOption(field.name, option)}
+                                            >
+                                                {option}
+                                            </Badge>
+                                        );
+                                    })}
+                                    {(filteredOptions as string[]).length === 0 && (
+                                        <div className="text-xs text-muted-foreground italic">
+                                            No supported languages detected
+                                        </div>
+                                    )}
                                 </div>
                             ) : (
-                                // Flat list fallback
+                                // Flat list fallback for other fields
                                 <div className="flex flex-wrap gap-1">
                                     {(Array.isArray(field.options) ? field.options : []).slice(0, 15).map((option: string) => {
                                         const isSelected = (applyAllValues[field.name] || []).includes(option);
@@ -560,16 +679,18 @@ export function RepoConfigSection({
 
                     <div className="space-y-4 py-4">
                         {listFields.map(field => {
-                            // All options are flat arrays from API
+                            // Get filtered options for this specific repo
+                            const repoLangs = editingRepo ? (repoLanguages[editingRepo] || []) : [];
+                            const filteredOptions = getFilteredOptions(field, repoLangs);
 
                             return (
                                 <div key={field.name} className="space-y-2">
                                     <label className="text-sm font-medium">{formatFieldName(field.name)}</label>
 
                                     {field.name === "test_frameworks" ? (
-                                        // Grouped by language
+                                        // Grouped by language - filtered for this repo
                                         <div className="space-y-3 max-h-[300px] overflow-y-auto">
-                                            {Object.entries(field.options as Record<string, string[]>).map(([group, options]) => (
+                                            {Object.entries(filteredOptions as Record<string, string[]>).map(([group, options]) => (
                                                 <div key={group} className="space-y-1">
                                                     <span className="text-xs text-muted-foreground capitalize font-medium">
                                                         {group}
@@ -592,9 +713,37 @@ export function RepoConfigSection({
                                                     </div>
                                                 </div>
                                             ))}
+                                            {Object.keys(filteredOptions as Record<string, string[]>).length === 0 && (
+                                                <div className="text-xs text-muted-foreground italic">
+                                                    No matching frameworks for this repo&apos;s languages
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : field.name === "source_languages" ? (
+                                        // Filtered source languages for this repo
+                                        <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto">
+                                            {(filteredOptions as string[]).map((option: string) => {
+                                                const isSelected = (editValues[field.name] || []).includes(option);
+                                                return (
+                                                    <Badge
+                                                        key={option}
+                                                        variant={isSelected ? "default" : "outline"}
+                                                        className="cursor-pointer transition-colors hover:bg-primary/80"
+                                                        onClick={() => toggleEditOption(field.name, option)}
+                                                    >
+                                                        {isSelected && <Check className="h-3 w-3 mr-1" />}
+                                                        {option}
+                                                    </Badge>
+                                                );
+                                            })}
+                                            {(filteredOptions as string[]).length === 0 && (
+                                                <div className="text-xs text-muted-foreground italic">
+                                                    No supported languages detected for this repo
+                                                </div>
+                                            )}
                                         </div>
                                     ) : (
-                                        // Flat list
+                                        // Flat list for other fields
                                         <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto">
                                             {(Array.isArray(field.options) ? field.options : []).map((option: string) => {
                                                 const isSelected = (editValues[field.name] || []).includes(option);

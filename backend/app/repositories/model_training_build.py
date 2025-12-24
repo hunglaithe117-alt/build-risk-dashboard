@@ -291,3 +291,36 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
             query["build_status"] = build_status
 
         return self.collection.count_documents(query)
+
+    def aggregate_stats_by_repo_config(
+        self,
+        model_repo_config_id: ObjectId,
+    ) -> Dict[str, int]:
+        """
+        Aggregate build stats by extraction status for a repo config.
+        Returns a dictionary with counts for 'completed', 'failed', 'pending', etc.
+        """
+        pipeline = [
+            {"$match": {"model_repo_config_id": model_repo_config_id}},
+            {"$group": {"_id": "$extraction_status", "count": {"$sum": 1}}},
+        ]
+        results = list(self.collection.aggregate(pipeline))
+
+        stats = {
+            "total_builds_processed": 0,  # completed + partial
+            "total_builds_failed": 0,
+            "total_pending": 0,
+        }
+
+        for r in results:
+            status = r["_id"]
+            count = r["count"]
+
+            if status in (ExtractionStatus.COMPLETED.value, ExtractionStatus.PARTIAL.value):
+                stats["total_builds_processed"] += count
+            elif status == ExtractionStatus.FAILED.value:
+                stats["total_builds_failed"] += count
+            elif status == ExtractionStatus.PENDING.value:
+                stats["total_pending"] += count
+
+        return stats

@@ -249,9 +249,7 @@ class RedisTokenPool:
                 int((reset_at - _now()).total_seconds()) + 5,  # +5 buffer
                 str(reset_at.timestamp()),
             )
-            self._redis.hset(
-                f"{KEY_STATS}:{token_hash}", "status", TOKEN_STATUS_RATE_LIMITED
-            )
+            self._redis.hset(f"{KEY_STATS}:{token_hash}", "status", TOKEN_STATUS_RATE_LIMITED)
         else:
             self._redis.hset(f"{KEY_STATS}:{token_hash}", "status", TOKEN_STATUS_ACTIVE)
 
@@ -277,9 +275,7 @@ class RedisTokenPool:
         try:
             remaining_int = int(remaining)
             limit_int = int(limit) if limit else 5000
-            reset_dt = (
-                datetime.fromtimestamp(int(reset), tz=timezone.utc) if reset else None
-            )
+            reset_dt = datetime.fromtimestamp(int(reset), tz=timezone.utc) if reset else None
 
             self.update_rate_limit(token_hash, remaining_int, limit_int, reset_dt)
         except (TypeError, ValueError):
@@ -387,14 +383,10 @@ class RedisTokenPool:
                     "masked_token": mask_token(raw_token) if raw_token else "****",
                     "label": stats.get("label", ""),
                     "status": stats.get("status", TOKEN_STATUS_ACTIVE),
-                    "rate_limit_remaining": int(
-                        stats.get("rate_limit_remaining", score) or 0
-                    ),
-                    "rate_limit_limit": int(
-                        stats.get("rate_limit_limit", 5000) or 5000
-                    ),
+                    "rate_limit_remaining": int(stats.get("rate_limit_remaining", score) or 0),
+                    "rate_limit_limit": int(stats.get("rate_limit_limit", 5000) or 5000),
                     "rate_limit_reset_at": stats.get("rate_limit_reset_at"),
-                    "last_used_at": stats.get("last_used_at"),
+                    "last_used_at": stats.get("last_used_at") or None,
                     "total_requests": int(stats.get("total_requests", 0) or 0),
                 }
             )

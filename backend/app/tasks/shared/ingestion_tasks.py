@@ -32,34 +32,6 @@ from app.tasks.base import PipelineTask
 logger = logging.getLogger(__name__)
 
 
-class RateLimiter:
-    def __init__(self, key: str, calls_per_second: float = 5.0):
-        self.key = f"ratelimit:{key}"
-        self.min_interval = 1.0 / calls_per_second
-
-    def wait(self):
-        """Wait until rate limit allows next call."""
-        import time
-
-        import redis
-
-        redis_client = redis.from_url(settings.REDIS_URL)
-        while True:
-            now = time.time()
-            last_call = redis_client.get(self.key)
-            if last_call is None:
-                # First call
-                redis_client.set(self.key, now, ex=60)
-                return
-            last_time = float(last_call)
-            elapsed = now - last_time
-            if elapsed >= self.min_interval:
-                redis_client.set(self.key, now, ex=60)
-                return
-            # Wait for remaining time
-            time.sleep(self.min_interval - elapsed)
-
-
 def _publish_status(repo_id: str, status: str, message: str = ""):
     """Publish status update to Redis for real-time UI updates."""
     try:
@@ -136,9 +108,7 @@ def clone_repo(
             # Check if this repo belongs to the configured organization
             from app.services.model_repository_service import is_org_repo
 
-            use_installation_token = (
-                is_org_repo(full_name) and settings.GITHUB_INSTALLATION_ID
-            )
+            use_installation_token = is_org_repo(full_name) and settings.GITHUB_INSTALLATION_ID
 
             if repo_path.exists():
                 logger.info(f"{log_ctx} Updating existing clone")
@@ -187,10 +157,12 @@ def clone_repo(
             if publish_status and raw_repo_id:
                 _publish_status(raw_repo_id, "importing", "Repository cloned successfully")
 
-            result.update({
-                "status": "cloned",
-                "path": str(repo_path),
-            })
+            result.update(
+                {
+                    "status": "cloned",
+                    "path": str(repo_path),
+                }
+            )
 
             # Preserve previous result data for chaining
             if isinstance(prev_result, dict):
@@ -204,8 +176,7 @@ def clone_repo(
         if retries_left > 0:
             # Still have retries - raise to trigger retry
             logger.warning(
-                f"{log_ctx} Clone failed, will retry in 60s "
-                f"({retries_left} retries left): {e}"
+                f"{log_ctx} Clone failed, will retry in 60s " f"({retries_left} retries left): {e}"
             )
             raise self.retry(exc=e, countdown=60) from e
         else:
@@ -217,10 +188,12 @@ def clone_repo(
                 f"{log_ctx} Clone failed after {self.max_retries} retries, "
                 f"continuing chain: {error_msg}"
             )
-            result.update({
-                "status": "failed",
-                "error": error_msg,
-            })
+            result.update(
+                {
+                    "status": "failed",
+                    "error": error_msg,
+                }
+            )
 
             if isinstance(prev_result, dict):
                 return {**prev_result, **result}
@@ -232,8 +205,8 @@ def clone_repo(
     base=PipelineTask,
     name="app.tasks.shared.create_worktree_chunk",
     queue="ingestion",
-    soft_time_limit=300,  # 5 min per chunk
-    time_limit=360,
+    soft_time_limit=600,  # 10 min per chunk (fork replay needs more time)
+    time_limit=660,
     max_retries=2,  # Will retry up to 2 times before giving up gracefully
 )
 def create_worktree_chunk(
@@ -348,7 +321,7 @@ def create_worktree_chunk(
                                     repo_slug=raw_repo.full_name,
                                     github_client=github_client,
                                 )
-                                if synthetic_sha:
+                                if synthetic_sha and synthetic_sha != sha:
                                     if build_run:
                                         build_run_repo.update_effective_sha(
                                             build_run.id, synthetic_sha
@@ -550,10 +523,7 @@ def aggregate_logs_results(
             continue
         chunk_idx = r.get("chunk_index", "?")
         if r.get("error"):
-            chunks_with_errors.append({
-                "chunk_index": chunk_idx,
-                "error": r.get("error")
-            })
+            chunks_with_errors.append({"chunk_index": chunk_idx, "error": r.get("error")})
             logger.warning(f"{log_ctx} Chunk {chunk_idx} had error: {r.get('error')}")
         else:
             successful_chunks.append(r)
@@ -672,9 +642,6 @@ def download_logs_chunk(
         logs_skipped = 0
         max_log_size = settings.MAX_LOG_SIZE_MB * 1024 * 1024
 
-        rate_limit = getattr(settings, "API_RATE_LIMIT_PER_SECOND", 5.0)
-        github_limiter = RateLimiter(f"github_logs:{raw_repo_id}", calls_per_second=rate_limit)
-
         max_consecutive = int(redis_client.get(f"{session_key}:max_expired") or 10)
 
         async def download_one(build_id: str) -> str:
@@ -705,7 +672,7 @@ def download_logs_chunk(
 
                 fetch_kwargs = {"build_id": f"{full_name}:{build_id}"}
 
-                github_limiter.wait()
+                ci_instance.wait_rate_limit()
                 log_files = await ci_instance.fetch_build_logs(**fetch_kwargs)
 
                 if not log_files:
@@ -790,10 +757,7 @@ def download_logs_chunk(
 
     except Exception as e:
         retries_left = self.max_retries - self.request.retries
-        logger.error(
-            f"{log_ctx} Error (retries_left={retries_left}): {e}",
-            exc_info=True
-        )
+        logger.error(f"{log_ctx} Error (retries_left={retries_left}): {e}", exc_info=True)
 
         if retries_left > 0:
             # Retry with exponential backoff

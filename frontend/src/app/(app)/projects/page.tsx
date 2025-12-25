@@ -3,12 +3,8 @@
 import {
   FileSpreadsheet,
   Loader2,
-  MoreVertical,
-  PlayCircle,
-  Settings,
   Trash2,
   Upload,
-  X
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -22,13 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
 import { datasetsApi } from "@/lib/api";
@@ -36,19 +25,10 @@ import type {
   DatasetRecord,
   DatasetTemplateRecord
 } from "@/types";
-import { createPortal } from "react-dom";
-import { EnrichmentPanel } from "./_components/EnrichmentPanel";
 import { UploadDatasetModal } from "./_components/UploadDatasetModal/index";
 import { useWebSocket } from "@/contexts/websocket-context";
 
-const Portal = ({ children }: { children: React.ReactNode }) => {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-  if (!mounted) return null;
-  return createPortal(children, document.body);
-};
+
 
 function formatNumber(value: number) {
   return value.toLocaleString("en-US");
@@ -84,10 +64,7 @@ export default function DatasetsPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
-  // Panel state
-  const [panelDataset, setPanelDataset] = useState<DatasetRecord | null>(null);
-  const [panelLoading, setPanelLoading] = useState(false);
-  const [panelSaving, setPanelSaving] = useState(false);
+
 
   // Templates
   const [templates, setTemplates] = useState<DatasetTemplateRecord[]>([]);
@@ -175,22 +152,7 @@ export default function DatasetsPage() {
     router.push(`/projects/${dataset.id}`);
   };
 
-  const openPanel = async (datasetId: string) => {
-    setPanelLoading(true);
-    try {
-      const dataset = await datasetsApi.get(datasetId);
-      setPanelDataset(dataset);
-    } catch (err) {
-      console.error(err);
-      setFeedback("Unable to load dataset details.");
-    } finally {
-      setPanelLoading(false);
-    }
-  };
 
-  const closePanel = () => {
-    setPanelDataset(null);
-  };
 
   const handleDelete = async (dataset: DatasetRecord) => {
     if (!confirm(`Delete dataset "${dataset.name}"? This cannot be undone.`)) {
@@ -389,62 +351,18 @@ export default function DatasetsPage() {
                         {formatDate(dataset.created_at)}
                       </td>
                       <td className="px-6 py-4">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-8 w-8 p-0"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MoreVertical className="h-4 w-4" />
-                              <span className="sr-only">Open menu</span>
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {/* Continue Setup for incomplete datasets (validation not completed) */}
-                            {dataset.validation_status !== "completed" && (
-                              <DropdownMenuItem
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  // Fetch fresh data to get latest setup_step
-                                  try {
-                                    const freshDataset = await datasetsApi.get(dataset.id);
-                                    setResumeDataset(freshDataset);
-                                    setUploadModalOpen(true);
-                                  } catch (err) {
-                                    console.error("Failed to fetch dataset:", err);
-                                    setFeedback("Failed to load dataset.");
-                                  }
-                                }}
-                                className="text-blue-600"
-                              >
-                                <PlayCircle className="mr-2 h-4 w-4" />
-                                Continue Setup
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openPanel(dataset.id);
-                              }}
-                            >
-                              <Settings className="mr-2 h-4 w-4" />
-                              Configure
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-red-600"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete(dataset);
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(dataset);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete</span>
+                        </Button>
                       </td>
                     </tr>
                   ))
@@ -503,139 +421,7 @@ export default function DatasetsPage() {
         existingDataset={resumeDataset || undefined}
       />
 
-      {/* Dataset Detail Panel */}
-      {panelDataset && (
-        <Portal>
-          <div className="fixed inset-0 z-50 flex justify-end bg-black/50">
-            <div className="h-full w-full max-w-2xl overflow-y-auto bg-white shadow-2xl dark:bg-slate-950">
-              <div className="flex items-center justify-between border-b px-6 py-4">
-                <div>
-                  <p className="text-lg font-semibold">{panelDataset.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {panelDataset.file_name} • {formatNumber(panelDataset.rows)} rows
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="rounded-full p-2 text-muted-foreground hover:bg-slate-100"
-                  onClick={closePanel}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
 
-              {panelLoading ? (
-                <div className="flex h-64 items-center justify-center">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <div className="space-y-6 p-6">
-                  {/* Mapping Status */}
-                  <div className="space-y-3">
-                    <h3 className="font-semibold">Column Mapping</h3>
-                    <div className="grid gap-2 text-sm">
-                      <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
-                        <span className="text-muted-foreground">Build ID</span>
-                        <span className="font-medium">
-                          {panelDataset.mapped_fields?.build_id || (
-                            <span className="text-amber-600">Not mapped</span>
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
-                        <span className="text-muted-foreground">Repo Name</span>
-                        <span className="font-medium">
-                          {panelDataset.mapped_fields?.repo_name || (
-                            <span className="text-amber-600">Not mapped</span>
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Languages & Frameworks */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold">Source Languages</h3>
-                      <span className="text-sm text-muted-foreground">
-                        {panelDataset.source_languages?.length || 0} languages
-                      </span>
-                    </div>
-                    {(panelDataset.source_languages?.length || 0) > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {panelDataset.source_languages?.map((lang) => (
-                          <Badge key={lang} variant="secondary" className="text-xs">
-                            {lang}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        No languages configured.
-                      </p>
-                    )}
-
-                    <div className="flex items-center justify-between pt-2">
-                      <h3 className="font-semibold">Test Frameworks</h3>
-                      <span className="text-sm text-muted-foreground">
-                        {panelDataset.test_frameworks?.length || 0} frameworks
-                      </span>
-                    </div>
-                    {(panelDataset.test_frameworks?.length || 0) > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {panelDataset.test_frameworks?.map((fw) => (
-                          <Badge key={fw} variant="outline" className="text-xs">
-                            {fw}
-                          </Badge>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        No frameworks configured.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Preview */}
-                  <div className="space-y-3">
-                    <h3 className="font-semibold">Data Preview</h3>
-                    <div className="max-h-64 overflow-auto rounded-lg border">
-                      <table className="min-w-full text-xs">
-                        <thead className="bg-slate-50 dark:bg-slate-800">
-                          <tr>
-                            {panelDataset.columns?.slice(0, 6).map((col) => (
-                              <th key={col} className="px-3 py-2 text-left font-medium">
-                                {col}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                          {panelDataset.preview?.slice(0, 5).map((row, idx) => (
-                            <tr key={idx}>
-                              {panelDataset.columns?.slice(0, 6).map((col) => (
-                                <td key={col} className="px-3 py-2 text-muted-foreground">
-                                  {String(row[col] || "—").slice(0, 30)}
-                                </td>
-                              ))}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Enrichment Panel */}
-                  <EnrichmentPanel
-                    datasetId={panelDataset.id}
-                    mappingReady={Boolean(panelDataset.mapped_fields?.build_id && panelDataset.mapped_fields?.repo_name)}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        </Portal>
-      )}
     </div>
   );
 }

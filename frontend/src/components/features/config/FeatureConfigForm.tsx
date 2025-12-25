@@ -41,7 +41,7 @@ interface ConfigFieldSpec {
 }
 
 interface RepoInfo {
-    id: string; // raw_repo_id
+    id: string; // github_repo_id
     full_name: string;
     validation_status: string;
 }
@@ -111,7 +111,7 @@ export function FeatureConfigForm({
                 const summary = await datasetsApi.getValidationSummary(datasetId!);
                 if (!isCancelled && summary.repos) {
                     setRepos(summary.repos.map(r => ({
-                        id: r.id,
+                        id: String(r.github_repo_id),
                         full_name: r.full_name,
                         validation_status: r.validation_status,
                     })));

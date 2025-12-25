@@ -1,18 +1,9 @@
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from app.ci_providers.models import CIProvider
 from app.entities.base import BaseEntity, PyObjectId
-
-
-class RepoScanConfig(BaseModel):
-    """Custom scan configuration for a repository (overrides global defaults)."""
-
-    # Custom sonar-project.properties content
-    sonarqube_properties: Optional[str] = None
-    # Custom trivy.yaml content
-    trivy_yaml: Optional[str] = None
 
 
 class DatasetRepoStats(BaseEntity):
@@ -38,6 +29,3 @@ class DatasetRepoStats(BaseEntity):
     builds_filtered: int = 0
     is_valid: bool = True
     validation_error: Optional[str] = None
-
-    # Custom scan configuration (overrides global defaults)
-    scan_config: Optional[RepoScanConfig] = None

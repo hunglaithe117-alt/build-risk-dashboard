@@ -506,12 +506,4 @@ SONARQUBE_METRICS: List[MetricDefinition] = [
         data_type=MetricDataType.INTEGER,
         example_value="35",
     ),
-    MetricDefinition(
-        key="last_commit_date",
-        display_name="Last Commit Date",
-        description="Date of the last commit analyzed by SonarQube",
-        category=MetricCategory.METADATA,
-        data_type=MetricDataType.DATETIME,
-        example_value="2024-01-15T10:30:00Z",
-    ),
 ]

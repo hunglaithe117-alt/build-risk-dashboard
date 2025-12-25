@@ -7,10 +7,6 @@ from pydantic import BaseModel, Field
 
 from app.entities import ValidationStats
 
-# ============================================================================
-# Request DTOs
-# ============================================================================
-
 
 class RepoConfigRequest(BaseModel):
     """Request model for updating repos from Step 2."""
@@ -25,18 +21,6 @@ class SaveReposRequest(BaseModel):
     """Request to update multiple repo configurations."""
 
     repos: List[RepoConfigRequest]
-
-
-class RepoScanConfigRequest(BaseModel):
-    """Request model for updating per-repo scan configuration."""
-
-    sonarqube_properties: Optional[str] = None
-    trivy_yaml: Optional[str] = None
-
-
-# ============================================================================
-# Response DTOs
-# ============================================================================
 
 
 class ValidationStatusResponse(BaseModel):
@@ -64,6 +48,7 @@ class RepoValidationResult(BaseModel):
 
     id: str
     raw_repo_id: str
+    github_repo_id: Optional[int] = None  # Needed for per-repo scan config
     full_name: str
     ci_provider: str = "github_actions"
     validation_status: str

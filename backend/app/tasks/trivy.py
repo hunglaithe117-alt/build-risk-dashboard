@@ -39,6 +39,7 @@ def start_trivy_scan_for_version_commit(
     raw_repo_id: str,
     github_repo_id: int,
     trivy_config: Dict[str, Any] = None,
+    config_file_path: str = None,
     selected_metrics: List[str] = None,
     correlation_id: str = "",
 ):
@@ -54,12 +55,13 @@ def start_trivy_scan_for_version_commit(
         repo_full_name: Repository full name (owner/repo)
         raw_repo_id: RawRepository MongoDB ID
         github_repo_id: GitHub's internal repository ID for paths
-        trivy_config: Optional config override containing:
-            - config_content: trivy.yaml content from UI (optional)
-            - scanners: comma-separated list like "vuln,config,secret" (optional)
+        trivy_config: Optional config containing scanners list
+        config_file_path: External config file path (trivy.yaml)
         selected_metrics: Optional list of metrics to filter
         correlation_id: Correlation ID for tracing
     """
+    from pathlib import Path
+
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
     logger.info(
         f"{corr_prefix} Starting Trivy scan for commit {commit_sha[:8]} in version {version_id[:8]}"
@@ -98,13 +100,12 @@ def start_trivy_scan_for_version_commit(
     start_time = time.time()
 
     try:
-        # Run Trivy scan with optional config override
-        # If user provides trivy.yaml content, it will be written to worktree
+        # Run Trivy scan
         trivy_tool = TrivyTool()
         scan_result = trivy_tool.scan(
             target_path=worktree_path_str,
             scan_types=_parse_scan_types(trivy_config),
-            config_content=trivy_config.get("config_content"),  # trivy.yaml content from UI
+            config_file_path=Path(config_file_path) if config_file_path else None,
         )
 
         scan_duration_ms = scan_result.get(

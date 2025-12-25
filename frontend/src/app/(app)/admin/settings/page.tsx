@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Settings as SettingsIcon, Github, Server, Bell } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Bell, Github, Server, Settings as SettingsIcon } from 'lucide-react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useEffect, useState } from 'react'
 
 import { GitHubTokensTab } from '@/components/settings/github-tokens-tab'
 import { IntegrationsTab } from '@/components/settings/integrations-tab'

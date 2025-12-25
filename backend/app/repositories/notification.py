@@ -20,12 +20,21 @@ class NotificationRepository(BaseRepository[Notification]):
         skip: int = 0,
         limit: int = 20,
         unread_only: bool = False,
+        cursor_id: str | None = None,
     ) -> tuple[List[Notification], int]:
-        """Find notifications for a user with pagination."""
+        """Find notifications for a user with pagination (offset or cursor)."""
         query = {"user_id": user_id}
         if unread_only:
             query["is_read"] = False
-        return self.paginate(query, sort=[("created_at", -1)], skip=skip, limit=limit)
+
+        if cursor_id:
+            try:
+                query["_id"] = {"$lt": ObjectId(cursor_id)}
+            except Exception:
+                pass  # Ignore invalid cursor
+
+        # If using cursor, skip should be 0 (handled by caller usually), but we respect it if passed
+        return self.paginate(query, sort=[("_id", -1)], skip=skip, limit=limit)
 
     def count_unread(self, user_id: ObjectId) -> int:
         """Count unread notifications for a user."""

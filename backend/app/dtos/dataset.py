@@ -127,3 +127,14 @@ class RepoValidationResponse(BaseModel):
     valid_repos: int
     invalid_repos: int
     repos: List[RepoValidationItem]
+
+
+class DatasetUpdateRequest(BaseModel):
+    """Request for updating dataset (PATCH)."""
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    mapped_fields: Optional[DatasetMappingDto] = None
+    ci_provider: Optional[str] = None
+    build_filters: Optional[BuildValidationFiltersDto] = None
+    setup_step: Optional[int] = None

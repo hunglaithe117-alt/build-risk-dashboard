@@ -48,6 +48,7 @@ def list_notifications(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     unread_only: bool = Query(False),
+    cursor: str | None = Query(None),
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -55,14 +56,15 @@ def list_notifications(
     notification_service = NotificationService(db)
     user_id = ObjectId(current_user["_id"])
 
-    items, total, unread_count = notification_service.list_notifications(
-        user_id, skip=skip, limit=limit, unread_only=unread_only
+    items, total, unread_count, next_cursor = notification_service.list_notifications(
+        user_id, skip=skip, limit=limit, unread_only=unread_only, cursor=cursor
     )
 
     return NotificationListResponse(
         items=[_to_response(n) for n in items],
         total=total,
         unread_count=unread_count,
+        next_cursor=next_cursor,
     )
 
 

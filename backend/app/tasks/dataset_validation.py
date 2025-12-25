@@ -616,7 +616,7 @@ def validate_builds_chunk(
                             repo_name_from_csv=repo_name,
                             raw_repo_id=ObjectId(raw_repo_id),
                             status=DatasetBuildStatus.FILTERED,
-                            ci_run_id=raw_build_run.id,  # Still link to RawBuildRun
+                            raw_run_id=raw_build_run.id,  # Reference to RawBuildRun
                             validation_error=f"Filtered: {filter_reason}",
                             validated_at=utc_now(),
                         )
@@ -631,7 +631,7 @@ def validate_builds_chunk(
                             repo_name_from_csv=repo_name,
                             raw_repo_id=ObjectId(raw_repo_id),
                             status=DatasetBuildStatus.FOUND,
-                            ci_run_id=raw_build_run.id,
+                            raw_run_id=raw_build_run.id,
                             validated_at=utc_now(),
                         )
                     )

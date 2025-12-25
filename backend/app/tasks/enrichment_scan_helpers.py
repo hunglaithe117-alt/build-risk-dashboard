@@ -9,14 +9,62 @@ Note: Scan record creation is handled by the scan tasks themselves (idempotent).
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from app.celery_app import celery_app
 from app.core.tracing import TracingContext
+from app.paths import get_sonarqube_config_path, get_trivy_config_path
 from app.repositories.dataset_version import DatasetVersionRepository
 from app.tasks.base import PipelineTask
 
 logger = logging.getLogger(__name__)
+
+
+def _write_config_file(config_path, content: str) -> bool:
+    """Write config content to file, creating directories if needed."""
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_path, "w") as f:
+            f.write(content)
+        logger.info(f"Wrote config to {config_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to write config to {config_path}: {e}")
+        return False
+
+
+def _get_repo_config(tool_config: dict, github_repo_id: int) -> dict:
+    """
+    Get scan config for a specific repo.
+
+    If repo has specific config in 'repos' dict, use it entirely.
+    Otherwise, use the default config (excluding 'repos' key).
+
+    No merging - repo config completely overrides default.
+    """
+    # Check for repo-specific config
+    repo_config = tool_config.get("repos", {}).get(str(github_repo_id))
+
+    if repo_config:
+        # Repo has specific config - use it entirely
+        return repo_config
+
+    # No repo-specific config - use default (exclude 'repos' key)
+    return {k: v for k, v in tool_config.items() if k != "repos"}
+
+
+def _build_sonar_config_content(sonar_config: dict) -> Optional[str]:
+    """Build sonar-project.properties content from config dict."""
+    config_lines = []
+
+    if sonar_config.get("projectKey"):
+        config_lines.append(f"sonar.projectKey={sonar_config['projectKey']}")
+
+    if sonar_config.get("extraProperties"):
+        extra_lines = sonar_config["extraProperties"].strip().split("\n")
+        config_lines.extend(extra_lines)
+
+    return "\n".join(config_lines) if config_lines else None
 
 
 @celery_app.task(
@@ -64,7 +112,19 @@ def dispatch_scan_for_commit(
     trivy_metrics = version.scan_metrics.get("trivy", [])
     if trivy_metrics:
         try:
-            trivy_config = version.scan_config.get("trivy", {})
+            # Get repo-specific or default trivy config
+            trivy_tool_config = version.scan_config.get("trivy", {})
+            trivy_config = _get_repo_config(trivy_tool_config, github_repo_id)
+
+            # Get config content (trivyYaml)
+            trivy_yaml = trivy_config.get("trivyYaml", "")
+
+            # Write config to external path (only if not exists)
+            trivy_config_path = None
+            if trivy_yaml:
+                trivy_config_path = get_trivy_config_path(version_id, github_repo_id)
+                if not trivy_config_path.exists():
+                    _write_config_file(trivy_config_path, trivy_yaml)
 
             from app.tasks.trivy import start_trivy_scan_for_version_commit
 
@@ -75,6 +135,7 @@ def dispatch_scan_for_commit(
                 raw_repo_id=raw_repo_id,
                 github_repo_id=github_repo_id,
                 trivy_config=trivy_config,
+                config_file_path=str(trivy_config_path) if trivy_config_path else None,
                 selected_metrics=trivy_metrics,
                 correlation_id=correlation_id,
             )
@@ -92,7 +153,9 @@ def dispatch_scan_for_commit(
     sonar_metrics = version.scan_metrics.get("sonarqube", [])
     if sonar_metrics:
         try:
-            sonar_config = version.scan_config.get("sonarqube", {})
+            # Get repo-specific or default sonar config
+            sonar_tool_config = version.scan_config.get("sonarqube", {})
+            sonar_config = _get_repo_config(sonar_tool_config, github_repo_id)
 
             # Generate component key with version_id prefix for uniqueness
             repo_name_safe = repo_full_name.replace("/", "_")
@@ -100,6 +163,13 @@ def dispatch_scan_for_commit(
             component_key = f"{version_prefix}_{repo_name_safe}_{commit_sha[:12]}"
 
             config_content = _build_sonar_config_content(sonar_config)
+
+            # Write config to external path (only if not exists)
+            sonar_config_path = None
+            if config_content:
+                sonar_config_path = get_sonarqube_config_path(version_id, github_repo_id)
+                if not sonar_config_path.exists():
+                    _write_config_file(sonar_config_path, config_content)
 
             from app.tasks.sonar import start_sonar_scan_for_version_commit
 
@@ -110,7 +180,7 @@ def dispatch_scan_for_commit(
                 raw_repo_id=raw_repo_id,
                 github_repo_id=github_repo_id,
                 component_key=component_key,
-                config_content=config_content,
+                config_file_path=str(sonar_config_path) if sonar_config_path else None,
                 correlation_id=correlation_id,
             )
 
@@ -129,17 +199,3 @@ def dispatch_scan_for_commit(
         "correlation_id": correlation_id,
         "results": results,
     }
-
-
-def _build_sonar_config_content(sonar_config: dict) -> str:
-    """Build sonar-project.properties content from config dict."""
-    config_lines = []
-
-    if sonar_config.get("projectKey"):
-        config_lines.append(f"sonar.projectKey={sonar_config['projectKey']}")
-
-    if sonar_config.get("extraProperties"):
-        extra_lines = sonar_config["extraProperties"].strip().split("\n")
-        config_lines.extend(extra_lines)
-
-    return "\n".join(config_lines) if config_lines else None

@@ -20,11 +20,8 @@ import {
     TemplateSelector,
 } from "@/components/features/selection";
 import { FeatureConfigForm, type FeatureConfigsData } from "@/components/features/config/FeatureConfigForm";
-import {
-    ScanConfigPanel,
-    DEFAULT_SCAN_CONFIG,
-    type ScanConfig,
-} from "@/components/sonar/scan-config-panel";
+import { ScanConfigPanel, type ScanConfig } from "@/components/sonar/scan-config-panel";
+import { useScanConfig } from "./useScanConfig";
 
 
 /** Scan metrics selection */
@@ -69,7 +66,9 @@ export function FeatureSelectionCard({
         sonarqube: [],
         trivy: [],
     });
-    const [scanConfig, setScanConfig] = useState<ScanConfig>(DEFAULT_SCAN_CONFIG);
+
+    // Use custom hook to fetch and manage scan config with backend defaults
+    const { scanConfig, setScanConfig, resetToDefaults } = useScanConfig();
 
     const {
         extractorNodes,
@@ -117,7 +116,7 @@ export function FeatureSelectionCard({
         setVersionName("");
         setFeatureConfigs({ global: {}, repos: {} });
         setScanMetrics({ sonarqube: [], trivy: [] });
-        setScanConfig(DEFAULT_SCAN_CONFIG);
+        resetToDefaults(); // Reset to backend defaults instead of hardcoded
     };
 
     const isDisabled = isCreating || hasActiveVersion || selectedFeatures.size === 0;
@@ -238,5 +237,3 @@ export function FeatureSelectionCard({
         </Card>
     );
 }
-
-

@@ -419,15 +419,22 @@ export function UploadDatasetModal({
                                 // Hide back button when validation is completed
                                 null
                             ) : (
-                                <Button
-                                    variant="outline"
-                                    onClick={wizard.goBackToStep1}
-                                    disabled={validationStatus === "validating" || uploading}
-                                    className="gap-2"
-                                >
-                                    <ArrowLeft className="h-4 w-4" />
-                                    Back
-                                </Button>
+                                <div className="flex items-center gap-3">
+                                    {validationStatus === "validating" && (
+                                        <span className="text-xs text-muted-foreground hidden sm:inline-block">
+                                            Pause validation to go back
+                                        </span>
+                                    )}
+                                    <Button
+                                        variant="outline"
+                                        onClick={wizard.goBackToStep1}
+                                        disabled={validationStatus === "validating" || uploading}
+                                        className="gap-2"
+                                    >
+                                        <ArrowLeft className="h-4 w-4" />
+                                        Back
+                                    </Button>
+                                </div>
                             )}
                         </div>
 

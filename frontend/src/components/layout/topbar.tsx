@@ -80,7 +80,7 @@ export function Topbar({ onToggleSidebar }: TopbarProps) {
   }
 
   return (
-    <header className="flex h-16 items-center justify-between border-b bg-white/70 px-4 md:px-6 backdrop-blur dark:bg-slate-950/90">
+    <header className="relative z-40 flex h-16 items-center justify-between border-b bg-white/70 px-4 md:px-6 backdrop-blur dark:bg-slate-950/90">
       <div className="flex items-center gap-3">
         <button
           type="button"

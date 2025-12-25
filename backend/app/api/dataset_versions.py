@@ -172,7 +172,7 @@ async def get_version_data(
     - column_stats: Statistics for each feature column (only on page 1)
     """
     service = DatasetVersionService(db)
-    return service.get_version_data(
+    return await service.get_version_data(
         dataset_id=dataset_id,
         version_id=version_id,
         user_id=str(current_user["_id"]),

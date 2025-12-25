@@ -2,15 +2,17 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Bell, Loader2, Save, User } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAuth } from '@/contexts/auth-context';
 import { useToast } from '@/components/ui/use-toast';
 import { userSettingsApi, UpdateUserSettingsRequest } from '@/lib/api';
+import { NotificationsList } from '@/components/notifications/NotificationsList';
+import { ProfileSettings } from '@/components/settings/ProfileSettings';
 
 interface SettingsState {
     browserNotifications: boolean;
@@ -20,8 +22,11 @@ interface SettingsState {
 }
 
 export default function SettingsPage() {
-    const { user } = useAuth();
     const { toast } = useToast();
+    const searchParams = useSearchParams();
+    const router = useRouter();
+
+    const [activeTab, setActiveTab] = useState('notifications');
 
     const [settingsState, setSettingsState] = useState<SettingsState>({
         browserNotifications: true,
@@ -29,6 +34,21 @@ export default function SettingsPage() {
         isSaving: false,
         hasChanges: false,
     });
+
+    // Sync tab with URL
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab && ['notifications', 'profile'].includes(tab)) {
+            setActiveTab(tab);
+        }
+    }, [searchParams]);
+
+    const handleTabChange = (value: string) => {
+        setActiveTab(value);
+        const params = new URLSearchParams(searchParams.toString());
+        params.set('tab', value);
+        router.push(`/settings?${params.toString()}`);
+    };
 
     // Load user settings on mount
     const loadSettings = useCallback(async () => {
@@ -101,7 +121,7 @@ export default function SettingsPage() {
                 </p>
             </div>
 
-            <Tabs defaultValue="notifications" className="space-y-6">
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
                 <TabsList className="grid w-full grid-cols-2 max-w-md">
                     <TabsTrigger value="notifications" className="flex items-center gap-2">
                         <Bell className="h-4 w-4" />
@@ -150,6 +170,9 @@ export default function SettingsPage() {
                         </CardContent>
                     </Card>
 
+                    {/* Notification History */}
+                    <NotificationsList />
+
                     {settingsState.hasChanges && (
                         <div className="flex justify-end">
                             <Button
@@ -174,34 +197,7 @@ export default function SettingsPage() {
                 </TabsContent>
 
                 <TabsContent value="profile" className="space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Profile Information</CardTitle>
-                            <CardDescription>
-                                Your account details from your authentication provider.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid gap-4">
-                                <div className="space-y-2">
-                                    <Label className="text-muted-foreground">Email</Label>
-                                    <p className="font-medium">{user?.email || 'Not available'}</p>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label className="text-muted-foreground">Name</Label>
-                                    <p className="font-medium">{user?.name || 'Not set'}</p>
-                                </div>
-                                <div className="space-y-2">
-                                    <Label className="text-muted-foreground">Role</Label>
-                                    <div className="flex items-center gap-2">
-                                        <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                                            {user?.role?.toUpperCase() || 'GUEST'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                    <ProfileSettings />
                 </TabsContent>
             </Tabs>
         </div>

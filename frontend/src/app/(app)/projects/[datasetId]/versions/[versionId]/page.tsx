@@ -38,6 +38,7 @@ import {
     AlertCircle,
     XCircle,
     AlertTriangle,
+    ExternalLink,
 } from "lucide-react";
 import { datasetVersionApi, type EnrichedBuildData } from "@/lib/api";
 import { ExportVersionModal } from "@/components/datasets/ExportVersionModal";
@@ -89,7 +90,8 @@ export default function VersionDetailPage() {
                     datasetId,
                     versionId,
                     currentPage,
-                    ITEMS_PER_PAGE
+                    ITEMS_PER_PAGE,
+                    true
                 );
                 setVersionData(response);
             } catch (err) {
@@ -141,6 +143,139 @@ export default function VersionDetailPage() {
     // Toggle build expansion
     const toggleBuildExpansion = (buildId: string) => {
         setExpandedBuildId(expandedBuildId === buildId ? null : buildId);
+    };
+
+    // Render Build Row Logic (reusable)
+    const renderBuildRow = (build: EnrichedBuildData) => {
+        const buildStatus = getBuildStatusConfig(build.extraction_status);
+        const BuildStatusIcon = buildStatus.icon;
+        const isExpanded = expandedBuildId === build.id;
+        const featurePercent = (build.feature_count / build.expected_feature_count) * 100;
+
+        return (
+            <Collapsible
+                key={build.id}
+                open={isExpanded}
+                onOpenChange={() => toggleBuildExpansion(build.id)}
+                asChild
+            >
+                <>
+                    <CollapsibleTrigger asChild>
+                        <TableRow className="cursor-pointer hover:bg-muted/50">
+                            <TableCell>
+                                {isExpanded ? (
+                                    <ChevronUp className="h-4 w-4" />
+                                ) : (
+                                    <ChevronDown className="h-4 w-4" />
+                                )}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm">
+                                <span className={build.web_url ? "text-blue-600 hover:underline" : ""}>
+                                    {build.web_url ? (
+                                        <Link href={build.web_url} target="_blank" onClick={(e) => e.stopPropagation()}>
+                                            #{build.raw_build_run_id.slice(-8)}
+                                        </Link>
+                                    ) : (
+                                        `#${build.raw_build_run_id.slice(-8)}`
+                                    )}
+                                </span>
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate">
+                                <div className="flex items-center gap-2">
+                                    {build.repo_url ? (
+                                        <a
+                                            href={build.repo_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="hover:underline flex items-center gap-1"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            {build.repo_full_name}
+                                            <ExternalLink className="h-3 w-3 opacity-50" />
+                                        </a>
+                                    ) : (
+                                        build.repo_full_name
+                                    )}
+                                </div>
+                            </TableCell>
+                            <TableCell>
+                                <span className="capitalize">{build.provider || "—"}</span>
+                            </TableCell>
+                            <TableCell>
+                                <Badge
+                                    variant="outline"
+                                    className={buildStatus.color}
+                                >
+                                    <BuildStatusIcon className="mr-1 h-3 w-3" />
+                                    {buildStatus.label}
+                                </Badge>
+                            </TableCell>
+                            <TableCell>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm">
+                                        {build.feature_count}/{build.expected_feature_count}
+                                    </span>
+                                    <Progress
+                                        value={featurePercent}
+                                        className="h-2 w-16"
+                                    />
+                                </div>
+                            </TableCell>
+                            <TableCell>
+                                {build.skipped_features.length > 0 ? (
+                                    <Badge variant="secondary">
+                                        {build.skipped_features.length}
+                                    </Badge>
+                                ) : (
+                                    "—"
+                                )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                                {formatRelativeTime(build.enriched_at)}
+                            </TableCell>
+                        </TableRow>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent asChild>
+                        <tr>
+                            <td colSpan={7} className="p-0">
+                                <div className="border-t bg-muted/30 p-4">
+                                    {build.missing_resources.length > 0 && (
+                                        <div className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+                                            <strong>Missing Resources:</strong>{" "}
+                                            {build.missing_resources.join(", ")}
+                                        </div>
+                                    )}
+                                    <div className="rounded-md border bg-background max-h-[500px] overflow-y-auto">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead className="w-[300px]">Feature</TableHead>
+                                                    <TableHead>Value</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {Object.entries(build.features)
+                                                    .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+                                                    .map(([key, value]) => (
+                                                        <TableRow key={key}>
+                                                            <TableCell className="font-medium text-xs">
+                                                                {key}
+                                                            </TableCell>
+                                                            <TableCell className="font-mono text-sm break-all">
+                                                                {formatValue(value, true)}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </CollapsibleContent>
+                </>
+            </Collapsible>
+        );
     };
 
     if (loading) {
@@ -239,7 +374,7 @@ export default function VersionDetailPage() {
                 </Card>
             </div>
 
-            {/* Enriched Builds Table */}
+            {/* Content Area */}
             <Card>
                 <CardHeader>
                     <CardTitle>Enriched Builds</CardTitle>
@@ -253,163 +388,57 @@ export default function VersionDetailPage() {
                             No enriched builds found
                         </div>
                     ) : (
-                        <>
-                            <div className="rounded-md border overflow-hidden">
-                                <Table className="table-fixed w-full">
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead className="w-[40px]"></TableHead>
-                                            <TableHead className="w-[100px]">Build ID</TableHead>
-                                            <TableHead className="w-[200px]">Repository</TableHead>
-                                            <TableHead className="w-[100px]">Status</TableHead>
-                                            <TableHead className="w-[120px]">Features</TableHead>
-                                            <TableHead className="w-[80px]">Skipped</TableHead>
-                                            <TableHead className="w-[100px]">Enriched At</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {builds.map((build) => {
-                                            const buildStatus = getBuildStatusConfig(build.extraction_status);
-                                            const BuildStatusIcon = buildStatus.icon;
-                                            const isExpanded = expandedBuildId === build.id;
-                                            const featurePercent = (build.feature_count / build.expected_feature_count) * 100;
-
-                                            return (
-                                                <Collapsible
-                                                    key={build.id}
-                                                    open={isExpanded}
-                                                    onOpenChange={() => toggleBuildExpansion(build.id)}
-                                                    asChild
-                                                >
-                                                    <>
-                                                        <CollapsibleTrigger asChild>
-                                                            <TableRow className="cursor-pointer hover:bg-muted/50">
-                                                                <TableCell>
-                                                                    {isExpanded ? (
-                                                                        <ChevronUp className="h-4 w-4" />
-                                                                    ) : (
-                                                                        <ChevronDown className="h-4 w-4" />
-                                                                    )}
-                                                                </TableCell>
-                                                                <TableCell className="font-mono text-sm">
-                                                                    #{build.raw_build_run_id.slice(-8)}
-                                                                </TableCell>
-                                                                <TableCell className="max-w-[200px] truncate">
-                                                                    {build.repo_full_name}
-                                                                </TableCell>
-                                                                <TableCell>
-                                                                    <Badge
-                                                                        variant="outline"
-                                                                        className={buildStatus.color}
-                                                                    >
-                                                                        <BuildStatusIcon className="mr-1 h-3 w-3" />
-                                                                        {buildStatus.label}
-                                                                    </Badge>
-                                                                </TableCell>
-                                                                <TableCell>
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-sm">
-                                                                            {build.feature_count}/{build.expected_feature_count}
-                                                                        </span>
-                                                                        <Progress
-                                                                            value={featurePercent}
-                                                                            className="h-2 w-16"
-                                                                        />
-                                                                    </div>
-                                                                </TableCell>
-                                                                <TableCell>
-                                                                    {build.skipped_features.length > 0 ? (
-                                                                        <Badge variant="secondary">
-                                                                            {build.skipped_features.length}
-                                                                        </Badge>
-                                                                    ) : (
-                                                                        "—"
-                                                                    )}
-                                                                </TableCell>
-                                                                <TableCell className="text-muted-foreground">
-                                                                    {formatRelativeTime(build.enriched_at)}
-                                                                </TableCell>
-                                                            </TableRow>
-                                                        </CollapsibleTrigger>
-                                                        <CollapsibleContent asChild>
-                                                            <tr>
-                                                                <td colSpan={7} className="p-0">
-                                                                    <div className="border-t bg-muted/30 p-4">
-                                                                        {/* Missing Resources Warning */}
-                                                                        {build.missing_resources.length > 0 && (
-                                                                            <div className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-                                                                                <strong>Missing Resources:</strong>{" "}
-                                                                                {build.missing_resources.join(", ")}
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* Simple scrollable features table */}
-                                                                        <div className="max-w-full overflow-x-auto rounded-md border bg-background" style={{ maxWidth: 'calc(100vw - 120px)' }}>
-                                                                            <Table>
-                                                                                <TableHeader>
-                                                                                    <TableRow>
-                                                                                        {Object.keys(build.features).map((key) => (
-                                                                                            <TableHead key={key} className="min-w-[120px] whitespace-nowrap text-xs">
-                                                                                                {key}
-                                                                                            </TableHead>
-                                                                                        ))}
-                                                                                    </TableRow>
-                                                                                </TableHeader>
-                                                                                <TableBody>
-                                                                                    <TableRow>
-                                                                                        {Object.values(build.features).map((value, idx) => (
-                                                                                            <TableCell key={idx} className="font-mono text-sm whitespace-nowrap">
-                                                                                                {formatValue(value)}
-                                                                                            </TableCell>
-                                                                                        ))}
-                                                                                    </TableRow>
-                                                                                </TableBody>
-                                                                            </Table>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-                                                        </CollapsibleContent>
-                                                    </>
-                                                </Collapsible>
-                                            );
-                                        })}
-                                    </TableBody>
-                                </Table>
-                            </div>
-
-                            {/* Pagination */}
-                            {total_pages > 1 && (
-                                <div className="mt-4 flex items-center justify-between">
-                                    <p className="text-sm text-muted-foreground">
-                                        Page {currentPage} of {total_pages}
-                                    </p>
-                                    <div className="flex items-center gap-2">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                                            disabled={currentPage === 1}
-                                        >
-                                            <ChevronLeft className="h-4 w-4" />
-                                            Previous
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={() => setCurrentPage((p) => Math.min(total_pages, p + 1))}
-                                            disabled={currentPage === total_pages}
-                                        >
-                                            Next
-                                            <ChevronRight className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            )}
-                        </>
+                        <div className="rounded-md border overflow-hidden">
+                            <Table className="table-fixed w-full">
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="w-[40px]"></TableHead>
+                                        <TableHead className="w-[100px]">Build ID</TableHead>
+                                        <TableHead className="w-[200px]">Repository</TableHead>
+                                        <TableHead className="w-[100px]">CI Provider</TableHead>
+                                        <TableHead className="w-[100px]">Status</TableHead>
+                                        <TableHead className="w-[120px]">Features</TableHead>
+                                        <TableHead className="w-[80px]">Skipped</TableHead>
+                                        <TableHead className="w-[100px]">Enriched At</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {builds.map((build) => renderBuildRow(build))}
+                                </TableBody>
+                            </Table>
+                        </div>
                     )}
                 </CardContent>
             </Card>
+
+            {/* Pagination */}
+            {total_pages > 1 && (
+                <div className="mt-4 flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                        Page {currentPage} of {total_pages} (Builds)
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                            Previous
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((p) => Math.min(total_pages, p + 1))}
+                            disabled={currentPage === total_pages}
+                        >
+                            Next
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+            )}
 
             {/* Export Modal */}
             <ExportVersionModal
@@ -424,16 +453,21 @@ export default function VersionDetailPage() {
     );
 }
 
-function formatValue(value: unknown): string {
+function formatValue(value: unknown, showFull = false): string {
     if (value === null || value === undefined) return "—";
     if (typeof value === "boolean") return value ? "✓" : "✗";
     if (typeof value === "number") {
         if (Number.isInteger(value)) return value.toLocaleString();
         return value.toFixed(2);
     }
-    if (typeof value === "string" && value.length > 30) {
-        return value.slice(0, 27) + "...";
+    if (typeof value === "string") {
+        if (!showFull && value.length > 30) return value.slice(0, 27) + "...";
+        return value;
     }
-    if (typeof value === "object") return JSON.stringify(value).slice(0, 30);
+    if (typeof value === "object") {
+        const str = JSON.stringify(value);
+        if (!showFull && str.length > 30) return str.slice(0, 30) + "...";
+        return str;
+    }
     return String(value);
 }

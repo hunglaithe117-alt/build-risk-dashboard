@@ -741,6 +741,8 @@ export interface DatasetValidationStatus {
 
 export interface RepoValidationResultNew {
   id: string;
+  raw_repo_id?: string;
+  github_repo_id?: number;  // Needed for per-repo scan config
   full_name: string;
   validation_status: "pending" | "valid" | "invalid" | "not_found" | "error";
   validation_error?: string;
@@ -867,6 +869,7 @@ export interface NotificationListResponse {
   items: Notification[];
   total: number;
   unread_count: number;
+  next_cursor?: string | null;
 }
 
 export interface UnreadCountResponse {

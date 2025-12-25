@@ -18,6 +18,7 @@ from app.dtos import (
     DatasetListResponse,
     DatasetResponse,
 )
+from app.dtos.dataset import DatasetUpdateRequest
 from app.middleware.rbac import Permission, RequirePermission
 from app.services.dataset_service import DatasetService
 
@@ -56,7 +57,7 @@ async def upload_dataset(
     upload_fobj = file.file
     try:
         upload_fobj.seek(0)
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Could not prepare file for upload: {str(e)}",
@@ -102,6 +103,28 @@ def delete_dataset(
     service = DatasetService(db)
     service.delete_dataset(dataset_id, user_id)
     return None
+
+
+@router.patch(
+    "/{dataset_id}",
+    response_model=DatasetResponse,
+    response_model_by_alias=False,
+)
+def update_dataset(
+    dataset_id: str = PathParam(..., description="Dataset id (Mongo ObjectId)"),
+    payload: DatasetUpdateRequest = ...,
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(RequirePermission(Permission.MANAGE_DATASETS)),
+):
+    """Update dataset fields (Admin and Guest)."""
+
+    user_id = str(current_user["_id"])
+    service = DatasetService(db)
+    return service.update_dataset(
+        dataset_id=dataset_id,
+        user_id=user_id,
+        updates=payload.model_dump(exclude_none=True),
+    )
 
 
 @router.get("/{dataset_id}/builds")

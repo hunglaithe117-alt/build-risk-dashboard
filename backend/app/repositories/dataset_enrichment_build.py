@@ -461,3 +461,61 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
             "completed": data.get("completed", 0),
             "scan_complete": data.get("with_sonar", 0) > 0 or data.get("with_trivy", 0) > 0,
         }
+
+    def list_by_version_with_details(
+        self,
+        dataset_version_id: ObjectId,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """
+        List builds for a version with repo name and web url.
+        """
+        pipeline = [
+            {"$match": {"dataset_version_id": dataset_version_id}},
+            {"$sort": {"_id": 1}},
+            {
+                "$facet": {
+                    "metadata": [{"$count": "total"}],
+                    "data": [
+                        {"$skip": skip},
+                        {"$limit": limit},
+                        {
+                            "$lookup": {
+                                "from": "raw_repositories",
+                                "localField": "raw_repo_id",
+                                "foreignField": "_id",
+                                "as": "repo",
+                            }
+                        },
+                        {
+                            "$lookup": {
+                                "from": "raw_build_runs",
+                                "localField": "raw_build_run_id",
+                                "foreignField": "_id",
+                                "as": "run",
+                            }
+                        },
+                        {
+                            "$addFields": {
+                                "repo_full_name": {"$arrayElemAt": ["$repo.full_name", 0]},
+                                "repo_url": {"$arrayElemAt": ["$repo.url", 0]},
+                                "provider": {"$arrayElemAt": ["$repo.provider", 0]},
+                                "web_url": {"$arrayElemAt": ["$run.web_url", 0]},
+                            }
+                        },
+                        {"$project": {"repo": 0, "run": 0}},
+                    ],
+                }
+            },
+        ]
+
+        result = list(self.collection.aggregate(pipeline))
+        if not result:
+            return [], 0
+
+        data = result[0]["data"]
+        metadata = result[0]["metadata"]
+        total = metadata[0]["total"] if metadata else 0
+
+        return data, total

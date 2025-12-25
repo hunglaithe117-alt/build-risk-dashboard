@@ -31,6 +31,9 @@ export interface EnrichedBuildData {
     id: string;
     raw_build_run_id: string;
     repo_full_name: string;
+    repo_url?: string;
+    provider?: string;
+    web_url?: string;
     extraction_status: string;
     feature_count: number;
     expected_feature_count: number;

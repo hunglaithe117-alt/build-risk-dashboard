@@ -209,7 +209,7 @@ export function NotificationDropdown({ className }: NotificationDropdownProps) {
                                 type="button"
                                 onClick={() => {
                                     setIsOpen(false)
-                                    // Could navigate to a full notifications page if you want
+                                    router.push('/settings')
                                 }}
                             >
                                 View all notifications

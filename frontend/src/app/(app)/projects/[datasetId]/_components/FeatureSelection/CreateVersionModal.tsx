@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -11,7 +11,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Loader2, Sparkles, Zap } from "lucide-react";
+import { Loader2, Sparkles, Zap, X } from "lucide-react";
 import { useFeatureSelector } from "@/components/features";
 import {
     GraphView,
@@ -21,11 +21,9 @@ import {
     TemplateSelector,
 } from "@/components/features/selection";
 import { FeatureConfigForm, type FeatureConfigsData } from "@/components/features/config/FeatureConfigForm";
-import {
-    ScanConfigPanel,
-    DEFAULT_SCAN_CONFIG,
-    type ScanConfig,
-} from "@/components/sonar/scan-config-panel";
+import { ScanConfigPanel, type ScanConfig } from "@/components/sonar/scan-config-panel";
+import { useScanConfig } from "./useScanConfig";
+import { datasetsApi } from "@/lib/api";
 
 
 /** Scan metrics selection */
@@ -38,6 +36,11 @@ interface ScanMetricsData {
 interface ScanData {
     metrics: ScanMetricsData;
     config: ScanConfig;
+}
+
+interface RepoInfo {
+    id: string;
+    full_name: string;
 }
 
 interface CreateVersionModalProps {
@@ -74,7 +77,35 @@ export function CreateVersionModal({
         sonarqube: [],
         trivy: [],
     });
-    const [scanConfig, setScanConfig] = useState<ScanConfig>(DEFAULT_SCAN_CONFIG);
+    const [repos, setRepos] = useState<RepoInfo[]>([]);
+
+    // Fetch repos for per-repo scan config
+    useEffect(() => {
+        if (!open || !datasetId) return;
+
+        async function fetchRepos() {
+            try {
+                const summary = await datasetsApi.getValidationSummary(datasetId);
+                if (summary.repos) {
+                    setRepos(summary.repos.map(r => ({
+                        // Use github_repo_id for scan config (backend uses this as key)
+                        id: String(r.github_repo_id || r.id),
+                        full_name: r.full_name,
+                    })));
+                }
+            } catch (err) {
+                console.error("Failed to fetch repos:", err);
+            }
+        }
+        fetchRepos();
+    }, [open, datasetId]);
+
+    // Use custom hook to fetch and manage scan config with backend defaults
+    // Fetch only when modal is open
+    const { scanConfig, setScanConfig, resetToDefaults } = useScanConfig({
+        fetchOnEnable: true,
+        enabled: open,
+    });
 
     const {
         extractorNodes,
@@ -96,35 +127,32 @@ export function CreateVersionModal({
     // Handle features change from graph view
     const handleGraphFeaturesChange = useCallback(
         (features: string[]) => {
-            const newSet = new Set(features);
+            // Convert array to toggle operations
             const currentSet = selectedFeatures;
+            const newSet = new Set(features);
 
-            features.forEach((feature) => {
-                if (!currentSet.has(feature)) toggleFeature(feature);
+            // Add new features
+            newSet.forEach((f) => {
+                if (!currentSet.has(f)) toggleFeature(f);
             });
-            currentSet.forEach((feature) => {
-                if (!newSet.has(feature)) toggleFeature(feature);
+
+            // Remove deselected features
+            currentSet.forEach((f) => {
+                if (!newSet.has(f)) toggleFeature(f);
             });
         },
         [selectedFeatures, toggleFeature]
     );
 
-    // Handle create version
     const handleCreateVersion = async () => {
-        if (selectedFeatures.size === 0) return;
-
         await onCreateVersion(
             Array.from(selectedFeatures),
             featureConfigs,
             { metrics: scanMetrics, config: scanConfig },
             versionName || undefined
         );
-
-        // Reset form
-        setVersionName("");
-        setFeatureConfigs({ global: {}, repos: {} });
-        setScanMetrics({ sonarqube: [], trivy: [] });
-        setScanConfig(DEFAULT_SCAN_CONFIG);
+        // Reset after creation
+        resetToDefaults(); // Reset to backend defaults instead of hardcoded
         clearSelection();
         onOpenChange(false);
     };
@@ -139,27 +167,42 @@ export function CreateVersionModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
-                        <Sparkles className="h-5 w-5" />
-                        Create New Version
-                    </DialogTitle>
-                    <DialogDescription>
-                        Select features to include in the enriched dataset
-                    </DialogDescription>
-                </DialogHeader>
+            <DialogContent className="max-h-[90vh] max-w-5xl flex flex-col p-0 gap-0">
+                {/* Sticky Header */}
+                <div className="sticky top-0 z-10 bg-background border-b px-6 py-4">
+                    {/* Close button */}
+                    <button
+                        onClick={() => onOpenChange(false)}
+                        className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    >
+                        <X className="h-4 w-4" />
+                        <span className="sr-only">Close</span>
+                    </button>
 
-                <div className="space-y-4 py-4">
-                    {/* View Toggle */}
-                    <div className="flex items-center justify-between">
-                        <TemplateSelector
-                            onApplyTemplate={applyTemplate}
-                            disabled={isCreating || hasActiveVersion}
-                        />
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Sparkles className="h-5 w-5" />
+                            Create New Version
+                        </DialogTitle>
+                        <DialogDescription>
+                            Select features to include in the enriched dataset
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    {/* View Toggle - part of sticky header */}
+                    <div className="flex items-center justify-between gap-4 mt-4">
+                        <div className="flex-1 min-w-0">
+                            <TemplateSelector
+                                onApplyTemplate={applyTemplate}
+                                disabled={isCreating || hasActiveVersion}
+                            />
+                        </div>
                         <ViewToggle value={viewMode} onChange={setViewMode} />
                     </div>
+                </div>
 
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                     {/* Graph or List View */}
                     <div className="min-h-[300px]">
                         {viewMode === "graph" ? (
@@ -175,11 +218,10 @@ export function CreateVersionModal({
                                 selectedFeatures={selectedFeatures}
                                 expandedNodes={expandedNodes}
                                 onToggleFeature={toggleFeature}
-                                onToggleNode={toggleNode}
+                                onToggleNode={toggleNodeExpand}
                                 onToggleNodeExpand={toggleNodeExpand}
                                 searchQuery={searchQuery}
                                 onSearchChange={setSearchQuery}
-                                isLoading={loading}
                             />
                         )}
                     </div>
@@ -214,6 +256,7 @@ export function CreateVersionModal({
                         }
                         scanConfig={scanConfig}
                         onScanConfigChange={setScanConfig}
+                        repos={repos}
                     />
 
                     {/* Version Name Input */}
@@ -234,24 +277,27 @@ export function CreateVersionModal({
                     )}
                 </div>
 
-                <DialogFooter>
-                    <Button variant="outline" onClick={handleCancel} disabled={isCreating}>
-                        Cancel
-                    </Button>
-                    <Button onClick={handleCreateVersion} disabled={isDisabled} className="gap-2">
-                        {isCreating ? (
-                            <>
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                Creating...
-                            </>
-                        ) : (
-                            <>
-                                <Zap className="h-4 w-4" />
-                                Create Version
-                            </>
-                        )}
-                    </Button>
-                </DialogFooter>
+                {/* Sticky Footer */}
+                <div className="sticky bottom-0 z-10 bg-background border-t px-6 py-4">
+                    <DialogFooter>
+                        <Button variant="outline" onClick={handleCancel} disabled={isCreating}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleCreateVersion} disabled={isDisabled} className="gap-2">
+                            {isCreating ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Creating...
+                                </>
+                            ) : (
+                                <>
+                                    <Zap className="h-4 w-4" />
+                                    Create Version
+                                </>
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </div>
             </DialogContent>
         </Dialog>
     );

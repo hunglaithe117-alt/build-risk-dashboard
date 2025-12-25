@@ -25,8 +25,10 @@ from app.tasks.pipeline.constants import DEFAULT_FEATURES
 from app.tasks.pipeline.execution_tracker import ExecutionResult, ExecutionTracker
 from app.tasks.pipeline.feature_dag import (
     build_features,
+    devops_features,
     git_features,
     github_features,
+    history_features,
     log_features,
     repo_features,
 )
@@ -126,6 +128,8 @@ class HamiltonPipeline:
             github_features,
             log_features,
             repo_features,
+            history_features,
+            devops_features,
         )
 
         # Add caching if enabled
@@ -164,6 +168,8 @@ class HamiltonPipeline:
                 github_features,
                 log_features,
                 repo_features,
+                history_features,
+                devops_features,
             ]
         )
         return set(registry.keys())

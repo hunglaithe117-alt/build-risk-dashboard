@@ -71,28 +71,39 @@ class DatasetValidationService:
         Returns dataset validation status with per-repository results
         from validation_stats.repo_stats.
         """
+        from app.repositories.raw_repository import RawRepositoryRepository
+
         dataset = self._get_dataset_or_404(dataset_id)
 
         # Fetch repo stats from separate collection
         repo_stats = self.dataset_repo_stats_repo.find_by_dataset(dataset_id)
 
-        repos_list = [
-            {
-                "id": str(stat.raw_repo_id),
-                "raw_repo_id": str(stat.raw_repo_id),
-                "full_name": stat.full_name,
-                "ci_provider": stat.ci_provider.value
-                if hasattr(stat.ci_provider, "value")
-                else str(stat.ci_provider),
-                "validation_status": "valid" if stat.is_valid else "invalid",
-                "validation_error": stat.validation_error,
-                "builds_total": stat.builds_total,
-                "builds_found": stat.builds_found,
-                "builds_not_found": stat.builds_not_found,
-                "builds_filtered": stat.builds_filtered,
-            }
-            for stat in repo_stats
-        ]
+        # Get raw_repo_ids for batch lookup
+        raw_repo_ids = [str(stat.raw_repo_id) for stat in repo_stats]
+        raw_repo_repo = RawRepositoryRepository(self.db)
+        raw_repos = raw_repo_repo.find_by_ids(raw_repo_ids)
+        raw_repo_map = {str(r.id): r for r in raw_repos}
+
+        repos_list = []
+        for stat in repo_stats:
+            raw_repo = raw_repo_map.get(str(stat.raw_repo_id))
+            repos_list.append(
+                {
+                    "id": str(stat.raw_repo_id),
+                    "raw_repo_id": str(stat.raw_repo_id),
+                    "github_repo_id": raw_repo.github_repo_id if raw_repo else None,
+                    "full_name": stat.full_name,
+                    "ci_provider": stat.ci_provider.value
+                    if hasattr(stat.ci_provider, "value")
+                    else str(stat.ci_provider),
+                    "validation_status": "valid" if stat.is_valid else "invalid",
+                    "validation_error": stat.validation_error,
+                    "builds_total": stat.builds_total,
+                    "builds_found": stat.builds_found,
+                    "builds_not_found": stat.builds_not_found,
+                    "builds_filtered": stat.builds_filtered,
+                }
+            )
 
         return {
             "dataset_id": dataset_id,

@@ -51,6 +51,7 @@ class TrivyTool(IntegrationTool):
         trivy_settings = self._get_db_settings()
         self._server_url = trivy_settings.get("server_url") or "http://localhost:4954"
         self._default_config = trivy_settings.get("default_config", "")
+        self._timeout = 600  # Default timeout 10 minutes
 
     def _get_db_settings(self) -> Dict[str, Any]:
         """Load Trivy settings from database."""
@@ -191,7 +192,7 @@ class TrivyTool(IntegrationTool):
         self,
         target_path: str,
         scan_types: Optional[List[str]] = None,
-        config_content: Optional[str] = None,
+        config_file_path: Optional[Path] = None,
     ) -> Dict[str, Any]:
         """
         Run Trivy scan on a filesystem path.
@@ -202,7 +203,7 @@ class TrivyTool(IntegrationTool):
         Args:
             target_path: Path to scan (usually a cloned git repo or worktree)
             scan_types: Types of scans to run (vuln, config, secret, license)
-            config_content: Optional trivy.yaml config content
+            config_file_path: External config file path (trivy.yaml)
 
         Returns:
             Dict with scan results and metrics
@@ -211,15 +212,6 @@ class TrivyTool(IntegrationTool):
             scan_types = ["vuln", "config"]
 
         start_time = time.time()
-
-        # Use custom config if provided, otherwise use default from settings
-        effective_config = config_content or self._default_config
-        config_file_path = None
-        if effective_config:
-            config_file_path = Path(target_path) / "trivy.yaml"
-            with open(config_file_path, "w") as f:
-                f.write(effective_config)
-            logger.info("Wrote trivy.yaml for scan")
 
         # Build command
         cmd = self._build_scan_command(
@@ -366,8 +358,6 @@ class TrivyTool(IntegrationTool):
             "fs",
             "--format",
             "json",
-            "--severity",
-            self._severity,
             "--timeout",
             f"{self._timeout}s",
         ]
@@ -376,13 +366,18 @@ class TrivyTool(IntegrationTool):
         if self._server_url:
             trivy_args.extend(["--server", self._server_url])
 
-        # Add skip dirs
-        if self._skip_dirs:
-            for skip_dir in self._skip_dirs.split(","):
-                trivy_args.extend(["--skip-dirs", skip_dir.strip()])
+        # Add scan types if NOT using a config file (or if we want to override)
+        # However, for consistency with user request "just include trivy.yaml",
+        # if config file is present, we might want to respect it.
+        # But scan_types argument is passed from caller.
+        # Let's add --scanners only if no config file or if we strictly want to enforce it.
+        # For now, we'll keep adding it as it helps filter results even with config
+        # or we can omit it if config is present.
+        # Given the bugs with missing attributes, let's play it safe and
+        # prioritize the config file content.
 
-        # Add scan types
-        trivy_args.extend(["--scanners", ",".join(scan_types)])
+        if not config_file_path:
+            trivy_args.extend(["--scanners", ",".join(scan_types)])
 
         # Target path inside container
         trivy_args.append("/work")

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Database, FolderGit2, Loader2, Plug, Zap, ScrollText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -20,16 +20,45 @@ import {
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 
+const VALID_TABS = ["overview", "data", "enrichment", "logs", "integrations"] as const;
+type TabValue = typeof VALID_TABS[number];
+
 export default function DatasetDetailPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const datasetId = params.datasetId as string;
+
+    // Get tab from URL or default to "overview"
+    const tabParam = searchParams.get("tab") as TabValue | null;
+    const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : "overview";
 
     const [dataset, setDataset] = useState<DatasetRecord | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState("overview");
+    const [activeTab, setActiveTab] = useState<TabValue>(initialTab);
     const [hasActiveEnrichment, setHasActiveEnrichment] = useState(false);
+
+    // Sync URL when tab changes
+    const handleTabChange = useCallback((value: string) => {
+        const tab = value as TabValue;
+        setActiveTab(tab);
+
+        // Update URL without full navigation
+        const newUrl = tab === "overview"
+            ? `/projects/${datasetId}`
+            : `/projects/${datasetId}?tab=${tab}`;
+        router.replace(newUrl, { scroll: false });
+    }, [datasetId, router]);
+
+    // Sync state when URL changes (e.g., back/forward button)
+    useEffect(() => {
+        const tab = searchParams.get("tab") as TabValue | null;
+        const validTab = tab && VALID_TABS.includes(tab) ? tab : "overview";
+        if (validTab !== activeTab) {
+            setActiveTab(validTab);
+        }
+    }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const loadDataset = useCallback(async () => {
         try {
@@ -101,7 +130,7 @@ export default function DatasetDetailPage() {
             />
 
             {/* Tabs - Full Width */}
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <Tabs value={activeTab} onValueChange={handleTabChange}>
                 <TabsList className="grid w-full grid-cols-5">
                     <TabsTrigger value="overview" className="gap-2">
                         <Database className="h-4 w-4" />

@@ -67,6 +67,7 @@ export const datasetsApi = {
             repos: Array<{
                 id: string;
                 raw_repo_id: string;
+                github_repo_id?: number;  // Needed for per-repo scan config
                 full_name: string;
                 ci_provider: string;
                 validation_status: string;

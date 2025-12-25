@@ -36,6 +36,7 @@ export const notificationsApi = {
         skip?: number;
         limit?: number;
         unread_only?: boolean;
+        cursor?: string | null;
     }): Promise<NotificationListResponse> => {
         const response = await api.get<NotificationListResponse>("/notifications", { params });
         return response.data;

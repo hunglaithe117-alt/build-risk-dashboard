@@ -295,6 +295,75 @@ class DatasetService:
             except Exception as e:
                 logger.warning("Failed to delete dataset file: %s", e)
 
+    def update_dataset(
+        self,
+        dataset_id: str,
+        user_id: str,
+        updates: dict,
+    ) -> DatasetResponse:
+        """
+        Update dataset fields (PATCH operation).
+
+        Allows updating:
+        - name, description
+        - mapped_fields (build_id, repo_name columns)
+        - ci_provider
+        - build_filters (exclude_bots, only_completed, allowed_conclusions)
+        - setup_step
+        """
+        from app.entities.dataset import BuildValidationFilters, DatasetValidationStatus
+
+        dataset = self.repo.find_by_id(dataset_id)
+        if not dataset:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+
+        # Block config changes if validation is completed
+        # These fields affect which builds are validated, so changing them
+        # after validation would invalidate the results
+        if dataset.validation_status == DatasetValidationStatus.COMPLETED:
+            config_fields = ["mapped_fields", "ci_provider", "build_filters"]
+            if any(updates.get(f) is not None for f in config_fields):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot update configuration after validation is completed. "
+                    "Delete and re-upload the dataset to change configuration.",
+                )
+
+        # Build update dict with only non-None values
+        update_data = {}
+        now = datetime.now(timezone.utc)
+        update_data["updated_at"] = now
+
+        if updates.get("name") is not None:
+            update_data["name"] = updates["name"]
+
+        if updates.get("description") is not None:
+            update_data["description"] = updates["description"]
+
+        if updates.get("mapped_fields") is not None:
+            mf = updates["mapped_fields"]
+            # Convert DTO to entity if needed
+            if hasattr(mf, "model_dump"):
+                mf = mf.model_dump()
+            update_data["mapped_fields"] = DatasetMapping(**mf).model_dump()
+
+        if updates.get("ci_provider") is not None:
+            update_data["ci_provider"] = updates["ci_provider"]
+
+        if updates.get("build_filters") is not None:
+            bf = updates["build_filters"]
+            if hasattr(bf, "model_dump"):
+                bf = bf.model_dump()
+            update_data["build_filters"] = BuildValidationFilters(**bf).model_dump()
+
+        if updates.get("setup_step") is not None:
+            update_data["setup_step"] = updates["setup_step"]
+
+        # Apply updates
+        self.repo.update_one(dataset_id, update_data)
+
+        return self._serialize(self.repo.find_by_id(dataset_id))
+
     def get_dataset_builds(
         self,
         dataset_id: str,
@@ -339,8 +408,8 @@ class DatasetService:
             }
 
             # Enrich with RawBuildRun data if available
-            if build.ci_run_id:
-                raw_build = raw_build_repo.find_by_id(build.ci_run_id)
+            if build.raw_run_id:
+                raw_build = raw_build_repo.find_by_id(build.raw_run_id)
                 if raw_build:
                     build_item.update(
                         {
@@ -395,12 +464,12 @@ class DatasetService:
         # Get validated builds for conclusion breakdown
         validated_builds = list(
             self.db.dataset_builds.find(
-                {"dataset_id": dataset_oid, "status": "found", "ci_run_id": {"$ne": None}},
-                {"ci_run_id": 1},
+                {"dataset_id": dataset_oid, "status": "found", "raw_run_id": {"$ne": None}},
+                {"raw_run_id": 1},
             )
         )
 
-        workflow_run_ids = [b["ci_run_id"] for b in validated_builds if b.get("ci_run_id")]
+        workflow_run_ids = [b["raw_run_id"] for b in validated_builds if b.get("raw_run_id")]
 
         # Conclusion breakdown from RawBuildRun
         conclusion_breakdown = {}

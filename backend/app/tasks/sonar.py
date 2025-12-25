@@ -40,7 +40,7 @@ def start_sonar_scan_for_version_commit(
     raw_repo_id: str,
     github_repo_id: int,
     component_key: str,
-    config_content: str = None,
+    config_file_path: str = None,
     correlation_id: str = "",
 ):
     """
@@ -56,9 +56,11 @@ def start_sonar_scan_for_version_commit(
         raw_repo_id: RawRepository MongoDB ID
         github_repo_id: GitHub's internal repository ID for paths
         component_key: SonarQube project key (format: reponame_commithash)
-        config_content: Optional sonar-project.properties content
+        config_file_path: External config file path (sonar-project.properties)
         correlation_id: Correlation ID for tracing
     """
+    from pathlib import Path
+
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
     logger.info(
         f"{corr_prefix} Starting SonarQube scan for {commit_sha[:8]} in version {version_id[:8]}"
@@ -100,7 +102,7 @@ def start_sonar_scan_for_version_commit(
         sonar_tool.scan_commit(
             commit_sha=commit_sha,
             full_name=repo_full_name,
-            sonar_config_content=config_content,
+            config_file_path=Path(config_file_path) if config_file_path else None,
             shared_worktree_path=worktree_path_str,
         )
 

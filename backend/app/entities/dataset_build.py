@@ -31,7 +31,7 @@ class DatasetBuild(BaseEntity):
     raw_repo_id: Optional[PyObjectId] = Field(
         None, description="Reference to raw_repositories table"
     )
-    ci_run_id: Optional[PyObjectId] = None
+    raw_run_id: Optional[PyObjectId] = Field(None, description="Reference to raw_build_runs table")
 
     class Config:
         collection = "dataset_builds"

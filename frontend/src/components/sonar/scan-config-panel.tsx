@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Settings, ChevronDown, ChevronUp, BarChart3, Shield } from "lucide-react";
+import { Settings, ChevronDown, ChevronUp, BarChart3, Shield, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/accordion";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScanMetricsSelector } from "./scan-metrics-selector";
+import { RepoScanOverrideSection } from "./RepoScanOverrideSection";
 
 // =============================================================================
 // Types
@@ -29,23 +30,26 @@ import { ScanMetricsSelector } from "./scan-metrics-selector";
 export interface SonarConfig {
     projectKey?: string;
     extraProperties?: string;
+    token?: string;
 }
 
 export interface TrivyConfig {
-    severity?: string;
-    ignoreUnfixed?: boolean;
-    scanners?: string;
-    extraArgs?: string;
+    trivyYaml?: string;
 }
 
 export interface ScanConfig {
-    sonarqube: SonarConfig;
-    trivy: TrivyConfig;
+    sonarqube: SonarConfig & { repos?: Record<string, SonarConfig> };
+    trivy: TrivyConfig & { repos?: Record<string, TrivyConfig> };
 }
 
 export interface EnabledTools {
     sonarqube: boolean;
     trivy: boolean;
+}
+
+interface RepoInfo {
+    id: string;
+    full_name: string;
 }
 
 interface ScanConfigPanelProps {
@@ -58,22 +62,18 @@ interface ScanConfigPanelProps {
     enabledTools?: EnabledTools;
     onEnabledToolsChange?: (tools: EnabledTools) => void;
     disabled?: boolean;
+    repos?: RepoInfo[];  // Optional repos for per-repo config
 }
 
-// =============================================================================
-// Default Config
-// =============================================================================
 
 const DEFAULT_SCAN_CONFIG: ScanConfig = {
     sonarqube: {
         projectKey: "",
         extraProperties: "",
+        token: "",
     },
     trivy: {
-        severity: "CRITICAL,HIGH,MEDIUM",
-        ignoreUnfixed: false,
-        scanners: "vuln,misconfig,secret",
-        extraArgs: "",
+        trivyYaml: "",
     },
 };
 
@@ -82,9 +82,6 @@ const DEFAULT_ENABLED_TOOLS: EnabledTools = {
     trivy: false,
 };
 
-// =============================================================================
-// Component
-// =============================================================================
 
 export function ScanConfigPanel({
     selectedSonarMetrics,
@@ -96,8 +93,10 @@ export function ScanConfigPanel({
     enabledTools = DEFAULT_ENABLED_TOOLS,
     onEnabledToolsChange,
     disabled = false,
+    repos = [],
 }: ScanConfigPanelProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [isConfigOpen, setIsConfigOpen] = useState(false);
     const [internalEnabledTools, setInternalEnabledTools] = useState<EnabledTools>(enabledTools);
 
     // Use external or internal state
@@ -131,7 +130,7 @@ export function ScanConfigPanel({
     };
 
     // Update Trivy config
-    const updateTrivyConfig = (key: keyof TrivyConfig, value: string | boolean) => {
+    const updateTrivyConfig = (key: keyof TrivyConfig, value: string) => {
         onScanConfigChange({
             ...scanConfig,
             trivy: {
@@ -140,6 +139,13 @@ export function ScanConfigPanel({
             },
         });
     };
+
+    // Check if any config is set
+    const hasConfig = Boolean(
+        scanConfig.sonarqube.projectKey ||
+        scanConfig.sonarqube.extraProperties ||
+        scanConfig.trivy.trivyYaml
+    );
 
     return (
         <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -167,12 +173,13 @@ export function ScanConfigPanel({
                 </Button>
             </CollapsibleTrigger>
 
-            <CollapsibleContent className="pt-4">
+            <CollapsibleContent className="pt-4 space-y-4">
+                {/* Tool Selection & Metrics */}
                 <Card>
                     <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Select Scan Tools</CardTitle>
+                        <CardTitle className="text-base">Select Scan Tools & Metrics</CardTitle>
                         <CardDescription>
-                            Choose which tools to run, then configure each tool below
+                            Enable tools and choose which metrics to include
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -180,8 +187,8 @@ export function ScanConfigPanel({
                         <div className="flex flex-wrap gap-4">
                             <label
                                 className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-all ${tools.sonarqube
-                                        ? "bg-blue-50 border-blue-300 dark:bg-blue-900/20"
-                                        : "hover:bg-muted/50"
+                                    ? "bg-blue-50 border-blue-300 dark:bg-blue-900/20"
+                                    : "hover:bg-muted/50"
                                     }`}
                             >
                                 <Checkbox
@@ -201,8 +208,8 @@ export function ScanConfigPanel({
 
                             <label
                                 className={`flex items-center gap-3 px-4 py-3 rounded-lg border cursor-pointer transition-all ${tools.trivy
-                                        ? "bg-green-50 border-green-300 dark:bg-green-900/20"
-                                        : "hover:bg-muted/50"
+                                    ? "bg-green-50 border-green-300 dark:bg-green-900/20"
+                                    : "hover:bg-muted/50"
                                     }`}
                             >
                                 <Checkbox
@@ -221,173 +228,180 @@ export function ScanConfigPanel({
                             </label>
                         </div>
 
-                        {/* Tool Configuration Sections */}
-                        {(tools.sonarqube || tools.trivy) && (
-                            <Accordion type="multiple" className="mt-4">
-                                {/* SonarQube Section */}
-                                {tools.sonarqube && (
-                                    <AccordionItem value="sonarqube">
-                                        <AccordionTrigger className="hover:no-underline">
-                                            <div className="flex items-center gap-2">
-                                                <BarChart3 className="h-4 w-4 text-blue-600" />
-                                                <span>SonarQube Settings</span>
-                                                <Badge variant="outline" className="ml-2">
-                                                    {selectedSonarMetrics.length} metrics
-                                                </Badge>
-                                            </div>
-                                        </AccordionTrigger>
-                                        <AccordionContent className="pt-4 space-y-6">
-                                            {/* Configuration */}
-                                            <div className="space-y-4">
-                                                <h5 className="text-sm font-medium text-muted-foreground">
-                                                    Configuration
-                                                </h5>
-                                                <div className="grid gap-4 pl-4">
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="sonar-project-key">
-                                                            Project Key (Optional)
-                                                        </Label>
-                                                        <Input
-                                                            id="sonar-project-key"
-                                                            placeholder="my-project-key"
-                                                            value={scanConfig.sonarqube.projectKey || ""}
-                                                            onChange={(e) =>
-                                                                updateSonarConfig("projectKey", e.target.value)
-                                                            }
-                                                        />
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Override auto-generated project key
-                                                        </p>
-                                                    </div>
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="sonar-extra">
-                                                            Extra Scanner Properties
-                                                        </Label>
-                                                        <Textarea
-                                                            id="sonar-extra"
-                                                            placeholder={`sonar.java.binaries=target/classes
-sonar.exclusions=**/test/**`}
-                                                            value={scanConfig.sonarqube.extraProperties || ""}
-                                                            onChange={(e) =>
-                                                                updateSonarConfig("extraProperties", e.target.value)
-                                                            }
-                                                            rows={3}
-                                                            className="font-mono text-sm"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
+                        {/* Metrics Selection - show when a tool is enabled */}
+                        {tools.sonarqube && (
+                            <div className="space-y-3 border-t pt-4">
+                                <div className="flex items-center gap-2">
+                                    <BarChart3 className="h-4 w-4 text-blue-600" />
+                                    <h5 className="text-sm font-medium">SonarQube Metrics</h5>
+                                </div>
+                                <ScanMetricsSelector
+                                    selectedSonarMetrics={selectedSonarMetrics}
+                                    selectedTrivyMetrics={[]}
+                                    onSonarChange={onSonarMetricsChange}
+                                    onTrivyChange={() => { }}
+                                    showOnlyTool="sonarqube"
+                                />
+                            </div>
+                        )}
 
-                                            {/* Metrics Selection */}
-                                            <div className="space-y-4 border-t pt-4">
-                                                <h5 className="text-sm font-medium text-muted-foreground">
-                                                    Metrics Selection
-                                                </h5>
-                                                <ScanMetricsSelector
-                                                    selectedSonarMetrics={selectedSonarMetrics}
-                                                    selectedTrivyMetrics={[]}
-                                                    onSonarChange={onSonarMetricsChange}
-                                                    onTrivyChange={() => { }}
-                                                    showOnlyTool="sonarqube"
-                                                />
-                                            </div>
-                                        </AccordionContent>
-                                    </AccordionItem>
-                                )}
-
-                                {/* Trivy Section */}
-                                {tools.trivy && (
-                                    <AccordionItem value="trivy">
-                                        <AccordionTrigger className="hover:no-underline">
-                                            <div className="flex items-center gap-2">
-                                                <Shield className="h-4 w-4 text-green-600" />
-                                                <span>Trivy Settings</span>
-                                                <Badge variant="outline" className="ml-2">
-                                                    {selectedTrivyMetrics.length} metrics
-                                                </Badge>
-                                            </div>
-                                        </AccordionTrigger>
-                                        <AccordionContent className="pt-4 space-y-6">
-                                            {/* Configuration */}
-                                            <div className="space-y-4">
-                                                <h5 className="text-sm font-medium text-muted-foreground">
-                                                    Configuration
-                                                </h5>
-                                                <div className="grid gap-4 pl-4">
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="trivy-severity">
-                                                            Severity Filter
-                                                        </Label>
-                                                        <Input
-                                                            id="trivy-severity"
-                                                            placeholder="CRITICAL,HIGH,MEDIUM"
-                                                            value={scanConfig.trivy.severity || ""}
-                                                            onChange={(e) =>
-                                                                updateTrivyConfig("severity", e.target.value)
-                                                            }
-                                                        />
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Comma-separated severity levels
-                                                        </p>
-                                                    </div>
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="trivy-scanners">Scanners</Label>
-                                                        <Input
-                                                            id="trivy-scanners"
-                                                            placeholder="vuln,misconfig,secret"
-                                                            value={scanConfig.trivy.scanners || ""}
-                                                            onChange={(e) =>
-                                                                updateTrivyConfig("scanners", e.target.value)
-                                                            }
-                                                        />
-                                                        <p className="text-xs text-muted-foreground">
-                                                            Scanner types: vuln, misconfig, secret, license
-                                                        </p>
-                                                    </div>
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="trivy-extra">Extra CLI Arguments</Label>
-                                                        <Textarea
-                                                            id="trivy-extra"
-                                                            placeholder={`--ignore-unfixed
---skip-dirs node_modules`}
-                                                            value={scanConfig.trivy.extraArgs || ""}
-                                                            onChange={(e) =>
-                                                                updateTrivyConfig("extraArgs", e.target.value)
-                                                            }
-                                                            rows={2}
-                                                            className="font-mono text-sm"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Metrics Selection */}
-                                            <div className="space-y-4 border-t pt-4">
-                                                <h5 className="text-sm font-medium text-muted-foreground">
-                                                    Metrics Selection
-                                                </h5>
-                                                <ScanMetricsSelector
-                                                    selectedSonarMetrics={[]}
-                                                    selectedTrivyMetrics={selectedTrivyMetrics}
-                                                    onSonarChange={() => { }}
-                                                    onTrivyChange={onTrivyMetricsChange}
-                                                    showOnlyTool="trivy"
-                                                />
-                                            </div>
-                                        </AccordionContent>
-                                    </AccordionItem>
-                                )}
-                            </Accordion>
+                        {tools.trivy && (
+                            <div className="space-y-3 border-t pt-4">
+                                <div className="flex items-center gap-2">
+                                    <Shield className="h-4 w-4 text-green-600" />
+                                    <h5 className="text-sm font-medium">Trivy Metrics</h5>
+                                </div>
+                                <ScanMetricsSelector
+                                    selectedSonarMetrics={[]}
+                                    selectedTrivyMetrics={selectedTrivyMetrics}
+                                    onSonarChange={() => { }}
+                                    onTrivyChange={onTrivyMetricsChange}
+                                    showOnlyTool="trivy"
+                                />
+                            </div>
                         )}
 
                         {/* Empty State */}
                         {!tools.sonarqube && !tools.trivy && (
                             <div className="text-center py-6 text-muted-foreground">
-                                Select a tool above to configure it
+                                Select a tool above to choose metrics
                             </div>
                         )}
                     </CardContent>
                 </Card>
+
+                {/* Tool Configuration - Separate Collapsible (like FeatureConfigForm) */}
+                {(tools.sonarqube || tools.trivy) && (
+                    <Collapsible open={isConfigOpen} onOpenChange={setIsConfigOpen}>
+                        <Card className="border-dashed">
+                            <CollapsibleTrigger asChild>
+                                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Wrench className="h-4 w-4 text-muted-foreground" />
+                                            <CardTitle className="text-sm font-medium">
+                                                Scanner Configuration
+                                            </CardTitle>
+                                            {hasConfig && (
+                                                <Badge variant="secondary" className="text-xs">
+                                                    configured
+                                                </Badge>
+                                            )}
+                                        </div>
+                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                            {isConfigOpen ? (
+                                                <ChevronUp className="h-4 w-4" />
+                                            ) : (
+                                                <ChevronDown className="h-4 w-4" />
+                                            )}
+                                        </Button>
+                                    </div>
+                                    <CardDescription className="text-xs">
+                                        Configure scanner properties (optional)
+                                    </CardDescription>
+                                </CardHeader>
+                            </CollapsibleTrigger>
+
+                            <CollapsibleContent>
+                                <CardContent className="pt-0 space-y-6">
+                                    <Accordion type="multiple">
+                                        {/* SonarQube Config */}
+                                        {tools.sonarqube && (
+                                            <AccordionItem value="sonarqube">
+                                                <AccordionTrigger className="hover:no-underline py-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <BarChart3 className="h-4 w-4 text-blue-600" />
+                                                        <span className="text-sm">SonarQube Properties</span>
+                                                    </div>
+                                                </AccordionTrigger>
+                                                <AccordionContent className="pt-2 space-y-4">
+                                                    <div className="grid gap-3 pl-4">
+                                                        <div className="grid gap-2">
+                                                            <Label htmlFor="sonar-project-key" className="text-xs">
+                                                                Project Key (Optional)
+                                                            </Label>
+                                                            <Input
+                                                                id="sonar-project-key"
+                                                                placeholder="my-project-key"
+                                                                value={scanConfig.sonarqube.projectKey || ""}
+                                                                onChange={(e) =>
+                                                                    updateSonarConfig("projectKey", e.target.value)
+                                                                }
+                                                                className="h-8 text-sm"
+                                                            />
+                                                            <p className="text-xs text-muted-foreground">
+                                                                Override auto-generated project key
+                                                            </p>
+                                                        </div>
+                                                        <div className="grid gap-2">
+                                                            <Label htmlFor="sonar-extra" className="text-xs">
+                                                                Extra Scanner Properties
+                                                            </Label>
+                                                            <Textarea
+                                                                id="sonar-extra"
+                                                                placeholder={`sonar.sources=.\nsonar.sourceEncoding=UTF-8`}
+                                                                value={scanConfig.sonarqube.extraProperties || ""}
+                                                                onChange={(e) =>
+                                                                    updateSonarConfig("extraProperties", e.target.value)
+                                                                }
+                                                                rows={4}
+                                                                className="font-mono text-xs"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </AccordionContent>
+                                            </AccordionItem>
+                                        )}
+
+                                        {/* Trivy Config */}
+                                        {tools.trivy && (
+                                            <AccordionItem value="trivy">
+                                                <AccordionTrigger className="hover:no-underline py-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <Shield className="h-4 w-4 text-green-600" />
+                                                        <span className="text-sm">Trivy Configuration</span>
+                                                    </div>
+                                                </AccordionTrigger>
+                                                <AccordionContent className="pt-2 space-y-4">
+                                                    <div className="grid gap-3 pl-4">
+                                                        <div className="grid gap-2">
+                                                            <Label htmlFor="trivy-yaml" className="text-xs">
+                                                                Config File (trivy.yaml)
+                                                            </Label>
+                                                            <Textarea
+                                                                id="trivy-yaml"
+                                                                placeholder={`timeout: 10m\nformat: json\nseverity:\n  - CRITICAL\n  - HIGH`}
+                                                                value={scanConfig.trivy.trivyYaml || ""}
+                                                                onChange={(e) =>
+                                                                    updateTrivyConfig("trivyYaml", e.target.value)
+                                                                }
+                                                                rows={8}
+                                                                className="font-mono text-xs"
+                                                            />
+                                                            <p className="text-xs text-muted-foreground">
+                                                                Paste trivy.yaml content here
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </AccordionContent>
+                                            </AccordionItem>
+                                        )}
+                                    </Accordion>
+
+                                    {/* Per-Repo Overrides */}
+                                    {repos.length > 0 && (
+                                        <RepoScanOverrideSection
+                                            repos={repos}
+                                            scanConfig={scanConfig}
+                                            onScanConfigChange={onScanConfigChange}
+                                            disabled={disabled}
+                                        />
+                                    )}
+                                </CardContent>
+                            </CollapsibleContent>
+                        </Card>
+                    </Collapsible>
+                )}
             </CollapsibleContent>
         </Collapsible>
     );

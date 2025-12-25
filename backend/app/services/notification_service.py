@@ -68,17 +68,26 @@ class NotificationService:
         skip: int = 0,
         limit: int = 20,
         unread_only: bool = False,
-    ) -> tuple[list[Notification], int, int]:
+        cursor: str | None = None,
+    ) -> tuple[list[Notification], int, int, str | None]:
         """
         List notifications for a user.
 
-        Returns: (items, total, unread_count)
+        Returns: (items, total, unread_count, next_cursor)
         """
+        # If cursor is provided, we should typically ignore skip, but repo handles logic
         items, total = self.notification_repo.find_by_user(
-            user_id, skip=skip, limit=limit, unread_only=unread_only
+            user_id, skip=skip, limit=limit, unread_only=unread_only, cursor_id=cursor
         )
         unread_count = self.notification_repo.count_unread(user_id)
-        return items, total, unread_count
+
+        next_cursor = None
+        if items and len(items) == limit:
+            # We explicitly check against limit to determine if there might be more
+            # The next cursor is the ID of the last item
+            next_cursor = str(items[-1].id)
+
+        return items, total, unread_count, next_cursor
 
     def get_unread_count(self, user_id: ObjectId) -> int:
         """Get the count of unread notifications for a user."""

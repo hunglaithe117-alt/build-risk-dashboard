@@ -198,7 +198,7 @@ class DatasetVersionService:
             ) from exc
 
         # Get count to check if we have data
-        count = self._enrichment_build_repo.count_by_query(
+        count = self._enrichment_build_repo.count(
             {
                 "dataset_id": ObjectId(dataset_id),
                 "dataset_version_id": ObjectId(version_id),
@@ -496,7 +496,7 @@ class DatasetVersionService:
         logger.info(f"Cancelled version {version_id}, cooldown set for {cooldown_seconds}s")
         return version
 
-    def get_version_data(
+    async def get_version_data(
         self,
         dataset_id: str,
         version_id: str,
@@ -508,8 +508,6 @@ class DatasetVersionService:
         """Get paginated version data with build overview and features."""
         from bson import ObjectId
 
-        from app.repositories.raw_repository import RawRepositoryRepository
-
         self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
@@ -519,49 +517,41 @@ class DatasetVersionService:
                 detail=f"Version is not completed. Status: {version.status}",
             )
 
-        # Get paginated data
-        skip = (page - 1) * page_size
-
-        items, total_count = self._enrichment_build_repo.list_by_version(
-            dataset_version_id=ObjectId(version_id), skip=skip, limit=page_size
-        )
-
-        # Batch lookup repo names
-        raw_repo_repo = RawRepositoryRepository(self._repo.db)
-        repo_id_set = {build.raw_repo_id for build in items}
-        repo_map = {}
-        for repo_id in repo_id_set:
-            repo = raw_repo_repo.find_by_id(str(repo_id))
-            if repo:
-                repo_map[str(repo_id)] = repo.full_name
-
-        # Build response with overview info
-        builds = []
-        expected_feature_count = len(version.selected_features)
-        for build in items:
-            builds.append(
-                {
-                    "id": str(build.id),
-                    "raw_build_run_id": str(build.raw_build_run_id),
-                    "repo_full_name": repo_map.get(str(build.raw_repo_id), "Unknown"),
-                    "extraction_status": (
-                        build.extraction_status.value
-                        if hasattr(build.extraction_status, "value")
-                        else build.extraction_status
-                    ),
-                    "feature_count": build.feature_count,
-                    "expected_feature_count": expected_feature_count,
-                    "skipped_features": build.skipped_features,
-                    "missing_resources": build.missing_resources,
-                    "enriched_at": (build.enriched_at.isoformat() if build.enriched_at else None),
-                    "features": build.features,
-                }
-            )
-
         column_stats = {}
         if include_stats:
             column_stats = self._calculate_column_stats(
                 dataset_id, version_id, version.selected_features
+            )
+
+        skip = (page - 1) * page_size
+
+        # Use new repository method to get enriched data (with web_url and repo_name)
+        builds_data, total = self._enrichment_build_repo.list_by_version_with_details(
+            ObjectId(version_id), skip=skip, limit=page_size
+        )
+
+        formatted_builds = []
+        expected_feature_count = len(version.selected_features)
+
+        for build in builds_data:
+            formatted_builds.append(
+                {
+                    "id": str(build.get("_id")),
+                    "raw_build_run_id": str(build.get("raw_build_run_id")),
+                    "repo_full_name": build.get("repo_full_name", "Unknown"),
+                    "repo_url": build.get("repo_url"),
+                    "provider": build.get("provider"),
+                    "web_url": build.get("web_url"),
+                    "extraction_status": build.get("extraction_status"),
+                    "feature_count": build.get("feature_count", 0),
+                    "expected_feature_count": expected_feature_count,
+                    "skipped_features": build.get("skipped_features", []),
+                    "missing_resources": build.get("missing_resources", []),
+                    "enriched_at": (
+                        build["enriched_at"].isoformat() if build.get("enriched_at") else None
+                    ),
+                    "features": build.get("features", {}),
+                }
             )
 
         return {
@@ -581,11 +571,11 @@ class DatasetVersionService:
                     version.completed_at.isoformat() if version.completed_at else None
                 ),
             },
-            "builds": builds,
-            "total": total_count,
+            "builds": formatted_builds,
+            "total": total,
             "page": page,
             "page_size": page_size,
-            "total_pages": (total_count + page_size - 1) // page_size,
+            "total_pages": (total + page_size - 1) // page_size,
             "column_stats": column_stats,
         }
 

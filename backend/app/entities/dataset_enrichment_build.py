@@ -47,11 +47,11 @@ class DatasetEnrichmentBuild(BaseEntity):
         ...,
         description="Reference to datasets table",
     )
-    dataset_version_id: Optional[PyObjectId] = Field(
+    dataset_version_id: PyObjectId = Field(
         None,
         description="Reference to dataset_versions table (if versioned enrichment)",
     )
-    dataset_build_id: Optional[PyObjectId] = Field(
+    dataset_build_id: PyObjectId = Field(
         None,
         description="Reference to dataset_builds table",
     )

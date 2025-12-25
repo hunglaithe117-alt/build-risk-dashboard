@@ -88,7 +88,6 @@ def get_all_metrics_grouped() -> Dict[str, Dict[str, Any]]:
             "tool_info": {
                 "display_name": tool.display_name,
                 "description": tool.description,
-                "scan_mode": tool.scan_mode.value,
                 "is_available": tool.is_available(),
                 "scan_types": tool.get_scan_types(),
             },

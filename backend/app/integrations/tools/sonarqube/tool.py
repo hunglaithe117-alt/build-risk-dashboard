@@ -193,7 +193,7 @@ class SonarQubeTool(IntegrationTool):
         self,
         commit_sha: str,
         full_name: str,
-        sonar_config_content: Optional[str] = None,
+        config_file_path: Optional[Path] = None,
         shared_worktree_path: Optional[Path] = None,
     ) -> str:
         """
@@ -202,7 +202,7 @@ class SonarQubeTool(IntegrationTool):
         Args:
             commit_sha: Commit SHA to scan
             full_name: Repo full name (owner/repo)
-            sonar_config_content: Optional custom sonar-project.properties content
+            config_file_path: External config file path (sonar-project.properties)
             shared_worktree_path: Optional path to shared worktree from pipeline
 
         Returns:
@@ -231,15 +231,7 @@ class SonarQubeTool(IntegrationTool):
             else:
                 raise ValueError("Shared worktree path or github_repo_id + full_name required")
 
-            # Use custom config if provided, otherwise use default from settings
-            effective_config = sonar_config_content or self._default_config
-            if effective_config:
-                config_path = worktree / "sonar-project.properties"
-                with open(config_path, "w") as f:
-                    f.write(effective_config)
-                logger.info(f"Wrote sonar-project.properties for {component_key}")
-
-            cmd = self._build_scan_command(component_key, worktree)
+            cmd = self._build_scan_command(component_key, worktree, config_file_path)
             logger.info(f"Scanning {component_key}...")
 
             subprocess.run(cmd, cwd=worktree, check=True, capture_output=True, text=True)
@@ -263,7 +255,12 @@ class SonarQubeTool(IntegrationTool):
     # Private Methods
     # =========================================================================
 
-    def _build_scan_command(self, component_key: str, source_dir: Path) -> List[str]:
+    def _build_scan_command(
+        self,
+        component_key: str,
+        source_dir: Path,
+        config_file_path: Optional[Path] = None,
+    ) -> List[str]:
         """Build sonar-scanner command using Docker image."""
         scanner_args = [
             f"-Dsonar.projectKey={component_key}",
@@ -276,20 +273,37 @@ class SonarQubeTool(IntegrationTool):
             "-Dsonar.java.binaries=.",
         ]
 
+        # Add project.settings if config file provided
+        if config_file_path:
+            scanner_args.append("-Dproject.settings=/tmp/sonar-project.properties")
+
         source_dir_str = str(source_dir.absolute())
-        return [
+
+        docker_args = [
             "docker",
             "run",
             "--rm",
             "-v",
             f"{source_dir_str}:/usr/src",
-            "-w",
-            "/usr/src",
-            "--network",
-            "host",
-            "sonarsource/sonar-scanner-cli:latest",
-            *scanner_args,
         ]
+
+        # Mount config file if provided
+        if config_file_path:
+            config_path_str = str(config_file_path.absolute())
+            docker_args.extend(["-v", f"{config_path_str}:/tmp/sonar-project.properties:ro"])
+
+        docker_args.extend(
+            [
+                "-w",
+                "/usr/src",
+                "--network",
+                "host",
+                "sonarsource/sonar-scanner-cli:latest",
+                *scanner_args,
+            ]
+        )
+
+        return docker_args
 
     def _project_exists(self, component_key: str) -> bool:
         """Check if a SonarQube project already exists."""

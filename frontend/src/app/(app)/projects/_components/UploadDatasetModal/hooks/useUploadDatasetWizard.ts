@@ -196,6 +196,9 @@ export function useUploadDatasetWizard({
                 throw new Error("No file to upload");
             }
 
+            // Start the validation process explicitly
+            await datasetsApi.startValidation(dataset.id);
+
             // Move to Step 2 and start polling
             setStep(2);
             setValidationStatus("validating");

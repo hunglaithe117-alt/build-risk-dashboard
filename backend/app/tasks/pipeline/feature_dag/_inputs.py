@@ -143,7 +143,7 @@ class FeatureConfigInput:
 
     id: str
     feature_configs: Dict[str, Any]
-    current_repo: Optional[str] = None  # Repository context for scope lookup
+    current_repo_id: Optional[int] = None  # github_repo_id for scope lookup
 
     def get(self, key: str, default: Any = None, scope: str = "auto") -> Any:
         """
@@ -159,8 +159,9 @@ class FeatureConfigInput:
         """
         # For repo scope or auto, try repo-specific config first
         if scope in ("repo", "auto"):
-            if self.current_repo and "repos" in self.feature_configs:
-                repo_configs = self.feature_configs["repos"].get(self.current_repo, {})
+            if self.current_repo_id and "repos" in self.feature_configs:
+                # Lookup by string(github_repo_id) to match frontend key format
+                repo_configs = self.feature_configs["repos"].get(str(self.current_repo_id), {})
                 if key in repo_configs:
                     return repo_configs[key]
 
@@ -172,44 +173,44 @@ class FeatureConfigInput:
         return default
 
     @classmethod
-    def from_entity(cls, config: Any, current_repo: Optional[str] = None) -> FeatureConfigInput:
+    def from_entity(cls, config: Any, current_repo_id: Optional[int] = None) -> FeatureConfigInput:
         """
         Create from ModelRepoConfig, DatasetVersion entity, or direct feature_configs dict.
 
         Args:
             config: Entity with feature_configs field, OR feature_configs dict directly
-            current_repo: Optional repo full_name for repo-scoped lookups
+            current_repo_id: Optional github_repo_id for repo-scoped lookups
         """
         # Support direct dict input (for simpler API)
         if isinstance(config, dict):
             return cls(
                 id="direct",
                 feature_configs=config,
-                current_repo=current_repo,
+                current_repo_id=current_repo_id,
             )
 
         # Entity input - extract feature_configs from entity
         return cls(
             id=str(getattr(config, "id", "unknown")),
             feature_configs=getattr(config, "feature_configs", {}) or {},
-            current_repo=current_repo,
+            current_repo_id=current_repo_id,
         )
 
     @classmethod
     def from_dict(
-        cls, feature_configs: Dict[str, Any], current_repo: Optional[str] = None
+        cls, feature_configs: Dict[str, Any], current_repo_id: Optional[int] = None
     ) -> FeatureConfigInput:
         """
         Create directly from feature_configs dict.
 
         Args:
             feature_configs: The configuration dict
-            current_repo: Optional repo full_name for repo-scoped lookups
+            current_repo_id: Optional github_repo_id for repo-scoped lookups
         """
         return cls(
             id="dict",
             feature_configs=feature_configs or {},
-            current_repo=current_repo,
+            current_repo_id=current_repo_id,
         )
 
 
@@ -385,8 +386,10 @@ def build_hamilton_inputs(
 
     # Create input objects from entities
     repo_input = RepoInput.from_entity(raw_repo)
-    # Pass current_repo for repo-scoped config lookup
-    config_input = FeatureConfigInput.from_entity(feature_config, current_repo=raw_repo.full_name)
+    # Pass github_repo_id for repo-scoped config lookup
+    config_input = FeatureConfigInput.from_entity(
+        feature_config, current_repo_id=raw_repo.github_repo_id
+    )
     build_run_input = BuildRunInput.from_entity(build_run)
 
     # Create BuildLogsInput

@@ -785,9 +785,20 @@ export interface TrivySettings {
   default_config?: string | null;
 }
 
+export interface EmailNotificationTypeToggles {
+  pipeline_completed: boolean;
+  pipeline_failed: boolean;
+  dataset_validation_completed: boolean;
+  dataset_enrichment_completed: boolean;
+  rate_limit_warning: boolean;
+  rate_limit_exhausted: boolean;
+  system_alerts: boolean;
+}
+
 export interface NotificationSettings {
   email_enabled: boolean;
   email_recipients: string;
+  email_type_toggles: EmailNotificationTypeToggles;
 }
 
 export interface ApplicationSettings {

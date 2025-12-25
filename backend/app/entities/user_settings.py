@@ -1,4 +1,4 @@
-"""User settings entity - represents user preferences and notification settings."""
+"""User settings entity - represents user preferences."""
 
 from datetime import datetime
 from typing import Optional
@@ -7,25 +7,16 @@ from bson import ObjectId
 from pydantic import BaseModel, Field
 
 
-class NotificationPreferences(BaseModel):
-    """User notification preferences."""
-
-    email_on_version_complete: bool = True
-    email_on_scan_complete: bool = True
-    email_on_version_failed: bool = True
-    browser_notifications: bool = True
-
-
 class UserSettings(BaseModel):
-    """User settings entity stored in MongoDB."""
+    """User settings entity stored in MongoDB.
+
+    Simplified to only contain browser_notifications toggle.
+    Email notifications are controlled at admin level via ApplicationSettings.
+    """
 
     id: Optional[ObjectId] = Field(default=None, alias="_id")
     user_id: ObjectId
-    notification_preferences: NotificationPreferences = Field(
-        default_factory=NotificationPreferences
-    )
-    timezone: str = "UTC"
-    language: str = "vi"
+    browser_notifications: bool = True
     created_at: datetime = Field(default_factory=lambda: datetime.now())
     updated_at: datetime = Field(default_factory=lambda: datetime.now())
 
@@ -37,9 +28,7 @@ class UserSettings(BaseModel):
         """Convert to dictionary for MongoDB storage."""
         return {
             "user_id": self.user_id,
-            "notification_preferences": self.notification_preferences.model_dump(),
-            "timezone": self.timezone,
-            "language": self.language,
+            "browser_notifications": self.browser_notifications,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -47,13 +36,10 @@ class UserSettings(BaseModel):
     @classmethod
     def from_dict(cls, data: dict) -> "UserSettings":
         """Create from MongoDB document."""
-        notification_prefs = data.get("notification_preferences", {})
         return cls(
             id=data.get("_id"),
             user_id=data["user_id"],
-            notification_preferences=NotificationPreferences(**notification_prefs),
-            timezone=data.get("timezone", "UTC"),
-            language=data.get("language", "vi"),
+            browser_notifications=data.get("browser_notifications", True),
             created_at=data.get("created_at", datetime.now()),
             updated_at=data.get("updated_at", datetime.now()),
         )

@@ -1433,27 +1433,16 @@ export const qualityApi = {
   },
 };
 
-// User Settings types
-export interface UserNotificationPreferences {
-  email_on_version_complete: boolean;
-  email_on_scan_complete: boolean;
-  email_on_version_failed: boolean;
-  browser_notifications: boolean;
-}
-
+// User Settings types (simplified - only browser notifications)
 export interface UserSettingsResponse {
   user_id: string;
-  notification_preferences: UserNotificationPreferences;
-  timezone: string;
-  language: string;
+  browser_notifications: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export interface UpdateUserSettingsRequest {
-  notification_preferences?: Partial<UserNotificationPreferences>;
-  timezone?: string;
-  language?: string;
+  browser_notifications?: boolean;
 }
 
 // User Settings API (personal preferences for each user)

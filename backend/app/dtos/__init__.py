@@ -103,7 +103,6 @@ from .user import (
     UserUpdate,
 )
 from .user_settings import (
-    NotificationPreferencesDTO,
     UpdateUserSettingsRequest,
     UserSettingsResponse,
 )
@@ -192,7 +191,6 @@ __all__ = [
     "MarkReadResponse",
     "CreateNotificationRequest",
     # User Settings
-    "NotificationPreferencesDTO",
     "UserSettingsResponse",
     "UpdateUserSettingsRequest",
     # Integration / Scan

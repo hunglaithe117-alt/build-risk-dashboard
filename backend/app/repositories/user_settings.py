@@ -1,11 +1,12 @@
 """Repository for user settings operations."""
 
+from datetime import datetime
 from typing import Optional
 
 from bson import ObjectId
 from pymongo.database import Database
 
-from app.entities.user_settings import NotificationPreferences, UserSettings
+from app.entities.user_settings import UserSettings
 
 
 class UserSettingsRepository:
@@ -31,10 +32,7 @@ class UserSettingsRepository:
             return existing_settings
 
         # Create default settings
-        new_settings = UserSettings(
-            user_id=user_id,
-            notification_preferences=NotificationPreferences(),
-        )
+        new_settings = UserSettings(user_id=user_id)
         result = self.collection.insert_one(new_settings.to_dict())
         new_settings.id = result.inserted_id
         return new_settings
@@ -42,21 +40,13 @@ class UserSettingsRepository:
     def update(
         self,
         user_id: ObjectId,
-        notification_preferences: Optional[NotificationPreferences] = None,
-        timezone: Optional[str] = None,
-        language: Optional[str] = None,
+        browser_notifications: Optional[bool] = None,
     ) -> Optional[UserSettings]:
         """Update user settings."""
-        from datetime import datetime
-
         update_fields: dict = {"updated_at": datetime.now()}
 
-        if notification_preferences is not None:
-            update_fields["notification_preferences"] = notification_preferences.model_dump()
-        if timezone is not None:
-            update_fields["timezone"] = timezone
-        if language is not None:
-            update_fields["language"] = language
+        if browser_notifications is not None:
+            update_fields["browser_notifications"] = browser_notifications
 
         result = self.collection.find_one_and_update(
             {"user_id": user_id},
@@ -70,8 +60,6 @@ class UserSettingsRepository:
 
     def upsert(self, user_settings: UserSettings) -> UserSettings:
         """Insert or update user settings."""
-        from datetime import datetime
-
         user_settings.updated_at = datetime.now()
         settings_dict = user_settings.to_dict()
 

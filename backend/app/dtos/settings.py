@@ -41,11 +41,26 @@ class TrivySettingsDto(BaseModel):
     default_config: Optional[str] = Field(None, description="Default trivy.yaml config content")
 
 
+class EmailNotificationTypeTogglesDto(BaseModel):
+    """Toggle which notification types trigger email."""
+
+    pipeline_completed: bool = False
+    pipeline_failed: bool = True
+    dataset_validation_completed: bool = False
+    dataset_enrichment_completed: bool = True
+    rate_limit_warning: bool = False
+    rate_limit_exhausted: bool = True
+    system_alerts: bool = True
+
+
 class NotificationSettingsDto(BaseModel):
     """Notification settings (email only)."""
 
     email_enabled: bool = False
     email_recipients: str = ""
+    email_type_toggles: EmailNotificationTypeTogglesDto = Field(
+        default_factory=EmailNotificationTypeTogglesDto
+    )
 
 
 class ApplicationSettingsResponse(BaseModel):

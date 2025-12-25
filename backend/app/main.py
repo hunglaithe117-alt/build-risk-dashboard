@@ -11,6 +11,7 @@ from app.api import (
     admin_invitations,
     admin_users,
     auth,
+    comparison,
     dashboard,
     dataset_validation,
     dataset_versions,
@@ -107,6 +108,7 @@ app.include_router(monitoring.router, prefix="/api", tags=["Monitoring"])
 app.include_router(notifications.router, prefix="/api", tags=["Notifications"])
 app.include_router(user_settings.router, prefix="/api", tags=["User Settings"])
 app.include_router(statistics.router, prefix="/api", tags=["Statistics"])
+app.include_router(comparison.router, prefix="/api", tags=["Comparison"])
 
 # Admin-only routes
 app.include_router(admin_users.router, prefix="/api", tags=["Admin - Users"])

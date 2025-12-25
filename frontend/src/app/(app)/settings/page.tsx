@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Bell, Check, Loader2, Save, User } from 'lucide-react';
+import { Bell, Loader2, Save, User } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,32 +10,21 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/auth-context';
 import { useToast } from '@/components/ui/use-toast';
-import { userSettingsApi, UserNotificationPreferences } from '@/lib/api';
+import { userSettingsApi, UpdateUserSettingsRequest } from '@/lib/api';
 
 interface SettingsState {
-    notificationPreferences: UserNotificationPreferences;
-    timezone: string;
-    language: string;
+    browserNotifications: boolean;
     isLoading: boolean;
     isSaving: boolean;
     hasChanges: boolean;
 }
-
-const DEFAULT_NOTIFICATION_PREFERENCES: UserNotificationPreferences = {
-    email_on_version_complete: true,
-    email_on_scan_complete: true,
-    email_on_version_failed: true,
-    browser_notifications: true,
-};
 
 export default function SettingsPage() {
     const { user } = useAuth();
     const { toast } = useToast();
 
     const [settingsState, setSettingsState] = useState<SettingsState>({
-        notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
-        timezone: 'UTC',
-        language: 'en',
+        browserNotifications: true,
         isLoading: true,
         isSaving: false,
         hasChanges: false,
@@ -45,16 +34,14 @@ export default function SettingsPage() {
     const loadSettings = useCallback(async () => {
         try {
             const data = await userSettingsApi.get();
-            setSettingsState(prev => ({
+            setSettingsState((prev) => ({
                 ...prev,
-                notificationPreferences: data.notification_preferences,
-                timezone: data.timezone,
-                language: data.language,
+                browserNotifications: data.browser_notifications,
                 isLoading: false,
             }));
         } catch {
             // Use defaults if API fails
-            setSettingsState(prev => ({
+            setSettingsState((prev) => ({
                 ...prev,
                 isLoading: false,
             }));
@@ -65,36 +52,21 @@ export default function SettingsPage() {
         loadSettings();
     }, [loadSettings]);
 
-    const updateNotificationPreference = (
-        preferenceKey: keyof UserNotificationPreferences,
-        enabled: boolean
-    ) => {
-        setSettingsState(prev => ({
-            ...prev,
-            notificationPreferences: {
-                ...prev.notificationPreferences,
-                [preferenceKey]: enabled,
-            },
-            hasChanges: true,
-        }));
-    };
-
     const handleSaveSettings = async () => {
-        setSettingsState(prev => ({ ...prev, isSaving: true }));
+        setSettingsState((prev) => ({ ...prev, isSaving: true }));
 
         try {
-            await userSettingsApi.update({
-                notification_preferences: settingsState.notificationPreferences,
-                timezone: settingsState.timezone,
-                language: settingsState.language,
-            });
+            const request: UpdateUserSettingsRequest = {
+                browser_notifications: settingsState.browserNotifications,
+            };
+            await userSettingsApi.update(request);
 
             toast({
                 title: 'Settings saved',
                 description: 'Your preferences have been updated.',
             });
 
-            setSettingsState(prev => ({
+            setSettingsState((prev) => ({
                 ...prev,
                 isSaving: false,
                 hasChanges: false,
@@ -105,7 +77,7 @@ export default function SettingsPage() {
                 description: 'Please try again later.',
                 variant: 'destructive',
             });
-            setSettingsState(prev => ({ ...prev, isSaving: false }));
+            setSettingsState((prev) => ({ ...prev, isSaving: false }));
         }
     };
 
@@ -142,84 +114,36 @@ export default function SettingsPage() {
                 </TabsList>
 
                 <TabsContent value="notifications" className="space-y-6">
+                    {/* Browser Notifications */}
                     <Card>
                         <CardHeader>
-                            <CardTitle>Email Notifications</CardTitle>
+                            <CardTitle className="flex items-center gap-2">
+                                <Bell className="h-5 w-5" />
+                                Browser Notifications
+                            </CardTitle>
                             <CardDescription>
-                                Configure when you receive email notifications about dataset enrichment activities.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label htmlFor="email-version-complete">Version Enrichment Complete</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Receive an email when a dataset version enrichment is completed.
-                                    </p>
-                                </div>
-                                <Switch
-                                    id="email-version-complete"
-                                    checked={settingsState.notificationPreferences.email_on_version_complete}
-                                    onCheckedChange={(checked) =>
-                                        updateNotificationPreference('email_on_version_complete', checked)
-                                    }
-                                />
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label htmlFor="email-scan-complete">Scan Complete</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Receive an email when an integration scan (SonarQube, Trivy) is completed.
-                                    </p>
-                                </div>
-                                <Switch
-                                    id="email-scan-complete"
-                                    checked={settingsState.notificationPreferences.email_on_scan_complete}
-                                    onCheckedChange={(checked) =>
-                                        updateNotificationPreference('email_on_scan_complete', checked)
-                                    }
-                                />
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <Label htmlFor="email-version-failed">Enrichment Failed</Label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Receive an email when a version enrichment or scan fails.
-                                    </p>
-                                </div>
-                                <Switch
-                                    id="email-version-failed"
-                                    checked={settingsState.notificationPreferences.email_on_version_failed}
-                                    onCheckedChange={(checked) =>
-                                        updateNotificationPreference('email_on_version_failed', checked)
-                                    }
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader>
-                            <CardTitle>Browser Notifications</CardTitle>
-                            <CardDescription>
-                                Enable push notifications in your browser for real-time updates.
+                                Receive push notifications in your browser for real-time updates.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
                             <div className="flex items-center justify-between">
                                 <div className="space-y-0.5">
-                                    <Label htmlFor="browser-notifications">Enable Browser Notifications</Label>
+                                    <Label htmlFor="browser-notifications">
+                                        Enable Browser Notifications
+                                    </Label>
                                     <p className="text-sm text-muted-foreground">
-                                        Receive instant notifications when enrichment tasks complete.
+                                        Get instant notifications when important events occur.
                                     </p>
                                 </div>
                                 <Switch
                                     id="browser-notifications"
-                                    checked={settingsState.notificationPreferences.browser_notifications}
+                                    checked={settingsState.browserNotifications}
                                     onCheckedChange={(checked) =>
-                                        updateNotificationPreference('browser_notifications', checked)
+                                        setSettingsState((prev) => ({
+                                            ...prev,
+                                            browserNotifications: checked,
+                                            hasChanges: true,
+                                        }))
                                     }
                                 />
                             </div>

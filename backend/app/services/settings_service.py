@@ -13,6 +13,7 @@ from app.dtos.settings import (
     ApplicationSettingsResponse,
     ApplicationSettingsUpdateRequest,
     CircleCISettingsDto,
+    EmailNotificationTypeTogglesDto,
     NotificationSettingsDto,
     SonarQubeSettingsDto,
     TravisCISettingsDto,
@@ -23,6 +24,7 @@ from app.entities.settings import (
     DEFAULT_TRIVY_CONFIG,
     ApplicationSettings,
     CircleCISettings,
+    EmailNotificationTypeToggles,
     NotificationSettings,
     SonarQubeSettings,
     TravisCISettings,
@@ -111,6 +113,9 @@ class SettingsService:
             notifications=NotificationSettingsDto(
                 email_enabled=db_settings.notifications.email_enabled,
                 email_recipients=db_settings.notifications.email_recipients,
+                email_type_toggles=EmailNotificationTypeTogglesDto(
+                    **db_settings.notifications.email_type_toggles.model_dump()
+                ),
             ),
         )
 
@@ -141,6 +146,7 @@ class SettingsService:
             notifications=NotificationSettingsDto(
                 email_enabled=False,
                 email_recipients="",
+                email_type_toggles=EmailNotificationTypeTogglesDto(),
             ),
         )
 
@@ -217,11 +223,17 @@ class SettingsService:
         # Update Notifications
         if request.notifications:
             notif_data = request.notifications.model_dump(exclude_none=True)
+            # Handle nested email_type_toggles
+            toggles_data = notif_data.pop("email_type_toggles", None)
+            new_toggles = existing.notifications.email_type_toggles
+            if toggles_data:
+                new_toggles = EmailNotificationTypeToggles(**toggles_data)
             existing.notifications = NotificationSettings(
                 email_enabled=notif_data.get("email_enabled", existing.notifications.email_enabled),
                 email_recipients=notif_data.get(
                     "email_recipients", existing.notifications.email_recipients
                 ),
+                email_type_toggles=new_toggles,
             )
 
         # Save to database
@@ -289,6 +301,7 @@ class SettingsService:
             notifications=NotificationSettings(
                 email_enabled=False,
                 email_recipients="",
+                email_type_toggles=EmailNotificationTypeToggles(),
             ),
         )
 

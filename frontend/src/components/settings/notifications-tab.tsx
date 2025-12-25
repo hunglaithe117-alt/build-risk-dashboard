@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Save, Loader2 } from 'lucide-react'
+import { Save, Loader2, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +9,52 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/use-toast'
 import { settingsApi, usersApi } from '@/lib/api'
-import type { ApplicationSettings, UserAccount } from '@/types'
+import type { ApplicationSettings, UserAccount, EmailNotificationTypeToggles } from '@/types'
+
+// Notification type toggle definitions with descriptions
+const NOTIFICATION_TYPE_TOGGLES: {
+  key: keyof EmailNotificationTypeToggles
+  label: string
+  description: string
+  isCritical?: boolean
+}[] = [
+    {
+      key: 'pipeline_completed',
+      label: 'Pipeline Completed',
+      description: 'Email khi feature extraction hoàn thành thành công',
+    },
+    {
+      key: 'pipeline_failed',
+      label: 'Pipeline Failed',
+      description: 'Email khi pipeline feature extraction thất bại',
+    },
+    {
+      key: 'dataset_validation_completed',
+      label: 'Dataset Validation Completed',
+      description: 'Email khi quá trình validate dataset hoàn thành',
+    },
+    {
+      key: 'dataset_enrichment_completed',
+      label: 'Dataset Enrichment Completed',
+      description: 'Email khi quá trình enrichment dataset hoàn thành',
+    },
+    {
+      key: 'rate_limit_warning',
+      label: 'Rate Limit Warning',
+      description: 'Email cảnh báo khi GitHub token sắp hết quota',
+    },
+    {
+      key: 'rate_limit_exhausted',
+      label: 'Rate Limit Exhausted',
+      description: 'Email khi tất cả GitHub tokens đều hết quota (Critical)',
+      isCritical: true,
+    },
+    {
+      key: 'system_alerts',
+      label: 'System Alerts',
+      description: 'Email cho các thông báo hệ thống quan trọng',
+    },
+  ]
 
 export function NotificationsTab() {
   const [settings, setSettings] = useState<ApplicationSettings | null>(null)
@@ -56,6 +101,20 @@ export function NotificationsTab() {
     }
   }
 
+  const handleToggleChange = (key: keyof EmailNotificationTypeToggles, checked: boolean) => {
+    if (!settings) return
+    setSettings({
+      ...settings,
+      notifications: {
+        ...settings.notifications,
+        email_type_toggles: {
+          ...settings.notifications.email_type_toggles,
+          [key]: checked,
+        },
+      },
+    })
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -99,11 +158,11 @@ export function NotificationsTab() {
         </Card>
       )}
 
-      {/* Email */}
+      {/* Email Toggle */}
       <Card>
         <CardHeader>
           <CardTitle>Email Notifications</CardTitle>
-          <CardDescription>Send notifications via email</CardDescription>
+          <CardDescription>Enable email notifications for system events</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
@@ -137,6 +196,42 @@ export function NotificationsTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Email Type Toggles */}
+      {settings.notifications.email_enabled && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Email Notification Types</CardTitle>
+            <CardDescription>
+              Choose which events trigger email notifications to recipients
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {NOTIFICATION_TYPE_TOGGLES.map((toggle) => (
+              <div key={toggle.key} className="flex items-center justify-between py-2">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor={`toggle-${toggle.key}`}>{toggle.label}</Label>
+                    {toggle.isCritical && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                        <AlertTriangle className="h-3 w-3" />
+                        Critical
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">{toggle.description}</p>
+                </div>
+                <Switch
+                  id={`toggle-${toggle.key}`}
+                  checked={settings.notifications.email_type_toggles?.[toggle.key] ?? false}
+                  onCheckedChange={(checked) => handleToggleChange(toggle.key, checked)}
+                />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex justify-end">
         <Button onClick={handleSave} disabled={saving}>
           {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}

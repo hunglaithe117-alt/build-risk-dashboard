@@ -124,11 +124,30 @@ class TrivySettings(BaseEntity):
     default_config: str = Field(default=DEFAULT_TRIVY_CONFIG)
 
 
+class EmailNotificationTypeToggles(BaseEntity):
+    """Toggle which notification types trigger email.
+
+    When email is enabled, these toggles control which events
+    actually send email notifications to recipients.
+    """
+
+    pipeline_completed: bool = False  # Not urgent, default OFF
+    pipeline_failed: bool = True  # Important, default ON
+    dataset_validation_completed: bool = False  # Not urgent, default OFF
+    dataset_enrichment_completed: bool = True  # Important milestone, default ON
+    rate_limit_warning: bool = False  # Frequent, default OFF
+    rate_limit_exhausted: bool = True  # CRITICAL, always recommended ON
+    system_alerts: bool = True  # Important, default ON
+
+
 class NotificationSettings(BaseEntity):
     """Notification settings (email only)."""
 
     email_enabled: bool = False
     email_recipients: str = ""
+    email_type_toggles: EmailNotificationTypeToggles = Field(
+        default_factory=EmailNotificationTypeToggles
+    )
 
 
 class ApplicationSettings(BaseEntity):

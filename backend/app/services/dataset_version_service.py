@@ -46,7 +46,7 @@ class DatasetVersionService:
     def _get_version(self, dataset_id: str, version_id: str) -> DatasetVersion:
         """Get version and verify it belongs to dataset. Raises HTTPException if not found."""
         version = self._repo.find_by_id(version_id)
-        if not version or version.dataset_id != dataset_id:
+        if not version or str(version.dataset_id) != dataset_id:
             raise HTTPException(status_code=404, detail="Version not found")
         return version
 

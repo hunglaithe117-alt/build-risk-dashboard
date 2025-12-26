@@ -41,9 +41,7 @@ class PipelineTask(Task):
     - task_name: Set from the Celery task name
 
     Rate Limit Handling:
-    - GithubRateLimitError: Handled INTERNALLY by GitHubClient via token rotation
     - GithubAllRateLimitError: Auto-retry with EXACT countdown when all tokens exhausted
-    - GithubRetryableError: Uses exponential backoff for transient errors
     - Sends notification when all tokens are exhausted (after max retries)
     """
 

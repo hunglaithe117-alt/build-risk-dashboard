@@ -725,7 +725,6 @@ def finalize_enrichment(
         quality_report = quality_service.evaluate_version(
             dataset_id=str(dataset_version.dataset_id),
             version_id=version_id,
-            user_id="system",  # Auto-triggered by system
         )
         logger.info(
             f"{corr_prefix} Auto quality evaluation completed: "

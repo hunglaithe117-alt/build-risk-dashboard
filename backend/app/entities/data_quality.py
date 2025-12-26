@@ -91,7 +91,7 @@ class DataQualityReport(BaseEntity):
     # References
     dataset_id: PyObjectId
     version_id: PyObjectId
-    user_id: PyObjectId
+    user_id: Optional[PyObjectId]
 
     # Overall scores (0-100)
     # Formula: 0.4*completeness + 0.3*validity + 0.2*consistency + 0.1*coverage

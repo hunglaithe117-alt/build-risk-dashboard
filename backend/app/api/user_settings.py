@@ -1,6 +1,5 @@
 """User settings API endpoints."""
 
-from bson import ObjectId
 from fastapi import APIRouter, Depends
 from pymongo.database import Database
 
@@ -10,7 +9,7 @@ from app.dtos.user_settings import (
     UserSettingsResponse,
 )
 from app.middleware.auth import get_current_user
-from app.repositories.user_settings import UserSettingsRepository
+from app.repositories.user import UserRepository
 
 router = APIRouter(prefix="/user-settings", tags=["User Settings"])
 
@@ -21,16 +20,15 @@ def get_user_settings(
     current_user: dict = Depends(get_current_user),
 ):
     """Get current user's settings."""
-    user_id = ObjectId(current_user["_id"])
-    settings_repo = UserSettingsRepository(db)
-
-    user_settings = settings_repo.get_or_create(user_id)
-
     return UserSettingsResponse(
-        user_id=str(user_settings.user_id),
-        browser_notifications=user_settings.browser_notifications,
-        created_at=user_settings.created_at.isoformat(),
-        updated_at=user_settings.updated_at.isoformat(),
+        user_id=str(current_user["_id"]),
+        browser_notifications=current_user.get("browser_notifications", True),
+        created_at=current_user.get("created_at").isoformat()
+        if current_user.get("created_at")
+        else "",
+        updated_at=current_user.get("updated_at").isoformat()
+        if current_user.get("updated_at")
+        else "",
     )
 
 
@@ -41,23 +39,30 @@ def update_user_settings(
     current_user: dict = Depends(get_current_user),
 ):
     """Update current user's settings."""
-    user_id = ObjectId(current_user["_id"])
-    settings_repo = UserSettingsRepository(db)
+    user_repo = UserRepository(db)
+    user_id = str(current_user["_id"])
 
-    # Ensure settings exist
-    existing_settings = settings_repo.get_or_create(user_id)
-
-    updated_settings = settings_repo.update(
+    updated_user = user_repo.update_settings(
         user_id=user_id,
         browser_notifications=request.browser_notifications,
     )
 
-    if not updated_settings:
-        updated_settings = existing_settings
+    if not updated_user:
+        # Return current state if update failed
+        return UserSettingsResponse(
+            user_id=user_id,
+            browser_notifications=current_user.get("browser_notifications", True),
+            created_at=current_user.get("created_at").isoformat()
+            if current_user.get("created_at")
+            else "",
+            updated_at=current_user.get("updated_at").isoformat()
+            if current_user.get("updated_at")
+            else "",
+        )
 
     return UserSettingsResponse(
-        user_id=str(updated_settings.user_id),
-        browser_notifications=updated_settings.browser_notifications,
-        created_at=updated_settings.created_at.isoformat(),
-        updated_at=updated_settings.updated_at.isoformat(),
+        user_id=str(updated_user.id),
+        browser_notifications=updated_user.browser_notifications,
+        created_at=updated_user.created_at.isoformat() if updated_user.created_at else "",
+        updated_at=updated_user.updated_at.isoformat() if updated_user.updated_at else "",
     )

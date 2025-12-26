@@ -48,9 +48,7 @@ class GitHubCache:
         url_hash = hashlib.md5(url.encode()).hexdigest()
         return f"{KEY_PREFIX}{url_hash}"
 
-    def get_cached(
-        self, url: str
-    ) -> Tuple[Optional[str], Optional[str], Optional[dict]]:
+    def get_cached(self, url: str) -> Tuple[Optional[str], Optional[str], Optional[dict]]:
         """
         Get cached ETag, Last-Modified, and data for a URL.
 

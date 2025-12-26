@@ -50,7 +50,9 @@ class DataQualityService:
         self.build_repo = DatasetEnrichmentBuildRepository(db)
         self.feature_service = FeatureService()
 
-    def evaluate_version(self, dataset_id: str, version_id: str, user_id: str) -> DataQualityReport:
+    def evaluate_version(
+        self, dataset_id: str, version_id: str, user_id: Optional[str] = None
+    ) -> DataQualityReport:
         """
         Run quality evaluation for a dataset version.
 
@@ -85,10 +87,17 @@ class DataQualityService:
             )
 
         # Create report
+        parsed_user_id = None
+        if user_id and user_id != "system":
+            try:
+                parsed_user_id = ObjectId(user_id)
+            except Exception:
+                pass  # Keep as None if invalid ObjectId
+
         report = DataQualityReport(
             dataset_id=ObjectId(dataset_id),
             version_id=ObjectId(version_id),
-            user_id=ObjectId(user_id),
+            user_id=parsed_user_id,
         )
         report.mark_started()
 

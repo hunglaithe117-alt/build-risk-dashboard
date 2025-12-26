@@ -23,7 +23,7 @@ router = APIRouter(prefix="/datasets/{dataset_id}/versions", tags=["Dataset Vers
 def _to_response(version: DatasetVersion) -> VersionResponse:
     return VersionResponse(
         id=str(version.id),
-        dataset_id=version.dataset_id,
+        dataset_id=str(version.dataset_id),
         version_number=version.version_number,
         name=version.name,
         description=version.description,

@@ -130,8 +130,7 @@ function formatDuration(seconds?: number | null): string {
     return `${mins}m ${secs}s`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function FeatureValue({ value }: { value: any }) {
+function FeatureValue({ value }: { value: unknown }) {
     if (value === null || value === undefined) {
         return <span className="text-muted-foreground italic">null</span>;
     }

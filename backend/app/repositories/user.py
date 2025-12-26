@@ -73,3 +73,21 @@ class UserRepository(BaseRepository[User]):
     def find_by_role(self, role: str) -> List[User]:
         """Find all users with a specific role."""
         return self.find_many({"role": role})
+
+    def update_settings(
+        self, user_id: str, browser_notifications: Optional[bool] = None
+    ) -> Optional[User]:
+        """Update user settings (browser_notifications)."""
+        from bson import ObjectId
+
+        updates: Dict = {"updated_at": datetime.now(timezone.utc)}
+
+        if browser_notifications is not None:
+            updates["browser_notifications"] = browser_notifications
+
+        result = self.collection.find_one_and_update(
+            {"_id": ObjectId(user_id)},
+            {"$set": updates},
+            return_document=True,
+        )
+        return User(**result) if result else None

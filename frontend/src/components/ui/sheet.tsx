@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 import { X } from "lucide-react"
@@ -72,34 +73,60 @@ const SheetTrigger = ({ children, asChild }: SheetTriggerProps) => {
     return <button onClick={handleClick}>{children}</button>;
 };
 
-const SheetContent = React.forwardRef<
-    HTMLDivElement,
-    React.HTMLAttributes<HTMLDivElement> & { side?: "left" | "right" }
->(({ className, children, side = "right", ...props }, ref) => {
-    const context = React.useContext(SheetContext);
+const sheetVariants = cva(
+    "fixed z-50 h-full bg-background p-6 shadow-lg border-l animate-in",
+    {
+        variants: {
+            side: {
+                left: "left-0 top-0 slide-in-from-left",
+                right: "right-0 top-0 slide-in-from-right",
+            },
+            size: {
+                default: "w-80",
+                sm: "w-72",
+                lg: "w-[480px]",
+                xl: "w-[640px]",
+                "2xl": "w-[800px]",
+                full: "w-screen",
+            },
+        },
+        defaultVariants: {
+            side: "right",
+            size: "default",
+        },
+    }
+);
 
-    return (
-        <div
-            ref={ref}
-            className={cn(
-                "fixed z-50 h-full w-80 bg-background p-6 shadow-lg border-l",
-                "animate-in slide-in-from-right",
-                side === "right" ? "right-0 top-0" : "left-0 top-0",
-                className
-            )}
-            {...props}
-        >
-            <button
-                className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
-                onClick={() => context?.onOpenChange(false)}
+interface SheetContentProps
+    extends React.HTMLAttributes<HTMLDivElement>,
+    VariantProps<typeof sheetVariants> {
+    showClose?: boolean;
+}
+
+const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
+    ({ className, children, side = "right", size = "default", showClose = true, ...props }, ref) => {
+        const context = React.useContext(SheetContext);
+
+        return (
+            <div
+                ref={ref}
+                className={cn(sheetVariants({ side, size }), className)}
+                {...props}
             >
-                <X className="h-4 w-4" />
-                <span className="sr-only">Close</span>
-            </button>
-            {children}
-        </div>
-    );
-});
+                {showClose && (
+                    <button
+                        className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                        onClick={() => context?.onOpenChange(false)}
+                    >
+                        <X className="h-4 w-4" />
+                        <span className="sr-only">Close</span>
+                    </button>
+                )}
+                {children}
+            </div>
+        );
+    }
+);
 SheetContent.displayName = "SheetContent";
 
 const SheetHeader = ({
@@ -143,10 +170,43 @@ const SheetDescription = React.forwardRef<
 ));
 SheetDescription.displayName = "SheetDescription";
 
+const SheetFooter = ({
+    className,
+    ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+    <div
+        className={cn(
+            "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
+            className
+        )}
+        {...props}
+    />
+);
+SheetFooter.displayName = "SheetFooter";
+
+const SheetClose = React.forwardRef<
+    HTMLButtonElement,
+    React.ButtonHTMLAttributes<HTMLButtonElement>
+>(({ className, ...props }, ref) => {
+    const context = React.useContext(SheetContext);
+
+    return (
+        <button
+            ref={ref}
+            className={className}
+            onClick={() => context?.onOpenChange(false)}
+            {...props}
+        />
+    );
+});
+SheetClose.displayName = "SheetClose";
+
 export {
     Sheet,
+    SheetClose,
     SheetContent,
     SheetDescription,
+    SheetFooter,
     SheetHeader,
     SheetTitle,
     SheetTrigger,

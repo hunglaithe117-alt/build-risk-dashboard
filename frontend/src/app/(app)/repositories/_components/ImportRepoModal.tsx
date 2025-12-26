@@ -5,10 +5,10 @@ import {
     Globe,
     Loader2,
     Search,
-    X
+    ArrowRight,
+    ArrowLeft,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
 import { FeatureDAGVisualization, type FeatureDAGData } from "@/components/features";
 import { FeatureConfigForm, type FeatureConfigsData } from "@/components/features/config/FeatureConfigForm";
@@ -22,6 +22,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetFooter,
+    SheetHeader,
+    SheetTitle,
+} from "@/components/ui/sheet";
 import { useDebounce } from "@/hooks/use-debounce";
 import { datasetsApi, featuresApi, reposApi } from "@/lib/api";
 import {
@@ -32,17 +40,6 @@ import {
     RepoSuggestion,
 } from "@/types";
 import { ExtractionPlanTimeline } from "./ExtractionPlanTimeline";
-
-const Portal = ({ children }: { children: React.ReactNode }) => {
-    const [mounted, setMounted] = useState(false);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
-
-    if (!mounted) return null;
-    return createPortal(children, document.body);
-};
 
 type FeatureCategoryGroup = {
     category: string;
@@ -59,7 +56,7 @@ function SelectedFeaturesPanelWithTooltips({
     featuresData: FeatureCategoryGroup[] | null;
 }) {
     const [isExpanded, setIsExpanded] = useState(false);
-    const INITIAL_SHOW = 20;
+    const INITIAL_SHOW = 15;
 
     // Build a map of feature name -> description from featuresData
     const featureDescriptions = useMemo(() => {
@@ -78,23 +75,19 @@ function SelectedFeaturesPanelWithTooltips({
     const hasMore = selectedFeatures.length > INITIAL_SHOW;
 
     return (
-        <div className="rounded-xl border bg-blue-50/50 dark:bg-blue-900/10 p-4">
+        <div className="rounded-lg border bg-blue-50/50 dark:bg-blue-900/10 p-3">
             <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-semibold text-blue-900 dark:text-blue-200">
-                    Selected Feature Set
+                <span className="text-xs font-semibold text-blue-900 dark:text-blue-200">
+                    Selected Features
                 </span>
-                <Badge className="bg-blue-600">{selectedFeatures.length} features</Badge>
+                <Badge className="bg-blue-600 text-xs">{selectedFeatures.length}</Badge>
             </div>
-            <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
-                All repositories will automatically extract these features for Bayesian risk prediction.
-                <span className="ml-1 text-blue-500">(Hover for description)</span>
-            </p>
-            <div className={`flex flex-wrap gap-1.5 ${isExpanded ? 'max-h-[300px]' : 'max-h-[120px]'} overflow-y-auto transition-all`}>
+            <div className={`flex flex-wrap gap-1 ${isExpanded ? 'max-h-[200px]' : 'max-h-[80px]'} overflow-y-auto transition-all`}>
                 {displayedFeatures.map(feat => (
                     <Badge
                         key={feat}
                         variant="secondary"
-                        className="text-xs cursor-help hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors"
+                        className="text-[10px] cursor-help"
                         title={featureDescriptions[feat] || feat}
                     >
                         {feat}
@@ -103,7 +96,7 @@ function SelectedFeaturesPanelWithTooltips({
                 {hasMore && !isExpanded && (
                     <Badge
                         variant="outline"
-                        className="text-xs cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900"
+                        className="text-[10px] cursor-pointer"
                         onClick={() => setIsExpanded(true)}
                     >
                         +{selectedFeatures.length - INITIAL_SHOW} more
@@ -113,14 +106,13 @@ function SelectedFeaturesPanelWithTooltips({
             {hasMore && isExpanded && (
                 <button
                     onClick={() => setIsExpanded(false)}
-                    className="mt-2 text-xs text-blue-600 hover:underline"
+                    className="mt-1 text-[10px] text-blue-600 hover:underline"
                 >
                     Show less
                 </button>
             )}
         </div>
     );
-
 }
 
 interface ImportRepoModalProps {
@@ -165,7 +157,6 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
     const [activeRepo, setActiveRepo] = useState<string | null>(null);
 
     // Templates state
-    const [templates, setTemplates] = useState<DatasetTemplateRecord[]>([]);
     const [templatesLoading, setTemplatesLoading] = useState(false);
 
     // DAG state
@@ -230,18 +221,16 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
         }
     }, [dagData, dagLoading]);
 
-    const [selectedFeatures, setselectedFeatures] = useState<string[]>([]);
+    const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
     const loadSelectedTemplate = useCallback(async () => {
         if (templatesLoading) return;
         if (selectedFeatures.length > 0) return;
         setTemplatesLoading(true);
         try {
             const template = await datasetsApi.getTemplateByName("TravisTorrent Full");
-            setTemplates([template]);
-            setselectedFeatures(template.feature_names || []);
+            setSelectedFeatures(template.feature_names || []);
         } catch (err) {
             console.error("Failed to load selected template:", err);
-            // Fallback: leave empty, showing all features
         } finally {
             setTemplatesLoading(false);
         }
@@ -367,280 +356,258 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
         validation_status: "unknown"
     })), [selectedList]);
 
-    if (!isOpen) return null;
-
     return (
-        <Portal>
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-                <div className="w-full max-w-7xl h-[90vh] rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-950 border dark:border-slate-800 flex flex-col overflow-hidden">
-                    <div className="mb-6 flex items-center justify-between">
-                        <div>
-                            <h2 className="text-xl font-semibold">Import Repositories</h2>
-                            <p className="text-sm text-muted-foreground">
-                                Step {step} of 2:{" "}
-                                {step === 1
-                                    ? "Select repositories"
-                                    : "Configure & Import"}
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            className="rounded-full p-2 text-muted-foreground hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                            onClick={onClose}
-                        >
-                            <X className="h-5 w-5" />
-                        </button>
-                    </div>
+        <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+            <SheetContent size="2xl" className="flex flex-col p-0 overflow-hidden">
+                {/* Header */}
+                <div className="px-6 py-4 border-b">
+                    <SheetHeader>
+                        <SheetTitle className="text-xl">Import Repositories</SheetTitle>
+                        <SheetDescription>
+                            Step {step} of 2: {step === 1 ? "Select repositories" : "Configure & Import"}
+                        </SheetDescription>
+                    </SheetHeader>
+                </div>
 
-
-                    {/* GitHub App status banner removed - app is managed at organization level */}
-
-                    <div className="flex-1 overflow-y-auto">
-                        {step === 1 ? (
-                            <div className="space-y-6">
-                                <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                                    <input
-                                        type="text"
-                                        className="w-full rounded-lg border border-slate-200 bg-transparent pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-0 focus:border-primary"
-                                        placeholder="Search repositories (e.g. owner/repo)..."
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                    />
-                                </div>
-                                {selectedList.length > 0 && (
-                                    <div className="rounded-lg border bg-slate-50 dark:bg-slate-900/30 px-3 py-2">
-                                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">
-                                            Selected ({selectedList.length})
-                                        </div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {selectedList.map((repo) => (
-                                                <Badge
-                                                    key={repo.full_name}
-                                                    variant="secondary"
-                                                    className="flex items-center gap-2"
-                                                >
-                                                    <span className="truncate max-w-[200px]">{repo.full_name}</span>
-                                                    <button
-                                                        type="button"
-                                                        className="text-xs"
-                                                        onClick={() => toggleSelection(repo)}
-                                                    >
-                                                        ×
-                                                    </button>
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="h-[400px] overflow-y-auto pr-2 space-y-6">
-                                    {searchError && (
-                                        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-                                            {searchError}
-                                        </div>
-                                    )}
-
-                                    {/* Private Repos Section */}
-                                    <div>
-                                        <h3 className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">
-                                            <Building2 className="h-3 w-3" /> Organization Repositories
-                                        </h3>
-                                        <div className="space-y-2">
-                                            {privateMatches.length === 0 && !isSearching ? (
-                                                <div className="text-sm text-muted-foreground italic px-2">
-                                                    No matching organization repositories found.
-                                                </div>
-                                            ) : (
-                                                privateMatches.map((repo) => (
-                                                    <RepoItem
-                                                        key={repo.full_name}
-                                                        repo={repo}
-                                                        isSelected={!!selectedRepos[repo.full_name]}
-                                                        onToggle={() => toggleSelection(repo)}
-                                                    />
-                                                ))
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Public Repos Section */}
-                                    <div>
-                                        <h3 className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">
-                                            <Globe className="h-3 w-3" /> Public GitHub Repositories
-                                        </h3>
-                                        <div className="space-y-2">
-                                            {publicMatches.length === 0 && !isSearching ? (
-                                                <div className="text-sm text-muted-foreground italic px-2">
-                                                    {searchTerm.length >= 3
-                                                        ? "No matching public repositories found."
-                                                        : "Type at least 3 characters to search public repositories."}
-                                                </div>
-                                            ) : (
-                                                publicMatches.map((repo) => (
-                                                    <RepoItem
-                                                        key={repo.full_name}
-                                                        repo={repo}
-                                                        isSelected={!!selectedRepos[repo.full_name]}
-                                                        onToggle={() => toggleSelection(repo)}
-                                                    />
-                                                ))
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {isSearching && (
-                                        <div className="flex justify-center py-4">
-                                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                                        </div>
-                                    )}
-                                </div>
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto px-6 py-4">
+                    {step === 1 ? (
+                        <div className="space-y-4">
+                            {/* Search */}
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                <input
+                                    type="text"
+                                    className="w-full rounded-lg border bg-transparent pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                                    placeholder="Search repositories (e.g. owner/repo)..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
                             </div>
-                        ) : (
-                            <div className="flex h-full gap-4">
-                                <div className="w-60 flex-shrink-0 rounded-xl border bg-slate-50 dark:bg-slate-900/40 overflow-hidden">
-                                    <div className="px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
-                                        Selected Repos
+
+                            {/* Selected Repos */}
+                            {selectedList.length > 0 && (
+                                <div className="rounded-lg border bg-slate-50 dark:bg-slate-900/30 p-3">
+                                    <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">
+                                        Selected ({selectedList.length})
                                     </div>
-                                    <div className="divide-y divide-slate-200 dark:divide-slate-800 max-h-[480px] overflow-y-auto">
+                                    <div className="flex flex-wrap gap-2">
                                         {selectedList.map((repo) => (
-                                            <button
+                                            <Badge
                                                 key={repo.full_name}
-                                                className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-2 transition-colors ${activeRepo === repo.full_name
-                                                    ? "bg-white dark:bg-slate-800 font-semibold border-l-2 border-primary"
-                                                    : "hover:bg-white/70 dark:hover:bg-slate-800/70"
-                                                    }`}
-                                                onClick={() => setActiveRepo(repo.full_name)}
+                                                variant="secondary"
+                                                className="flex items-center gap-2"
                                             >
-                                                <span className="truncate">{repo.full_name}</span>
-                                                <Badge variant="secondary" className="text-[10px] h-5">
-                                                    {repo.private ? "Private" : "Public"}
-                                                </Badge>
-                                            </button>
+                                                <span className="truncate max-w-[180px]">{repo.full_name}</span>
+                                                <button
+                                                    type="button"
+                                                    className="text-xs hover:text-destructive"
+                                                    onClick={() => toggleSelection(repo)}
+                                                >
+                                                    ×
+                                                </button>
+                                            </Badge>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="flex-1 overflow-y-auto pr-0">
-                                    {!activeRepo ? (
-                                        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                                            Select a repository to configure
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-4">
+                            )}
 
-                                            {/* Base Config (CI, Limits) */}
-                                            <div className="grid gap-4 md:grid-cols-3 mb-6 p-4 border rounded-lg bg-slate-50 dark:bg-slate-900/20">
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-medium">CI Provider</label>
-                                                    <Select
-                                                        value={baseConfigs[activeRepo]?.ci_provider || CIProvider.GITHUB_ACTIONS}
-                                                        onValueChange={(val) => setBaseConfigs(prev => ({
-                                                            ...prev,
-                                                            [activeRepo]: { ...prev[activeRepo], ci_provider: val }
-                                                        }))}
-                                                    >
-                                                        <SelectTrigger>
-                                                            <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value={CIProvider.GITHUB_ACTIONS}>GitHub Actions</SelectItem>
-                                                            <SelectItem value={CIProvider.TRAVIS_CI}>Travis CI</SelectItem>
-                                                            <SelectItem value={CIProvider.CIRCLECI}>CircleCI</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-medium">Max Builds</label>
-                                                    <Input
-                                                        type="number"
-                                                        placeholder="Unlimited"
-                                                        min={1}
-                                                        value={baseConfigs[activeRepo]?.max_builds || ""}
-                                                        onChange={(e) => setBaseConfigs(prev => ({
-                                                            ...prev,
-                                                            [activeRepo]: { ...prev[activeRepo], max_builds: e.target.value ? parseInt(e.target.value) : null }
-                                                        }))}
-                                                    />
-                                                </div>
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-medium">Since Days</label>
-                                                    <Input
-                                                        type="number"
-                                                        placeholder="Unlimited"
-                                                        min={1}
-                                                        value={baseConfigs[activeRepo]?.since_days || ""}
-                                                        onChange={(e) => setBaseConfigs(prev => ({
-                                                            ...prev,
-                                                            [activeRepo]: { ...prev[activeRepo], since_days: e.target.value ? parseInt(e.target.value) : null }
-                                                        }))}
-                                                    />
-                                                </div>
+                            {/* Search Results */}
+                            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
+                                {searchError && (
+                                    <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                                        {searchError}
+                                    </div>
+                                )}
+
+                                {/* Private Repos */}
+                                <div>
+                                    <h3 className="mb-2 text-xs font-medium text-muted-foreground flex items-center gap-2">
+                                        <Building2 className="h-3 w-3" /> Organization Repositories
+                                    </h3>
+                                    <div className="space-y-1.5">
+                                        {privateMatches.length === 0 && !isSearching ? (
+                                            <div className="text-sm text-muted-foreground italic px-2 py-1">
+                                                No matching organization repositories found.
                                             </div>
+                                        ) : (
+                                            privateMatches.map((repo) => (
+                                                <RepoItem
+                                                    key={repo.full_name}
+                                                    repo={repo}
+                                                    isSelected={!!selectedRepos[repo.full_name]}
+                                                    onToggle={() => toggleSelection(repo)}
+                                                />
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
 
-                                            {/* Dynamic Feature Config */}
-                                            <FeatureConfigForm
-                                                selectedFeatures={featureFormFeatures}
-                                                repos={featureFormRepos}
-                                                onChange={setFeatureConfigs}
+                                {/* Public Repos */}
+                                <div>
+                                    <h3 className="mb-2 text-xs font-medium text-muted-foreground flex items-center gap-2">
+                                        <Globe className="h-3 w-3" /> Public GitHub Repositories
+                                    </h3>
+                                    <div className="space-y-1.5">
+                                        {publicMatches.length === 0 && !isSearching ? (
+                                            <div className="text-sm text-muted-foreground italic px-2 py-1">
+                                                {searchTerm.length >= 3
+                                                    ? "No matching public repositories found."
+                                                    : "Type at least 3 characters to search."}
+                                            </div>
+                                        ) : (
+                                            publicMatches.map((repo) => (
+                                                <RepoItem
+                                                    key={repo.full_name}
+                                                    repo={repo}
+                                                    isSelected={!!selectedRepos[repo.full_name]}
+                                                    onToggle={() => toggleSelection(repo)}
+                                                />
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+
+                                {isSearching && (
+                                    <div className="flex justify-center py-4">
+                                        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {/* Repo Tabs */}
+                            <div className="flex gap-2 overflow-x-auto pb-2">
+                                {selectedList.map((repo) => (
+                                    <button
+                                        key={repo.full_name}
+                                        className={`px-3 py-1.5 rounded-lg text-sm whitespace-nowrap transition-colors ${activeRepo === repo.full_name
+                                                ? "bg-primary text-primary-foreground"
+                                                : "bg-muted hover:bg-muted/80"
+                                            }`}
+                                        onClick={() => setActiveRepo(repo.full_name)}
+                                    >
+                                        {repo.full_name.split("/")[1]}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {activeRepo && (
+                                <div className="space-y-4">
+                                    {/* Base Config */}
+                                    <div className="grid gap-3 sm:grid-cols-3 p-3 border rounded-lg bg-slate-50 dark:bg-slate-900/20">
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium">CI Provider</label>
+                                            <Select
+                                                value={baseConfigs[activeRepo]?.ci_provider || CIProvider.GITHUB_ACTIONS}
+                                                onValueChange={(val) => setBaseConfigs(prev => ({
+                                                    ...prev,
+                                                    [activeRepo]: { ...prev[activeRepo], ci_provider: val }
+                                                }))}
+                                            >
+                                                <SelectTrigger className="h-9">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value={CIProvider.GITHUB_ACTIONS}>GitHub Actions</SelectItem>
+                                                    <SelectItem value={CIProvider.TRAVIS_CI}>Travis CI</SelectItem>
+                                                    <SelectItem value={CIProvider.CIRCLECI}>CircleCI</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium">Max Builds</label>
+                                            <Input
+                                                type="number"
+                                                placeholder="Unlimited"
+                                                min={1}
+                                                className="h-9"
+                                                value={baseConfigs[activeRepo]?.max_builds || ""}
+                                                onChange={(e) => setBaseConfigs(prev => ({
+                                                    ...prev,
+                                                    [activeRepo]: { ...prev[activeRepo], max_builds: e.target.value ? parseInt(e.target.value) : null }
+                                                }))}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium">Since Days</label>
+                                            <Input
+                                                type="number"
+                                                placeholder="Unlimited"
+                                                min={1}
+                                                className="h-9"
+                                                value={baseConfigs[activeRepo]?.since_days || ""}
+                                                onChange={(e) => setBaseConfigs(prev => ({
+                                                    ...prev,
+                                                    [activeRepo]: { ...prev[activeRepo], since_days: e.target.value ? parseInt(e.target.value) : null }
+                                                }))}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Feature Config */}
+                                    <FeatureConfigForm
+                                        selectedFeatures={featureFormFeatures}
+                                        repos={featureFormRepos}
+                                        onChange={setFeatureConfigs}
+                                    />
+
+                                    {/* DAG Preview */}
+                                    {dagLoading || templatesLoading ? (
+                                        <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            Loading feature extraction plan...
+                                        </div>
+                                    ) : dagData && selectedFeatures.length > 0 && (
+                                        <div className="space-y-3 pt-3 border-t">
+                                            <h4 className="text-sm font-semibold">Feature Extraction Plan</h4>
+
+                                            <ExtractionPlanTimeline
+                                                executionLevels={dagData.execution_levels.map(level => ({
+                                                    ...level,
+                                                    nodes: level.nodes.filter(nodeId => {
+                                                        const node = dagData.nodes.find(n => n.id === nodeId);
+                                                        return node?.features.some(f => selectedFeatures.includes(f));
+                                                    })
+                                                })).filter(level => level.nodes.length > 0)}
+                                                nodeLabels={Object.fromEntries(
+                                                    dagData.nodes?.map((n: { id: string; label?: string }) => [n.id, n.label || n.id]) || []
+                                                )}
+                                                activeNodes={new Set(
+                                                    dagData.nodes
+                                                        ?.filter(n => n.features.some(f => selectedFeatures.includes(f)))
+                                                        .map(n => n.id) || []
+                                                )}
                                             />
 
-                                            {/* DAG Visualization - Selected Features */}
-                                            {dagLoading || templatesLoading ? (
-                                                <div className="mt-6 pt-4 border-t flex items-center gap-2 text-sm text-muted-foreground">
-                                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                                    Loading feature extraction plan...
-                                                </div>
-                                            ) : dagData && selectedFeatures.length > 0 && (
-                                                <div className="mt-6 pt-4 border-t space-y-4">
-                                                    <h4 className="text-sm font-semibold flex items-center gap-2">
-                                                        <span>Features Extraction Plan</span>
-                                                        <Badge variant="secondary" className="text-xs">
-                                                            {selectedFeatures.length} features
-                                                        </Badge>
-                                                    </h4>
+                                            <FeatureDAGVisualization
+                                                dagData={dagData as FeatureDAGData}
+                                                selectedFeatures={selectedFeatures}
+                                                onFeaturesChange={() => { }}
+                                                className="h-[250px]"
+                                            />
 
-                                                    {/* 1. Extraction Plan Timeline - filter nodes with selected features */}
-                                                    <ExtractionPlanTimeline
-                                                        executionLevels={dagData.execution_levels.map(level => ({
-                                                            ...level,
-                                                            nodes: level.nodes.filter(nodeId => {
-                                                                const node = dagData.nodes.find(n => n.id === nodeId);
-                                                                return node?.features.some(f => selectedFeatures.includes(f));
-                                                            })
-                                                        })).filter(level => level.nodes.length > 0)}
-                                                        nodeLabels={Object.fromEntries(
-                                                            dagData.nodes?.map((n: { id: string; label?: string }) => [n.id, n.label || n.id]) || []
-                                                        )}
-                                                        activeNodes={new Set(
-                                                            dagData.nodes
-                                                                ?.filter(n => n.features.some(f => selectedFeatures.includes(f)))
-                                                                .map(n => n.id) || []
-                                                        )}
-                                                    />
-
-                                                    {/* 2. Visual DAG Graph - show ALL nodes, highlight selected features */}
-                                                    <FeatureDAGVisualization
-                                                        dagData={dagData as FeatureDAGData}
-                                                        selectedFeatures={selectedFeatures}
-                                                        onFeaturesChange={() => { }}
-                                                        className="h-[350px]"
-                                                    />
-
-                                                    {/* 3. Selected Features Panel */}
-                                                    <SelectedFeaturesPanelWithTooltips
-                                                        selectedFeatures={selectedFeatures}
-                                                        featuresData={featuresData}
-                                                    />
-                                                </div>
-                                            )}
+                                            <SelectedFeaturesPanelWithTooltips
+                                                selectedFeatures={selectedFeatures}
+                                                featuresData={featuresData}
+                                            />
                                         </div>
                                     )}
                                 </div>
-                            </div>
-                        )}
-                    </div>
+                            )}
+                        </div>
+                    )}
+                </div>
 
-                    <div className="mt-6 flex items-center justify-between border-t pt-4">
+                {/* Footer */}
+                <div className="px-6 py-4 border-t bg-background">
+                    {importError && (
+                        <div className="mb-3 rounded-lg bg-red-50 p-2 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
+                            {importError}
+                        </div>
+                    )}
+                    <SheetFooter className="flex-row justify-between sm:justify-between">
                         <Button variant="ghost" onClick={onClose}>
                             Cancel
                         </Button>
@@ -648,10 +615,9 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                             {step > 1 && (
                                 <Button
                                     variant="outline"
-                                    onClick={() =>
-                                        setStep((prev) => (prev > 1 ? ((prev - 1) as 1 | 2) : prev))
-                                    }
+                                    onClick={() => setStep((prev) => (prev > 1 ? ((prev - 1) as 1 | 2) : prev))}
                                 >
+                                    <ArrowLeft className="h-4 w-4 mr-1" />
                                     Back
                                 </Button>
                             )}
@@ -661,9 +627,9 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                                     disabled={selectedList.length === 0}
                                 >
                                     Next
+                                    <ArrowRight className="h-4 w-4 ml-1" />
                                 </Button>
                             ) : (
-                                // Step 2 is now final - Import button directly
                                 <Button
                                     onClick={handleImport}
                                     disabled={importing || selectedList.length === 0}
@@ -673,16 +639,10 @@ export function ImportRepoModal({ isOpen, onClose, onImport }: ImportRepoModalPr
                                 </Button>
                             )}
                         </div>
-                    </div>
-
-                    {importError && (
-                        <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">
-                            {importError}
-                        </div>
-                    )}
+                    </SheetFooter>
                 </div>
-            </div>
-        </Portal>
+            </SheetContent>
+        </Sheet>
     );
 }
 
@@ -696,26 +656,24 @@ function RepoItem({
     onToggle: () => void;
 }) {
     return (
-        <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${isSelected ? 'bg-slate-50 border-primary/50 dark:bg-slate-900' : 'hover:bg-slate-50 dark:hover:bg-slate-900/50'}`}>
+        <label className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 transition-colors ${isSelected ? 'bg-slate-50 border-primary/50 dark:bg-slate-900' : 'hover:bg-slate-50 dark:hover:bg-slate-900/50'}`}>
             <input
                 type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                 checked={isSelected}
                 onChange={onToggle}
             />
             <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                    <span className="font-medium truncate">{repo.full_name}</span>
+                    <span className="font-medium text-sm truncate">{repo.full_name}</span>
                     {repo.private && (
-                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5">Private</Badge>
+                        <Badge variant="secondary" className="text-[10px] h-4 px-1">Private</Badge>
                     )}
                 </div>
-                <p className="text-sm text-muted-foreground line-clamp-1">
+                <p className="text-xs text-muted-foreground line-clamp-1">
                     {repo.description || "No description provided"}
                 </p>
             </div>
         </label>
     );
 }
-
-

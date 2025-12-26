@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from pydantic import Field
 
+from app.entities.base import PyObjectId
 from app.entities.repo_config_base import FeatureConfigBase
 
 
@@ -42,8 +43,8 @@ class DatasetVersion(FeatureConfigBase):
         collection_name = "dataset_versions"
         use_enum_values = True
 
-    dataset_id: str = Field(..., description="ID of the parent dataset")
-    user_id: str = Field(..., description="User who created this version")
+    dataset_id: PyObjectId = Field(..., description="ID of the parent dataset")
+    user_id: PyObjectId = Field(..., description="User who created this version")
     version_number: int = Field(..., description="Auto-incremented version number")
     name: str = Field(default="", description="User-provided or auto-generated name")
     description: Optional[str] = Field(None, description="Optional description")

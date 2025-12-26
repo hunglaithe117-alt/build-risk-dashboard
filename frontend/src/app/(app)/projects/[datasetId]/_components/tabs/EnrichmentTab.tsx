@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Loader2, AlertCircle, Sparkles, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -12,12 +13,9 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import type { DatasetRecord } from "@/types";
-import { CreateVersionModal } from "../FeatureSelection/CreateVersionModal";
 import { VersionHistoryTable } from "../VersionHistoryTable";
 import { useDatasetVersions, type DatasetVersion } from "../../_hooks/useDatasetVersions";
 import { useWebSocket } from "@/contexts/websocket-context";
-import type { FeatureConfigsData } from "@/components/features/config/FeatureConfigForm";
-import type { ScanConfig } from "@/components/sonar/scan-config-panel";
 
 interface EnrichmentTabProps {
     datasetId: string;
@@ -30,17 +28,15 @@ export function EnrichmentTab({
     dataset,
     onEnrichmentStatusChange,
 }: EnrichmentTabProps) {
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    const router = useRouter();
     const { subscribe } = useWebSocket();
 
     const {
         versions,
         activeVersion,
         loading,
-        creating,
         error,
         refresh,
-        createVersion,
         cancelVersion,
         deleteVersion,
         downloadVersion,
@@ -81,36 +77,15 @@ export function EnrichmentTab({
         dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name
     );
 
-    // Handle create version
-    const handleCreateVersion = async (
-        features: string[],
-        featureConfigs: FeatureConfigsData,
-        scanData: {
-            metrics: { sonarqube: string[]; trivy: string[] };
-            config: ScanConfig;
-        },
-        name?: string
-    ) => {
-        const flatConfigs: Record<string, unknown> = {
-            ...featureConfigs.global,
-            repo_configs: featureConfigs.repos,
-        };
-        const version = await createVersion({
-            selected_features: features,
-            feature_configs: flatConfigs,
-            scan_metrics: scanData.metrics,
-            scan_config: scanData.config as Record<string, unknown>,
-            name,
-        });
-        if (version) {
-            notifyParent();
-        }
-    };
-
     // Handle cancel
     const handleCancel = async (versionId: string) => {
         await cancelVersion(versionId);
         notifyParent();
+    };
+
+    // Navigate to full-page wizard
+    const handleCreateVersion = () => {
+        router.push(`/projects/${datasetId}/versions/new`);
     };
 
     if (loading) {
@@ -158,7 +133,7 @@ export function EnrichmentTab({
                     </p>
                 </div>
                 <Button
-                    onClick={() => setIsModalOpen(true)}
+                    onClick={handleCreateVersion}
                     disabled={hasActiveVersion}
                     className="gap-2"
                 >
@@ -188,17 +163,6 @@ export function EnrichmentTab({
                 onRefresh={refresh}
                 onDownload={downloadVersion}
                 onDelete={deleteVersion}
-            />
-
-            {/* Create Version Modal */}
-            <CreateVersionModal
-                datasetId={datasetId}
-                rowCount={dataset.rows || 0}
-                open={isModalOpen}
-                onOpenChange={setIsModalOpen}
-                onCreateVersion={handleCreateVersion}
-                isCreating={creating}
-                hasActiveVersion={hasActiveVersion}
             />
         </div>
     );

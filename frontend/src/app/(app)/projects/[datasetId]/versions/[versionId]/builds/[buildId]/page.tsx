@@ -204,12 +204,6 @@ export default function BuildDetailPage() {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Badge className={`${buildStatus.bgColor} ${buildStatus.color}`}>
-                        <BuildStatusIcon className="mr-1 h-3 w-3" />
-                        {rawBuild.conclusion}
-                    </Badge>
-                </div>
             </div>
 
             {/* Build Overview + Enrichment Status */}
@@ -222,14 +216,21 @@ export default function BuildDetailPage() {
                     <CardContent className="space-y-3">
                         <div className="grid grid-cols-2 gap-4 text-sm">
                             <div className="flex items-center gap-2">
-                                <GitBranch className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-muted-foreground">Branch:</span>
-                                <span className="font-medium">{rawBuild.branch || "—"}</span>
+                                <span className="text-muted-foreground">Conclusion:</span>
+                                <Badge className={`${buildStatus.bgColor} ${buildStatus.color}`}>
+                                    <BuildStatusIcon className="mr-1 h-3 w-3" />
+                                    {rawBuild.conclusion}
+                                </Badge>
                             </div>
                             <div className="flex items-center gap-2">
                                 <Clock className="h-4 w-4 text-muted-foreground" />
                                 <span className="text-muted-foreground">Duration:</span>
                                 <span className="font-medium">{formatDuration(rawBuild.duration_seconds)}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <GitBranch className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-muted-foreground">Branch:</span>
+                                <span className="font-medium">{rawBuild.branch || "—"}</span>
                             </div>
                         </div>
 
@@ -262,8 +263,8 @@ export default function BuildDetailPage() {
                         </div>
 
                         <div className="flex items-center gap-2 text-sm pt-2 border-t">
-                            <span className="text-muted-foreground">Created:</span>
-                            <span>{formatRelativeTime(rawBuild.created_at)}</span>
+                            <span className="text-muted-foreground">Started:</span>
+                            <span>{formatRelativeTime(rawBuild.started_at)}</span>
                             <span className="text-muted-foreground">•</span>
                             <span className="text-muted-foreground">Completed:</span>
                             <span>{formatRelativeTime(rawBuild.completed_at)}</span>
@@ -350,8 +351,8 @@ export default function BuildDetailPage() {
                                         .map(([key, value]) => (
                                             <TableRow key={key}>
                                                 <TableCell className="font-medium text-xs">{key}</TableCell>
-                                                <TableCell className="font-mono text-sm break-all">
-                                                    {formatValue(value)}
+                                                <TableCell className="font-mono text-sm">
+                                                    <ExpandableValue value={formatValue(value)} />
                                                 </TableCell>
                                             </TableRow>
                                         ))}
@@ -524,4 +525,29 @@ function formatValue(value: unknown): string {
     if (typeof value === "string") return value;
     if (typeof value === "object") return JSON.stringify(value);
     return String(value);
+}
+
+function ExpandableValue({ value }: { value: string }) {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const MAX_LENGTH = 50;
+
+    const isLong = value.length > MAX_LENGTH;
+
+    if (!isLong) {
+        return <span>{value}</span>;
+    }
+
+    return (
+        <div>
+            <span className={isExpanded ? "break-all" : "line-clamp-1"}>
+                {value}
+            </span>
+            <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="text-xs text-blue-600 hover:underline ml-1"
+            >
+                {isExpanded ? "Show less" : "Show more"}
+            </button>
+        </div>
+    );
 }

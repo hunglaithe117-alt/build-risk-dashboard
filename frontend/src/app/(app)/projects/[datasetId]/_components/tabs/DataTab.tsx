@@ -6,11 +6,9 @@ import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
-    CardDescription,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
     Table,
     TableBody,
@@ -22,18 +20,13 @@ import {
 import { api } from "@/lib/api";
 import type { DatasetRecord } from "@/types";
 import {
-    AlertCircle,
-    CheckCircle2,
     ChevronLeft,
     ChevronRight,
-    Clock,
-    Database,
     ExternalLink,
     FolderGit2,
-    GitBranch,
-    GitCommit,
     Loader2,
     RefreshCw,
+    AlertTriangle,
 } from "lucide-react";
 
 interface DataTabProps {
@@ -63,44 +56,6 @@ interface BuildItem {
     web_url?: string;
 }
 
-interface BuildsStats {
-    status_breakdown: Record<string, number>;
-    conclusion_breakdown: Record<string, number>;
-    builds_per_repo: { repo: string; count: number }[];
-    avg_duration_seconds?: number;
-    total_builds: number;
-    found_builds: number;
-}
-
-function StatCard({
-    icon: Icon,
-    label,
-    value,
-    variant = "default",
-}: {
-    icon: React.ElementType;
-    label: string;
-    value: number | string;
-    variant?: "default" | "success" | "warning" | "error";
-}) {
-    const colors = {
-        default: "bg-slate-50 dark:bg-slate-800 text-slate-600",
-        success: "bg-green-50 dark:bg-green-900/20 text-green-600",
-        warning: "bg-amber-50 dark:bg-amber-900/20 text-amber-600",
-        error: "bg-red-50 dark:bg-red-900/20 text-red-600",
-    };
-
-    return (
-        <div className={`flex items-center gap-3 p-4 rounded-lg border ${colors[variant]}`}>
-            <Icon className="h-5 w-5" />
-            <div>
-                <p className="text-2xl font-bold">{typeof value === "number" ? value.toLocaleString() : value}</p>
-                <p className="text-xs text-muted-foreground">{label}</p>
-            </div>
-        </div>
-    );
-}
-
 function formatDuration(seconds: number): string {
     if (seconds < 60) return `${Math.round(seconds)}s`;
     if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
@@ -109,7 +64,6 @@ function formatDuration(seconds: number): string {
 
 export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
     const [builds, setBuilds] = useState<BuildItem[]>([]);
-    const [stats, setStats] = useState<BuildsStats | null>(null);
     const [loadingBuilds, setLoadingBuilds] = useState(false);
     const [page, setPage] = useState(0);
     const [total, setTotal] = useState(0);
@@ -117,18 +71,14 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
 
     const isValidated = dataset.validation_status === "completed";
 
-    // Load builds and stats
+    // Load builds
     const loadBuilds = useCallback(async () => {
         if (!isValidated) return;
         setLoadingBuilds(true);
         try {
-            const [buildsRes, statsRes] = await Promise.all([
-                api.get<{ items: BuildItem[]; total: number }>(`/datasets/${datasetId}/builds?skip=${page * pageSize}&limit=${pageSize}&status_filter=found`),
-                api.get<BuildsStats>(`/datasets/${datasetId}/builds/stats`),
-            ]);
+            const buildsRes = await api.get<{ items: BuildItem[]; total: number }>(`/datasets/${datasetId}/builds?skip=${page * pageSize}&limit=${pageSize}&status_filter=found`);
             setBuilds(buildsRes.data.items);
             setTotal(buildsRes.data.total);
-            setStats(statsRes.data);
         } catch (err) {
             console.error("Failed to load builds:", err);
         } finally {
@@ -136,189 +86,124 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
         }
     }, [datasetId, page, isValidated]);
 
-    // Load builds when validated
-    useEffect(() => { loadBuilds(); }, [loadBuilds]);
+    // Initial load
+    useEffect(() => {
+        if (isValidated) {
+            loadBuilds();
+        }
+    }, [isValidated, loadBuilds]);
 
     if (!isValidated) {
         return (
-            <Alert variant="destructive" className="my-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                    Dataset validation must be completed before viewing build data.
-                </AlertDescription>
-            </Alert>
+            <div className="flex flex-col items-center justify-center py-12 border rounded-lg border-dashed bg-slate-50 dark:bg-slate-900/50">
+                <AlertTriangle className="h-10 w-10 text-amber-500 mb-4" />
+                <h3 className="text-lg font-semibold">Validation Required</h3>
+                <p className="text-sm text-muted-foreground text-center max-w-sm mt-2">
+                    Dataset validation must be completed to view validated build details.
+                    Please check your configuration or wait for the background validation to finish.
+                </p>
+            </div>
         );
     }
 
     return (
-        <div className="space-y-6">
-            {/* Status Header */}
-            <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Validated Builds</h2>
-                <div className="flex items-center gap-2">
-                    <Badge className="bg-green-500">
-                        <CheckCircle2 className="mr-1 h-3 w-3" />
-                        Validated
-                    </Badge>
-                    <Button variant="outline" size="sm" onClick={() => { onRefresh(); loadBuilds(); }}>
-                        <RefreshCw className={`h-4 w-4 ${loadingBuilds ? "animate-spin" : ""}`} />
-                    </Button>
-                </div>
-            </div>
-
-            {/* Stats Cards */}
-            {stats && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                    <StatCard icon={Database} label="Total Builds" value={stats.total_builds} variant="default" />
-                    <StatCard icon={CheckCircle2} label="Found" value={stats.found_builds} variant="success" />
-                    <StatCard icon={Clock} label="Avg Duration" value={stats.avg_duration_seconds ? formatDuration(stats.avg_duration_seconds) : "N/A"} variant="default" />
-                </div>
-            )}
-
-            {/* Conclusion breakdown */}
-            {stats && Object.keys(stats.conclusion_breakdown).length > 0 && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <GitCommit className="h-5 w-5" />
-                            Build Results
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="flex flex-wrap gap-3">
-                            {Object.entries(stats.conclusion_breakdown).map(([conclusion, count]) => (
-                                <div key={conclusion} className="flex items-center gap-2">
-                                    <Badge variant={conclusion === "success" ? "default" : "secondary"}
-                                        className={conclusion === "success" ? "bg-green-500" : conclusion === "failure" ? "bg-red-500" : ""}>
-                                        {conclusion}
-                                    </Badge>
-                                    <span className="text-sm font-medium">{count}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* Builds per repo */}
-            {stats && stats.builds_per_repo.length > 0 && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <GitBranch className="h-5 w-5" />
-                            Builds per Repository (Top 10)
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-2">
-                            {stats.builds_per_repo.map((item) => (
-                                <div key={item.repo} className="flex items-center justify-between">
-                                    <span className="text-sm font-mono truncate max-w-[60%]">{item.repo}</span>
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-32 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(item.count / stats.builds_per_repo[0].count) * 100}%` }} />
-                                        </div>
-                                        <span className="text-sm font-medium w-12 text-right">{item.count}</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* Builds Table */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <FolderGit2 className="h-5 w-5" />
-                        Builds ({total} found)
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                    {loadingBuilds ? (
-                        <div className="flex items-center justify-center py-12">
-                            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                        </div>
-                    ) : (
-                        <>
-                            <div className="overflow-x-auto">
-                                <Table>
-                                    <TableHeader>
+        <Card>
+            <CardHeader className="border-b px-4 py-3 flex flex-row items-center justify-between">
+                <CardTitle className="text-base font-medium flex items-center gap-2">
+                    <FolderGit2 className="h-4 w-4" />
+                    Build List
+                </CardTitle>
+                <Button variant="ghost" size="sm" onClick={() => { onRefresh(); loadBuilds(); }} className="h-8 w-8 p-0">
+                    <RefreshCw className={`h-4 w-4 ${loadingBuilds ? "animate-spin" : ""}`} />
+                </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+                {loadingBuilds ? (
+                    <div className="flex items-center justify-center py-12">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                ) : (
+                    <div className="flex flex-col">
+                        <div className="overflow-x-auto">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow className="hover:bg-transparent">
+                                        <TableHead>Build ID</TableHead>
+                                        <TableHead>Repository</TableHead>
+                                        <TableHead>Ref</TableHead>
+                                        <TableHead>Status</TableHead>
+                                        <TableHead>Duration</TableHead>
+                                        <TableHead className="w-[50px]"></TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {builds.length === 0 ? (
                                         <TableRow>
-                                            <TableHead>Build</TableHead>
-                                            <TableHead>Repository</TableHead>
-                                            <TableHead>Branch</TableHead>
-                                            <TableHead>Commit</TableHead>
-                                            <TableHead>Conclusion</TableHead>
-                                            <TableHead>Duration</TableHead>
-                                            <TableHead></TableHead>
+                                            <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                                No builds found
+                                            </TableCell>
                                         </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {builds.length === 0 ? (
-                                            <TableRow>
-                                                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                                                    No builds found
+                                    ) : (
+                                        builds.map((build) => (
+                                            <TableRow key={build.id}>
+                                                <TableCell className="font-mono text-xs">
+                                                    #{build.build_number || build.build_id_from_csv}
+                                                </TableCell>
+                                                <TableCell className="max-w-[200px]">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-mono text-xs truncate" title={build.repo_name_from_csv}>{build.repo_name_from_csv}</span>
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <div className="flex flex-col gap-0.5 max-w-[150px]">
+                                                        <span className="text-xs truncate font-medium">{build.branch || "HEAD"}</span>
+                                                        {build.commit_sha && (
+                                                            <span className="text-[10px] font-mono text-muted-foreground truncate">{build.commit_sha.slice(0, 7)}</span>
+                                                        )}
+                                                    </div>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge variant="secondary" className={`text-[10px] px-1.5 ${build.conclusion === "success" ? "bg-green-50 text-green-700 border-green-200" :
+                                                            build.conclusion === "failure" ? "bg-red-50 text-red-700 border-red-200" : ""
+                                                        }`}>
+                                                        {build.conclusion || build.status}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className="text-xs text-muted-foreground">
+                                                    {build.duration_seconds ? formatDuration(build.duration_seconds) : "-"}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {build.web_url && (
+                                                        <a href={build.web_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                                            <ExternalLink className="h-4 w-4 text-slate-500" />
+                                                        </a>
+                                                    )}
                                                 </TableCell>
                                             </TableRow>
-                                        ) : (
-                                            builds.map((build) => (
-                                                <TableRow key={build.id}>
-                                                    <TableCell className="font-mono text-xs">
-                                                        #{build.build_number || build.build_id_from_csv}
-                                                    </TableCell>
-                                                    <TableCell className="font-mono text-xs max-w-[150px] truncate">
-                                                        {build.repo_name_from_csv}
-                                                    </TableCell>
-                                                    <TableCell className="text-xs">{build.branch || "-"}</TableCell>
-                                                    <TableCell className="font-mono text-xs">
-                                                        {build.commit_sha?.slice(0, 7) || "-"}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <Badge variant="secondary" className={
-                                                            build.conclusion === "success" ? "bg-green-100 text-green-700" :
-                                                                build.conclusion === "failure" ? "bg-red-100 text-red-700" : ""
-                                                        }>
-                                                            {build.conclusion || "-"}
-                                                        </Badge>
-                                                    </TableCell>
-                                                    <TableCell className="text-xs">
-                                                        {build.duration_seconds ? formatDuration(build.duration_seconds) : "-"}
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        {build.web_url && (
-                                                            <a href={build.web_url} target="_blank" rel="noopener noreferrer">
-                                                                <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                                                            </a>
-                                                        )}
-                                                    </TableCell>
-                                                </TableRow>
-                                            ))
-                                        )}
-                                    </TableBody>
-                                </Table>
-                            </div>
+                                        ))
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </div>
 
-                            {total > pageSize && (
-                                <div className="flex items-center justify-between px-4 py-3 border-t">
-                                    <span className="text-sm text-muted-foreground">
-                                        {page * pageSize + 1}-{Math.min((page + 1) * pageSize, total)} of {total}
-                                    </span>
-                                    <div className="flex gap-2">
-                                        <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
-                                            <ChevronLeft className="h-4 w-4" />
-                                        </Button>
-                                        <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => setPage(p => p + 1)}>
-                                            <ChevronRight className="h-4 w-4" />
-                                        </Button>
-                                    </div>
+                        {total > pageSize && (
+                            <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50 dark:bg-slate-900/50">
+                                <span className="text-xs text-muted-foreground">
+                                    Showing {page * pageSize + 1}-{Math.min((page + 1) * pageSize, total)} of {total}
+                                </span>
+                                <div className="flex gap-2">
+                                    <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} className="h-7 w-7 p-0">
+                                        <ChevronLeft className="h-4 w-4" />
+                                    </Button>
+                                    <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => setPage(p => p + 1)} className="h-7 w-7 p-0">
+                                        <ChevronRight className="h-4 w-4" />
+                                    </Button>
                                 </div>
-                            )}
-                        </>
-                    )}
-                </CardContent>
-            </Card>
-        </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
     );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
     Card,
     CardContent,
@@ -10,25 +10,25 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { DatasetRecord } from "@/types";
+import { api } from "@/lib/api";
 import {
-    ChevronDown,
-    ChevronRight,
-    Database,
-    GitBranch,
-    CheckCircle2,
-    XCircle,
-    AlertTriangle,
     BarChart3,
     TrendingUp,
     TrendingDown,
-    Calendar,
     FileSpreadsheet,
     Layers,
     HardDrive,
+    GitBranch,
     MapPin,
+    CheckCircle2,
+    XCircle,
+    Settings,
+    Clock,
+    Database,
+    GitCommit,
+    AlertTriangle,
     Github,
     ExternalLink,
-    Settings,
 } from "lucide-react";
 
 interface OverviewTabProps {
@@ -36,16 +36,13 @@ interface OverviewTabProps {
     onRefresh: () => void;
 }
 
-function formatDate(value?: string | null) {
-    if (!value) return "—";
-    try {
-        return new Intl.DateTimeFormat(undefined, {
-            dateStyle: "medium",
-            timeStyle: "short",
-        }).format(new Date(value));
-    } catch {
-        return value;
-    }
+interface BuildsStats {
+    status_breakdown: Record<string, number>;
+    conclusion_breakdown: Record<string, number>;
+    builds_per_repo: { repo: string; count: number }[];
+    avg_duration_seconds?: number;
+    total_builds: number;
+    found_builds: number;
 }
 
 function formatFileSize(bytes: number): string {
@@ -54,6 +51,12 @@ function formatFileSize(bytes: number): string {
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+function formatDuration(seconds: number): string {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+    return `${Math.round(seconds / 3600)}h ${Math.round((seconds % 3600) / 60)}m`;
 }
 
 function QualityMeter({
@@ -109,43 +112,54 @@ function QualityMeter({
     );
 }
 
-function ValidationStatCard({
+function StatCard({
+    icon: Icon,
     label,
     value,
-    total,
+    subValue,
     variant = "default",
 }: {
+    icon: React.ElementType;
     label: string;
-    value: number;
-    total?: number;
-    variant?: "success" | "warning" | "error" | "default";
+    value: number | string;
+    subValue?: string;
+    variant?: "default" | "success" | "warning" | "error";
 }) {
     const colors = {
-        success: "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-600",
-        warning: "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-600",
-        error: "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-600",
-        default: "bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-600",
+        default: "bg-slate-50 dark:bg-slate-800 text-slate-600",
+        success: "bg-green-50 dark:bg-green-900/20 text-green-600",
+        warning: "bg-amber-50 dark:bg-amber-900/20 text-amber-600",
+        error: "bg-red-50 dark:bg-red-900/20 text-red-600",
     };
 
     return (
-        <div className={`p-4 rounded-lg border ${colors[variant]}`}>
-            <p className="text-2xl font-bold">{value.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">
-                {label}
-                {total !== undefined && ` / ${total.toLocaleString()}`}
-            </p>
+        <div className={`p-4 rounded-lg border ${colors[variant]} flex flex-col justify-between`}>
+            <div>
+                <p className="text-3xl font-bold tracking-tight mb-1">{typeof value === "number" ? value.toLocaleString() : value}</p>
+                <p className="text-sm font-medium text-muted-foreground">{label}</p>
+            </div>
+            {subValue && (
+                <div className="mt-4 flex items-center gap-2 text-xs opacity-80">
+                    <Icon className="h-3.5 w-3.5" />
+                    <span>{subValue}</span>
+                </div>
+            )}
         </div>
     );
 }
 
-export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
-    const [previewExpanded, setPreviewExpanded] = useState(true);
-    const [reposExpanded, setReposExpanded] = useState(true);
+export function OverviewTab({ dataset }: OverviewTabProps) {
+    const [stats, setStats] = useState<BuildsStats | null>(null);
 
-    const stats = dataset.stats || { missing_rate: 0, duplicate_rate: 0, build_coverage: 0 };
+    const stats_metadata = dataset.stats || { missing_rate: 0, duplicate_rate: 0, build_coverage: 0 };
+    const reposCount = dataset.validation_stats?.repos_total || (new Set(dataset.preview?.map(r => r[dataset.mapped_fields?.repo_name || ""]))).size || 0;
+    const languages = dataset.source_languages || [];
+    const frameworks = dataset.test_frameworks || [];
+
+    const isValidated = dataset.validation_status === "completed";
     const validationStats = dataset.validation_stats;
 
-    // Get unique repos from preview data
+    // Get unique repos from preview data for manual tab
     const repoField = dataset.mapped_fields?.repo_name || "";
     const uniqueRepos = Array.from(
         new Set(
@@ -153,300 +167,341 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                 ?.map(row => row[repoField] as string)
                 .filter(Boolean) || []
         )
-    ).slice(0, 10);
+    );
 
-    const reposCount = dataset.validation_stats?.repos_total || uniqueRepos.length;
-    const languages = dataset.source_languages || [];
-    const frameworks = dataset.test_frameworks || [];
+    useEffect(() => {
+        const loadStats = async () => {
+            if (!isValidated) return;
+            try {
+                const res = await api.get<BuildsStats>(`/datasets/${dataset.id}/builds/stats`);
+                setStats(res.data);
+            } catch (err) {
+                console.error("Failed to load build stats", err);
+            }
+        };
+        loadStats();
+    }, [dataset.id, isValidated]);
 
     return (
         <div className="space-y-6">
-            {/* Dataset Info Card */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Database className="h-5 w-5" />
-                        Dataset Info
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
-                            <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
-                            <div>
-                                <p className="text-2xl font-bold">{dataset.rows.toLocaleString()}</p>
-                                <p className="text-xs text-muted-foreground">Rows</p>
-                            </div>
+            {/* key metrics grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card>
+                    <CardContent className="p-6 flex flex-col items-center text-center gap-2">
+                        <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-full mb-1">
+                            <FileSpreadsheet className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                         </div>
-                        <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
-                            <Layers className="h-5 w-5 text-muted-foreground" />
-                            <div>
-                                <p className="text-2xl font-bold">{dataset.columns?.length || 0}</p>
-                                <p className="text-xs text-muted-foreground">Columns</p>
-                            </div>
+                        <div>
+                            <p className="text-3xl font-bold">{dataset.rows.toLocaleString()}</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Rows</p>
                         </div>
-                        <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
-                            <GitBranch className="h-5 w-5 text-muted-foreground" />
-                            <div>
-                                <p className="text-2xl font-bold">{reposCount}</p>
-                                <p className="text-xs text-muted-foreground">Repositories</p>
-                            </div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardContent className="p-6 flex flex-col items-center text-center gap-2">
+                        <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-full mb-1">
+                            <Layers className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                         </div>
-                        <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800">
-                            <HardDrive className="h-5 w-5 text-muted-foreground" />
-                            <div>
-                                <p className="text-2xl font-bold">{formatFileSize(dataset.size_bytes || 0)}</p>
-                                <p className="text-xs text-muted-foreground">File Size</p>
-                            </div>
+                        <div>
+                            <p className="text-3xl font-bold">{dataset.columns?.length || 0}</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Columns</p>
                         </div>
-                    </div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardContent className="p-6 flex flex-col items-center text-center gap-2">
+                        <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-full mb-1">
+                            <GitBranch className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                        </div>
+                        <div>
+                            <p className="text-3xl font-bold">{reposCount}</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Repositories</p>
+                        </div>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardContent className="p-6 flex flex-col items-center text-center gap-2">
+                        <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full mb-1">
+                            <HardDrive className="h-6 w-6 text-slate-600 dark:text-slate-400" />
+                        </div>
+                        <div>
+                            <p className="text-3xl font-bold">{formatFileSize(dataset.size_bytes || 0)}</p>
+                            <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Size</p>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
 
-                    {/* Column Mapping */}
-                    <div className="mt-4 pt-4 border-t">
-                        <div className="flex items-center gap-2 mb-3">
-                            <MapPin className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm font-medium">Column Mapping</span>
-                        </div>
-                        <div className="grid gap-2 md:grid-cols-2">
-                            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
-                                <span className="text-sm text-muted-foreground">Build ID</span>
-                                <div className="flex items-center gap-2">
+            <div className="grid md:grid-cols-3 gap-6">
+                {/* Column Mapping Status */}
+                <Card className="md:col-span-1">
+                    <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                            <MapPin className="h-5 w-5" />
+                            Configuration
+                        </CardTitle>
+                        <CardDescription>
+                            Key column mappings
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-3">
+                            <div>
+                                <p className="text-sm font-medium mb-1.5 text-muted-foreground">Build ID Column</p>
+                                <div className="flex items-center gap-2 p-2 rounded-md bg-slate-50 dark:bg-slate-800/50 border">
                                     {dataset.mapped_fields?.build_id ? (
                                         <>
                                             <CheckCircle2 className="h-4 w-4 text-green-500" />
-                                            <Badge variant="secondary" className="font-mono text-xs">
-                                                {dataset.mapped_fields.build_id}
-                                            </Badge>
+                                            <code className="text-xs font-mono">{dataset.mapped_fields.build_id}</code>
                                         </>
                                     ) : (
                                         <>
                                             <XCircle className="h-4 w-4 text-amber-500" />
-                                            <span className="text-amber-600 text-sm">Not mapped</span>
+                                            <span className="text-xs text-amber-600 italic">Not mapped</span>
                                         </>
                                     )}
                                 </div>
                             </div>
-                            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
-                                <span className="text-sm text-muted-foreground">Repo Name</span>
-                                <div className="flex items-center gap-2">
+                            <div>
+                                <p className="text-sm font-medium mb-1.5 text-muted-foreground">Repository Name Column</p>
+                                <div className="flex items-center gap-2 p-2 rounded-md bg-slate-50 dark:bg-slate-800/50 border">
                                     {dataset.mapped_fields?.repo_name ? (
                                         <>
                                             <CheckCircle2 className="h-4 w-4 text-green-500" />
-                                            <Badge variant="secondary" className="font-mono text-xs">
-                                                {dataset.mapped_fields.repo_name}
-                                            </Badge>
+                                            <code className="text-xs font-mono">{dataset.mapped_fields.repo_name}</code>
                                         </>
                                     ) : (
                                         <>
                                             <XCircle className="h-4 w-4 text-amber-500" />
-                                            <span className="text-amber-600 text-sm">Not mapped</span>
+                                            <span className="text-xs text-amber-600 italic">Not mapped</span>
                                         </>
                                     )}
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    {/* Languages & Frameworks */}
-                    {(languages.length > 0 || frameworks.length > 0) && (
-                        <div className="mt-4 pt-4 border-t">
-                            <div className="flex items-center gap-2 mb-3">
-                                <Settings className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-sm font-medium">Languages & Frameworks</span>
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                {languages.map((lang: string) => (
-                                    <Badge key={lang} variant="secondary">{lang}</Badge>
-                                ))}
-                                {frameworks.map((fw: string) => (
-                                    <Badge key={fw} variant="outline">{fw}</Badge>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
-
-            {/* Data Quality Metrics */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <BarChart3 className="h-5 w-5" />
-                        Data Quality
-                    </CardTitle>
-                    <CardDescription>
-                        Quality indicators calculated during upload and validation
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid md:grid-cols-3 gap-4">
-                        <QualityMeter
-                            label="Missing Rate"
-                            value={stats.missing_rate}
-                            description="Cells without values in key columns"
-                            invertColor={true}
-                        />
-                        <QualityMeter
-                            label="Duplicate Rate"
-                            value={stats.duplicate_rate}
-                            description="Rows with identical build IDs"
-                            invertColor={true}
-                        />
-                        <QualityMeter
-                            label="Build Coverage"
-                            value={stats.build_coverage}
-                            description="Builds verified in CI provider"
-                            invertColor={false}
-                        />
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* Validation Statistics */}
-            {validationStats && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <GitBranch className="h-5 w-5" />
-                            Validation Results
-                        </CardTitle>
-                        <CardDescription className="flex items-center gap-4">
-                            <span>Build verification summary from CI provider</span>
-                            {dataset.validation_completed_at && (
-                                <span className="flex items-center gap-1 text-xs">
-                                    <Calendar className="h-3 w-3" />
-                                    {formatDate(dataset.validation_completed_at)}
-                                </span>
-                            )}
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                            <ValidationStatCard
-                                label="Total Repos"
-                                value={validationStats.repos_total}
-                                variant="default"
-                            />
-                            <ValidationStatCard
-                                label="Valid Repos"
-                                value={validationStats.repos_valid}
-                                variant="success"
-                            />
-                            <ValidationStatCard
-                                label="Builds Found"
-                                value={validationStats.builds_found}
-                                variant="success"
-                            />
-                            <ValidationStatCard
-                                label="Builds Not Found"
-                                value={validationStats.builds_not_found}
-                                variant={validationStats.builds_not_found > 0 ? "warning" : "default"}
-                            />
-                        </div>
-
-                        {validationStats.builds_total > 0 && (
-                            <div className="flex items-center gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                                {validationStats.builds_found > validationStats.builds_not_found ? (
-                                    <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
-                                ) : validationStats.builds_not_found > 0 ? (
-                                    <AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0" />
-                                ) : (
-                                    <XCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
-                                )}
-                                <div className="text-sm">
-                                    <span className="font-medium">
-                                        {((validationStats.builds_found / validationStats.builds_total) * 100).toFixed(1)}%
-                                    </span>
-                                    <span className="text-muted-foreground ml-1">
-                                        of builds were found and verified in CI provider
-                                    </span>
+                        {/* Languages & Frameworks */}
+                        {(languages.length > 0 || frameworks.length > 0) && (
+                            <div className="pt-4 border-t">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <Settings className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm font-medium">Stack Detection</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {languages.map((lang: string) => (
+                                        <Badge key={lang} variant="secondary" className="text-xs">{lang}</Badge>
+                                    ))}
+                                    {frameworks.map((fw: string) => (
+                                        <Badge key={fw} variant="outline" className="text-xs">{fw}</Badge>
+                                    ))}
                                 </div>
                             </div>
                         )}
                     </CardContent>
                 </Card>
-            )}
 
-            {/* Repositories (Collapsible) */}
-            {uniqueRepos.length > 0 && (
-                <Card>
-                    <CardHeader
-                        className="cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors rounded-t-lg"
-                        onClick={() => setReposExpanded(!reposExpanded)}
-                    >
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Github className="h-5 w-5" />
-                                    Repositories ({uniqueRepos.length})
-                                </CardTitle>
-                                <CardDescription>
-                                    Unique repositories from this dataset
-                                </CardDescription>
+                {/* Data Quality Metrics */}
+                <Card className="md:col-span-2">
+                    <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                            <BarChart3 className="h-5 w-5" />
+                            Data Quality Scores
+                        </CardTitle>
+                        <CardDescription>
+                            Quality indicators calculated during analysis
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid sm:grid-cols-3 gap-4">
+                        <QualityMeter
+                            label="Missing Rate"
+                            value={stats_metadata.missing_rate}
+                            description="Cells without values"
+                            invertColor={true}
+                        />
+                        <QualityMeter
+                            label="Duplicate Rate"
+                            value={stats_metadata.duplicate_rate}
+                            description="Duplicate rows"
+                            invertColor={true}
+                        />
+                        <QualityMeter
+                            label="Build Coverage"
+                            value={stats_metadata.build_coverage}
+                            description="Verified in CI"
+                            invertColor={false}
+                        />
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* --- VALIDATION STATUS SECTION --- */}
+            <div className="pt-6 border-t">
+                <div className="flex items-center gap-2 mb-4">
+                    <CheckCircle2 className="h-5 w-5 text-blue-600" />
+                    <h3 className="text-lg font-semibold">Validation Statistics</h3>
+                </div>
+
+                {!isValidated ? (
+                    <div className="flex flex-col items-center justify-center py-6 border rounded-lg border-dashed bg-slate-50 dark:bg-slate-900/50">
+                        <AlertTriangle className="h-10 w-10 text-amber-500 mb-4" />
+                        <h3 className="text-lg font-semibold">Validation Pending</h3>
+                        <p className="text-sm text-muted-foreground text-center max-w-sm mt-2">
+                            Metrics will appear here once validation is complete.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="space-y-6">
+                        {/* Consolidated Validation Metrics (Single Row) */}
+                        {validationStats && stats && (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <StatCard
+                                    icon={CheckCircle2}
+                                    label="Verified Builds"
+                                    value={validationStats.builds_found}
+                                    subValue={`${((validationStats.builds_found / validationStats.builds_total) * 100).toFixed(1)}% of total`}
+                                    variant="success"
+                                />
+                                <StatCard
+                                    icon={AlertTriangle}
+                                    label="Missing Builds"
+                                    value={validationStats.builds_not_found}
+                                    subValue={validationStats.builds_not_found > 0 ? "Action Required" : "All Clear"}
+                                    variant={validationStats.builds_not_found > 0 ? "warning" : "default"}
+                                />
+                                <StatCard
+                                    icon={Clock}
+                                    label="Avg Duration"
+                                    value={stats.avg_duration_seconds ? formatDuration(stats.avg_duration_seconds) : "N/A"}
+                                    subValue="Per Build"
+                                    variant="default"
+                                />
+                                <StatCard
+                                    icon={Github}
+                                    label="Valid Repos"
+                                    value={validationStats.repos_valid}
+                                    subValue={`of ${validationStats.repos_total} total`}
+                                    variant="default"
+                                />
                             </div>
-                            {reposExpanded ? (
-                                <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                            ) : (
-                                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                        )}
+
+                        {/* Charts */}
+                        <div className="grid md:grid-cols-2 gap-6">
+                            {/* Conclusion Breakdown */}
+                            {stats && Object.keys(stats.conclusion_breakdown).length > 0 && (
+                                <Card>
+                                    <CardHeader className="pb-2">
+                                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                                            <GitCommit className="h-4 w-4" />
+                                            Build Conclusions
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="flex flex-wrap gap-2">
+                                            {Object.entries(stats.conclusion_breakdown).map(([conclusion, count]) => (
+                                                <div key={conclusion} className="flex items-center gap-1.5 px-3 py-1.5 border rounded-md text-sm">
+                                                    <Badge variant={conclusion === "success" ? "default" : "secondary"}
+                                                        className={conclusion === "success" ? "bg-green-500 hover:bg-green-600" : conclusion === "failure" ? "bg-red-500 hover:bg-red-600" : "bg-slate-200 text-slate-700"}>
+                                                        {conclusion}
+                                                    </Badge>
+                                                    <span className="font-mono">{count}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {/* Top Repos */}
+                            {stats && stats.builds_per_repo.length > 0 && (
+                                <Card>
+                                    <CardHeader className="pb-2">
+                                        <CardTitle className=" text-sm font-medium flex items-center gap-2">
+                                            <GitBranch className="h-4 w-4" />
+                                            Top Repositories by Volume
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="space-y-3">
+                                            {stats.builds_per_repo.slice(0, 5).map((item) => (
+                                                <div key={item.repo} className="flex items-center justify-between text-sm">
+                                                    <span className="font-mono truncate max-w-[70%] text-muted-foreground">{item.repo}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-20 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                                            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(item.count / stats.builds_per_repo[0].count) * 100}%` }} />
+                                                        </div>
+                                                        <span className="font-medium w-8 text-right">{item.count}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </CardContent>
+                                </Card>
                             )}
                         </div>
+                    </div>
+                )}
+            </div>
+
+            {/* --- REPOSITORIES & SOURCE PREVIEW --- */}
+            <div className="pt-6 border-t grid md:grid-cols-1 gap-6">
+                {/* Repositories */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Github className="h-5 w-5" />
+                            Active Repositories
+                        </CardTitle>
+                        <CardDescription>
+                            All repositories extracted from the source data ({uniqueRepos.length} total)
+                        </CardDescription>
                     </CardHeader>
-                    {reposExpanded && (
-                        <CardContent>
-                            <div className="space-y-2">
-                                {uniqueRepos.map(repo => (
+                    <CardContent>
+                        {uniqueRepos.length > 0 ? (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                {uniqueRepos.map((repo) => (
                                     <div
                                         key={repo}
-                                        className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2 dark:bg-slate-800"
+                                        className="flex items-center justify-between rounded-lg border p-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                                     >
-                                        <div className="flex items-center gap-3">
-                                            <Github className="h-4 w-4 text-muted-foreground" />
-                                            <span className="font-mono text-sm">{repo}</span>
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            <Github className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                            <span className="font-mono text-sm truncate" title={repo}>{repo}</span>
                                         </div>
                                         <a
                                             href={`https://github.com/${repo}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-muted-foreground hover:text-foreground"
+                                            className="ml-2 text-muted-foreground hover:text-foreground"
                                         >
-                                            <ExternalLink className="h-4 w-4" />
+                                            <ExternalLink className="h-3 w-3" />
                                         </a>
                                     </div>
                                 ))}
                             </div>
-                        </CardContent>
-                    )}
-                </Card>
-            )}
-
-            {/* Data Preview (Collapsible) */}
-            <Card>
-                <CardHeader
-                    className="cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors rounded-t-lg"
-                    onClick={() => setPreviewExpanded(!previewExpanded)}
-                >
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <CardTitle className="flex items-center gap-2">
-                                <Database className="h-5 w-5" />
-                                Data Preview
-                            </CardTitle>
-                            <CardDescription>
-                                Sample data from your dataset ({dataset.rows?.toLocaleString()} total rows)
-                            </CardDescription>
-                        </div>
-                        {previewExpanded ? (
-                            <ChevronDown className="h-5 w-5 text-muted-foreground" />
                         ) : (
-                            <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                            <div className="text-center py-12 text-muted-foreground">
+                                No repositories found. Please check your data mapping.
+                            </div>
                         )}
-                    </div>
-                </CardHeader>
-                {previewExpanded && (
+                    </CardContent>
+                </Card>
+
+                {/* Source Preview */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Database className="h-5 w-5" />
+                            Raw Data Preview
+                        </CardTitle>
+                        <CardDescription>
+                            Previewing first 10 rows of uploaded CSV. Total rows: {dataset.rows?.toLocaleString()}
+                        </CardDescription>
+                    </CardHeader>
                     <CardContent className="p-0">
-                        <div className="max-h-80 overflow-auto border-t">
+                        <div className="overflow-x-auto border-t">
                             <table className="min-w-full text-sm">
-                                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800">
+                                <thead className="bg-slate-50 dark:bg-slate-800/50">
                                     <tr>
                                         {dataset.columns?.map((col) => {
                                             const isMapped = col === dataset.mapped_fields?.build_id ||
@@ -454,26 +509,28 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                                             return (
                                                 <th
                                                     key={col}
-                                                    className={`px-4 py-2 text-left font-medium whitespace-nowrap ${isMapped ? "text-blue-600 dark:text-blue-400" : ""
+                                                    className={`px-4 py-3 text-left font-medium whitespace-nowrap border-b ${isMapped ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"
                                                         }`}
                                                 >
-                                                    {col}
-                                                    {isMapped && (
-                                                        <Badge variant="outline" className="ml-2 text-[10px] px-1 py-0">
-                                                            mapped
-                                                        </Badge>
-                                                    )}
+                                                    <div className="flex items-center gap-2">
+                                                        {col}
+                                                        {isMapped && (
+                                                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-5 border-blue-200 text-blue-600">
+                                                                Mapped
+                                                            </Badge>
+                                                        )}
+                                                    </div>
                                                 </th>
                                             );
                                         })}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
-                                    {dataset.preview?.slice(0, 5).map((row, idx) => (
+                                    {dataset.preview?.slice(0, 10).map((row, idx) => (
                                         <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
                                             {dataset.columns?.map((col) => (
-                                                <td key={col} className="px-4 py-2 text-muted-foreground whitespace-nowrap">
-                                                    {String(row[col] ?? "—").slice(0, 50)}
+                                                <td key={col} className="px-4 py-2.5 text-muted-foreground whitespace-nowrap max-w-[300px] truncate">
+                                                    {String(row[col] ?? "—")}
                                                 </td>
                                             ))}
                                         </tr>
@@ -482,8 +539,8 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                             </table>
                         </div>
                     </CardContent>
-                )}
-            </Card>
+                </Card>
+            </div>
         </div>
     );
 }

@@ -284,7 +284,7 @@ export function AnalysisSection({ datasetId, versionId, versionStatus }: Analysi
                             />
 
                             {/* Detail Charts Grid */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="flex flex-col gap-6">
                                 <FeatureDistributionChart
                                     datasetId={datasetId}
                                     versionId={versionId}

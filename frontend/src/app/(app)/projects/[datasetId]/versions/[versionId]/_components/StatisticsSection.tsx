@@ -255,7 +255,7 @@ export function StatisticsSection({ datasetId, versionId, versionStatus }: Stati
                     Feature Analysis
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="flex flex-col gap-6">
                     {/* Feature Distributions */}
                     <FeatureDistributionChart
                         datasetId={datasetId}

@@ -35,8 +35,7 @@ class Settings(BaseSettings):
     FRONTEND_BASE_URL: str = "http://localhost:3000"
 
     # RBAC / Organization Access
-    GITHUB_ORGANIZATION: Optional[str] = None  # GitHub org name for membership check
-    REQUIRE_ORG_MEMBERSHIP: bool = True
+    GITHUB_ORGANIZATION: str
 
     # Google OAuth (for guest login via Gmail)
     GOOGLE_CLIENT_ID: Optional[str] = None

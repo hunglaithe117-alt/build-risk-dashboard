@@ -49,26 +49,13 @@ async def check_org_membership(access_token: str, username: str) -> bool:
 
     Returns:
         True if user is a member, False otherwise
-
-    Raises:
-        HTTPException: If REQUIRE_ORG_MEMBERSHIP=True but GITHUB_ORGANIZATION is not set
     """
-    if not settings.REQUIRE_ORG_MEMBERSHIP:
-        # Org membership check disabled
-        return True
-
-    org = settings.GITHUB_ORGANIZATION
-    if not org:
-        # REQUIRE_ORG_MEMBERSHIP=True but no org configured - this is a config error
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="REQUIRE_ORG_MEMBERSHIP is enabled but GITHUB_ORGANIZATION is not configured.",
-        )
 
     try:
         # Use the user-centric membership endpoint which is more reliable for checking
         # if the authenticated user is a member, even if membership is private.
         # Requires 'read:org' scope.
+        org = settings.GITHUB_ORGANIZATION
         url = f"https://api.github.com/user/memberships/orgs/{org}"
         async with httpx.AsyncClient(timeout=10) as client:
             response = await client.get(
@@ -105,9 +92,12 @@ async def sync_user_github_repos(access_token: str, max_repos: int = 100) -> lis
     repos = []
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            # Fetch repos user has access to (includes collaborator access)
+            # Fetch repos explicitly from the configured organization
+            # usage of /orgs/{org}/repos ensures we only get repos for that org
+            # and avoids pagination issues where personal repos might crowd out org repos
+            org_name = settings.GITHUB_ORGANIZATION
             response = await client.get(
-                "https://api.github.com/user/repos",
+                f"https://api.github.com/orgs/{org_name}/repos",
                 headers={
                     "Accept": "application/vnd.github+json",
                     "Authorization": f"Bearer {access_token}",
@@ -115,7 +105,7 @@ async def sync_user_github_repos(access_token: str, max_repos: int = 100) -> lis
                 params={
                     "per_page": min(max_repos, 100),
                     "sort": "updated",
-                    "affiliation": "owner,collaborator,organization_member",
+                    "type": "all",  # all repos (public, private, member)
                 },
             )
             if response.status_code == 200:

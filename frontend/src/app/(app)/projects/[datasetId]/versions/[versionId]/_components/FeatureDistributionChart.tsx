@@ -127,15 +127,9 @@ export function FeatureDistributionChart({
         <Card className="h-full">
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-4">
-                    <div>
-                        <CardTitle className="text-base flex items-center gap-2">
-                            <BarChart3 className="h-4 w-4" />
-                            Feature Distributions
-                        </CardTitle>
-                        <CardDescription>
-                            Value analysis for individual features
-                        </CardDescription>
-                    </div>
+                    <CardDescription>
+                        Value analysis for individual features
+                    </CardDescription>
                     <div className="w-[250px]">
                         <Select
                             value={selectedFeature}

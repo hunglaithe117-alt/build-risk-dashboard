@@ -498,10 +498,10 @@ export default function RepoBuildsPage() {
                             <thead className="bg-slate-50 dark:bg-slate-900/40">
                                 <tr>
                                     <th className="px-6 py-3 text-left font-semibold text-slate-500">
-                                        Build #
+                                        Build
                                     </th>
                                     <th className="px-6 py-3 text-left font-semibold text-slate-500">
-                                        Workflow ID
+                                        Build ID
                                     </th>
                                     <th className="px-6 py-3 text-left font-semibold text-slate-500">
                                         Status

@@ -6,6 +6,7 @@ from app.tasks.pipeline.feature_dag import (
     history_features,
     log_features,
     repo_features,
+    risk_prediction_features,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "log_features",
     "devops_features",
     "history_features",
+    "risk_prediction_features",
 ]

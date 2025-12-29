@@ -34,7 +34,7 @@ class DashboardService:
         accessible_repos = current_user.get("github_accessible_repos", []) if current_user else []
 
         # Base repo filter
-        repo_filter: dict = {"import_status": "imported"}
+        repo_filter: dict = {"status": "imported"}
 
         # For non-viewer users (regular users), filter by accessible repos
         # Admin and guest see all data

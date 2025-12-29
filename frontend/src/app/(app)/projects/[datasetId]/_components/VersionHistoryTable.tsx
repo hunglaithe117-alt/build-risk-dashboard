@@ -68,9 +68,9 @@ export function VersionHistoryTable({
     const [currentPage, setCurrentPage] = useState(1);
     const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-    // Filter completed versions (not pending/processing)
+    // Filter completed versions (not pending/ingesting/processing)
     const completedVersions = versions.filter(
-        (version) => version.status !== "pending" && version.status !== "processing"
+        (version) => version.status !== "pending" && version.status !== "ingesting" && version.status !== "processing"
     );
 
     // Pagination

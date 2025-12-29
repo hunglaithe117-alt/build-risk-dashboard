@@ -171,24 +171,24 @@ export default function UserReposPage() {
                                                 {repo.full_name}
                                             </td>
                                             <td className="px-6 py-4">
-                                                {repo.import_status === "imported" ? (
+                                                {repo.status === "imported" ? (
                                                     <Badge variant="outline" className="border-green-500 text-green-600">
                                                         Ready
                                                     </Badge>
-                                                ) : repo.import_status === "importing" ? (
+                                                ) : repo.status === "ingesting" || repo.status === "processing" ? (
                                                     <Badge variant="default" className="bg-blue-500">
                                                         <Loader2 className="w-3 h-3 mr-1 animate-spin" />
                                                         Syncing
                                                     </Badge>
                                                 ) : (
-                                                    <Badge variant="secondary">{repo.import_status}</Badge>
+                                                    <Badge variant="secondary">{repo.status}</Badge>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">
                                                 {formatTimestamp(repo.last_scanned_at)}
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">
-                                                {repo.total_builds_imported.toLocaleString()}
+                                                {repo.builds_fetched.toLocaleString()}
                                             </td>
                                         </tr>
                                     ))

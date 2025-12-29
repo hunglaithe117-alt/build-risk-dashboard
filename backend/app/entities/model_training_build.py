@@ -103,38 +103,40 @@ class ModelTrainingBuild(BaseEntity):
         description="Number of features extracted",
     )
 
-    # ML-specific fields
-    is_labeled: bool = Field(
-        default=False,
-        description="Whether this build has been labeled for training",
-    )
+    # Ground truth label (for supervised learning)
     label: Optional[str] = Field(
         None,
-        description="Label for supervised learning (e.g., 'pass', 'fail')",
-    )
-    in_training_set: bool = Field(
-        default=False,
-        description="Whether this build is included in training set",
-    )
-    in_test_set: bool = Field(
-        default=False,
-        description="Whether this build is included in test set",
+        description="Ground truth label (e.g., 'pass', 'fail', 'LOW', 'MEDIUM', 'HIGH')",
     )
 
-    # Prediction tracking (if model has been applied)
-    has_prediction: bool = Field(
-        default=False,
-        description="Whether a prediction exists for this build",
+    # Normalized features for prediction input
+    normalized_features: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Standardized features sent to prediction API",
     )
+
+    # Prediction results from Bayesian model
     predicted_label: Optional[str] = Field(
         None,
-        description="Predicted label from the model",
+        description="Predicted risk level (LOW, MEDIUM, HIGH)",
     )
     prediction_confidence: Optional[float] = Field(
         None,
-        description="Confidence score of the prediction (0-1)",
+        description="Risk score from prediction model (0-1)",
+    )
+    prediction_uncertainty: Optional[float] = Field(
+        None,
+        description="Bayesian uncertainty score",
+    )
+    prediction_model_version: Optional[str] = Field(
+        None,
+        description="Version of the prediction model used",
     )
     predicted_at: Optional[datetime] = Field(
         None,
         description="When the prediction was made",
+    )
+    prediction_error: Optional[str] = Field(
+        None,
+        description="Error message if prediction failed",
     )

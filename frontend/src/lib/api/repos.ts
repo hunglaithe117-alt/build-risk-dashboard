@@ -37,9 +37,21 @@ export const reposApi = {
         const response = await api.post<{ status: string }>(`/repos/${repoId}/sync-run`);
         return response.data;
     },
-    reprocessFeatures: async (repoId: string) => {
+    reprocessFailed: async (repoId: string) => {
         const response = await api.post<{ status: string; message?: string }>(
-            `/repos/${repoId}/reprocess-features`
+            `/repos/${repoId}/reprocess-failed`
+        );
+        return response.data;
+    },
+    reingestFailed: async (repoId: string) => {
+        const response = await api.post<{ status: string; message?: string }>(
+            `/repos/${repoId}/reingest-failed`
+        );
+        return response.data;
+    },
+    startProcessing: async (repoId: string) => {
+        const response = await api.post<{ status: string; message?: string }>(
+            `/repos/${repoId}/start-processing`
         );
         return response.data;
     },
@@ -78,6 +90,12 @@ export const reposApi = {
                 total_builds_failed: number;
             };
         }>(`/repos/${repoId}/import-progress`);
+        return response.data;
+    },
+    retryPredictions: async (repoId: string) => {
+        const response = await api.post<{ status: string; message?: string }>(
+            `/repos/${repoId}/retry-predictions`
+        );
         return response.data;
     },
 };

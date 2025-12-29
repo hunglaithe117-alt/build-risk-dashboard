@@ -305,7 +305,6 @@ export interface EnrichmentBuildDetail {
     id: string;
     extraction_status: string;
     extraction_error: string | null;
-    is_missing_commit: boolean;
     missing_resources: string[];
     skipped_features: string[];
     feature_count: number;

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
+from pymongo import ReturnDocument
 from pymongo.client_session import ClientSession
 
 from app.entities.enums import ExtractionStatus
@@ -47,6 +48,54 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         )
         return ModelTrainingBuild(**doc) if doc else None
 
+    def upsert_or_get(
+        self,
+        raw_repo_id: ObjectId,
+        raw_build_run_id: ObjectId,
+        model_import_build_id: ObjectId,
+        model_repo_config_id: ObjectId,
+        head_sha: str,
+        build_number: int,
+        build_created_at: datetime,
+        extraction_status: ExtractionStatus,
+    ) -> tuple[ModelTrainingBuild, bool]:
+        """
+        Atomic upsert by business key (raw_repo_id + raw_build_run_id).
+
+        Uses atomic find_one_and_update for thread safety.
+        Returns the document and a boolean indicating if it was newly created.
+        """
+        doc = self.collection.find_one_and_update(
+            {
+                "raw_repo_id": raw_repo_id,
+                "raw_build_run_id": raw_build_run_id,
+            },
+            {
+                "$setOnInsert": {
+                    "raw_repo_id": raw_repo_id,
+                    "raw_build_run_id": raw_build_run_id,
+                    "model_import_build_id": model_import_build_id,
+                    "model_repo_config_id": model_repo_config_id,
+                    "head_sha": head_sha,
+                    "build_number": build_number,
+                    "build_created_at": build_created_at,
+                    "extraction_status": extraction_status.value
+                    if hasattr(extraction_status, "value")
+                    else extraction_status,
+                    "created_at": datetime.utcnow(),
+                },
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        build = ModelTrainingBuild(**doc)
+        # Check if it was newly created by comparing created_at
+        was_created = (
+            doc.get("created_at") is not None
+            and (datetime.utcnow() - doc.get("created_at", datetime.utcnow())).total_seconds() < 2
+        )
+        return build, was_created
+
     def list_by_repo(
         self,
         repo_id: str,
@@ -75,6 +124,18 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         }
         cursor = self.collection.find(query).limit(limit)
         return [ModelTrainingBuild(**doc) for doc in cursor]
+
+    def find_failed_builds(
+        self,
+        model_repo_config_id: ObjectId,
+    ) -> List[ModelTrainingBuild]:
+        """Find all FAILED builds for a repo config."""
+        return self.find_many(
+            {
+                "model_repo_config_id": model_repo_config_id,
+                "extraction_status": ExtractionStatus.FAILED.value,
+            }
+        )
 
     def find_by_config(
         self,
@@ -331,8 +392,8 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         results = list(self.collection.aggregate(pipeline))
 
         stats = {
-            "total_builds_processed": 0,  # completed + partial
-            "total_builds_failed": 0,
+            "builds_processed": 0,  # completed + partial
+            "builds_failed": 0,
             "total_pending": 0,
         }
 
@@ -341,10 +402,76 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
             count = r["count"]
 
             if status in (ExtractionStatus.COMPLETED.value, ExtractionStatus.PARTIAL.value):
-                stats["total_builds_processed"] += count
+                stats["builds_processed"] += count
             elif status == ExtractionStatus.FAILED.value:
-                stats["total_builds_failed"] += count
+                stats["builds_failed"] += count
             elif status == ExtractionStatus.PENDING.value:
                 stats["total_pending"] += count
 
         return stats
+
+    def find_builds_needing_prediction(
+        self,
+        model_repo_config_id: ObjectId,
+        limit: int = 1000,
+    ) -> List[ModelTrainingBuild]:
+        """
+        Find processed builds that need prediction.
+
+        Returns builds where:
+        - extraction_status is COMPLETED or PARTIAL
+        - predicted_label is None (no prediction yet)
+        - prediction_error is None (not failed)
+
+        Args:
+            model_repo_config_id: The ModelRepoConfig ID
+            limit: Maximum number of builds to return
+
+        Returns:
+            List of builds needing prediction
+        """
+        query = {
+            "model_repo_config_id": model_repo_config_id,
+            "extraction_status": {
+                "$in": [
+                    ExtractionStatus.COMPLETED.value,
+                    ExtractionStatus.PARTIAL.value,
+                ]
+            },
+            "predicted_label": None,
+            "prediction_error": None,
+        }
+        cursor = self.collection.find(query).limit(limit)
+        return [ModelTrainingBuild(**doc) for doc in cursor]
+
+    def find_builds_with_failed_predictions(
+        self,
+        model_repo_config_id: ObjectId,
+        limit: int = 1000,
+    ) -> List[ModelTrainingBuild]:
+        """
+        Find builds where prediction failed (has error but could be retried).
+
+        Returns builds where:
+        - extraction_status is COMPLETED or PARTIAL (features extracted)
+        - prediction_error is NOT None (prediction failed)
+
+        Args:
+            model_repo_config_id: The ModelRepoConfig ID
+            limit: Maximum number of builds to return
+
+        Returns:
+            List of builds with failed predictions
+        """
+        query = {
+            "model_repo_config_id": model_repo_config_id,
+            "extraction_status": {
+                "$in": [
+                    ExtractionStatus.COMPLETED.value,
+                    ExtractionStatus.PARTIAL.value,
+                ]
+            },
+            "prediction_error": {"$ne": None},
+        }
+        cursor = self.collection.find(query).limit(limit)
+        return [ModelTrainingBuild(**doc) for doc in cursor]

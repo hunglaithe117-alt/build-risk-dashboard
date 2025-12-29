@@ -58,6 +58,33 @@ class RawBuildRunDocument(TypedDict, total=False):
 RawBuildRunsCollection = Collection[RawBuildRunDocument]
 
 
+class ModelTrainingBuildDocument(TypedDict, total=False):
+    """
+    TypedDict representing a model_training_builds MongoDB document.
+
+    Matches the ModelTrainingBuild entity schema for type-safe queries.
+    Used to access extracted features from previous builds.
+    """
+
+    _id: ObjectId
+    raw_repo_id: ObjectId
+    raw_build_run_id: ObjectId
+    model_repo_config_id: ObjectId
+    model_import_build_id: ObjectId
+    head_sha: Optional[str]
+    build_number: Optional[int]
+    build_created_at: Optional[datetime]
+    extraction_status: str
+    features: Dict[str, Any]  # Extracted features including git_diff_src_churn
+    feature_count: int
+    label: Optional[str]
+    created_at: Optional[datetime]
+
+
+# Type alias for model_training_builds collection
+ModelTrainingBuildsCollection = Collection[ModelTrainingBuildDocument]
+
+
 @dataclass
 class GitHistoryInput:
     """Git history access - bare repo for commit operations (no worktree)."""

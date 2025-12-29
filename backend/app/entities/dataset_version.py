@@ -19,7 +19,8 @@ class VersionStatus(str, Enum):
     """Dataset version status."""
 
     PENDING = "pending"
-    PROCESSING = "processing"
+    INGESTING = "ingesting"  # Clone/worktree/download logs phase
+    PROCESSING = "processing"  # Feature extraction phase
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -60,11 +61,7 @@ class DatasetVersion(FeatureConfigBase):
     failed_rows: int = Field(default=0, description="Rows that failed enrichment")
     skipped_rows: int = Field(default=0, description="Rows skipped (already processed)")
 
-    # Ingestion tracking (runs before enrichment)
-    ingestion_status: str = Field(
-        default="pending",
-        description="Status of ingestion phase: pending, ingesting, completed, failed",
-    )
+    # Ingestion tracking (progress within INGESTING phase)
     ingestion_progress: int = Field(default=0, description="Ingestion progress percentage (0-100)")
     repos_total: int = Field(default=0, description="Total repos to ingest")
     repos_ingested: int = Field(default=0, description="Repos successfully ingested")

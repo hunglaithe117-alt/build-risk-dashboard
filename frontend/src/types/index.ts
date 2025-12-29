@@ -251,16 +251,16 @@ export interface RepositoryRecord {
   ci_provider: string;
   test_frameworks: string[];
   source_languages: string[];
-  total_builds_imported: number;
-  total_builds_processed: number;
-  total_builds_failed: number;
-  last_sync_error?: string;
-  notes?: string;
-  import_status: "queued" | "importing" | "imported" | "failed";
-  // Lazy Sync
+  // Stats
+  builds_fetched: number;
+  builds_ingested: number;
+  builds_processed: number;
+  builds_failed: number;
+  // Status
+  status: "queued" | "ingesting" | "ingestion_complete" | "ingestion_partial" | "processing" | "imported" | "partial" | "failed";
+  error_message?: string;
   last_synced_at?: string;
-  last_sync_status?: string;
-  last_remote_check_at?: string;
+  notes?: string;
 }
 
 export interface RepoDetail extends RepositoryRecord {
@@ -632,7 +632,7 @@ export interface EnrichmentStartResponse {
 export interface EnrichmentJob {
   id: string;
   dataset_id: string;
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  status: "pending" | "ingesting" | "processing" | "completed" | "failed" | "cancelled";
   total_rows: number;
   processed_rows: number;
   enriched_rows: number;

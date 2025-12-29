@@ -9,8 +9,10 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { DatasetRecord } from "@/types";
-import { api } from "@/lib/api";
+import { api, datasetsApi } from "@/lib/api";
+import { toast } from "@/components/ui/use-toast";
 import {
     BarChart3,
     TrendingUp,
@@ -29,6 +31,8 @@ import {
     AlertTriangle,
     Github,
     ExternalLink,
+    RefreshCw,
+    AlertCircle,
 } from "lucide-react";
 
 interface OverviewTabProps {
@@ -148,8 +152,9 @@ function StatCard({
     );
 }
 
-export function OverviewTab({ dataset }: OverviewTabProps) {
+export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
     const [stats, setStats] = useState<BuildsStats | null>(null);
+    const [isRetrying, setIsRetrying] = useState(false);
 
     const stats_metadata = dataset.stats || { missing_rate: 0, duplicate_rate: 0, build_coverage: 0 };
     const reposCount = dataset.validation_stats?.repos_total || (new Set(dataset.preview?.map(r => r[dataset.mapped_fields?.repo_name || ""]))).size || 0;
@@ -157,6 +162,7 @@ export function OverviewTab({ dataset }: OverviewTabProps) {
     const frameworks = dataset.test_frameworks || [];
 
     const isValidated = dataset.validation_status === "completed";
+    const isValidationFailed = dataset.validation_status === "failed";
     const validationStats = dataset.validation_stats;
 
     // Get unique repos from preview data for manual tab
@@ -168,6 +174,27 @@ export function OverviewTab({ dataset }: OverviewTabProps) {
                 .filter(Boolean) || []
         )
     );
+
+    const handleRetryValidation = async () => {
+        setIsRetrying(true);
+        try {
+            await datasetsApi.startValidation(dataset.id);
+            toast({
+                title: "Validation Started",
+                description: "Dataset validation has been restarted.",
+            });
+            onRefresh();
+        } catch (err) {
+            console.error("Failed to restart validation", err);
+            toast({
+                title: "Retry Failed",
+                description: "Failed to restart validation. Please try again.",
+                variant: "destructive",
+            });
+        } finally {
+            setIsRetrying(false);
+        }
+    };
 
     useEffect(() => {
         const loadStats = async () => {
@@ -341,7 +368,26 @@ export function OverviewTab({ dataset }: OverviewTabProps) {
                     <h3 className="text-lg font-semibold">Validation Statistics</h3>
                 </div>
 
-                {!isValidated ? (
+                {isValidationFailed ? (
+                    <div className="flex flex-col items-center justify-center py-8 border rounded-lg border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-900/20">
+                        <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+                        <h3 className="text-lg font-semibold text-red-700 dark:text-red-400">Validation Failed</h3>
+                        {dataset.validation_error && (
+                            <p className="text-sm text-red-600 dark:text-red-400 text-center max-w-md mt-2 px-4">
+                                {dataset.validation_error}
+                            </p>
+                        )}
+                        <Button
+                            variant="outline"
+                            className="mt-4 gap-2 border-red-300 text-red-700 hover:bg-red-100 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/40"
+                            onClick={handleRetryValidation}
+                            disabled={isRetrying}
+                        >
+                            <RefreshCw className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
+                            {isRetrying ? "Restarting..." : "Retry Validation"}
+                        </Button>
+                    </div>
+                ) : !isValidated ? (
                     <div className="flex flex-col items-center justify-center py-6 border rounded-lg border-dashed bg-slate-50 dark:bg-slate-900/50">
                         <AlertTriangle className="h-10 w-10 text-amber-500 mb-4" />
                         <h3 className="text-lg font-semibold">Validation Pending</h3>

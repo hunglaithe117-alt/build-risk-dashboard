@@ -73,6 +73,12 @@ celery_app.conf.update(
             Exchange("buildguard"),
             routing_key="pipeline.trivy_scan",
         ),
+        # Prediction: ML model inference, separate from processing
+        Queue(
+            "prediction",
+            Exchange("buildguard"),
+            routing_key="pipeline.prediction",
+        ),
     ],
     broker_connection_retry_on_startup=True,
     # Celery Beat Schedule for periodic tasks

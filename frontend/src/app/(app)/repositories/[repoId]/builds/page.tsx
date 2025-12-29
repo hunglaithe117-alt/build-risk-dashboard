@@ -440,15 +440,15 @@ export default function RepoBuildsPage() {
                             )}
                             <div className="flex items-center gap-2">
                                 <span className="text-muted-foreground">Total builds:</span>
-                                <span className="font-medium">{repo.total_builds_imported.toLocaleString()}</span>
+                                <span className="font-medium">{repo.builds_fetched.toLocaleString()}</span>
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className="text-muted-foreground">Processed:</span>
                                 <span className="font-medium">
-                                    {(repo.total_builds_processed || 0).toLocaleString()}
-                                    {repo.total_builds_failed ? (
+                                    {(repo.builds_processed || 0).toLocaleString()}
+                                    {repo.builds_failed ? (
                                         <span className="text-red-500 ml-1">
-                                            ({repo.total_builds_failed} failed)
+                                            ({repo.builds_failed} failed)
                                         </span>
                                     ) : null}
                                 </span>

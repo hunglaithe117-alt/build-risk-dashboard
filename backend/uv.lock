@@ -155,6 +155,7 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "sf-hamilton", extra = ["pandera"] },
     { name = "tenacity" },
+    { name = "torch" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -215,6 +216,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "sf-hamilton", extras = ["pandera"], specifier = ">=1.62" },
     { name = "tenacity", specifier = ">=8.2,<9.0" },
+    { name = "torch", specifier = ">=2.1.2" },
     { name = "torch", marker = "extra == 'ml'", specifier = ">=2.1,<2.2" },
     { name = "torchvision", marker = "extra == 'ml'", specifier = ">=0.16,<0.17" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.24,<0.28" },

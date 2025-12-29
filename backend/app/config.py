@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     TRAVIS_TOKEN: Optional[str] = None
     TRAVIS_BASE_URL: str = "https://api.travis-ci.com"
 
-    # ML Model
-    # MODEL_PATH: str = "./app/ml/models/bayesian_cnn.pth"
+    # ML Model / Prediction
+    PREDICTION_API_URL: str = "http://localhost:8001/predict"
 
     # Celery / RabbitMQ
     CELERY_BROKER_URL: str = "amqp://myuser:mypass@localhost:5672//"
@@ -73,6 +73,9 @@ class Settings(BaseSettings):
 
     # --- Processing Phase (feature extraction) ---
     PROCESSING_BUILDS_PER_BATCH: int = 50  # Builds processed per enrichment batch
+
+    # --- Prediction Phase (risk prediction) ---
+    PREDICTION_BUILDS_PER_BATCH: int = 50  # Builds predicted per batch
 
     # --- Validation Phase (CSV/repo validation) ---
     VALIDATION_CSV_CHUNK_SIZE: int = 1000  # Rows per CSV chunk

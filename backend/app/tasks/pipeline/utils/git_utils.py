@@ -220,3 +220,221 @@ def git_log_files(
             continue
 
     return all_shas
+
+
+def get_author_first_commit_ts(repo_path: Path, author: str) -> Optional[int]:
+    """
+    Get the timestamp of author's first commit in the repository.
+
+    Uses git log --all --author --reverse to find the oldest commit.
+    Matches risk_features_enrichment.py::check_is_new_contributor logic.
+
+    Returns:
+        Unix timestamp of first commit, or None if not found
+    """
+    try:
+        # Use Popen to read only first line (more efficient for large repos)
+        proc = subprocess.Popen(
+            ["git", "log", "--all", "--author", author, "--reverse", "--format=%ct"],
+            cwd=str(repo_path),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        if proc.stdout:
+            first_line = proc.stdout.readline().strip()
+            proc.terminate()
+            if first_line:
+                return int(first_line)
+    except Exception as e:
+        logger.warning(f"Failed to get first commit for author {author}: {e}")
+    return None
+
+
+def get_files_in_commit(repo_path: Path, sha: str) -> List[str]:
+    """Get list of files changed in a commit."""
+    try:
+        output = run_git(repo_path, ["diff", "--name-only", f"{sha}^", sha])
+        return [f.strip() for f in output.splitlines() if f.strip()]
+    except Exception:
+        return []
+
+
+def get_author_file_ownership(
+    repo_path: Path,
+    author: str,
+    file_paths: List[str],
+    max_files: int = 20,
+) -> float:
+    """
+    Calculate author's ownership of files (% of commits on files by author).
+
+    Matches github_enrichment.py::author_ownership logic.
+
+    Args:
+        repo_path: Path to repository
+        author: Author name to check
+        file_paths: Files to analyze
+        max_files: Maximum files to check (for performance)
+
+    Returns:
+        Ownership ratio (0.0 - 1.0)
+    """
+    total_commits = 0
+    author_commits = 0
+
+    for filepath in file_paths[:max_files]:
+        try:
+            # Total commits on this file
+            all_log = run_git(
+                repo_path,
+                ["log", "--oneline", "--follow", "--", filepath],
+            )
+            file_total = len([line for line in all_log.splitlines() if line])
+            total_commits += file_total
+
+            # Author's commits on this file
+            author_log = run_git(
+                repo_path,
+                ["log", "--oneline", "--author", author, "--follow", "--", filepath],
+            )
+            file_author = len([line for line in author_log.splitlines() if line])
+            author_commits += file_author
+        except Exception:
+            continue
+
+    if total_commits > 0:
+        return round(author_commits / total_commits, 4)
+    return 0.0
+
+
+def get_commit_message(repo_path: Path, sha: str) -> Optional[str]:
+    """Get commit message body."""
+    try:
+        # %B: raw body (unwrapped subject and body)
+        return run_git(repo_path, ["log", "-1", "--format=%B", sha])
+    except Exception:
+        return None
+
+
+def check_is_merge_commit(repo_path: Path, sha: str) -> bool:
+    """Check if commit is a merge commit (has >1 parent)."""
+    try:
+        parents = get_commit_parents(repo_path, sha)
+        return len(parents) > 1
+    except Exception:
+        return False
+
+
+def get_author_total_commits(repo_path: Path, author: str) -> int:
+    """Count total commits by author in the repository."""
+    try:
+        output = run_git(
+            repo_path,
+            ["rev-list", "--count", "--author", author, "--all"],
+        )
+        return int(output) if output else 0
+    except Exception:
+        return 0
+
+
+def get_author_last_commit_ts(repo_path: Path, author: str, before_ts: int) -> Optional[int]:
+    """
+    Get timestamp of author's last commit before a given timestamp.
+
+    Args:
+        repo_path: Path to repository
+        author: Author email/name
+        before_ts: Timestamp to look before
+
+    Returns:
+        Timestamp of previous commit or None
+    """
+    try:
+        # Get 1 commit by author, before the given date
+        # --before accepts absolute timestamp
+        output = run_git(
+            repo_path,
+            [
+                "log",
+                "-1",
+                "--author",
+                author,
+                f"--before={before_ts}",
+                "--format=%ct",
+                "--date=raw",
+            ],
+        )
+        return int(output) if output else None
+    except Exception:
+        return None
+
+
+def get_file_change_stats(repo_path: Path, sha: str) -> List[int]:
+    """
+    Get lines changed per file for entropy calculation.
+    Returns list of integers (added + deleted lines per file).
+    """
+    try:
+        # --numstat returns: added\tdeleted\tfilepath
+        output = run_git(
+            repo_path,
+            ["show", "--numstat", "--format=", sha],
+        )
+        changes = []
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 3:
+                try:
+                    added = int(parts[0]) if parts[0] != "-" else 0
+                    deleted = int(parts[1]) if parts[1] != "-" else 0
+                    changes.append(added + deleted)
+                except ValueError:
+                    continue  # Skip binary files or parse errors
+        return changes
+    except Exception as e:
+        logger.warning(f"Failed to get file change stats for {sha}: {e}")
+        return []
+
+
+def get_file_modification_count(repo_path: Path, files: List[str], since_iso: str) -> float:
+    """
+    Calculate average modification count for a list of files since a date.
+
+    Args:
+        repo_path: Path to repository
+        files: List of file paths to check
+        since_iso: ISO date string for --since
+
+    Returns:
+        Average number of commits per file
+    """
+    if not files:
+        return 0.0
+
+    try:
+        if len(files) > 20:
+            check_files = files[:20]
+        else:
+            check_files = files
+
+        count_sum = 0
+        valid_files = 0
+        for f in check_files:
+            try:
+                c = run_git(
+                    repo_path, ["rev-list", "--count", "--since", since_iso, "HEAD", "--", f]
+                )
+                if c:
+                    count_sum += int(c)
+                    valid_files += 1
+            except Exception:
+                continue
+
+        return round(count_sum / valid_files, 2) if valid_files > 0 else 0.0
+
+    except Exception as e:
+        logger.warning(f"Failed to calc file mod count: {e}")
+        return 0.0

@@ -43,9 +43,7 @@ def verify_signature(signature: str | None, body: bytes) -> None:
         )
 
 
-def _handle_workflow_run_event(
-    db: Database, payload: Dict[str, object]
-) -> Dict[str, object]:
+def _handle_workflow_run_event(db: Database, payload: Dict[str, object]) -> Dict[str, object]:
     """Handle workflow_run events."""
     action = payload.get("action")
     # Only process completed runs; we additionally filter by conclusion below.
@@ -80,9 +78,7 @@ def _handle_workflow_run_event(
     # Save/Update RawBuildRun
     build_run_repo = RawBuildRunRepository(db)
 
-    existing_run = build_run_repo.find_by_business_key(
-        repo_id, build_id, CIProvider.GITHUB
-    )
+    existing_run = build_run_repo.find_by_business_key(repo_id, build_id, CIProvider.GITHUB)
 
     if existing_run:
         # Update existing run but don't reprocess (avoid duplicate processing)
@@ -117,11 +113,7 @@ def _handle_workflow_run_event(
         # Map GitHub conclusion to normalized conclusion
         gh_conclusion = workflow_run.get("conclusion", "").lower()
         try:
-            conclusion = (
-                BuildConclusion(gh_conclusion)
-                if gh_conclusion
-                else BuildConclusion.NONE
-            )
+            conclusion = BuildConclusion(gh_conclusion) if gh_conclusion else BuildConclusion.NONE
         except (ValueError, KeyError):
             conclusion = BuildConclusion.UNKNOWN
 
@@ -156,19 +148,13 @@ def _handle_workflow_run_event(
             raw_data=workflow_run,
             is_bot_commit=is_bot,
         )
-        inserted_run = build_run_repo.create(new_run)
-
-        db.repositories.update_one(
-            {"_id": ObjectId(repo_id)}, {"$inc": {"total_builds_imported": 1}}
-        )
+        build_run_repo.insert_one(new_run)
 
         # Find ModelRepoConfig for this raw_repo
         from app.repositories.model_repo_config import ModelRepoConfigRepository
 
         model_repo_config_repo = ModelRepoConfigRepository(db)
-        repo_config = model_repo_config_repo.find_active_by_raw_repo_id(
-            ObjectId(repo_id)
-        )
+        repo_config = model_repo_config_repo.find_one({"raw_repo_id": ObjectId(repo_id)})
 
         if not repo_config:
             return {
@@ -180,6 +166,9 @@ def _handle_workflow_run_event(
             }
 
         repo_config_id = str(repo_config.id)
+        model_repo_config_repo.update_one(
+            {"_id": ObjectId(repo_config_id)}, {"$inc": {"builds_fetched": 1}}
+        )
 
         # Dispatch prepare_and_dispatch_processing to run ingestion workflow (clone, logs, worktrees)
         # then dispatch_build_processing for feature extraction
@@ -207,9 +196,7 @@ def _handle_workflow_run_event(
     }
 
 
-def handle_github_event(
-    db: Database, event: str, payload: Dict[str, object]
-) -> Dict[str, object]:
+def handle_github_event(db: Database, event: str, payload: Dict[str, object]) -> Dict[str, object]:
     if event in {"installation", "installation_repositories"}:
         # return _handle_installation_event(db, event, payload)
         return {"status": "ignored", "reason": "installation_management_removed"}

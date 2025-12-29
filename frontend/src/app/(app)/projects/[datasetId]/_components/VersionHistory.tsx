@@ -61,10 +61,10 @@ export const VersionHistory = memo(function VersionHistory({
 
     // Separate active version from completed ones
     const activeVersion = versions.find(
-        (v) => v.status === "pending" || v.status === "processing"
+        (v) => v.status === "pending" || v.status === "ingesting" || v.status === "processing"
     );
     const completedVersions = versions.filter(
-        (v) => v.status !== "pending" && v.status !== "processing"
+        (v) => v.status !== "pending" && v.status !== "ingesting" && v.status !== "processing"
     );
 
     return (

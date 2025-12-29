@@ -7,6 +7,7 @@ All PipelineTask subclasses automatically:
 3. Clear TracingContext on task completion
 4. Auto-retry on GithubAllRateLimitError with EXACT countdown from retry_after
 5. Send notification when all GitHub tokens are exhausted
+6. Handle SoftTimeLimitExceeded to update entity status before failing
 
 Note: GithubRateLimitError is handled internally by GitHubClient via token rotation.
 Only GithubAllRateLimitError (when ALL tokens exhausted) is propagated to tasks.
@@ -14,9 +15,10 @@ Only GithubAllRateLimitError (when ALL tokens exhausted) is propagated to tasks.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable, Optional
 
 from celery import Task
+from celery.exceptions import SoftTimeLimitExceeded
 from pymongo.database import Database
 
 from app.core.tracing import TracingContext
@@ -58,13 +60,22 @@ class PipelineTask(Task):
 
     def __call__(self, *args, **kwargs):
         """
-        Override __call__ to handle GithubAllRateLimitError with exact countdown.
+        Override __call__ to handle special exceptions.
 
-        When all tokens are exhausted (GithubAllRateLimitError), retry with the
-        EXACT countdown from retry_after instead of exponential backoff.
+        Handles:
+        - GithubAllRateLimitError: Retry with EXACT countdown from retry_after
+        - SoftTimeLimitExceeded: Update entity status to FAILED before re-raising
         """
         try:
             return super().__call__(*args, **kwargs)
+        except SoftTimeLimitExceeded:
+            # Task exceeded time limit - update entity status before failing
+            logger.error(f"Task {self.name} exceeded soft time limit, marking entity as failed")
+            self._handle_entity_failure(
+                kwargs,
+                "Task exceeded time limit. Network may be slow or data is too large. Please retry.",
+            )
+            raise
         except GithubAllRateLimitError as exc:
             # All tokens exhausted - calculate exact countdown from retry_after
             countdown = self._calculate_countdown(exc)
@@ -154,11 +165,66 @@ class PipelineTask(Task):
             self._db = get_database()
         return self._db
 
+    def get_entity_failure_handler(self, kwargs: dict) -> Optional[Callable[[str, str], None]]:
+        """
+        Override in subclass to provide entity status updater on task failure.
+
+        When a task fails (timeout, unhandled exception, etc.), this handler
+        is called to update the associated entity's status to FAILED.
+
+        Args:
+            kwargs: Task keyword arguments (contains dataset_id, version_id, etc.)
+
+        Returns:
+            Callable that takes (status: str, error_message: str) to update entity,
+            or None if no entity update is needed.
+
+        Example subclass implementation:
+            def get_entity_failure_handler(self, kwargs):
+                dataset_id = kwargs.get("dataset_id")
+                if not dataset_id:
+                    return None
+                def updater(status, error_msg):
+                    dataset_repo = DatasetRepository(self.db)
+                    dataset_repo.update_one(dataset_id, {
+                        "validation_status": status,
+                        "validation_error": error_msg,
+                    })
+                return updater
+        """
+        return None
+
+    def _handle_entity_failure(self, kwargs: dict, error_message: str) -> None:
+        """
+        Call entity failure handler to update entity status.
+
+        Safe to call - catches exceptions to prevent masking the original error.
+        """
+        try:
+            handler = self.get_entity_failure_handler(kwargs)
+            if handler:
+                handler("failed", error_message)
+                logger.info(f"Entity status updated to 'failed' for task {self.name}")
+        except Exception as e:
+            # Log but don't raise - we don't want to mask the original error
+            logger.warning(f"Failed to update entity status: {e}")
+
     def on_failure(
         self, exc: Exception, task_id: str, args: tuple, kwargs: dict, einfo
     ):  # pragma: no cover - logging only
-        """Handle task failure - log error and send notification for rate limit exhaustion."""
+        """
+        Handle task failure.
+
+        Actions:
+        1. Log the error
+        2. Update entity status to FAILED (via get_entity_failure_handler)
+        3. Send notification for rate limit exhaustion
+        """
         logger.error("Task %s failed: %s", self.name, exc, exc_info=exc)
+
+        # Update entity status to FAILED (unless already handled by __call__)
+        if not isinstance(exc, SoftTimeLimitExceeded):
+            self._handle_entity_failure(kwargs, str(exc))
 
         # Send notification when all GitHub tokens are exhausted (after max retries)
         if isinstance(exc, GithubAllRateLimitError):

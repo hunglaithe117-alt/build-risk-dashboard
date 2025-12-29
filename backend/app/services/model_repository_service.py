@@ -14,8 +14,8 @@ from app.dtos import (
     RepoSearchResponse,
     RepoSuggestionListResponse,
 )
-from app.entities.enums import ModelImportStatus
 from app.entities.feature_audit_log import AuditLogCategory
+from app.entities.model_repo_config import ModelImportStatus
 from app.repositories.model_repo_config import ModelRepoConfigRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.services.github.github_client import (
@@ -159,7 +159,7 @@ class RepositoryService:
                     full_name=payload.full_name,
                     raw_repo_id=raw_repo.id,
                     ci_provider=payload.ci_provider,
-                    import_status=ModelImportStatus.QUEUED,
+                    status=ModelImportStatus.QUEUED,
                     max_builds_to_ingest=payload.max_builds,
                     since_days=payload.since_days,
                     only_with_logs=payload.only_with_logs or False,
@@ -357,16 +357,14 @@ class RepositoryService:
             )
 
         # Check if already importing
-        if repo_doc.import_status == ModelImportStatus.IMPORTING:
+        if repo_doc.status in (ModelImportStatus.INGESTING, ModelImportStatus.PROCESSING):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Repository is already being imported. Please wait for completion.",
             )
 
         # Update status to queued/importing
-        self.repo_config.update_repository(
-            repo_id, {"import_status": ModelImportStatus.QUEUED.value}
-        )
+        self.repo_config.update_repository(repo_id, {"status": ModelImportStatus.QUEUED.value})
 
         # Trigger import task with sync_until_existing mode
         start_model_processing.delay(
@@ -382,15 +380,14 @@ class RepositoryService:
 
         return {"status": "queued"}
 
-    def trigger_reprocess(self, repo_id: str):
+    def trigger_reprocess_failed(self, repo_id: str):
         """
-        Trigger re-extraction of features for all existing builds.
+        Trigger re-processing of only FAILED builds.
 
         Unlike trigger_sync (which fetches new workflow runs from GitHub),
-        this method reprocesses existing builds to re-extract features.
-        Useful when feature extractors have been updated.
+        this method reprocesses only failed builds to retry extraction.
         """
-        from app.tasks.model_processing import reprocess_repo_builds
+        from app.tasks.model_processing import reprocess_failed_builds
 
         repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
         if not repo_doc:
@@ -399,9 +396,50 @@ class RepositoryService:
             )
 
         # Queue the reprocess task
-        reprocess_repo_builds.delay(repo_id)
+        reprocess_failed_builds.delay(repo_id)
 
-        return {"status": "queued", "message": "Re-extraction of features queued"}
+        return {"status": "queued", "message": "Re-processing of failed builds queued"}
+
+    def trigger_reingest_failed(self, repo_id: str):
+        """
+        Trigger re-ingestion of only FAILED import builds.
+
+        This method retries builds that failed during the ingestion phase
+        (fetch, clone, worktree creation, log download).
+        """
+        from app.tasks.model_ingestion import reingest_failed_builds
+
+        repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
+        if not repo_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
+            )
+
+        # Queue the reingest task
+        reingest_failed_builds.delay(repo_id)
+
+        return {"status": "queued", "message": "Re-ingestion of failed builds queued"}
+
+    def trigger_retry_predictions(self, repo_id: str):
+        """
+        Trigger retry of prediction for builds with failed predictions.
+
+        This method retries prediction for builds that:
+        - Have extraction_status = COMPLETED or PARTIAL (features available)
+        - Have prediction_error set (previous prediction failed)
+        """
+        from app.tasks.model_processing import retry_failed_predictions
+
+        repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
+        if not repo_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
+            )
+
+        # Queue the retry predictions task
+        retry_failed_predictions.delay(repo_id)
+
+        return {"status": "queued", "message": "Retry of failed predictions queued"}
 
     def delete_repository(self, repo_id: str) -> None:
         """
@@ -481,12 +519,43 @@ class RepositoryService:
         extraction_results = list(training_build_repo.collection.aggregate(extraction_pipeline))
         extraction_counts = {r["_id"]: r["count"] for r in extraction_results if r["_id"]}
 
+        # Get prediction stats from training builds
+        prediction_pipeline = [
+            {"$match": {"model_repo_config_id": ObjectId(repo_id)}},
+            {
+                "$group": {
+                    "_id": None,
+                    "with_prediction": {
+                        "$sum": {"$cond": [{"$ne": ["$predicted_label", None]}, 1, 0]}
+                    },
+                    "prediction_failed": {
+                        "$sum": {"$cond": [{"$ne": ["$prediction_error", None]}, 1, 0]}
+                    },
+                    "total_processed": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$extraction_status", ["completed", "partial"]]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                }
+            },
+        ]
+        prediction_results = list(training_build_repo.collection.aggregate(prediction_pipeline))
+        prediction_stats = prediction_results[0] if prediction_results else {}
+
+        with_prediction = prediction_stats.get("with_prediction", 0)
+        prediction_failed = prediction_stats.get("prediction_failed", 0)
+        total_processed = prediction_stats.get("total_processed", 0)
+        pending_prediction = max(0, total_processed - with_prediction - prediction_failed)
+
         return {
             "repo_id": repo_id,
-            "import_status": repo_doc.import_status.value
-            if hasattr(repo_doc.import_status, "value")
-            else repo_doc.import_status,
-            "import_version": repo_doc.import_version,
+            "status": repo_doc.status.value
+            if hasattr(repo_doc.status, "value")
+            else repo_doc.status,
             # Import phase (ModelImportBuild)
             "import_builds": {
                 "pending": import_status_counts.get("pending", 0),
@@ -503,12 +572,16 @@ class RepositoryService:
                 "partial": extraction_counts.get("partial", 0),
                 "failed": extraction_counts.get("failed", 0),
                 "total": sum(extraction_counts.values()),
+                # Prediction stats
+                "with_prediction": with_prediction,
+                "pending_prediction": pending_prediction,
+                "prediction_failed": prediction_failed,
             },
             # Summary from repo config
             "summary": {
-                "total_builds_imported": repo_doc.total_builds_imported,
-                "total_builds_processed": repo_doc.total_builds_processed,
-                "total_builds_failed": repo_doc.total_builds_failed,
+                "builds_fetched": repo_doc.builds_fetched,
+                "builds_completed": repo_doc.builds_completed,
+                "builds_failed": repo_doc.builds_failed,
             },
         }
 
@@ -560,70 +633,6 @@ class RepositoryService:
             "frameworks": registry.get_supported_frameworks(),
             "by_language": registry.get_frameworks_by_language(),
             "languages": registry.get_languages(),
-        }
-
-    def reprocess_build(self, repo_id: str, raw_build_run_id: str, current_user: dict) -> dict:
-        """
-        Reprocess a build using the DAG-based feature pipeline.
-
-        Useful for:
-        - Retrying failed builds
-        - Re-extracting features after pipeline updates
-
-        Args:
-            repo_id: ModelRepoConfig._id (MongoDB ObjectId string)
-            raw_build_run_id: RawBuildRun._id (MongoDB ObjectId string)
-                              This is what the UI sends from Build History table
-            current_user: Current authenticated user
-
-        Note on ID types:
-            - raw_build_run_id: The RawBuildRun._id shown in UI (from Build History)
-            - model_training_build_id: The ModelTrainingBuild._id needed by the task
-            - ci_run_id: CI provider's workflow ID (e.g., GitHub run ID like "20349163111")
-        """
-        from app.entities.enums import ExtractionStatus
-        from app.repositories.model_training_build import ModelTrainingBuildRepository
-        from app.services.model_build_service import BuildService
-        from app.tasks.model_processing import (
-            reprocess_build as reprocess_build_task,
-        )
-
-        # Validate raw build exists
-        build_service = BuildService(self.db)
-        build = build_service.get_build_detail(raw_build_run_id)
-        if not build:
-            raise HTTPException(status_code=404, detail="Build not found")
-
-        # Find corresponding ModelTrainingBuild by raw_build_run_id
-        build_repo = ModelTrainingBuildRepository(self.db)
-        model_training_build = build_repo.find_one({"raw_build_run_id": ObjectId(raw_build_run_id)})
-
-        if not model_training_build:
-            raise HTTPException(
-                status_code=404,
-                detail="ModelTrainingBuild not found for this build. "
-                "The build may not have been processed yet.",
-            )
-
-        model_training_build_id = str(model_training_build.id)
-
-        # Reset extraction status to pending before reprocessing
-        build_repo.update_one(
-            model_training_build_id,
-            {
-                "extraction_status": ExtractionStatus.PENDING.value,
-                "extraction_error": None,
-            },
-        )
-
-        # Trigger async reprocessing with the correct ModelTrainingBuild._id
-        reprocess_build_task.delay(model_training_build_id)
-
-        return {
-            "status": "queued",
-            "raw_build_run_id": raw_build_run_id,
-            "model_training_build_id": model_training_build_id,
-            "message": "Build reprocessing has been queued",
         }
 
     # Export Methods
@@ -842,3 +851,48 @@ class RepositoryService:
             )
 
         return job.file_path
+
+    def start_processing(self, repo_id: str) -> dict:
+        """
+        Trigger Phase 2: Start processing (feature extraction + prediction).
+
+        Only allowed when ingestion is complete (INGESTION_COMPLETE or INGESTION_PARTIAL).
+        User can decide to proceed even with partial ingestion.
+
+        Raises:
+            HTTPException: If repository not found or status is invalid
+        """
+        from app.tasks.model_ingestion import start_processing_phase
+
+        repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
+        if not repo_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
+            )
+
+        # Validate status - must be ingestion complete/partial
+        current_status = repo_doc.status
+        if hasattr(current_status, "value"):
+            current_status = current_status.value
+
+        valid_ingestion_statuses = [
+            ModelImportStatus.INGESTION_COMPLETE.value,
+            ModelImportStatus.INGESTION_PARTIAL.value,
+        ]
+
+        if current_status not in valid_ingestion_statuses:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Cannot start processing: status is '{current_status}'. "
+                    f"Ingestion must be complete first."
+                ),
+            )
+
+        # Queue the processing task
+        start_processing_phase.delay(repo_config_id=repo_id)
+
+        return {
+            "status": "queued",
+            "message": "Processing phase started. Feature extraction will begin shortly.",
+        }

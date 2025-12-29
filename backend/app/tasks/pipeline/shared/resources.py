@@ -26,6 +26,7 @@ class FeatureResource(str, Enum):
 
     # Collection access
     RAW_BUILD_RUNS = "raw_build_runs"  # raw_build_runs collection
+    MODEL_TRAINING_BUILDS = "model_training_builds"  # model_training_builds collection
 
     # Git resources (require ingestion)
     GIT_HISTORY = "git_history"  # Git bare repo (clone_repo task)
@@ -89,6 +90,11 @@ INPUT_REGISTRY: Dict[str, InputSpec] = {
     "raw_build_runs": InputSpec(
         name="raw_build_runs",
         resource=FeatureResource.RAW_BUILD_RUNS,
+        is_core=True,
+    ),
+    "model_training_builds": InputSpec(
+        name="model_training_builds",
+        resource=FeatureResource.MODEL_TRAINING_BUILDS,
         is_core=True,
     ),
     # Git resources - require ingestion

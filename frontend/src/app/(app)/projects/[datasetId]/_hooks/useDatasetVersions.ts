@@ -10,7 +10,7 @@ export interface DatasetVersion {
     name: string;
     description: string | null;
     selected_features: string[];
-    status: "pending" | "processing" | "completed" | "failed" | "cancelled";
+    status: "pending" | "ingesting" | "processing" | "completed" | "failed" | "cancelled";
     total_rows: number;
     processed_rows: number;
     enriched_rows: number;
@@ -93,7 +93,7 @@ export function useDatasetVersions(datasetId: string): UseDatasetVersionsReturn 
 
     // Find active (processing) version
     const activeVersion = versions.find(
-        (v) => v.status === "pending" || v.status === "processing"
+        (v) => v.status === "pending" || v.status === "ingesting" || v.status === "processing"
     ) || null;
 
     const hasMore = skip + versions.length < total;

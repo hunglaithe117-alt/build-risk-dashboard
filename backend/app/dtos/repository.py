@@ -53,14 +53,14 @@ class RepoResponse(BaseModel):
     ci_provider: CIProvider = CIProvider.GITHUB_ACTIONS
     test_frameworks: List[TestFramework] = Field(default_factory=list)
     source_languages: List[str] = Field(default_factory=list)
-    total_builds_imported: int = 0
-    total_builds_processed: int = 0
-    total_builds_failed: int = 0
-    import_status: Optional[str] = Field(
+    builds_fetched: int = 0
+    builds_completed: int = 0
+    builds_failed: int = 0
+    status: Optional[str] = Field(
         default="imported",
-        description="Import status: queued, importing, imported, failed",
+        description="Pipeline status: queued, ingesting, processing, imported, failed",
     )
-    last_sync_error: Optional[str] = None
+    error_message: Optional[str] = None
     last_synced_at: Optional[datetime] = None
     notes: Optional[str] = None
     max_builds_to_ingest: Optional[int] = None

@@ -32,6 +32,7 @@ dependencies = [
   "google-auth-oauthlib>=1.2.3",
   "jaro-winkler>=2.0.3",
   "scikit-learn>=1.8.0",
+  "torch>=2.1.2",
 ]
 
 [project.optional-dependencies]

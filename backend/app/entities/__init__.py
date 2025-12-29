@@ -26,10 +26,7 @@ from .dataset_template import DatasetTemplate
 
 # Shared enums
 from .enums import (
-    DatasetRepoValidationStatus,
     ExtractionStatus,
-    ModelImportStatus,
-    ModelSyncStatus,
     TestFramework,
 )
 from .export_job import ExportFormat, ExportJob, ExportStatus
@@ -42,7 +39,7 @@ from .feature_audit_log import (
 
 # Model training flow entities
 from .model_import_build import ModelImportBuild, ModelImportBuildStatus
-from .model_repo_config import ModelRepoConfig
+from .model_repo_config import ModelImportStatus, ModelRepoConfig
 from .model_training_build import ModelTrainingBuild
 from .notification import Notification, NotificationType
 
@@ -63,8 +60,6 @@ __all__ = [
     "TestFramework",
     "ExtractionStatus",
     "ModelImportStatus",
-    "ModelSyncStatus",
-    "DatasetRepoValidationStatus",
     "CIProvider",
     "RawRepository",
     "RawBuildRun",

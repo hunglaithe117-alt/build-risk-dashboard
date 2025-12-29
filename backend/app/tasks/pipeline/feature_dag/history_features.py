@@ -2,7 +2,7 @@
 Build history and committer experience features.
 
 Features extracted from historical build data:
-- Build history: prev_built_result, same_committer, elapsed_days_last_build
+- Build history: prev_built_result, same_committer, time_since_prev_build
 - Committer experience: committer_fail_history, committer_recent_fail_history, committer_avg_exp
 - Project history: project_fail_history, project_fail_recent
 - Time features: day_week, time_of_day
@@ -108,7 +108,7 @@ def time_of_day(build_run: BuildRunInput) -> Optional[int]:
     {
         "prev_built_result": Optional[str],
         "same_committer": Optional[bool],
-        "elapsed_days_last_build": Optional[float],
+        "time_since_prev_build": Optional[float],
     }
 )
 @feature_metadata(
@@ -129,14 +129,14 @@ def build_history_features(
 
     - prev_built_result: Outcome of the previous build ('passed', 'failed', etc.)
     - same_committer: Whether committer is same as previous build
-    - elapsed_days_last_build: Days since previous build completed
+    - time_since_prev_build: Days since previous build completed
     """
     from bson import ObjectId
 
     result = {
         "prev_built_result": None,
         "same_committer": None,
-        "elapsed_days_last_build": None,
+        "time_since_prev_build": None,
     }
 
     if not build_run.created_at:
@@ -171,11 +171,11 @@ def build_history_features(
             similarity = compute_similarity(current_author, prev_author)
             result["same_committer"] = similarity > AUTHOR_SIMILARITY_THRESHOLD
 
-        # elapsed_days_last_build
+        # time_since_prev_build
         prev_completed = prev_build.get("completed_at") or prev_build.get("created_at")
         if prev_completed and build_run.created_at:
             delta = build_run.created_at - prev_completed
-            result["elapsed_days_last_build"] = delta.total_seconds() / 86400  # days
+            result["time_since_prev_build"] = delta.total_seconds() / 86400  # days
 
     except Exception as e:
         logger.warning(f"Failed to get build history: {e}")

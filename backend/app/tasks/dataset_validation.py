@@ -20,7 +20,7 @@ Architecture:
 
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from bson import ObjectId
 from celery import chain, group
@@ -56,6 +56,41 @@ from app.tasks.dataset_validation_helpers import (
 from app.utils.datetime import utc_now
 
 logger = logging.getLogger(__name__)
+
+
+class DatasetValidationTask(PipelineTask):
+    """
+    Custom task class for dataset validation with entity failure handling.
+
+    When a task fails (timeout, unhandled error), automatically updates
+    Dataset.validation_status to FAILED and publishes WebSocket event.
+    """
+
+    def get_entity_failure_handler(self, kwargs: dict) -> Optional[Callable[[str, str], None]]:
+        """Update Dataset status to FAILED when task fails."""
+        dataset_id = kwargs.get("dataset_id")
+        if not dataset_id:
+            return None
+
+        def update_dataset_failed(status: str, error_message: str) -> None:
+            try:
+                db = get_database()
+                dataset_repo = DatasetRepository(db)
+                dataset_repo.update_one(
+                    dataset_id,
+                    {
+                        "validation_status": DatasetValidationStatus.FAILED,
+                        "validation_error": error_message,
+                        "validation_completed_at": utc_now(),
+                    },
+                )
+                # Publish WebSocket event for frontend
+                publish_dataset_update(dataset_id, "failed", error=error_message)
+                cleanup_validation_stats(dataset_id)
+            except Exception as e:
+                logger.warning(f"Failed to update dataset {dataset_id} status: {e}")
+
+        return update_dataset_failed
 
 
 def publish_dataset_update(
@@ -97,7 +132,7 @@ def publish_dataset_update(
 
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=DatasetValidationTask,
     name="app.tasks.dataset_validation.dataset_validation_orchestrator",
     queue="validation",
     soft_time_limit=3600,
@@ -300,7 +335,7 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
 # Task 2: Repo Chunk Validator
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=DatasetValidationTask,
     name="app.tasks.dataset_validation.validate_repo_chunk",
     queue="validation",
     soft_time_limit=600,
@@ -424,7 +459,7 @@ def validate_repo_chunk(
 # Task 3: Build Chunk Validator
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=DatasetValidationTask,
     name="app.tasks.dataset_validation.validate_builds_chunk",
     queue="validation",
     soft_time_limit=300,
@@ -692,7 +727,7 @@ def validate_builds_chunk(
 # Task 4: Result Aggregator
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=DatasetValidationTask,
     name="app.tasks.dataset_validation.aggregate_validation_results",
     queue="validation",
     soft_time_limit=300,

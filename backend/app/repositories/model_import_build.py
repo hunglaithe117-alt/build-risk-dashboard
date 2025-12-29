@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List, Optional
 
 from bson import ObjectId
+from pymongo import ReturnDocument
 from pymongo.synchronous.client_session import ClientSession
 
 from app.entities.model_import_build import ModelImportBuild, ModelImportBuildStatus
@@ -26,7 +27,6 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         self,
         config_id: str,
         status: Optional[ModelImportBuildStatus] = None,
-        import_version: Optional[int] = None,
     ) -> List[ModelImportBuild]:
         """
         Find all builds for a repo config, optionally filtered by status.
@@ -34,7 +34,6 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         Args:
             config_id: ModelRepoConfig ID
             status: Optional status filter
-            import_version: Optional import version filter
 
         Returns:
             List of ModelImportBuild entities
@@ -42,17 +41,15 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         query = {"model_repo_config_id": ObjectId(config_id)}
         if status:
             query["status"] = status.value if hasattr(status, "value") else status
-        if import_version:
-            query["import_version"] = import_version
         return self.find_many(query)
 
-    def find_fetched_builds(
-        self, config_id: str, import_version: Optional[int] = None
-    ) -> List[ModelImportBuild]:
+    def find_fetched_builds(self, config_id: str) -> List[ModelImportBuild]:
         """Find successfully fetched builds."""
-        return self.find_by_repo_config(
-            config_id, status=ModelImportBuildStatus.FETCHED, import_version=import_version
-        )
+        return self.find_by_repo_config(config_id, status=ModelImportBuildStatus.FETCHED)
+
+    def find_failed_imports(self, config_id: str) -> List[ModelImportBuild]:
+        """Find failed import builds for retry."""
+        return self.find_by_repo_config(config_id, status=ModelImportBuildStatus.FAILED)
 
     def count_by_status(self, config_id: str) -> dict:
         """
@@ -68,16 +65,34 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         results = list(self.collection.aggregate(pipeline))
         return {r["_id"]: r["count"] for r in results}
 
-    def bulk_insert(self, builds: List[ModelImportBuild]) -> List[ModelImportBuild]:
+    def update_many_by_status(
+        self,
+        config_id: str,
+        from_status: str,
+        updates: dict,
+    ) -> int:
         """
-        Insert multiple builds in one operation.
+        Update all builds with given status.
 
         Args:
-            builds: List of ModelImportBuild entities
+            config_id: ModelRepoConfig ID
+            from_status: Current status to filter
+            updates: Fields to update
 
         Returns:
-            List of inserted entities with IDs
+            Number of builds updated
         """
+        result = self.collection.update_many(
+            {
+                "model_repo_config_id": ObjectId(config_id),
+                "status": from_status,
+            },
+            {"$set": updates},
+        )
+        return result.modified_count
+
+    def bulk_insert(self, builds: List[ModelImportBuild]) -> List[ModelImportBuild]:
+        """Insert multiple builds in one operation."""
         if not builds:
             return []
 
@@ -101,21 +116,45 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             }
         )
 
+    def upsert_by_business_key(
+        self,
+        config_id: str,
+        raw_build_run_id: str,
+        status: ModelImportBuildStatus,
+        ci_run_id: str,
+        commit_sha: str,
+    ) -> ModelImportBuild:
+        """
+        Atomic upsert by business key (config + raw_build_run).
+
+        Uses atomic find_one_and_update for thread safety.
+        This prevents duplicate records when the same task runs concurrently.
+        """
+        update_data = {
+            "model_repo_config_id": ObjectId(config_id),
+            "raw_build_run_id": ObjectId(raw_build_run_id),
+            "status": status.value if hasattr(status, "value") else status,
+            "ci_run_id": ci_run_id,
+            "commit_sha": commit_sha,
+        }
+
+        doc = self.collection.find_one_and_update(
+            {
+                "model_repo_config_id": ObjectId(config_id),
+                "raw_build_run_id": ObjectId(raw_build_run_id),
+            },
+            {"$set": update_data, "$setOnInsert": {"created_at": ObjectId().generation_time}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return ModelImportBuild(**doc)
+
     def find_by_raw_build_run_ids(
         self,
         config_id: str,
         raw_build_run_ids: List[str],
     ) -> List[ModelImportBuild]:
-        """
-        Batch query: Find all import builds by their raw_build_run_ids.
-
-        Args:
-            config_id: ModelRepoConfig ID
-            raw_build_run_ids: List of RawBuildRun IDs
-
-        Returns:
-            List of ModelImportBuild entities
-        """
+        """Batch query: Find all import builds by their raw_build_run_ids."""
         if not raw_build_run_ids:
             return []
 
@@ -130,43 +169,28 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             }
         )
 
-    def get_commit_shas(self, config_id: str, import_version: Optional[int] = None) -> List[str]:
+    def get_commit_shas(self, config_id: str) -> List[str]:
         """Get unique commit SHAs for ingestion."""
         query = {
             "model_repo_config_id": ObjectId(config_id),
             "status": ModelImportBuildStatus.FETCHED.value,
         }
-        if import_version:
-            query["import_version"] = import_version
-
         result = self.collection.distinct("commit_sha", query)
         return [sha for sha in result if sha]
 
-    def get_ci_run_ids(self, config_id: str, import_version: Optional[int] = None) -> List[str]:
+    def get_ci_run_ids(self, config_id: str) -> List[str]:
         """Get CI run IDs for log download."""
         query = {
             "model_repo_config_id": ObjectId(config_id),
             "status": ModelImportBuildStatus.FETCHED.value,
         }
-        if import_version:
-            query["import_version"] = import_version
-
         result = self.collection.distinct("ci_run_id", query)
         return list(result)
 
     def delete_by_repo_config(
         self, model_repo_config_id: ObjectId, session: ClientSession | None = None
     ) -> int:
-        """
-        Delete all import builds for a repo config.
-
-        Args:
-            model_repo_config_id: The ModelRepoConfig ID
-            session: Optional MongoDB session for transaction support
-
-        Returns:
-            Number of documents deleted.
-        """
+        """Delete all import builds for a repo config."""
         result = self.collection.delete_many(
             {"model_repo_config_id": model_repo_config_id},
             session=session,

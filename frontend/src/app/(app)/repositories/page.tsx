@@ -3,8 +3,10 @@
 import { Input } from "@/components/ui/input";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
+  CheckCircle2,
   Loader2,
   MoreVertical,
+  Play,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -106,7 +108,7 @@ export default function AdminReposPage() {
             // Update status and stats if available
             return {
               ...repo,
-              import_status: data.status,
+              status: data.status,
               ...(data.stats || {}),
             };
           }
@@ -133,6 +135,8 @@ export default function AdminReposPage() {
 
   const [rescanLoading, setRescanLoading] = useState<Record<string, boolean>>({});
   const [reprocessLoading, setReprocessLoading] = useState<Record<string, boolean>>({});
+  const [reingestLoading, setReingestLoading] = useState<Record<string, boolean>>({});
+  const [startProcessingLoading, setStartProcessingLoading] = useState<Record<string, boolean>>({});
   const [deleteLoading, setDeleteLoading] = useState<Record<string, boolean>>({});
 
   const handleRescan = async (repo: RepositoryRecord, e: React.MouseEvent) => {
@@ -151,19 +155,51 @@ export default function AdminReposPage() {
     }
   };
 
-  const handleReprocess = async (repo: RepositoryRecord, e: React.MouseEvent) => {
+  const handleReprocessFailed = async (repo: RepositoryRecord, e: React.MouseEvent) => {
     e.stopPropagation();
     if (reprocessLoading[repo.id]) return;
 
     setReprocessLoading((prev) => ({ ...prev, [repo.id]: true }));
     try {
-      await reposApi.reprocessFeatures(repo.id);
-      setFeedback("Builds queued for feature re-extraction.");
+      await reposApi.reprocessFailed(repo.id);
+      setFeedback("Failed builds queued for retry.");
       loadRepositories(page);
     } catch (err) {
       console.error(err);
     } finally {
       setReprocessLoading((prev) => ({ ...prev, [repo.id]: false }));
+    }
+  };
+
+  const handleReingestFailed = async (repo: RepositoryRecord, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (reingestLoading[repo.id]) return;
+
+    setReingestLoading((prev) => ({ ...prev, [repo.id]: true }));
+    try {
+      await reposApi.reingestFailed(repo.id);
+      setFeedback("Failed ingestion builds queued for retry.");
+      loadRepositories(page);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setReingestLoading((prev) => ({ ...prev, [repo.id]: false }));
+    }
+  };
+
+  const handleStartProcessing = async (repo: RepositoryRecord, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (startProcessingLoading[repo.id]) return;
+
+    setStartProcessingLoading((prev) => ({ ...prev, [repo.id]: true }));
+    try {
+      await reposApi.startProcessing(repo.id);
+      setFeedback("Processing phase started. Feature extraction will begin shortly.");
+      loadRepositories(page);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setStartProcessingLoading((prev) => ({ ...prev, [repo.id]: false }));
     }
   };
 
@@ -293,17 +329,25 @@ export default function AdminReposPage() {
                     <tr
                       key={repo.id}
                       className="cursor-pointer transition hover:bg-slate-50 dark:hover:bg-slate-900/40"
-                      onClick={() => router.push(`/repositories/${repo.id}/builds`)}
+                      onClick={() => router.push(`/repositories/${repo.id}`)}
                     >
                       <td className="px-6 py-4 font-medium text-foreground">
                         {repo.full_name}
                       </td>
                       <td className="px-6 py-4">
-                        {repo.import_status === "queued" ? (
+                        {repo.status === "queued" ? (
                           <Badge variant="secondary">Queued</Badge>
-                        ) : repo.import_status === "importing" ? (
-                          <Badge variant="default" className="bg-blue-500 hover:bg-blue-600"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Importing</Badge>
-                        ) : repo.import_status === "failed" ? (
+                        ) : repo.status === "ingesting" ? (
+                          <Badge variant="default" className="bg-blue-500 hover:bg-blue-600"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Ingesting</Badge>
+                        ) : repo.status === "ingestion_complete" ? (
+                          <Badge variant="default" className="bg-green-500 hover:bg-green-600"><CheckCircle2 className="w-3 h-3 mr-1" /> Ingested</Badge>
+                        ) : repo.status === "ingestion_partial" ? (
+                          <Badge variant="default" className="bg-amber-500 hover:bg-amber-600">Ingestion Partial</Badge>
+                        ) : repo.status === "processing" ? (
+                          <Badge variant="default" className="bg-purple-500 hover:bg-purple-600"><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Processing</Badge>
+                        ) : repo.status === "partial" ? (
+                          <Badge variant="default" className="bg-amber-500 hover:bg-amber-600">Partial</Badge>
+                        ) : repo.status === "failed" ? (
                           <Badge variant="destructive">Failed</Badge>
                         ) : (
                           <Badge variant="outline" className="border-green-500 text-green-600">Imported</Badge>
@@ -315,10 +359,10 @@ export default function AdminReposPage() {
                       <td className="px-6 py-4">
                         <ImportProgressDisplay
                           repoId={repo.id}
-                          totalImported={repo.total_builds_imported}
-                          totalProcessed={repo.total_builds_processed}
-                          totalFailed={repo.total_builds_failed}
-                          importStatus={repo.import_status}
+                          totalFetched={repo.builds_fetched}
+                          totalProcessed={repo.builds_processed}
+                          totalFailed={repo.builds_failed}
+                          importStatus={repo.status}
                         />
                       </td>
                       <td className="px-6 py-4">
@@ -335,6 +379,24 @@ export default function AdminReposPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            {/* Start Processing - only when ingestion is complete */}
+                            {(repo.status === "ingestion_complete" || repo.status === "ingestion_partial") && (
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartProcessing(repo, e as unknown as React.MouseEvent);
+                                }}
+                                disabled={startProcessingLoading[repo.id]}
+                                className="text-green-600 focus:text-green-600 focus:bg-green-50 dark:text-green-400 dark:focus:bg-green-900/20"
+                              >
+                                {startProcessingLoading[repo.id] ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Play className="mr-2 h-4 w-4" />
+                                )}
+                                Start Processing
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -342,8 +404,9 @@ export default function AdminReposPage() {
                               }}
                               disabled={
                                 rescanLoading[repo.id] ||
-                                repo.import_status === "queued" ||
-                                repo.import_status === "importing"
+                                repo.status === "queued" ||
+                                repo.status === "ingesting" ||
+                                repo.status === "processing"
                               }
                             >
                               {rescanLoading[repo.id] ? (
@@ -353,16 +416,36 @@ export default function AdminReposPage() {
                               )}
                               Sync New Builds
                             </DropdownMenuItem>
+                            {/* Reingest Failed - for ingestion failures */}
+                            {(repo.status === "ingestion_partial" || repo.status === "failed") && (
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReingestFailed(repo, e as unknown as React.MouseEvent);
+                                }}
+                                disabled={reingestLoading[repo.id]}
+                              >
+                                {reingestLoading[repo.id] ? (
+                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RotateCcw className="mr-2 h-4 w-4" />
+                                )}
+                                Retry Failed Ingestion
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleReprocess(repo, e as unknown as React.MouseEvent);
+                                handleReprocessFailed(repo, e as unknown as React.MouseEvent);
                               }}
                               disabled={
                                 reprocessLoading[repo.id] ||
-                                repo.import_status === "queued" ||
-                                repo.import_status === "importing" ||
-                                repo.total_builds_imported === 0
+                                repo.status === "queued" ||
+                                repo.status === "ingesting" ||
+                                repo.status === "ingestion_complete" ||
+                                repo.status === "ingestion_partial" ||
+                                repo.status === "processing" ||
+                                repo.builds_failed === 0
                               }
                             >
                               {reprocessLoading[repo.id] ? (
@@ -370,7 +453,7 @@ export default function AdminReposPage() {
                               ) : (
                                 <RotateCcw className="mr-2 h-4 w-4" />
                               )}
-                              Re-extract Features
+                              Retry Failed Extractions{repo.builds_failed > 0 && ` (${repo.builds_failed})`}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem

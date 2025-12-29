@@ -14,7 +14,7 @@ Flow (NEW - chord pattern):
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from bson import ObjectId
 from celery import chain, chord, group
@@ -22,9 +22,10 @@ from celery import chain, chord, group
 from app.celery_app import celery_app
 from app.config import settings
 from app.core.tracing import TracingContext
+from app.database.mongo import get_database
 from app.entities.dataset_build import DatasetBuild
 from app.entities.dataset_enrichment_build import DatasetEnrichmentBuild
-from app.entities.dataset_version import DatasetVersion
+from app.entities.dataset_version import DatasetVersion, VersionStatus
 from app.entities.enums import ExtractionStatus
 from app.entities.feature_audit_log import AuditLogCategory
 from app.entities.raw_repository import RawRepository
@@ -42,9 +43,40 @@ from app.tasks.shared.events import publish_enrichment_update
 logger = logging.getLogger(__name__)
 
 
+class EnrichmentTask(PipelineTask):
+    """
+    Custom task class for enrichment with entity failure handling.
+
+    When a task fails (timeout, error), automatically updates
+    DatasetVersion status to FAILED and publishes WebSocket event.
+    """
+
+    def get_entity_failure_handler(self, kwargs: dict) -> Optional[Callable[[str, str], None]]:
+        """Update DatasetVersion status to FAILED when task fails."""
+        version_id = kwargs.get("version_id")
+        if not version_id:
+            return None
+
+        def update_version_failed(status: str, error_message: str) -> None:
+            try:
+                db = get_database()
+                version_repo = DatasetVersionRepository(db)
+                version_repo.mark_failed(version_id, error_message)
+                # Publish WebSocket event for frontend
+                publish_enrichment_update(
+                    version_id=version_id,
+                    status="failed",
+                    error=error_message,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to update version {version_id} status: {e}")
+
+        return update_version_failed
+
+
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=EnrichmentTask,
     name="app.tasks.version_enrichment.start_enrichment",
     queue="processing",
     soft_time_limit=120,
@@ -120,7 +152,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
             {
                 "total_rows": total_rows,
                 "repos_total": len(validated_raw_repo_ids),
-                "ingestion_status": "ingesting",
+                "status": VersionStatus.INGESTING.value,
             },
         )
         # Publish initial progress via WebSocket
@@ -270,7 +302,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
 # Task 1b: Aggregate ingestion results (chord callback)
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=EnrichmentTask,
     name="app.tasks.version_enrichment.aggregate_ingestion_results",
     queue="processing",
     soft_time_limit=30,
@@ -318,10 +350,11 @@ def aggregate_ingestion_results(
     )
 
     # Update version status
+    # Ingestion complete, now transition to PROCESSING for feature extraction
     version_repo.update_one(
         version_id,
         {
-            "ingestion_status": "completed",
+            "status": VersionStatus.PROCESSING.value,
             "ingestion_progress": 100,
             "repos_ingested": repos_success,
             "repos_failed": repos_failed,
@@ -334,7 +367,7 @@ def aggregate_ingestion_results(
 # Task 1c: Dispatch scans and processing after ingestion
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=EnrichmentTask,
     name="app.tasks.version_enrichment.dispatch_scans_and_processing",
     queue="processing",
     soft_time_limit=30,
@@ -385,7 +418,7 @@ def dispatch_scans_and_processing(self: PipelineTask, version_id: str) -> Dict[s
 # Task 2: Dispatch enrichment batches after ingestion
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=EnrichmentTask,
     name="app.tasks.version_enrichment.dispatch_enrichment_batches",
     queue="processing",
     soft_time_limit=120,
@@ -485,7 +518,7 @@ def dispatch_enrichment_batches(
 # Task 2: Process batch
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=EnrichmentTask,
     name="app.tasks.version_enrichment.process_enrichment_batch",
     queue="processing",
     soft_time_limit=600,
@@ -674,7 +707,7 @@ def process_enrichment_batch(
 # Task 3: Finalize
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=EnrichmentTask,
     name="app.tasks.version_enrichment.finalize_enrichment",
     queue="processing",
     soft_time_limit=30,
@@ -814,7 +847,7 @@ def _extract_features_for_enrichment(
 # Task 4: Dispatch version scans (runs in parallel with ingestion)
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=EnrichmentTask,
     name="app.tasks.version_enrichment.dispatch_version_scans",
     queue="processing",
     soft_time_limit=300,

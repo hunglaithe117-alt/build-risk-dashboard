@@ -157,15 +157,58 @@ def trigger_sync(
     return service.trigger_sync(repo_id, user_id)
 
 
-@router.post("/{repo_id}/reprocess-features")
-def trigger_reprocess_features(
+@router.post("/{repo_id}/reprocess-failed")
+def trigger_reprocess_failed(
     repo_id: str,
     db: Database = Depends(get_db),
     _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
 ):
-    """Reprocess features for all builds in the repository (Admin only)."""
+    """Reprocess only failed builds in the repository (Admin only)."""
     service = RepositoryService(db)
-    return service.trigger_reprocess(repo_id)
+    return service.trigger_reprocess_failed(repo_id)
+
+
+@router.post("/{repo_id}/reingest-failed")
+def trigger_reingest_failed(
+    repo_id: str,
+    db: Database = Depends(get_db),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
+):
+    """Retry failed ingestion builds in the repository (Admin only)."""
+    service = RepositoryService(db)
+    return service.trigger_reingest_failed(repo_id)
+
+
+@router.post("/{repo_id}/start-processing")
+def start_processing(
+    repo_id: str,
+    db: Database = Depends(get_db),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
+):
+    """
+    Start feature extraction phase (Admin only).
+
+    Phase 2 of the two-phase pipeline.
+    Only allowed when ingestion is complete (status: ingestion_complete or ingestion_partial).
+    User can proceed with partial ingestion if they accept some failed builds.
+    """
+    service = RepositoryService(db)
+    return service.start_processing(repo_id)
+
+
+@router.post("/{repo_id}/retry-predictions")
+def retry_predictions(
+    repo_id: str,
+    db: Database = Depends(get_db),
+    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
+):
+    """
+    Retry prediction for builds with failed predictions (Admin only).
+
+    Retries builds that have features extracted but prediction failed.
+    """
+    service = RepositoryService(db)
+    return service.trigger_retry_predictions(repo_id)
 
 
 @router.get(
@@ -214,28 +257,6 @@ def get_build_detail(
 
         raise HTTPException(status_code=404, detail="Build not found")
     return build
-
-
-@router.post(
-    "/{repo_id}/builds/{build_id}/reprocess",
-    status_code=status.HTTP_202_ACCEPTED,
-)
-def reprocess_build(
-    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
-    build_id: str = Path(..., description="Build id (Mongo ObjectId)"),
-    db: Database = Depends(get_db),
-    _admin: dict = Depends(RequirePermission(Permission.MANAGE_REPOS)),
-):
-    """
-    Reprocess a build using the new DAG-based feature pipeline (Admin only).
-
-    Useful for:
-    - Retrying failed builds
-    - Re-extracting features after pipeline updates
-    - Testing new feature extractors on existing data
-    """
-    service = RepositoryService(db)
-    return service.reprocess_build(repo_id, build_id, _admin)
 
 
 @router.get("/{repo_id}/export/preview")

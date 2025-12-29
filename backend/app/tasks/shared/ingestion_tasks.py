@@ -16,6 +16,8 @@ import logging
 import subprocess
 from typing import Any, Dict, List
 
+from celery.exceptions import SoftTimeLimitExceeded
+
 from app.celery_app import celery_app
 from app.ci_providers import CIProvider, get_ci_provider, get_provider_config
 from app.config import settings
@@ -137,6 +139,19 @@ def clone_repo(
             if isinstance(prev_result, dict):
                 return {**prev_result, **result}
             return result
+
+    except SoftTimeLimitExceeded:
+        # Task exceeded time limit - return result to continue pipeline
+        logger.error(f"{log_ctx} TIMEOUT! Task exceeded soft time limit")
+        result.update(
+            {
+                "status": "timeout",
+                "error": "Clone task exceeded time limit",
+            }
+        )
+        if isinstance(prev_result, dict):
+            return {**prev_result, **result}
+        return result
 
     except (subprocess.CalledProcessError, TimeoutError, Exception) as e:
         # Check if we have retries left
@@ -360,6 +375,24 @@ def create_worktree_chunk(
                 "fork_commits_replayed": fork_commits_replayed,
             }
         )
+
+    except SoftTimeLimitExceeded:
+        # Task exceeded time limit - return result with what we accomplished
+        remaining = len(commit_shas) - (worktrees_created + worktrees_skipped + worktrees_failed)
+        logger.error(
+            f"{log_ctx} TIMEOUT! Created {worktrees_created}, " f"{remaining} commits not processed"
+        )
+        result.update(
+            {
+                "status": "timeout",
+                "worktrees_created": worktrees_created,
+                "worktrees_skipped": worktrees_skipped,
+                "worktrees_failed": worktrees_failed + remaining,
+                "fork_commits_replayed": fork_commits_replayed,
+                "error": f"Timeout: {remaining} commits not processed",
+            }
+        )
+        return result
 
     except Exception as e:
         # Check if we have retries left
@@ -738,6 +771,24 @@ def download_logs_chunk(
         result["logs_downloaded"] = logs_downloaded
         result["logs_expired"] = logs_expired
         result["logs_skipped"] = logs_skipped
+        return result
+
+    except SoftTimeLimitExceeded:
+        # Task exceeded time limit - return result with what we accomplished
+        processed = logs_downloaded + logs_expired + logs_skipped
+        remaining = len(build_ids) - processed if build_ids else 0
+        logger.error(
+            f"{log_ctx} TIMEOUT! Downloaded {logs_downloaded}, " f"{remaining} builds not processed"
+        )
+        result.update(
+            {
+                "status": "timeout",
+                "logs_downloaded": logs_downloaded,
+                "logs_expired": logs_expired,
+                "logs_skipped": logs_skipped,
+                "error": f"Timeout: {remaining} builds not processed",
+            }
+        )
         return result
 
     except Exception as e:

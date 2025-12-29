@@ -225,7 +225,7 @@ export default function UserBuildsPage() {
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className="text-muted-foreground">Total builds:</span>
-                                <span className="font-medium">{repo.total_builds_imported.toLocaleString()}</span>
+                                <span className="font-medium">{repo.builds_fetched.toLocaleString()}</span>
                             </div>
                         </div>
                     </CardContent>

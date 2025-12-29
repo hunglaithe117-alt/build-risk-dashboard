@@ -1,11 +1,11 @@
 """
-ModelImportBuild Entity - Tracks builds fetched during model import.
+ModelImportBuild Entity - Tracks builds through the import pipeline.
 
-This entity links fetched builds to a specific ModelRepoConfig import session,
-enabling query-based tracking instead of passing state through Celery tasks.
+This entity links builds to a ModelRepoConfig and tracks their progress
+through fetch → ingestion → processing stages.
 
 Key design principles:
-- Import session tracking: Links build to specific import version
+- Session tracking: Links build to ModelRepoConfig
 - Status tracking: Tracks build through fetch → ingestion → processing
 - Query-based flow: Enables DB queries instead of state passing
 """
@@ -22,16 +22,26 @@ from app.entities.base import BaseEntity, PyObjectId
 class ModelImportBuildStatus(str, Enum):
     """Status of a build in the import pipeline."""
 
-    FETCHED = "fetched"  # Build successfully fetched from CI provider
-    FAILED = "failed"  # Failed to fetch
+    # Initial state
+    PENDING = "pending"  # Queued for fetch
+
+    # Fetch stage
+    FETCHED = "fetched"  # Build info fetched from CI API
+
+    # Ingestion stage (clone, worktree, logs)
+    INGESTING = "ingesting"  # Ingestion in progress
+    INGESTED = "ingested"  # Resources ready for processing
+
+    # Error state
+    FAILED = "failed"  # Any stage failed
 
 
 class ModelImportBuild(BaseEntity):
     """
-    Tracks a build fetched during model import.
+    Tracks a build through the import pipeline.
 
     Links RawBuildRun to ModelRepoConfig for import session tracking.
-    Enables query-based flow instead of passing build IDs through tasks.
+    Tracks status from fetch through ingestion to processing.
     """
 
     class Config:
@@ -49,21 +59,16 @@ class ModelImportBuild(BaseEntity):
         description="Reference to raw_build_runs - the source build data",
     )
 
-    # Import version (to distinguish between re-imports)
-    import_version: int = Field(
-        default=1,
-        description="Import version from ModelRepoConfig at time of fetch",
-    )
-
     # Pipeline status
     status: ModelImportBuildStatus = Field(
         default=ModelImportBuildStatus.FETCHED,
-        description="Fetch status: FETCHED or FAILED",
+        description="Pipeline status: FETCHED → INGESTING → INGESTED or FAILED",
     )
 
-    status_error: Optional[str] = Field(
+    # Error tracking (single field for any stage)
+    ingestion_error: Optional[str] = Field(
         None,
-        description="Error message if status is FAILED",
+        description="Error message if ingestion failed (clone, worktree, or logs)",
     )
 
     # Denormalized fields for quick access (avoid joins)
@@ -81,4 +86,14 @@ class ModelImportBuild(BaseEntity):
     fetched_at: datetime = Field(
         default_factory=datetime.utcnow,
         description="When this build was fetched from CI provider",
+    )
+
+    ingestion_started_at: Optional[datetime] = Field(
+        None,
+        description="When ingestion started",
+    )
+
+    ingested_at: Optional[datetime] = Field(
+        None,
+        description="When ingestion completed successfully",
     )

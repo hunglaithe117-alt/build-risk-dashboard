@@ -150,7 +150,6 @@ def extract_features_for_build(
     feature_config: Dict[str, Any],
     raw_build_run: RawBuildRun,
     selected_features: List[str],
-    github_client=None,
     save_run: bool = True,
     category: AuditLogCategory = AuditLogCategory.MODEL_TRAINING,
     output_build_id: Optional[str] = None,
@@ -193,13 +192,19 @@ def extract_features_for_build(
     feature_vector_repo = FeatureVectorRepository(db)
 
     try:
+        from app.services.github.github_client import get_public_github_client
+        from app.tasks.pipeline.feature_dag._inputs import GitHubClientInput
+
+        client = get_public_github_client()
+        github_client_input = GitHubClientInput(client=client, full_name=raw_repo.full_name)
+
         # Prepare all inputs and filter features by available resources
         prepared = prepare_pipeline_input(
             raw_repo=raw_repo,
             feature_config=feature_config,
             raw_build_run=raw_build_run,
             selected_features=selected_features if selected_features else None,
-            github_client=github_client,
+            github_client=github_client_input,
         )
 
         # Execute Hamilton pipeline

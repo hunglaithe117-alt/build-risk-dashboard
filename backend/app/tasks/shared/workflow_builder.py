@@ -20,7 +20,6 @@ from app.tasks.shared.ingestion_tasks import (
     clone_repo,
     create_worktree_chunk,
     download_logs_chunk,
-    finalize_worktrees,
 )
 
 logger = logging.getLogger(__name__)
@@ -113,7 +112,6 @@ def _create_task_signature(
     build_ids: List[str],
     commit_shas: List[str],
     ci_provider: str,
-    publish_status: bool = False,
     correlation_id: Optional[str] = None,
 ) -> Optional[Signature]:
     """
@@ -127,7 +125,6 @@ def _create_task_signature(
             raw_repo_id=raw_repo_id,
             github_repo_id=github_repo_id,
             full_name=full_name,
-            publish_status=publish_status,
             correlation_id=correlation_id,
         )
 
@@ -136,7 +133,6 @@ def _create_task_signature(
             raw_repo_id=raw_repo_id,
             github_repo_id=github_repo_id,
             commit_shas=commit_shas,
-            publish_status=publish_status,
             correlation_id=correlation_id,
         )
 
@@ -147,7 +143,6 @@ def _create_task_signature(
             full_name=full_name,
             build_ids=build_ids,
             ci_provider=ci_provider,
-            publish_status=publish_status,
             correlation_id=correlation_id,
         )
 
@@ -160,7 +155,6 @@ def _build_worktree_chain(
     raw_repo_id: str,
     github_repo_id: int,
     commit_shas: List[str],
-    publish_status: bool = False,
     correlation_id: Optional[str] = None,
 ) -> Optional[Signature]:
     """
@@ -187,27 +181,15 @@ def _build_worktree_chain(
     # Build chain of chunk tasks
     chunk_signatures = []
     for idx, chunk_shas in enumerate(chunks):
-        sig = create_worktree_chunk.s(
+        sig = create_worktree_chunk.si(
             raw_repo_id=raw_repo_id,
             github_repo_id=github_repo_id,
             commit_shas=chunk_shas,
-            publish_status=publish_status,
             chunk_index=idx,
             total_chunks=total_chunks,
             correlation_id=correlation_id,
         )
         chunk_signatures.append(sig)
-
-    # Add finalize task at end
-    chunk_signatures.append(
-        finalize_worktrees.s(
-            raw_repo_id=raw_repo_id,
-            github_repo_id=github_repo_id,
-            total_chunks=total_chunks,
-            publish_status=publish_status,
-            correlation_id=correlation_id,
-        )
-    )
 
     return chain(*chunk_signatures)
 
@@ -218,7 +200,6 @@ def _build_logs_chord(
     full_name: str,
     build_ids: List[str],
     ci_provider: str,
-    publish_status: bool = False,
     correlation_id: Optional[str] = None,
 ) -> Optional[Signature]:
     """
@@ -243,9 +224,6 @@ def _build_logs_chord(
         f"{len(unique_build_ids)} builds in {total_chunks} parallel chunks"
     )
 
-    # Check settings for force download flag
-    force_download = getattr(settings, "FORCE_DOWNLOAD_LOGS", False)
-
     # Build chord: parallel chunk tasks → aggregate callback
     chunk_tasks = [
         download_logs_chunk.si(
@@ -254,10 +232,8 @@ def _build_logs_chord(
             full_name=full_name,
             build_ids=chunk_ids,
             ci_provider=ci_provider,
-            publish_status=publish_status,
             chunk_index=idx,
             total_chunks=total_chunks,
-            force_download=force_download,
             correlation_id=correlation_id,
         )
         for idx, chunk_ids in enumerate(chunks)
@@ -267,7 +243,6 @@ def _build_logs_chord(
         raw_repo_id=raw_repo_id,
         github_repo_id=github_repo_id,
         total_chunks=total_chunks,
-        publish_status=publish_status,
         correlation_id=correlation_id,
     )
 

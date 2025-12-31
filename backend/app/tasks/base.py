@@ -17,10 +17,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
+import redis
 from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
 from pymongo.database import Database
 
+from app.config import settings
 from app.core.tracing import TracingContext
 from app.database.mongo import get_database
 from app.services.github.exceptions import (
@@ -57,6 +59,7 @@ class PipelineTask(Task):
 
     def __init__(self) -> None:
         self._db: Database | None = None
+        self._redis: redis.Redis | None = None
 
     def __call__(self, *args, **kwargs):
         """
@@ -94,7 +97,7 @@ class PipelineTask(Task):
                 )
                 raise self.retry(exc=exc, countdown=self.default_retry_delay) from exc
 
-    def _calculate_countdown(self, exc: GithubAllRateLimitError) -> int | None:
+    def _calculate_countdown(self, exc: GithubAllRateLimitError) -> Optional[int]:
         """
         Calculate exact countdown seconds from exception's retry_after.
 
@@ -159,11 +162,22 @@ class PipelineTask(Task):
         # Clear tracing context to avoid leaking to other tasks
         TracingContext.clear()
 
+        # Close Redis connection if it exists
+        if self._redis:
+            self._redis.close()
+            self._redis = None
+
     @property
     def db(self) -> Database:
         if self._db is None:
             self._db = get_database()
         return self._db
+
+    @property
+    def redis(self) -> redis.Redis:
+        if self._redis is None:
+            self._redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        return self._redis
 
     def get_entity_failure_handler(self, kwargs: dict) -> Optional[Callable[[str, str], None]]:
         """
@@ -247,3 +261,83 @@ class PipelineTask(Task):
         except Exception as notify_exc:
             # Don't fail the task if notification fails
             logger.warning(f"Failed to send rate limit notification: {notify_exc}")
+
+
+class ModelPipelineTask(PipelineTask):
+    """
+    Pipeline task for ModelRepoConfig with automatic failure handling.
+
+    When any unhandled exception occurs (including SoftTimeLimitExceeded),
+    this task will automatically:
+    1. Update ModelRepoConfig status to FAILED
+    2. Log the error with correlation_id for traceability
+    3. Send WebSocket notification to frontend
+    4. Store error_message for user visibility
+
+    Usage:
+        @celery_app.task(bind=True, base=ModelPipelineTask, ...)
+        def my_task(self, repo_config_id: str, ...):
+            ...
+
+    Note: Only critical/unrecoverable exceptions will set FAILED status.
+    Individual build failures are tracked at ModelTrainingBuild level.
+    """
+
+    abstract = True
+
+    def get_entity_failure_handler(self, kwargs: dict):
+        """
+        Override to auto-update ModelRepoConfig status to FAILED on task failure.
+
+        Extracts repo_config_id from kwargs and returns an updater function.
+        """
+        repo_config_id = kwargs.get("repo_config_id")
+        if not repo_config_id:
+            return None
+
+        # Capture correlation_id for logging
+        correlation_id = kwargs.get("correlation_id", "unknown")
+
+        def updater(status: str, error_msg: str) -> None:
+            """Update ModelRepoConfig to FAILED status with error details."""
+            from app.entities.model_repo_config import ModelImportStatus
+            from app.repositories.model_repo_config import ModelRepoConfigRepository
+            from app.tasks.shared.status_publisher import publish_status
+
+            log_prefix = f"[corr={correlation_id[:8] if correlation_id != 'unknown' else 'N/A'}]"
+
+            try:
+                # Truncate error message for storage
+                truncated_error = error_msg[:500] if error_msg else "Unknown error"
+
+                # Update repo config status
+                repo_config_repo = ModelRepoConfigRepository(self.db)
+                repo_config_repo.update_repository(
+                    repo_config_id,
+                    {
+                        "status": ModelImportStatus.FAILED.value,
+                        "error_message": truncated_error,
+                    },
+                )
+
+                # Log with correlation_id for traceability
+                logger.error(
+                    f"{log_prefix} ModelRepoConfig {repo_config_id} marked as FAILED. "
+                    f"Task: {self.name}. Error: {truncated_error[:200]}"
+                )
+
+                # Notify frontend via WebSocket
+                publish_status(
+                    repo_config_id,
+                    "failed",
+                    f"Pipeline failed: {truncated_error[:200]}",
+                )
+
+            except Exception as update_exc:
+                # Log but don't raise - we don't want to mask the original error
+                logger.warning(
+                    f"{log_prefix} Failed to update ModelRepoConfig {repo_config_id} "
+                    f"to FAILED status: {update_exc}"
+                )
+
+        return updater

@@ -183,7 +183,7 @@ export function IssuesTab({
                     <CardContent>
                         <p className="text-sm text-muted-foreground">
                             {failedExtractionCount} builds failed during feature extraction.
-                            Check the Builds tab for details. Click "Retry All" to re-process.
+                            Check the Builds tab for details. Click &quot;Retry All&quot; to re-process.
                         </p>
                     </CardContent>
                 </Card>
@@ -216,7 +216,7 @@ export function IssuesTab({
                     <CardContent>
                         <p className="text-sm text-muted-foreground">
                             {failedPredictionCount} builds have completed extraction but failed prediction.
-                            Click "Retry All" to re-run predictions.
+                            Click &quot;Retry All&quot; to re-run predictions.
                         </p>
                     </CardContent>
                 </Card>

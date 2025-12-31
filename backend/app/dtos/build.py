@@ -102,6 +102,110 @@ class BuildListResponse(BaseModel):
 
 
 # =============================================================================
+# Import Build DTOs (Ingestion Phase)
+# =============================================================================
+
+
+class ResourceStatusDTO(BaseModel):
+    """Status of a single resource in ingestion."""
+
+    status: str = "pending"  # pending, in_progress, completed, failed, skipped
+    error: Optional[str] = None
+
+
+class ImportBuildSummary(BaseModel):
+    """
+    Summary of a build in the import/ingestion phase.
+
+    Shows RawBuildRun basics + ModelImportBuild status + resource breakdown.
+    """
+
+    # Identity - using ModelImportBuild._id
+    id: str = Field(..., alias="_id")
+
+    # From RawBuildRun (denormalized)
+    build_number: Optional[int] = None
+    build_id: str = ""  # CI provider's build ID
+    commit_sha: str = ""
+    branch: str = ""
+    conclusion: str = "unknown"  # Build result (success/failure)
+    created_at: Optional[datetime] = None
+    web_url: Optional[str] = None
+
+    # From ModelImportBuild
+    status: str = "fetched"  # pending, fetched, ingesting, ingested, failed
+    ingestion_started_at: Optional[datetime] = None
+    ingested_at: Optional[datetime] = None
+
+    # Resource status breakdown
+    resource_status: Dict[str, ResourceStatusDTO] = {}
+    required_resources: List[str] = []
+
+    class Config:
+        populate_by_name = True
+
+
+class ImportBuildListResponse(BaseModel):
+    """Paginated list of import builds."""
+
+    items: List[ImportBuildSummary]
+    total: int
+    page: int
+    size: int
+
+
+# =============================================================================
+# Training Build DTOs (Processing Phase)
+# =============================================================================
+
+
+class TrainingBuildSummary(BaseModel):
+    """
+    Summary of a build in the processing/training phase.
+
+    Shows ModelTrainingBuild status + feature extraction + prediction.
+    """
+
+    # Identity - using ModelTrainingBuild._id
+    id: str = Field(..., alias="_id")
+
+    # Build basics (from RawBuildRun via joins)
+    build_number: Optional[int] = None
+    build_id: str = ""
+    commit_sha: str = ""
+    branch: str = ""
+    conclusion: str = "unknown"
+    created_at: Optional[datetime] = None
+    web_url: Optional[str] = None
+
+    # Extraction status
+    extraction_status: str = "pending"  # pending, completed, failed, partial
+    extraction_error: Optional[str] = None
+    extracted_at: Optional[datetime] = None
+    feature_count: int = 0
+    skipped_features: List[str] = []
+    missing_resources: List[str] = []
+
+    # Prediction results
+    predicted_label: Optional[str] = None  # LOW, MEDIUM, HIGH
+    prediction_confidence: Optional[float] = None
+    prediction_uncertainty: Optional[float] = None
+    predicted_at: Optional[datetime] = None
+
+    class Config:
+        populate_by_name = True
+
+
+class TrainingBuildListResponse(BaseModel):
+    """Paginated list of training builds."""
+
+    items: List[TrainingBuildSummary]
+    total: int
+    page: int
+    size: int
+
+
+# =============================================================================
 # Enrichment Build Detail DTOs (for dataset version build detail page)
 # =============================================================================
 

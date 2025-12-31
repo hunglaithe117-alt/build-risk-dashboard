@@ -68,6 +68,24 @@ export const reposApi = {
         const response = await api.get<{
             repo_id: string;
             status: string;
+            // Current batch (after checkpoint)
+            current_batch: {
+                batch_id: string | null;
+                pending: number;
+                fetched: number;
+                ingesting: number;
+                ingested: number;
+                failed: number;
+                total: number;
+            };
+            // Checkpoint info
+            checkpoint: {
+                has_checkpoint: boolean;
+                last_checkpoint_at: string | null;
+                accepted_failed: number;
+                stats: Record<string, number>;
+            };
+            // Total import builds (all batches)
             import_builds: {
                 pending: number;
                 fetched: number;

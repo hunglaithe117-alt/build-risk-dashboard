@@ -127,7 +127,7 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         }
         if status == ModelImportStatus.INGESTING:
             update["started_at"] = datetime.utcnow()
-        elif status in (ModelImportStatus.IMPORTED, ModelImportStatus.FAILED):
+        elif status in (ModelImportStatus.PROCESSED, ModelImportStatus.FAILED):
             update["completed_at"] = datetime.utcnow()
             update["last_synced_at"] = datetime.utcnow()
         if error:

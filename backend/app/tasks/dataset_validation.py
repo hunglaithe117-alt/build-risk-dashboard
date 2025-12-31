@@ -22,6 +22,7 @@ import logging
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
+import redis
 from bson import ObjectId
 from celery import chain, group
 
@@ -72,6 +73,8 @@ class DatasetValidationTask(PipelineTask):
         if not dataset_id:
             return None
 
+        redis_client = self.redis
+
         def update_dataset_failed(status: str, error_message: str) -> None:
             try:
                 db = get_database()
@@ -85,8 +88,8 @@ class DatasetValidationTask(PipelineTask):
                     },
                 )
                 # Publish WebSocket event for frontend
-                publish_dataset_update(dataset_id, "failed", error=error_message)
-                cleanup_validation_stats(dataset_id)
+                publish_dataset_update(redis_client, dataset_id, "failed", error=error_message)
+                cleanup_validation_stats(redis_client, dataset_id)
             except Exception as e:
                 logger.warning(f"Failed to update dataset {dataset_id} status: {e}")
 
@@ -94,6 +97,7 @@ class DatasetValidationTask(PipelineTask):
 
 
 def publish_dataset_update(
+    redis_client: redis.Redis,
     dataset_id: str,
     status: str,
     progress: int = 0,
@@ -103,10 +107,7 @@ def publish_dataset_update(
     """Publish dataset validation update to Redis for WebSocket broadcast."""
     import json
 
-    import redis
-
     try:
-        r = redis.from_url(settings.REDIS_URL)
         payload = {
             "type": "DATASET_UPDATE",
             "payload": {
@@ -120,7 +121,7 @@ def publish_dataset_update(
         if error:
             payload["payload"]["validation_error"] = error
 
-        r.publish("events", json.dumps(payload))
+        redis_client.publish("events", json.dumps(payload))
     except Exception as e:
         logger.error(f"Failed to publish dataset update: {e}")
 
@@ -184,7 +185,7 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
                 "validation_error": None,
             },
         )
-        publish_dataset_update(dataset_id, "validating", progress=0)
+        publish_dataset_update(self.redis, dataset_id, "validating", progress=0)
 
         # Get configuration
         file_path = dataset.file_path
@@ -255,17 +256,17 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
                     "setup_step": 2,
                 },
             )
-            publish_dataset_update(dataset_id, "completed", progress=100)
+            publish_dataset_update(self.redis, dataset_id, "completed", progress=100)
             return {"status": "completed", "message": "No valid repos found"}
 
         # Initialize Redis counters
-        init_validation_stats(dataset_id, total_repos, total_builds)
+        init_validation_stats(self.redis, dataset_id, total_repos, total_builds)
 
         # Chunk repos for parallel processing
         repo_chunks = list(chunk_dict(all_repo_builds, settings.VALIDATION_REPOS_PER_TASK))
 
         # Update total chunks in Redis
-        increment_validation_stat(dataset_id, "total_chunks", len(repo_chunks))
+        increment_validation_stat(self.redis, dataset_id, "total_chunks", len(repo_chunks))
 
         repo_tasks = [
             validate_repo_chunk.si(
@@ -328,7 +329,7 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
                 "correlation_id": correlation_id,
             },
         )
-        publish_dataset_update(dataset_id, "failed", error=str(e))
+        publish_dataset_update(self.redis, dataset_id, "failed", error=str(e))
         raise
 
 
@@ -367,7 +368,7 @@ def validate_repo_chunk(
     dataset_repo_stats_repo = DatasetRepoStatsRepository(db)
 
     # Check if cancelled before starting
-    if is_validation_cancelled(dataset_id):
+    if is_validation_cancelled(self.redis, dataset_id):
         logger.info(f"{log_ctx} Validation cancelled, skipping chunk")
         return {"chunk_index": chunk_index, "cancelled": True, "correlation_id": correlation_id}
 
@@ -379,7 +380,7 @@ def validate_repo_chunk(
     with get_public_github_client() as client:
         for repo_name, builds in repo_builds_chunk.items():
             # Check cancellation periodically
-            if is_validation_cancelled(dataset_id):
+            if is_validation_cancelled(self.redis, dataset_id):
                 logger.info(f"Validation cancelled mid-chunk for {dataset_id}")
                 break
             try:
@@ -389,8 +390,10 @@ def validate_repo_chunk(
                 # Check if private
                 if repo_data.get("private"):
                     repos_private += 1
-                    increment_validation_stat(dataset_id, "repos_private")
-                    increment_validation_stat(dataset_id, "builds_not_found", len(builds))
+                    increment_validation_stat(self.redis, dataset_id, "repos_private")
+                    increment_validation_stat(
+                        self.redis, dataset_id, "builds_not_found", len(builds)
+                    )
                     continue
 
                 # Create/update RawRepository
@@ -404,7 +407,7 @@ def validate_repo_chunk(
                 )
 
                 repos_valid += 1
-                increment_validation_stat(dataset_id, "repos_valid")
+                increment_validation_stat(self.redis, dataset_id, "repos_valid")
 
                 # Extract CI provider from first build
                 # All builds for same repo have same ci_provider
@@ -436,16 +439,16 @@ def validate_repo_chunk(
                     logger.error(f"Failed to validate repo {repo_name}: {e}")
 
                 repos_not_found += 1
-                increment_validation_stat(dataset_id, "repos_not_found")
-                increment_validation_stat(dataset_id, "builds_not_found", len(builds))
+                increment_validation_stat(self.redis, dataset_id, "repos_not_found")
+                increment_validation_stat(self.redis, dataset_id, "builds_not_found", len(builds))
 
     # Update chunk completion
-    increment_validation_stat(dataset_id, "chunks_completed")
+    increment_validation_stat(self.redis, dataset_id, "chunks_completed")
 
     # Publish progress update
-    stats = get_validation_stats(dataset_id)
+    stats = get_validation_stats(self.redis, dataset_id)
     progress = calculate_progress(stats["chunks_completed"], stats["total_chunks"])
-    publish_dataset_update(dataset_id, "validating", progress=progress, stats=stats)
+    publish_dataset_update(self.redis, dataset_id, "validating", progress=progress, stats=stats)
 
     return {
         "chunk_index": chunk_index,
@@ -496,7 +499,7 @@ def validate_builds_chunk(
     raw_repo_repo = RawRepositoryRepository(db)
 
     # Check if cancelled before starting
-    if is_validation_cancelled(dataset_id):
+    if is_validation_cancelled(self.redis, dataset_id):
         return {"repo_name": repo_name, "cancelled": True, "correlation_id": correlation_id}
 
     # Lookup raw_repo_id if not provided (dispatched from orchestrator)
@@ -609,7 +612,7 @@ def validate_builds_chunk(
         build_id = build_info["build_id"]
 
         # Check cancellation periodically
-        if is_validation_cancelled(dataset_id):
+        if is_validation_cancelled(self.redis, dataset_id):
             break
 
         try:
@@ -711,9 +714,9 @@ def validate_builds_chunk(
         batch_create_dataset_builds(dataset_build_repo, builds_to_insert)
 
     # Update Redis counters
-    increment_validation_stat(dataset_id, "builds_found", builds_found)
-    increment_validation_stat(dataset_id, "builds_not_found", builds_not_found)
-    increment_validation_stat(dataset_id, "builds_filtered", builds_filtered)
+    increment_validation_stat(self.redis, dataset_id, "builds_found", builds_found)
+    increment_validation_stat(self.redis, dataset_id, "builds_not_found", builds_not_found)
+    increment_validation_stat(self.redis, dataset_id, "builds_filtered", builds_filtered)
 
     return {
         "repo_name": repo_name,
@@ -769,7 +772,7 @@ def aggregate_validation_results(
     dataset_repo_stats_repo = DatasetRepoStatsRepository(db)
 
     # Get final stats from Redis (all tasks have completed at this point)
-    stats = get_validation_stats(dataset_id)
+    stats = get_validation_stats(self.redis, dataset_id)
 
     total_repos = stats["total_repos"]
     total_builds = stats["total_builds"]

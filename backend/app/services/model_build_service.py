@@ -12,7 +12,13 @@ from typing import Any, Dict, List, Optional
 from bson import ObjectId
 from pymongo.database import Database
 
-from app.dtos.build import BuildDetail, BuildListResponse, BuildSummary
+from app.dtos.build import (
+    BuildDetail,
+    BuildListResponse,
+    BuildSummary,
+    ImportBuildListResponse,
+    TrainingBuildListResponse,
+)
 from app.repositories.model_repo_config import ModelRepoConfigRepository
 from app.repositories.model_training_build import ModelTrainingBuildRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
@@ -305,3 +311,193 @@ class BuildService:
                 )
             )
         return items
+
+    def get_import_builds(
+        self,
+        repo_id: str,
+        skip: int = 0,
+        limit: int = 20,
+        q: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> ImportBuildListResponse:
+        """
+        Get import/ingestion builds for a repository.
+
+        Shows ModelImportBuild data with RawBuildRun enrichment.
+        This is for the Ingestion phase.
+        """
+        from app.dtos.build import ImportBuildListResponse, ImportBuildSummary, ResourceStatusDTO
+
+        try:
+            config_oid = ObjectId(repo_id)
+        except Exception:
+            return ImportBuildListResponse(items=[], total=0, page=1, size=limit)
+
+        config = self.model_repo_config_repo.find_by_id(repo_id)
+        if not config:
+            return ImportBuildListResponse(items=[], total=0, page=1, size=limit)
+
+        # Query model_import_builds
+        query: Dict[str, Any] = {"model_repo_config_id": config_oid}
+
+        if status:
+            query["status"] = status
+
+        if q:
+            or_conditions = []
+            or_conditions.append({"commit_sha": {"$regex": q, "$options": "i"}})
+            or_conditions.append({"ci_run_id": {"$regex": q, "$options": "i"}})
+            if or_conditions:
+                query["$or"] = or_conditions
+
+        total = self.db.model_import_builds.count_documents(query)
+        cursor = (
+            self.db.model_import_builds.find(query).sort("fetched_at", -1).skip(skip).limit(limit)
+        )
+        import_builds = list(cursor)
+
+        if not import_builds:
+            return ImportBuildListResponse(
+                items=[], total=total, page=skip // limit + 1, size=limit
+            )
+
+        # Get RawBuildRun data for enrichment
+        raw_ids = [b["raw_build_run_id"] for b in import_builds]
+        raw_cursor = self.db.raw_build_runs.find({"_id": {"$in": raw_ids}})
+        raw_map = {doc["_id"]: doc for doc in raw_cursor}
+
+        items = []
+        for imp in import_builds:
+            raw = raw_map.get(imp["raw_build_run_id"], {})
+
+            # Convert resource_status dict
+            resource_status = {}
+            for key, val in imp.get("resource_status", {}).items():
+                if isinstance(val, dict):
+                    resource_status[key] = ResourceStatusDTO(
+                        status=val.get("status", "pending"),
+                        error=val.get("error"),
+                    )
+
+            items.append(
+                ImportBuildSummary(
+                    _id=str(imp["_id"]),
+                    build_number=raw.get("build_number"),
+                    build_id=raw.get("ci_run_id", ""),
+                    commit_sha=imp.get("commit_sha") or raw.get("commit_sha", ""),
+                    branch=raw.get("branch", ""),
+                    conclusion=raw.get("conclusion", "unknown"),
+                    created_at=raw.get("created_at"),
+                    web_url=raw.get("web_url"),
+                    status=imp.get("status", "fetched"),
+                    ingestion_started_at=imp.get("ingestion_started_at"),
+                    ingested_at=imp.get("ingested_at"),
+                    resource_status=resource_status,
+                    required_resources=imp.get("required_resources", []),
+                )
+            )
+
+        return ImportBuildListResponse(
+            items=items,
+            total=total,
+            page=skip // limit + 1,
+            size=limit,
+        )
+
+    def get_training_builds(
+        self,
+        repo_id: str,
+        skip: int = 0,
+        limit: int = 20,
+        q: Optional[str] = None,
+        extraction_status: Optional[str] = None,
+    ) -> TrainingBuildListResponse:
+        """
+        Get training/processing builds for a repository.
+
+        Shows ModelTrainingBuild data with extraction and prediction info.
+        This is for the Processing phase.
+        """
+        from app.dtos.build import TrainingBuildListResponse, TrainingBuildSummary
+
+        try:
+            config_oid = ObjectId(repo_id)
+        except Exception:
+            return TrainingBuildListResponse(items=[], total=0, page=1, size=limit)
+
+        config = self.model_repo_config_repo.find_by_id(repo_id)
+        if not config:
+            return TrainingBuildListResponse(items=[], total=0, page=1, size=limit)
+
+        # Query model_training_builds
+        query: Dict[str, Any] = {"model_repo_config_id": config_oid}
+
+        if extraction_status:
+            query["extraction_status"] = extraction_status
+
+        if q:
+            or_conditions = []
+            if q.isdigit():
+                or_conditions.append({"build_number": int(q)})
+            or_conditions.append({"head_sha": {"$regex": q, "$options": "i"}})
+            if or_conditions:
+                query["$or"] = or_conditions
+
+        total = self.db.model_training_builds.count_documents(query)
+        cursor = (
+            self.db.model_training_builds.find(query)
+            .sort("build_created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+        training_builds = list(cursor)
+
+        if not training_builds:
+            return TrainingBuildListResponse(
+                items=[], total=total, page=skip // limit + 1, size=limit
+            )
+
+        # Get RawBuildRun data for enrichment
+        raw_ids = [t["raw_build_run_id"] for t in training_builds]
+        raw_cursor = self.db.raw_build_runs.find({"_id": {"$in": raw_ids}})
+        raw_map = {doc["_id"]: doc for doc in raw_cursor}
+
+        # Get FeatureVector data for skipped_features and missing_resources
+        fv_ids = [t["feature_vector_id"] for t in training_builds if t.get("feature_vector_id")]
+        fv_cursor = self.db.feature_vectors.find({"_id": {"$in": fv_ids}})
+        fv_map = {doc["_id"]: doc for doc in fv_cursor}
+
+        items = []
+        for training in training_builds:
+            raw = raw_map.get(training["raw_build_run_id"], {})
+            fv = fv_map.get(training.get("feature_vector_id"), {})
+
+            items.append(
+                TrainingBuildSummary(
+                    _id=str(training["_id"]),
+                    build_number=training.get("build_number") or raw.get("build_number"),
+                    build_id=raw.get("ci_run_id", ""),
+                    commit_sha=training.get("head_sha") or raw.get("commit_sha", ""),
+                    branch=raw.get("branch", ""),
+                    conclusion=raw.get("conclusion", "unknown"),
+                    created_at=training.get("build_created_at") or raw.get("created_at"),
+                    web_url=raw.get("web_url"),
+                    extraction_status=training.get("extraction_status", "pending"),
+                    extraction_error=training.get("extraction_error"),
+                    extracted_at=training.get("extracted_at"),
+                    feature_count=fv.get("feature_count", 0) or len(fv.get("features", {})),
+                    skipped_features=fv.get("skipped_features", []),
+                    missing_resources=fv.get("missing_resources", []),
+                    predicted_label=training.get("predicted_label"),
+                    prediction_confidence=training.get("prediction_confidence"),
+                    prediction_uncertainty=training.get("prediction_uncertainty"),
+                    predicted_at=training.get("predicted_at"),
+                )
+            )
+
+        return TrainingBuildListResponse(
+            items=items,
+            total=total,
+            page=skip // limit + 1,
+            size=limit,
+        )

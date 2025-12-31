@@ -124,8 +124,8 @@ class ModelImportBuild(BaseEntity):
         description="When ingestion completed successfully",
     )
 
-    # General ingestion error (not specific to a resource)
-    ingestion_error: Optional[str] = Field(
+    # Batch tracking for checkpoint system
+    batch_id: Optional[str] = Field(
         None,
-        description="Error message if ingestion failed",
+        description="UUID of the sync batch this build belongs to (for checkpoint tracking)",
     )

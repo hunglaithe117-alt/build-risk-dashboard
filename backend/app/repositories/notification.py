@@ -1,5 +1,7 @@
 """Repository for Notification entities."""
 
+from __future__ import annotations
+
 from typing import List
 
 from bson import ObjectId

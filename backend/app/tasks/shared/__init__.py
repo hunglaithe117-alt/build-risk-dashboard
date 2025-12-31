@@ -5,7 +5,6 @@ from app.tasks.shared.ingestion_tasks import (
     clone_repo,
     create_worktree_chunk,
     download_logs_chunk,
-    finalize_worktrees,
 )
 from app.tasks.shared.processing_helpers import (
     extract_features_for_build,
@@ -18,7 +17,6 @@ __all__ = [
     # Ingestion tasks
     "clone_repo",
     "create_worktree_chunk",
-    "finalize_worktrees",
     "download_logs_chunk",
     "aggregate_logs_results",
     # Processing helpers

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import redis
 import redis.asyncio as aioredis
 
@@ -33,14 +35,21 @@ class RedisLock:
             # critical section
     """
 
-    def __init__(self, key: str, timeout: int = 600, blocking_timeout: int = 30):
+    def __init__(
+        self,
+        key: str,
+        timeout: int = 600,
+        blocking_timeout: int = 30,
+        redis_client: redis.Redis | None = None,
+    ):
         self.key = f"lock:{key}"
         self.timeout = timeout
         self.blocking_timeout = blocking_timeout
         self._lock = None
+        self._client = redis_client
 
     def __enter__(self):
-        redis_client = redis.from_url(settings.REDIS_URL)
+        redis_client = self._client or redis.from_url(settings.REDIS_URL)
         self._lock = redis_client.lock(
             self.key,
             timeout=self.timeout,

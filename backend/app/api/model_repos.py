@@ -207,8 +207,8 @@ def start_processing(
     Start feature extraction phase (Admin only).
 
     Phase 2 of the two-phase pipeline.
-    Only allowed when ingestion is complete (status: ingestion_complete or ingestion_partial).
-    User can proceed with partial ingestion if they accept some failed builds.
+    Allowed when status is: ingested, imported, or partial.
+    Uses checkpoint to process only new builds since last processing.
     """
     service = RepositoryService(db)
     return service.start_processing(repo_id)
@@ -254,6 +254,58 @@ def get_repo_builds(
     """
     service = BuildService(db)
     return service.get_builds_by_repo(repo_id, skip, limit, q, extraction_status)
+
+
+@router.get(
+    "/{repo_id}/import-builds",
+    response_model_by_alias=False,
+)
+def get_import_builds(
+    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    q: str | None = Query(default=None, description="Search query (commit SHA, build ID)"),
+    status: str | None = Query(
+        default=None,
+        description="Filter by ingestion status: pending, fetched, ingesting, ingested, failed",
+    ),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    List import/ingestion builds for a repository.
+
+    Shows ModelImportBuild data with resource status breakdown.
+    For the Ingestion phase - shows what resources have been fetched/failed.
+    """
+    service = BuildService(db)
+    return service.get_import_builds(repo_id, skip, limit, q, status)
+
+
+@router.get(
+    "/{repo_id}/training-builds",
+    response_model_by_alias=False,
+)
+def get_training_builds(
+    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    q: str | None = Query(default=None, description="Search query (build number, commit SHA)"),
+    extraction_status: str | None = Query(
+        default=None,
+        description="Filter by extraction status: pending, completed, failed, partial",
+    ),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    List training/processing builds for a repository.
+
+    Shows ModelTrainingBuild data with extraction and prediction info.
+    For the Processing phase - shows feature extraction and prediction results.
+    """
+    service = BuildService(db)
+    return service.get_training_builds(repo_id, skip, limit, q, extraction_status)
 
 
 @router.get(

@@ -20,6 +20,21 @@ import { CollectionCard } from "../../_components/CollectionCard";
 import { ProcessingCard } from "../../_components/ProcessingCard";
 
 interface ImportProgress {
+    current_batch: {
+        batch_id: string | null;
+        pending: number;
+        fetched: number;
+        ingesting: number;
+        ingested: number;
+        failed: number;
+        total: number;
+    };
+    checkpoint: {
+        has_checkpoint: boolean;
+        last_checkpoint_at: string | null;
+        accepted_failed: number;
+        stats: Record<string, number>;
+    };
     import_builds: {
         pending: number;
         fetched: number;
@@ -129,25 +144,29 @@ export function OverviewTab({
     const repoId = repo.id;
     const status = repo.status || "queued";
 
-    const canStartProcessing = ["ingestion_complete", "ingestion_partial"].includes(status.toLowerCase());
+    const canStartProcessing = ["ingested", "processed"].includes(status.toLowerCase());
 
     return (
         <div className="space-y-6">
             {/* Mini Stepper */}
             <MiniStepper status={status} progress={progress} />
 
-            {/* Collection Card */}
+            {/* Collection Card - shows current batch (after checkpoint) */}
             <CollectionCard
-                fetchedCount={progress?.import_builds.total || 0}
-                ingestedCount={progress?.import_builds.ingested || 0}
-                totalCount={progress?.import_builds.total || 0}
-                failedCount={progress?.import_builds.failed || 0}
+                fetchedCount={progress?.current_batch?.total || progress?.import_builds.total || 0}
+                ingestedCount={progress?.current_batch?.ingested || progress?.import_builds.ingested || 0}
+                totalCount={progress?.current_batch?.total || progress?.import_builds.total || 0}
+                failedCount={progress?.current_batch?.failed || progress?.import_builds.failed || 0}
                 lastSyncedAt={repo.last_synced_at}
                 status={status}
                 onSync={onSync}
                 onRetryFailed={onRetryIngestion}
                 syncLoading={syncLoading}
                 retryLoading={retryIngestionLoading}
+                // Checkpoint props
+                hasCheckpoint={progress?.checkpoint?.has_checkpoint || false}
+                checkpointAt={progress?.checkpoint?.last_checkpoint_at}
+                acceptedFailedCount={progress?.checkpoint?.accepted_failed || 0}
             />
 
             {/* Processing Card */}

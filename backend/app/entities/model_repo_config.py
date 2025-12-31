@@ -21,11 +21,9 @@ class ModelImportStatus(str, Enum):
     QUEUED = "queued"
     FETCHING = "fetching"  # Fetching builds from CI API
     INGESTING = "ingesting"  # Clone/worktree/download logs phase
-    INGESTION_COMPLETE = "ingestion_complete"  # Phase 1 done, all builds ingested
-    INGESTION_PARTIAL = "ingestion_partial"  # Phase 1 done, some builds failed
+    INGESTED = "ingested"  # Ingestion done (user accepts current state to start processing)
     PROCESSING = "processing"  # Feature extraction phase
-    IMPORTED = "imported"  # All builds processed successfully
-    PARTIAL = "partial"  # Some builds succeeded, some failed
+    PROCESSED = "processed"  # Processing complete (features extracted)
     FAILED = "failed"  # Critical error, pipeline failed
 
 
@@ -110,4 +108,18 @@ class ModelRepoConfig(FeatureConfigBase):
     builds_failed: int = Field(
         default=0,
         description="Number of builds that failed processing",
+    )
+
+    # === CHECKPOINT (Batch boundary for progress tracking) ===
+    last_checkpoint_at: Optional[datetime] = Field(
+        None,
+        description="Timestamp when user accepted current ingestion state and started processing",
+    )
+    current_batch_id: Optional[str] = Field(
+        None,
+        description="UUID of the current sync batch (for tracking new builds)",
+    )
+    checkpoint_stats: dict = Field(
+        default_factory=dict,
+        description="Stats snapshot at checkpoint: {fetched, ingested, failed_ingestion}",
     )

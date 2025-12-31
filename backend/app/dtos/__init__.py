@@ -14,6 +14,11 @@ from .build import (
     BuildDetail,
     BuildListResponse,
     BuildSummary,
+    ImportBuildListResponse,
+    ImportBuildSummary,
+    ResourceStatusDTO,
+    TrainingBuildListResponse,
+    TrainingBuildSummary,
 )
 from .dashboard import (
     DashboardMetrics,
@@ -139,6 +144,13 @@ __all__ = [
     "BuildSummary",
     "BuildDetail",
     "BuildListResponse",
+    # Import Builds (Ingestion)
+    "ImportBuildSummary",
+    "ImportBuildListResponse",
+    "ResourceStatusDTO",
+    # Training Builds (Processing)
+    "TrainingBuildSummary",
+    "TrainingBuildListResponse",
     # Dataset
     "DatasetResponse",
     "DatasetListResponse",

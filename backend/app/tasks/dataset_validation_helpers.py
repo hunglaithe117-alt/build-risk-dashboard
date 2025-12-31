@@ -24,21 +24,19 @@ logger = logging.getLogger(__name__)
 REDIS_VALIDATION_PREFIX = "dataset_validation:"
 
 
-def get_redis_client() -> redis.Redis:
-    """Get Redis client for stats tracking."""
-    return redis.from_url(settings.REDIS_URL)
-
-
-def init_validation_stats(dataset_id: str, total_repos: int, total_builds: int) -> None:
+def init_validation_stats(
+    redis_client: redis.Redis, dataset_id: str, total_repos: int, total_builds: int
+) -> None:
     """
     Initialize Redis counters for a validation job.
 
     Args:
+        redis_client: Redis client
         dataset_id: Dataset being validated
         total_repos: Total unique repos to validate
         total_builds: Total builds to validate
     """
-    r = get_redis_client()
+    r = redis_client
     prefix = f"{REDIS_VALIDATION_PREFIX}{dataset_id}"
 
     # Set initial counters
@@ -57,11 +55,14 @@ def init_validation_stats(dataset_id: str, total_repos: int, total_builds: int) 
     pipe.execute()
 
 
-def increment_validation_stat(dataset_id: str, stat_name: str, amount: int = 1) -> int:
+def increment_validation_stat(
+    redis_client: redis.Redis, dataset_id: str, stat_name: str, amount: int = 1
+) -> int:
     """
     Increment a validation stat counter in Redis.
 
     Args:
+        redis_client: Redis client
         dataset_id: Dataset being validated
         stat_name: Name of stat (repos_valid, builds_found, etc.)
         amount: Amount to increment
@@ -69,22 +70,22 @@ def increment_validation_stat(dataset_id: str, stat_name: str, amount: int = 1) 
     Returns:
         New value after increment
     """
-    r = get_redis_client()
     key = f"{REDIS_VALIDATION_PREFIX}{dataset_id}:{stat_name}"
-    return r.incrby(key, amount)
+    return redis_client.incrby(key, amount)
 
 
-def get_validation_stats(dataset_id: str) -> Dict[str, int]:
+def get_validation_stats(redis_client: redis.Redis, dataset_id: str) -> Dict[str, int]:
     """
     Get all validation stats from Redis.
 
     Args:
+        redis_client: Redis client
         dataset_id: Dataset being validated
 
     Returns:
         Dict with all stat values
     """
-    r = get_redis_client()
+    r = redis_client
     prefix = f"{REDIS_VALIDATION_PREFIX}{dataset_id}"
 
     stats = {}
@@ -108,9 +109,9 @@ def get_validation_stats(dataset_id: str) -> Dict[str, int]:
     return stats
 
 
-def cleanup_validation_stats(dataset_id: str) -> None:
+def cleanup_validation_stats(redis_client: redis.Redis, dataset_id: str) -> None:
     """Delete validation stats from Redis after completion."""
-    r = get_redis_client()
+    r = redis_client
     prefix = f"{REDIS_VALIDATION_PREFIX}{dataset_id}"
 
     keys = r.keys(f"{prefix}:*")
@@ -118,10 +119,9 @@ def cleanup_validation_stats(dataset_id: str) -> None:
         r.delete(*keys)
 
 
-def is_validation_cancelled(dataset_id: str) -> bool:
+def is_validation_cancelled(redis_client: redis.Redis, dataset_id: str) -> bool:
     """Check if validation was cancelled via Redis flag."""
-    r = get_redis_client()
-    return r.get(f"dataset_validation:{dataset_id}:cancelled") == b"1"
+    return redis_client.get(f"dataset_validation:{dataset_id}:cancelled") == "1"
 
 
 def read_csv_chunks(

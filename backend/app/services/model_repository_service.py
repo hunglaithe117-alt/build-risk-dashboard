@@ -22,7 +22,7 @@ from app.repositories.raw_repository import RawRepositoryRepository
 from app.services.github.github_client import (
     get_user_github_client,
 )
-from app.tasks.model_processing import start_model_processing
+from app.tasks.model_ingestion import start_model_processing
 
 logger = logging.getLogger(__name__)
 
@@ -519,7 +519,10 @@ class RepositoryService:
         """
         Get detailed import progress breakdown.
 
-        Returns counts by ModelImportBuild status.
+        Returns counts by ModelImportBuild status, including:
+        - Total stats (all builds)
+        - Current batch stats (builds after checkpoint)
+        - Checkpoint info (timestamp and accepted failures)
         """
         from app.repositories.model_import_build import ModelImportBuildRepository
         from app.repositories.model_training_build import ModelTrainingBuildRepository
@@ -533,8 +536,28 @@ class RepositoryService:
         import_build_repo = ModelImportBuildRepository(self.db)
         training_build_repo = ModelTrainingBuildRepository(self.db)
 
-        # Get counts by import status
+        # Get counts by import status (total)
         import_status_counts = import_build_repo.count_by_status(repo_id)
+
+        # === CHECKPOINT-BASED CURRENT BATCH STATS ===
+        current_batch_id = repo_doc.current_batch_id
+        checkpoint_stats = repo_doc.checkpoint_stats or {}
+        has_checkpoint = repo_doc.last_checkpoint_at is not None
+
+        # Current batch counts (if batch_id exists)
+        current_batch_counts = {}
+        if current_batch_id:
+            current_batch_counts = import_build_repo.count_by_status_for_batch(
+                repo_id, current_batch_id
+            )
+
+        # Calculate current batch summary
+        current_batch_total = sum(current_batch_counts.values())
+        current_batch_ingested = current_batch_counts.get("ingested", 0)
+        current_batch_failed = current_batch_counts.get("failed", 0)
+
+        # Accepted failures from checkpoint (previous batches)
+        accepted_failed = checkpoint_stats.get("failed_ingestion", 0) if has_checkpoint else 0
 
         # Get extraction status counts from training builds
         extraction_pipeline = [
@@ -584,7 +607,26 @@ class RepositoryService:
             "status": repo_doc.status.value
             if hasattr(repo_doc.status, "value")
             else repo_doc.status,
-            # Import phase (ModelImportBuild)
+            # === CURRENT BATCH (after checkpoint) ===
+            "current_batch": {
+                "batch_id": current_batch_id,
+                "pending": current_batch_counts.get("pending", 0),
+                "fetched": current_batch_counts.get("fetched", 0),
+                "ingesting": current_batch_counts.get("ingesting", 0),
+                "ingested": current_batch_ingested,
+                "failed": current_batch_failed,
+                "total": current_batch_total,
+            },
+            # === CHECKPOINT INFO ===
+            "checkpoint": {
+                "has_checkpoint": has_checkpoint,
+                "last_checkpoint_at": (
+                    repo_doc.last_checkpoint_at.isoformat() if repo_doc.last_checkpoint_at else None
+                ),
+                "accepted_failed": accepted_failed,
+                "stats": checkpoint_stats,
+            },
+            # Import phase (ModelImportBuild) - TOTAL
             "import_builds": {
                 "pending": import_status_counts.get("pending", 0),
                 "fetched": import_status_counts.get("fetched", 0),
@@ -909,8 +951,12 @@ class RepositoryService:
         """
         Trigger Phase 2: Start processing (feature extraction + prediction).
 
-        Only allowed when ingestion is complete (INGESTION_COMPLETE or INGESTION_PARTIAL).
-        User can decide to proceed even with partial ingestion.
+        Allowed when:
+        - INGESTED: First processing after ingestion
+        - PROCESSED: Re-processing after new sync
+
+        Uses checkpoint to only process new builds since last processing.
+        FAILED status is only set by ModelPipelineTask on unhandled exceptions.
 
         Raises:
             HTTPException: If repository not found or status is invalid
@@ -923,22 +969,22 @@ class RepositoryService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
             )
 
-        # Validate status - must be ingestion complete/partial
+        # Validate status
         current_status = repo_doc.status
         if hasattr(current_status, "value"):
             current_status = current_status.value
 
-        valid_ingestion_statuses = [
-            ModelImportStatus.INGESTION_COMPLETE.value,
-            ModelImportStatus.INGESTION_PARTIAL.value,
+        valid_statuses = [
+            ModelImportStatus.INGESTED.value,
+            ModelImportStatus.PROCESSED.value,
         ]
 
-        if current_status not in valid_ingestion_statuses:
+        if current_status not in valid_statuses:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     f"Cannot start processing: status is '{current_status}'. "
-                    f"Ingestion must be complete first."
+                    f"Expected: ingested or processed."
                 ),
             )
 

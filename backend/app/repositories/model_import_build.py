@@ -48,6 +48,31 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             query["status"] = status.value if hasattr(status, "value") else status
         return self.find_many(query)
 
+    def find_ingested_after_checkpoint(
+        self,
+        config_id: str,
+        checkpoint_at: datetime,
+    ) -> List[ModelImportBuild]:
+        """
+        Find INGESTED builds created after the checkpoint timestamp.
+
+        Used to process only new builds that haven't been processed yet.
+
+        Args:
+            config_id: ModelRepoConfig ID
+            checkpoint_at: Only return builds with created_at > checkpoint_at
+
+        Returns:
+            List of ModelImportBuild entities created after checkpoint
+        """
+
+        query = {
+            "model_repo_config_id": ObjectId(config_id),
+            "status": ModelImportBuildStatus.INGESTED.value,
+            "created_at": {"$gt": checkpoint_at},
+        }
+        return self.find_many(query)
+
     def find_fetched_builds(self, config_id: str) -> List[ModelImportBuild]:
         """Find successfully fetched builds."""
         return self.find_by_repo_config(config_id, status=ModelImportBuildStatus.FETCHED)
@@ -124,6 +149,32 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         results = list(self.collection.aggregate(pipeline))
         return {r["_id"]: r["count"] for r in results}
 
+    def count_by_status_for_batch(self, config_id: str, batch_id: str) -> dict:
+        """
+        Get count of builds by status for a specific batch (current sync).
+
+        Used for checkpoint-based progress tracking to show only builds
+        from the current sync batch, not all builds.
+
+        Args:
+            config_id: ModelRepoConfig ID
+            batch_id: The batch UUID to filter on
+
+        Returns:
+            Dict mapping status -> count for builds in this batch only
+        """
+        pipeline = [
+            {
+                "$match": {
+                    "model_repo_config_id": ObjectId(config_id),
+                    "batch_id": batch_id,
+                }
+            },
+            {"$group": {"_id": "$status", "count": {"$sum": 1}}},
+        ]
+        results = list(self.collection.aggregate(pipeline))
+        return {r["_id"]: r["count"] for r in results}
+
     def update_many_by_status(
         self,
         config_id: str,
@@ -182,6 +233,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         status: ModelImportBuildStatus,
         ci_run_id: str,
         commit_sha: str,
+        batch_id: Optional[str] = None,
     ) -> ModelImportBuild:
         """
         Atomic upsert by business key (config + raw_build_run).
@@ -196,6 +248,9 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             "ci_run_id": ci_run_id,
             "commit_sha": commit_sha,
         }
+
+        if batch_id:
+            update_data["batch_id"] = batch_id
 
         doc = self.collection.find_one_and_update(
             {
@@ -302,6 +357,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         resource: str,
         status: ResourceStatus,
         error: Optional[str] = None,
+        from_resource_status: Optional[ResourceStatus] = None,
     ) -> int:
         """
         Update resource status for all INGESTING builds in a repo config.
@@ -311,6 +367,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             resource: Resource name
             status: New status
             error: Optional error message
+            from_resource_status: Optional filter to only update if currently in this status
 
         Returns:
             Number of builds updated
@@ -328,11 +385,17 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         elif status == ResourceStatus.IN_PROGRESS:
             update[f"resource_status.{resource}.started_at"] = now
 
+        query = {
+            "model_repo_config_id": ObjectId(config_id),
+            "status": ModelImportBuildStatus.INGESTING.value,
+        }
+
+        # Add logic to query specific resource status if provided
+        if from_resource_status:
+            query[f"resource_status.{resource}.status"] = from_resource_status.value
+
         result = self.collection.update_many(
-            {
-                "model_repo_config_id": ObjectId(config_id),
-                "status": ModelImportBuildStatus.INGESTING.value,
-            },
+            query,
             {"$set": update},
         )
         return result.modified_count
@@ -412,7 +475,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         self,
         config_id: str,
         resource: str,
-        failed_commits: List[str],
+        commits: List[str],
         status: ResourceStatus,
         error: Optional[str] = None,
     ) -> int:
@@ -422,7 +485,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         Args:
             config_id: ModelRepoConfig ID
             resource: Resource name (e.g., git_worktree)
-            failed_commits: List of commit SHAs that failed
+            commits: List of commit SHAs that failed
             status: Status for failed builds
             error: Error message
 
@@ -441,7 +504,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             {
                 "model_repo_config_id": ObjectId(config_id),
                 "status": ModelImportBuildStatus.INGESTING.value,
-                "commit_sha": {"$in": failed_commits},
+                "commit_sha": {"$in": commits},
             },
             {"$set": update},
         )

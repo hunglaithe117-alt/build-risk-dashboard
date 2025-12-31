@@ -28,7 +28,26 @@ import { OverviewTab } from "./_tabs/OverviewTab";
 import { BuildsTab } from "./_tabs/BuildsTab";
 import { IssuesTab } from "./_tabs/IssuesTab";
 
+
 interface ImportProgress {
+    // Current batch (builds in the current sync session)
+    current_batch: {
+        batch_id: string | null;
+        pending: number;
+        fetched: number;
+        ingesting: number;
+        ingested: number;
+        failed: number;
+        total: number;
+    };
+    // Checkpoint info (if processing was started)
+    checkpoint: {
+        has_checkpoint: boolean;
+        last_checkpoint_at: string | null;
+        accepted_failed: number;
+        stats: Record<string, number>;
+    };
+    // Total import builds (all batches)
     import_builds: {
         pending: number;
         fetched: number;
@@ -94,6 +113,8 @@ export default function RepoDetailPage() {
         try {
             const data = await reposApi.getImportProgress(repoId);
             setProgress({
+                current_batch: data.current_batch,
+                checkpoint: data.checkpoint,
                 import_builds: data.import_builds,
                 training_builds: data.training_builds,
             });

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2, RefreshCw, RotateCcw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +25,10 @@ interface CollectionCardProps {
     onRetryFailed: () => void;
     syncLoading: boolean;
     retryLoading: boolean;
+    // Checkpoint info
+    hasCheckpoint?: boolean;
+    checkpointAt?: string | null;
+    acceptedFailedCount?: number;
 }
 
 export function CollectionCard({
@@ -38,6 +42,9 @@ export function CollectionCard({
     onRetryFailed,
     syncLoading,
     retryLoading,
+    hasCheckpoint = false,
+    checkpointAt,
+    acceptedFailedCount = 0,
 }: CollectionCardProps) {
     const isCollecting = ["queued", "fetching", "ingesting"].includes(status.toLowerCase());
     const hasPartial = failedCount > 0;
@@ -83,7 +90,23 @@ export function CollectionCard({
                     />
                 </div>
 
-                {/* Warning for partial ingestion */}
+                {/* Checkpoint info (previous batch accepted failures) */}
+                {hasCheckpoint && acceptedFailedCount > 0 && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800">
+                        <CheckCircle2 className="h-4 w-4 text-slate-500 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm text-slate-600 dark:text-slate-400">
+                            <span className="font-medium">{acceptedFailedCount} failed builds accepted</span>
+                            <span className="text-slate-400 dark:text-slate-500">
+                                {" "}from previous batch
+                                {checkpointAt && (
+                                    <span> • Checkpoint: {formatTimestamp(checkpointAt)}</span>
+                                )}
+                            </span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Warning for partial ingestion (current batch only) */}
                 {hasPartial && !isCollecting && (
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900">
                         <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />

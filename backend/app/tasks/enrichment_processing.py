@@ -1001,17 +1001,6 @@ def process_single_enrichment(
     if not dataset_version:
         return {"status": "error", "error": "Version not found"}
 
-    # Create GitHub client
-    github_client_input = None
-    try:
-        from app.services.github.github_client import get_public_github_client
-        from app.tasks.pipeline.feature_dag._inputs import GitHubClientInput
-
-        client = get_public_github_client()
-        github_client_input = GitHubClientInput(client=client, full_name=raw_repo.full_name)
-    except Exception as e:
-        logger.warning(f"{corr_prefix} Failed to create GitHub client: {e}")
-
     # Extract features using shared helper
     result = extract_features_for_build(
         db=self.db,
@@ -1019,7 +1008,6 @@ def process_single_enrichment(
         feature_config=dataset_version.feature_configs,
         raw_build_run=raw_build_run,
         selected_features=selected_features,
-        github_client=github_client_input,
         output_build_id=enrichment_build_id,
         category=AuditLogCategory.DATASET_ENRICHMENT,
     )

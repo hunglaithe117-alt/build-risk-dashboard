@@ -1,7 +1,7 @@
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from bson import ObjectId
 
@@ -9,6 +9,7 @@ from app.celery_app import celery_app
 from app.config import settings
 from app.core.tracing import TracingContext
 from app.entities.enums import ExtractionStatus
+from app.entities.model_import_build import ModelImportBuildStatus
 from app.entities.model_repo_config import ModelImportStatus
 from app.repositories.dataset_template_repository import DatasetTemplateRepository
 from app.repositories.model_import_build import ModelImportBuildRepository
@@ -16,7 +17,7 @@ from app.repositories.model_repo_config import ModelRepoConfigRepository
 from app.repositories.model_training_build import ModelTrainingBuildRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
-from app.tasks.base import PipelineTask
+from app.tasks.base import ModelPipelineTask, PipelineTask
 from app.tasks.shared import extract_features_for_build
 from app.tasks.shared.events import publish_build_status as publish_build_update
 from app.tasks.shared.events import publish_repo_status as publish_status
@@ -24,96 +25,142 @@ from app.tasks.shared.events import publish_repo_status as publish_status
 logger = logging.getLogger(__name__)
 
 
-# Task 1: Orchestrator - starts ingestion then processing
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
-    name="app.tasks.model_processing.start_model_processing",
+    base=ModelPipelineTask,
+    name="app.tasks.model_ingestion.start_processing_phase",
     queue="processing",
-    soft_time_limit=120,
-    time_limit=180,
+    soft_time_limit=60,
+    time_limit=120,
 )
-def start_model_processing(
+def start_processing_phase(
     self: PipelineTask,
     repo_config_id: str,
-    ci_provider: str,
-    max_builds: Optional[int] = None,
-    since_days: Optional[int] = None,
-    only_with_logs: bool = False,
-    sync_until_existing: bool = False,
 ) -> Dict[str, Any]:
     """
-    Orchestrator: Start ingestion for repo, then dispatch processing.
+    Phase 2: Start processing phase (manually triggered by user).
 
-    Flow: start_model_processing -> ingest_model_builds -> dispatch_build_processing
+    Uses checkpoint to determine which builds haven't been processed yet:
+    - If last_checkpoint_at exists: only process builds created AFTER that timestamp
+    - If no checkpoint: process ALL INGESTED builds (first processing)
+
+    After processing starts, creates a new checkpoint.
     """
-    from app.entities.model_repo_config import ModelImportStatus
-    from app.repositories.model_repo_config import ModelRepoConfigRepository
-    from app.tasks.model_ingestion import ingest_model_builds
+    correlation_id = TracingContext.get_correlation_id() or str(uuid.uuid4())
+    log_ctx = f"[corr={correlation_id[:8]}]"
 
-    # Generate correlation_id for tracing entire flow
-    correlation_id = str(uuid.uuid4())
+    import_build_repo = ModelImportBuildRepository(self.db)
+    repo_config_repo = ModelRepoConfigRepository(self.db)
 
-    # Set tracing context for structured logging
-    TracingContext.set(
-        correlation_id=correlation_id,
-        repo_id=repo_config_id,
-        pipeline_type="model_processing",
+    # Validate status
+    repo_config = repo_config_repo.find_by_id(repo_config_id)
+    if not repo_config:
+        logger.error(f"{log_ctx} Repository config {repo_config_id} not found")
+        return {"status": "error", "message": "Repository config not found"}
+
+    # Allow processing when status is INGESTED (ready for processing)
+    # or PROCESSED (re-processing after sync)
+    valid_statuses = [
+        ModelImportStatus.INGESTED.value,
+        ModelImportStatus.PROCESSED.value,
+    ]
+    if repo_config.status not in valid_statuses:
+        msg = (
+            f"Cannot start processing: status is {repo_config.status}. "
+            f"Expected: {valid_statuses}"
+        )
+        logger.warning(f"{log_ctx} {msg}")
+        return {"status": "error", "message": msg}
+
+    # === DETERMINE WHICH BUILDS TO PROCESS ===
+    # Use checkpoint to find only NEW builds since last processing
+    last_checkpoint = repo_config.last_checkpoint_at
+
+    if last_checkpoint:
+        # Process only builds created AFTER the last checkpoint
+        logger.info(f"{log_ctx} Checkpoint exists at {last_checkpoint}, finding new builds")
+        ingested_builds = import_build_repo.find_ingested_after_checkpoint(
+            repo_config_id, checkpoint_at=last_checkpoint
+        )
+    else:
+        # First processing - get ALL ingested builds
+        logger.info(f"{log_ctx} No checkpoint, processing all INGESTED builds")
+        ingested_builds = import_build_repo.find_by_repo_config(
+            repo_config_id, status=ModelImportBuildStatus.INGESTED
+        )
+
+    if not ingested_builds:
+        logger.info(f"{log_ctx} No new ingested builds to process for {repo_config_id}")
+        return {"status": "completed", "builds": 0, "message": "No new builds to process"}
+
+    # === CREATE CHECKPOINT ===
+    # Snapshot current stats before processing
+    status_counts = import_build_repo.count_by_status(repo_config_id)
+    total_fetched = sum(status_counts.values())
+    ingested_count = status_counts.get(ModelImportBuildStatus.INGESTED.value, 0)
+    failed_ingestion_count = status_counts.get(ModelImportBuildStatus.FAILED.value, 0)
+
+    checkpoint_timestamp = datetime.utcnow()
+    current_batch_id = repo_config.current_batch_id
+
+    logger.info(
+        f"{log_ctx} Creating checkpoint: "
+        f"fetched={total_fetched}, ingested={ingested_count}, failed={failed_ingestion_count}, "
+        f"processing {len(ingested_builds)} builds"
     )
 
-    model_repo_config_repo = ModelRepoConfigRepository(self.db)
+    # Extract raw_build_run_ids
+    raw_build_run_ids = [str(b.raw_build_run_id) for b in ingested_builds]
 
-    # Validate repo exists
-    repo = model_repo_config_repo.find_by_id(repo_config_id)
-    if not repo:
-        logger.error(f"Repository {repo_config_id} not found")
-        return {"status": "error", "error": "Repository not found"}
-
-    # Mark as started
-    model_repo_config_repo.update_repository(
+    # Save checkpoint and update status to PROCESSING
+    repo_config_repo.update_repository(
         repo_config_id,
-        {"status": ModelImportStatus.INGESTING.value},
-    )
-    publish_status(repo_config_id, "ingesting", "Starting import workflow...")
-
-    try:
-        ingest_model_builds.delay(
-            repo_config_id=repo_config_id,
-            ci_provider=ci_provider,
-            max_builds=max_builds,
-            since_days=since_days,
-            only_with_logs=only_with_logs,
-            sync_until_existing=sync_until_existing,
-            correlation_id=correlation_id,
-        )
-
-        logger.info(f"Dispatched model processing workflow for {repo.full_name}")
-
-        return {
-            "status": "dispatched",
-            "repo_config_id": repo_config_id,
-            "full_name": repo.full_name,
-            "correlation_id": correlation_id,
-        }
-
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Model processing start failed: {error_msg}")
-        model_repo_config_repo.update_repository(
-            repo_config_id,
-            {
-                "status": ModelImportStatus.FAILED.value,
-                "error_message": error_msg,
+        {
+            "status": ModelImportStatus.PROCESSING.value,
+            "last_checkpoint_at": checkpoint_timestamp,
+            "checkpoint_stats": {
+                "fetched": total_fetched,
+                "ingested": ingested_count,
+                "failed_ingestion": failed_ingestion_count,
+                "batch_id": current_batch_id,
             },
-        )
-        publish_status(repo_config_id, "failed", error_msg)
-        raise
+        },
+    )
+
+    # Dispatch processing with correlation_id
+    dispatch_build_processing.delay(
+        repo_config_id=repo_config_id,
+        raw_repo_id=str(repo_config.raw_repo_id),
+        raw_build_run_ids=raw_build_run_ids,
+        correlation_id=correlation_id,
+    )
+
+    logger.info(f"{log_ctx} Dispatched processing for {len(raw_build_run_ids)} new builds")
+
+    publish_status(
+        repo_config_id,
+        "processing",
+        f"Processing {len(raw_build_run_ids)} builds...",
+    )
+
+    return {
+        "status": "dispatched",
+        "builds": len(raw_build_run_ids),
+        "checkpoint": {
+            "timestamp": checkpoint_timestamp.isoformat(),
+            "stats": {
+                "fetched": total_fetched,
+                "ingested": ingested_count,
+                "failed_ingestion": failed_ingestion_count,
+            },
+        },
+    }
 
 
 # Task 2: Dispatch processing for all pending builds
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=ModelPipelineTask,
     name="app.tasks.model_processing.dispatch_build_processing",
     queue="processing",
     soft_time_limit=300,
@@ -155,20 +202,15 @@ def dispatch_build_processing(
         logger.info(f"{corr_prefix} No builds to process for repo config {repo_config_id}")
         repo_config_repo.update_repository(
             repo_config_id,
-            {"status": ModelImportStatus.IMPORTED.value},
+            {"status": ModelImportStatus.PROCESSED.value},
         )
-        publish_status(repo_config_id, "imported", "No new builds to process")
+        publish_status(repo_config_id, "processed", "No new builds to process")
         return {"repo_config_id": repo_config_id, "dispatched": 0}
 
     raw_build_runs = raw_build_run_repo.find_by_ids(raw_build_run_ids)
     build_run_map = {str(r.id): r for r in raw_build_runs}
 
-    # Get import builds and filter to only INGESTED status
-    from app.entities.model_import_build import ModelImportBuildStatus as ImportStatus
-
-    import_builds = import_build_repo.find_by_raw_build_run_ids(repo_config_id, raw_build_run_ids)
-    # Only process builds that are INGESTED (have all resources)
-    ingested_builds = [ib for ib in import_builds if ib.status == ImportStatus.INGESTED]
+    ingested_builds = import_build_repo.find_by_raw_build_run_ids(repo_config_id, raw_build_run_ids)
 
     # Sort by created_at ascending (oldest first) for temporal features
     ingested_builds.sort(
@@ -183,7 +225,6 @@ def dispatch_build_processing(
     # Step 1: Create ModelTrainingBuild for INGESTED builds only (in order)
     created_count = 0
     skipped_existing = 0
-    skipped_not_ready = 0
     model_build_ids = []
 
     # Process in temporal order: oldest → newest
@@ -221,13 +262,9 @@ def dispatch_build_processing(
         if was_created:
             created_count += 1
 
-    # Count not-ready builds (FAILED ingestion)
-    skipped_not_ready = len(import_builds) - len(ingested_builds)
-
     logger.info(
         f"{corr_prefix} Created {created_count} new builds, "
         f"skipped {skipped_existing} already processed, "
-        f"skipped {skipped_not_ready} not ready (failed ingestion), "
         f"dispatching {len(model_build_ids)} for processing (temporal order)"
     )
 
@@ -241,9 +278,9 @@ def dispatch_build_processing(
         "processing",
         f"Scheduling {len(model_build_ids)} builds for sequential processing...",
         stats={
-            "builds_fetched": len(raw_build_run_ids),
-            "builds_processed": skipped_existing,
-            "builds_failed": 0,
+            "builds_ingested": len(raw_build_run_ids),
+            "builds_created": created_count,
+            "builds_skipped": skipped_existing,
         },
     )
 
@@ -256,9 +293,9 @@ def dispatch_build_processing(
         # No builds to process
         repo_config_repo.update_repository(
             repo_config_id,
-            {"status": ModelImportStatus.IMPORTED.value},
+            {"status": ModelImportStatus.PROCESSED.value},
         )
-        publish_status(repo_config_id, "imported", "No pending builds to process")
+        publish_status(repo_config_id, "processed", "No pending builds to process")
         return {"repo_config_id": repo_config_id, "dispatched": 0}
 
     # Create sequential tasks - process builds one by one
@@ -307,7 +344,7 @@ def dispatch_build_processing(
 
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=ModelPipelineTask,
     name="app.tasks.processing.finalize_model_processing",
     queue="processing",
     soft_time_limit=60,
@@ -341,13 +378,13 @@ def finalize_model_processing(
     skipped_count = sum(1 for r in results if r and r.get("status") == "skipped")
     total_count = len(results)
 
-    # Determine final status
+    # Determine final status - always PROCESSED
+    # FAILED is only set by ModelPipelineTask on unhandled exceptions
+    final_status = ModelImportStatus.PROCESSED
+
+    # Log warning if all builds failed (but don't set FAILED status)
     if failed_count > 0 and success_count == 0:
-        final_status = ModelImportStatus.FAILED
-    elif failed_count > 0 and success_count > 0:
-        final_status = ModelImportStatus.PARTIAL
-    else:
-        final_status = ModelImportStatus.IMPORTED
+        logger.warning(f"{corr_prefix} All builds failed processing ({failed_count}), ")
 
     # Mark import as complete
     model_build_repo = ModelTrainingBuildRepository(self.db)
@@ -405,290 +442,6 @@ def finalize_model_processing(
         "skipped": skipped_count,
         "status": final_status,
         "aggregated_stats": aggregated_stats,
-    }
-
-
-# Task 3: Process a batch of builds (new batch pattern)
-@celery_app.task(
-    bind=True,
-    base=PipelineTask,
-    name="app.tasks.processing.process_build_batch",
-    queue="processing",
-    soft_time_limit=1800,  # 30 min for batch
-    time_limit=2100,
-)
-def process_build_batch(
-    self: PipelineTask,
-    repo_config_id: str,
-    model_build_ids: List[str],
-    batch_index: int = 0,
-    total_batches: int = 1,
-    correlation_id: str = "",
-) -> Dict[str, Any]:
-    """
-    Process a batch of builds for feature extraction.
-
-    This is the batch version of process_workflow_run, matching the
-    enrichment flow pattern (process_enrichment_batch).
-
-    Args:
-        repo_config_id: The model_repo_config_id
-        model_build_ids: List of ModelTrainingBuild ObjectId strings
-        batch_index: Index of this batch (for logging)
-        total_batches: Total number of batches (for logging)
-        correlation_id: Correlation ID for tracing
-    """
-    from celery.exceptions import SoftTimeLimitExceeded
-
-    from app.repositories.dataset_template_repository import DatasetTemplateRepository
-    from app.services.github.github_client import get_public_github_client
-    from app.tasks.pipeline.feature_dag._inputs import GitHubClientInput
-
-    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
-    log_ctx = f"{corr_prefix}[batch={batch_index + 1}/{total_batches}]"
-
-    model_build_repo = ModelTrainingBuildRepository(self.db)
-    repo_config_repo = ModelRepoConfigRepository(self.db)
-    raw_build_run_repo = RawBuildRunRepository(self.db)
-    raw_repo_repo = RawRepositoryRepository(self.db)
-
-    # Validate repo config exists
-    repo_config = repo_config_repo.find_by_id(repo_config_id)
-    if not repo_config:
-        logger.error(f"{log_ctx} Repository Config {repo_config_id} not found")
-        return {"status": "error", "error": "Repository Config not found"}
-
-    # Get RawRepository (same for all builds in this batch)
-    raw_repo = raw_repo_repo.find_by_id(repo_config.raw_repo_id)
-    if not raw_repo:
-        logger.error(f"{log_ctx} RawRepository {repo_config.raw_repo_id} not found")
-        return {"status": "error", "error": "RawRepository not found"}
-
-    # Get template features
-    template_repo = DatasetTemplateRepository(self.db)
-    template = template_repo.find_by_name("TravisTorrent Full")
-    feature_names = template.feature_names if template else []
-
-    # Create GitHub client once for the batch
-    github_client_input = None
-    try:
-        client = get_public_github_client()
-        github_client_input = GitHubClientInput(client=client, full_name=raw_repo.full_name)
-    except Exception as e:
-        logger.warning(f"{log_ctx} Failed to create GitHub client: {e}")
-
-    # Process each build in the batch
-    processed = 0
-    succeeded = 0
-    failed = 0
-    skipped = 0
-    processed_ids = []  # Track which builds we've processed for timeout handling
-
-    try:
-        for build_id_str in model_build_ids:
-            try:
-                result = _process_single_build(
-                    db=self.db,
-                    model_build_id=build_id_str,
-                    repo_config=repo_config,
-                    raw_repo=raw_repo,
-                    feature_names=feature_names,
-                    github_client_input=github_client_input,
-                    model_build_repo=model_build_repo,
-                    repo_config_repo=repo_config_repo,
-                    raw_build_run_repo=raw_build_run_repo,
-                    corr_prefix=log_ctx,
-                )
-                processed += 1
-                processed_ids.append(build_id_str)
-                status = result.get("status")
-                if status in ("completed", "partial"):
-                    succeeded += 1
-                elif status == "skipped":
-                    skipped += 1
-                else:
-                    failed += 1
-
-            except Exception as e:
-                logger.error(f"{log_ctx} Failed to process build {build_id_str}: {e}")
-                failed += 1
-                processed += 1
-                processed_ids.append(build_id_str)
-
-    except SoftTimeLimitExceeded:
-        # Mark remaining (unprocessed) builds as FAILED due to timeout
-        unprocessed_ids = [bid for bid in model_build_ids if bid not in processed_ids]
-        unprocessed_count = len(unprocessed_ids)
-
-        logger.error(
-            f"{log_ctx} TIMEOUT! Processed {len(processed_ids)}/{len(model_build_ids)} "
-            f"builds, marking {unprocessed_count} as failed"
-        )
-
-        # Mark each unprocessed build as failed
-        for build_id in unprocessed_ids:
-            model_build_repo.update_one(
-                build_id,
-                {
-                    "extraction_status": ExtractionStatus.FAILED.value,
-                    "extraction_error": (
-                        "Timeout: batch exceeded time limit before processing this build"
-                    ),
-                },
-            )
-
-        # Update repo config failed count
-        if unprocessed_count > 0:
-            repo_config_repo.increment_builds_failed(
-                ObjectId(repo_config_id),
-                count=unprocessed_count,
-            )
-
-        # Publish update for real-time UI
-        publish_status(
-            repo_config_id,
-            "processing",
-            f"Batch {batch_index + 1} timeout: {len(processed_ids)} processed, "
-            f"{unprocessed_count} timed out",
-        )
-
-        # Return result instead of re-raising - allows chord callback to aggregate
-        # and set PARTIAL status instead of failing entire pipeline
-        return {
-            "status": "failed",
-            "batch_index": batch_index,
-            "processed": len(processed_ids),
-            "succeeded": succeeded,
-            "skipped": skipped,
-            "failed": failed + unprocessed_count,
-            "timeout": True,
-        }
-
-    logger.info(
-        f"{log_ctx} Batch complete: {succeeded}/{processed} succeeded, "
-        f"{skipped} skipped, {failed} failed"
-    )
-
-    # Send real-time progress update for this batch
-    publish_status(
-        repo_config_id,
-        "processing",
-        f"Batch {batch_index + 1}/{total_batches}: {succeeded} builds processed",
-        stats={
-            "builds_processed": succeeded,
-            "builds_failed": failed,
-        },
-    )
-
-    return {
-        "status": "completed" if failed == 0 else "partial",
-        "batch_index": batch_index,
-        "processed": processed,
-        "succeeded": succeeded,
-        "skipped": skipped,
-        "failed": failed,
-    }
-
-
-def _process_single_build(
-    db,
-    model_build_id: str,
-    repo_config,
-    raw_repo,
-    feature_names: List[str],
-    github_client_input,
-    model_build_repo,
-    repo_config_repo,
-    raw_build_run_repo,
-    corr_prefix: str = "",
-) -> Dict[str, Any]:
-    """
-    Process a single build within a batch.
-
-    Features are saved to FeatureVector (single source of truth).
-    ModelTrainingBuild stores reference via feature_vector_id.
-    """
-    # Find the ModelTrainingBuild
-    model_build = model_build_repo.find_one(
-        {
-            "_id": ObjectId(model_build_id),
-            "extraction_status": ExtractionStatus.PENDING.value,
-        }
-    )
-    if not model_build:
-        # Already processed or not found
-        return {"status": "skipped", "reason": "not_found_or_processed"}
-
-    build_id = str(model_build.id)
-
-    # Mark as IN_PROGRESS immediately with timestamp
-    model_build_repo.update_one(
-        build_id,
-        {
-            "extraction_status": ExtractionStatus.IN_PROGRESS.value,
-            "extraction_started_at": datetime.utcnow(),
-        },
-    )
-
-    # Get the RawBuildRun
-    raw_build_run = raw_build_run_repo.find_by_id(model_build.raw_build_run_id)
-    if not raw_build_run:
-        model_build_repo.update_one(
-            build_id,
-            {
-                "extraction_status": ExtractionStatus.FAILED.value,
-                "extraction_error": "RawBuildRun not found",
-            },
-        )
-        return {"status": "failed", "error": "RawBuildRun not found"}
-
-    # Extract features using shared helper (saves to FeatureVector)
-    from app.entities.feature_audit_log import AuditLogCategory
-
-    result = extract_features_for_build(
-        db=db,
-        raw_repo=raw_repo,
-        feature_config=repo_config.feature_configs,
-        raw_build_run=raw_build_run,
-        selected_features=feature_names,
-        github_client=github_client_input,
-        output_build_id=str(model_build.id),
-        category=AuditLogCategory.MODEL_TRAINING,
-    )
-
-    # Update ModelTrainingBuild with feature_vector_id reference
-    updates = {
-        "feature_vector_id": result.get("feature_vector_id"),
-    }
-
-    if result["status"] == "completed":
-        updates["extraction_status"] = ExtractionStatus.COMPLETED.value
-        updates["extracted_at"] = datetime.utcnow()
-    elif result["status"] == "partial":
-        updates["extraction_status"] = ExtractionStatus.PARTIAL.value
-        updates["extracted_at"] = datetime.utcnow()
-    else:
-        updates["extraction_status"] = ExtractionStatus.FAILED.value
-
-    if result.get("errors"):
-        updates["extraction_error"] = "; ".join(result["errors"])
-    elif result.get("warnings"):
-        updates["extraction_error"] = "Warning: " + "; ".join(result["warnings"])
-
-    model_build_repo.update_one(build_id, updates)
-
-    # Publish build status update for real-time UI
-    publish_build_update(str(repo_config.id), build_id, updates["extraction_status"])
-
-    # Update repo config stats: only track failed builds at extraction time
-    # builds_completed is incremented after prediction completes
-    if updates["extraction_status"] == ExtractionStatus.FAILED.value:
-        repo_config_repo.increment_builds_failed(ObjectId(repo_config.id))
-
-    return {
-        "status": result["status"],
-        "build_id": build_id,
-        "feature_count": result.get("feature_count", 0),
     }
 
 
@@ -777,17 +530,6 @@ def process_workflow_run(
         template = template_repo.find_by_name("Risk Prediction")
         feature_names = template.feature_names if template else []
 
-        # Create GitHub client for GITHUB_API features
-        github_client_input = None
-        try:
-            from app.services.github.github_client import get_public_github_client
-            from app.tasks.pipeline.feature_dag._inputs import GitHubClientInput
-
-            client = get_public_github_client()
-            github_client_input = GitHubClientInput(client=client, full_name=raw_repo.full_name)
-        except Exception as e:
-            logger.warning(f"{corr_prefix} Failed to create GitHub client: {e}")
-
         # Use shared helper for feature extraction with status
         result = extract_features_for_build(
             db=self.db,
@@ -795,7 +537,6 @@ def process_workflow_run(
             feature_config=repo_config.feature_configs,
             raw_build_run=raw_build_run,
             selected_features=feature_names,
-            github_client=github_client_input,
         )
 
         # Only save reference to FeatureVector (single source of truth for feature data)
@@ -862,7 +603,6 @@ def process_workflow_run(
         stats = None
         if updated_config:
             stats = {
-                "builds_fetched": updated_config.builds_fetched,
                 "builds_completed": updated_config.builds_completed,
                 "builds_failed": updated_config.builds_failed,
             }
@@ -996,11 +736,7 @@ def reprocess_failed_builds(self: PipelineTask, repo_config_id: str) -> Dict[str
     }
 
 
-# =============================================================================
 # PROCESSING CHAIN ERROR HANDLER
-# =============================================================================
-
-
 @celery_app.task(
     bind=True,
     base=PipelineTask,
@@ -1066,18 +802,17 @@ def handle_processing_chain_error(
     )
 
     if completed_builds:
-        # Some builds made it through - set PARTIAL
         repo_config_repo.update_repository(
             repo_config_id,
             {
-                "status": ModelImportStatus.PARTIAL.value,
-                "error_message": f"Processing partially failed: {error_msg}",
+                "status": ModelImportStatus.PROCESSED.value,
+                "error_message": f"Processing had some failures: {error_msg}",
             },
         )
         publish_status(
             repo_config_id,
-            ModelImportStatus.PARTIAL.value,
-            f"Processing partial: {len(completed_builds)} ok, {failed_count} failed. "
+            ModelImportStatus.PROCESSED.value,
+            f"Processing done: {len(completed_builds)} ok, {failed_count} failed. "
             f"Use Retry Failed to retry.",
         )
     else:

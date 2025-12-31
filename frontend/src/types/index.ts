@@ -228,6 +228,76 @@ export interface BuildListResponse {
   size: number;
 }
 
+// ============================================================================
+// Import Build Types (Ingestion Phase)
+// ============================================================================
+
+export interface ResourceStatus {
+  status: string; // pending, in_progress, completed, failed, skipped
+  error?: string;
+}
+
+export interface ImportBuild {
+  id: string;
+  // Build basics from RawBuildRun
+  build_number?: number;
+  build_id: string;
+  commit_sha: string;
+  branch: string;
+  conclusion: string;
+  created_at?: string;
+  web_url?: string;
+  // Ingestion status from ModelImportBuild
+  status: string; // pending, fetched, ingesting, ingested, failed
+  ingestion_started_at?: string;
+  ingested_at?: string;
+  // Resource status breakdown
+  resource_status: Record<string, ResourceStatus>;
+  required_resources: string[];
+}
+
+export interface ImportBuildListResponse {
+  items: ImportBuild[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+// ============================================================================
+// Training Build Types (Processing Phase)
+// ============================================================================
+
+export interface TrainingBuild {
+  id: string;
+  // Build basics
+  build_number?: number;
+  build_id: string;
+  commit_sha: string;
+  branch: string;
+  conclusion: string;
+  created_at?: string;
+  web_url?: string;
+  // Extraction status
+  extraction_status: string; // pending, completed, failed, partial
+  extraction_error?: string;
+  extracted_at?: string;
+  feature_count: number;
+  skipped_features: string[];
+  missing_resources: string[];
+  // Prediction results
+  predicted_label?: string;
+  prediction_confidence?: number;
+  prediction_uncertainty?: number;
+  predicted_at?: string;
+}
+
+export interface TrainingBuildListResponse {
+  items: TrainingBuild[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 export interface DashboardMetrics {
   total_builds: number;
   success_rate: number;

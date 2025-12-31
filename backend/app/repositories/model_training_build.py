@@ -432,7 +432,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
 
         stats = {
             "builds_processed": 0,  # completed + partial
-            "builds_failed": 0,
+            "builds_processing_failed": 0,
             "total_pending": 0,
         }
 
@@ -443,7 +443,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
             if status in (ExtractionStatus.COMPLETED.value, ExtractionStatus.PARTIAL.value):
                 stats["builds_processed"] += count
             elif status == ExtractionStatus.FAILED.value:
-                stats["builds_failed"] += count
+                stats["builds_processing_failed"] += count
             elif status == ExtractionStatus.PENDING.value:
                 stats["total_pending"] += count
 

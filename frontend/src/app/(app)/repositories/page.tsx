@@ -364,7 +364,7 @@ export default function AdminReposPage() {
                           totalFetched={repo.builds_fetched}
                           totalIngested={repo.builds_ingested}
                           totalProcessed={repo.builds_completed}
-                          totalFailed={repo.builds_failed}
+                          totalFailed={repo.builds_missing_resource + repo.builds_processing_failed}
                           importStatus={repo.status}
                         />
                       </td>
@@ -448,7 +448,7 @@ export default function AdminReposPage() {
                                 repo.status === "ingestion_complete" ||
                                 repo.status === "ingestion_partial" ||
                                 repo.status === "processing" ||
-                                repo.builds_failed === 0
+                                repo.builds_processing_failed === 0
                               }
                             >
                               {reprocessLoading[repo.id] ? (
@@ -456,7 +456,7 @@ export default function AdminReposPage() {
                               ) : (
                                 <RotateCcw className="mr-2 h-4 w-4" />
                               )}
-                              Retry Failed Extractions{repo.builds_failed > 0 && ` (${repo.builds_failed})`}
+                              Retry Failed Processing{repo.builds_processing_failed > 0 && ` (${repo.builds_processing_failed})`}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem

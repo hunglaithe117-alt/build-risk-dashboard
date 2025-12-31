@@ -335,7 +335,8 @@ export interface RepositoryRecord {
   builds_fetched: number;
   builds_ingested: number;
   builds_completed: number;
-  builds_failed: number;
+  builds_missing_resource: number;  // Ingestion phase failures
+  builds_processing_failed: number; // Processing phase failures
   // Status
   status: "queued" | "fetching" | "ingesting" | "ingestion_complete" | "ingestion_partial" | "processing" | "imported" | "partial" | "failed";
   error_message?: string;

@@ -94,7 +94,6 @@ export default function RepoDetailPage() {
     const [syncLoading, setSyncLoading] = useState(false);
     const [retryIngestionLoading, setRetryIngestionLoading] = useState(false);
     const [retryProcessingLoading, setRetryProcessingLoading] = useState(false);
-    const [retryPredictionLoading, setRetryPredictionLoading] = useState(false);
 
     const { subscribe } = useWebSocket();
 
@@ -204,19 +203,6 @@ export default function RepoDetailPage() {
         }
     };
 
-    const handleRetryPrediction = async () => {
-        setRetryPredictionLoading(true);
-        try {
-            await reposApi.retryPredictions(repoId);
-            loadRepo();
-            loadProgress();
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setRetryPredictionLoading(false);
-        }
-    };
-
     if (loading) {
         return (
             <div className="flex min-h-[60vh] items-center justify-center">
@@ -320,13 +306,11 @@ export default function RepoDetailPage() {
                         onSync={handleSync}
                         onRetryIngestion={handleRetryIngestion}
                         onStartProcessing={handleStartProcessing}
-                        onRetryProcessing={handleRetryProcessing}
-                        onRetryPrediction={handleRetryPrediction}
+                        onRetryFailed={handleRetryProcessing}
                         syncLoading={syncLoading}
                         retryIngestionLoading={retryIngestionLoading}
                         startProcessingLoading={startProcessingLoading}
-                        retryProcessingLoading={retryProcessingLoading}
-                        retryPredictionLoading={retryPredictionLoading}
+                        retryFailedLoading={retryProcessingLoading}
                     />
                 </TabsContent>
 
@@ -341,11 +325,9 @@ export default function RepoDetailPage() {
                         failedExtractionCount={progress?.training_builds.failed || 0}
                         failedPredictionCount={progress?.training_builds.prediction_failed || 0}
                         onRetryIngestion={handleRetryIngestion}
-                        onRetryExtraction={handleRetryProcessing}
-                        onRetryPrediction={handleRetryPrediction}
+                        onRetryFailed={handleRetryProcessing}
                         retryIngestionLoading={retryIngestionLoading}
-                        retryExtractionLoading={retryProcessingLoading}
-                        retryPredictionLoading={retryPredictionLoading}
+                        retryFailedLoading={retryProcessingLoading}
                     />
                 </TabsContent>
             </Tabs>

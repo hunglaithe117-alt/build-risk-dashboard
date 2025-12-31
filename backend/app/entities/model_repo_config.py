@@ -105,21 +105,21 @@ class ModelRepoConfig(FeatureConfigBase):
         default=0,
         description="Number of builds completed (extraction + prediction)",
     )
-    builds_failed: int = Field(
+
+    # Ingestion phase counter
+    builds_missing_resource: int = Field(
         default=0,
-        description="Number of builds that failed processing",
+        description="Number of builds with missing resources during ingestion (logs, worktree)",
     )
 
-    # === CHECKPOINT (Batch boundary for progress tracking) ===
-    last_checkpoint_at: Optional[datetime] = Field(
-        None,
-        description="Timestamp when user accepted current ingestion state and started processing",
+    # Processing phase counter (extraction + prediction failures)
+    builds_processing_failed: int = Field(
+        default=0,
+        description="Number of builds that failed during processing (extraction or prediction)",
     )
-    current_batch_id: Optional[str] = Field(
+
+    last_processed_import_build_id: Optional[PyObjectId] = Field(
         None,
-        description="UUID of the current sync batch (for tracking new builds)",
-    )
-    checkpoint_stats: dict = Field(
-        default_factory=dict,
-        description="Stats snapshot at checkpoint: {fetched, ingested, failed_ingestion}",
+        description="ObjectId of the last ModelImportBuild that was processed. "
+        "Builds with _id > this value are pending processing.",
     )

@@ -407,12 +407,16 @@ class RepositoryService:
 
     def trigger_reprocess_failed(self, repo_id: str):
         """
-        Trigger re-processing of only FAILED builds.
+        Trigger unified retry for all failed builds (extraction + prediction).
+
+        This handles both:
+        - Extraction FAILED builds → full pipeline (extract + predict)
+        - Extraction OK + Prediction FAILED → predict only (skip extraction)
 
         Unlike trigger_sync (which fetches new workflow runs from GitHub),
-        this method reprocesses only failed builds to retry extraction.
+        this method only retries failed builds.
         """
-        from app.tasks.model_processing import reprocess_failed_builds
+        from app.tasks.model_processing import retry_failed_builds
 
         repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
         if not repo_doc:
@@ -420,10 +424,10 @@ class RepositoryService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
             )
 
-        # Queue the reprocess task
-        reprocess_failed_builds.delay(repo_id)
+        # Queue the unified retry task
+        retry_failed_builds.delay(repo_id)
 
-        return {"status": "queued", "message": "Re-processing of failed builds queued"}
+        return {"status": "queued", "message": "Retry of failed builds queued"}
 
     def trigger_reingest_failed(self, repo_id: str):
         """
@@ -444,27 +448,6 @@ class RepositoryService:
         reingest_failed_builds.delay(repo_id)
 
         return {"status": "queued", "message": "Re-ingestion of failed builds queued"}
-
-    def trigger_retry_predictions(self, repo_id: str):
-        """
-        Trigger retry of prediction for builds with failed predictions.
-
-        This method retries prediction for builds that:
-        - Have extraction_status = COMPLETED or PARTIAL (features available)
-        - Have prediction_error set (previous prediction failed)
-        """
-        from app.tasks.model_processing import retry_failed_predictions
-
-        repo_doc = self.repo_config.find_by_id(ObjectId(repo_id))
-        if not repo_doc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Repository not found"
-            )
-
-        # Queue the retry predictions task
-        retry_failed_predictions.delay(repo_id)
-
-        return {"status": "queued", "message": "Retry of failed predictions queued"}
 
     def delete_repository(self, repo_id: str) -> None:
         """
@@ -539,26 +522,6 @@ class RepositoryService:
         # Get counts by import status (total)
         import_status_counts = import_build_repo.count_by_status(repo_id)
 
-        # === CHECKPOINT-BASED CURRENT BATCH STATS ===
-        current_batch_id = repo_doc.current_batch_id
-        checkpoint_stats = repo_doc.checkpoint_stats or {}
-        has_checkpoint = repo_doc.last_checkpoint_at is not None
-
-        # Current batch counts (if batch_id exists)
-        current_batch_counts = {}
-        if current_batch_id:
-            current_batch_counts = import_build_repo.count_by_status_for_batch(
-                repo_id, current_batch_id
-            )
-
-        # Calculate current batch summary
-        current_batch_total = sum(current_batch_counts.values())
-        current_batch_ingested = current_batch_counts.get("ingested", 0)
-        current_batch_failed = current_batch_counts.get("failed", 0)
-
-        # Accepted failures from checkpoint (previous batches)
-        accepted_failed = checkpoint_stats.get("failed_ingestion", 0) if has_checkpoint else 0
-
         # Get extraction status counts from training builds
         extraction_pipeline = [
             {"$match": {"model_repo_config_id": ObjectId(repo_id)}},
@@ -602,29 +565,20 @@ class RepositoryService:
         # Get per-resource status summary (git_history, git_worktree, build_logs)
         resource_status_summary = import_build_repo.get_resource_status_summary(repo_id)
 
+        # Checkpoint: use ObjectId for reliable ordering
+        last_checkpoint_id = repo_doc.last_processed_import_build_id
+
         return {
             "repo_id": repo_id,
             "status": repo_doc.status.value
             if hasattr(repo_doc.status, "value")
             else repo_doc.status,
-            # === CURRENT BATCH (after checkpoint) ===
-            "current_batch": {
-                "batch_id": current_batch_id,
-                "pending": current_batch_counts.get("pending", 0),
-                "fetched": current_batch_counts.get("fetched", 0),
-                "ingesting": current_batch_counts.get("ingesting", 0),
-                "ingested": current_batch_ingested,
-                "failed": current_batch_failed,
-                "total": current_batch_total,
-            },
-            # === CHECKPOINT INFO ===
+            # === CHECKPOINT INFO (simplified) ===
             "checkpoint": {
-                "has_checkpoint": has_checkpoint,
-                "last_checkpoint_at": (
-                    repo_doc.last_checkpoint_at.isoformat() if repo_doc.last_checkpoint_at else None
+                "has_checkpoint": last_checkpoint_id is not None,
+                "last_processed_import_build_id": (
+                    str(last_checkpoint_id) if last_checkpoint_id else None
                 ),
-                "accepted_failed": accepted_failed,
-                "stats": checkpoint_stats,
             },
             # Import phase (ModelImportBuild) - TOTAL
             "import_builds": {
@@ -653,7 +607,8 @@ class RepositoryService:
             "summary": {
                 "builds_fetched": repo_doc.builds_fetched,
                 "builds_completed": repo_doc.builds_completed,
-                "builds_failed": repo_doc.builds_failed,
+                "builds_missing_resource": repo_doc.builds_missing_resource,
+                "builds_processing_failed": repo_doc.builds_processing_failed,
             },
         }
 

@@ -48,38 +48,68 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             query["status"] = status.value if hasattr(status, "value") else status
         return self.find_many(query)
 
-    def find_ingested_after_checkpoint(
+    def find_unprocessed_builds(
         self,
         config_id: str,
-        checkpoint_at: datetime,
+        after_id: Optional[ObjectId] = None,
+        include_failed: bool = False,
     ) -> List[ModelImportBuild]:
         """
-        Find INGESTED builds created after the checkpoint timestamp.
+        Find builds that haven't been processed yet.
 
-        Used to process only new builds that haven't been processed yet.
+        Uses ObjectId comparison which is more reliable than timestamp
+        since ObjectId embeds creation time and auto-increments.
 
         Args:
             config_id: ModelRepoConfig ID
-            checkpoint_at: Only return builds with created_at > checkpoint_at
+            after_id: Only return builds with _id > after_id (checkpoint)
+            include_failed: If True, include FAILED builds along with INGESTED
 
         Returns:
-            List of ModelImportBuild entities created after checkpoint
+            List of ModelImportBuild entities after checkpoint, sorted by _id ascending
         """
-
         query = {
             "model_repo_config_id": ObjectId(config_id),
-            "status": ModelImportBuildStatus.INGESTED.value,
-            "created_at": {"$gt": checkpoint_at},
         }
-        return self.find_many(query)
+
+        # Include both INGESTED and FAILED if requested (graceful failure handling)
+        if include_failed:
+            query["status"] = {
+                "$in": [
+                    ModelImportBuildStatus.INGESTED.value,
+                    ModelImportBuildStatus.MISSING_RESOURCE.value,
+                ]
+            }
+        else:
+            query["status"] = ModelImportBuildStatus.INGESTED.value
+
+        if after_id:
+            query["_id"] = {"$gt": after_id}
+
+        # Sort by _id ascending to process in insertion order
+        docs = list(self.collection.find(query).sort("_id", 1))
+        return [ModelImportBuild(**doc) for doc in docs]
 
     def find_fetched_builds(self, config_id: str) -> List[ModelImportBuild]:
         """Find successfully fetched builds."""
         return self.find_by_repo_config(config_id, status=ModelImportBuildStatus.FETCHED)
 
-    def find_failed_imports(self, config_id: str) -> List[ModelImportBuild]:
-        """Find failed import builds for retry."""
-        return self.find_by_repo_config(config_id, status=ModelImportBuildStatus.FAILED)
+    def find_failed_imports(
+        self, config_id: str, after_id: Optional[ObjectId] = None
+    ) -> List[ModelImportBuild]:
+        """Find failed import builds for retry.
+
+        Args:
+            config_id: ModelRepoConfig ID
+            after_id: Only return builds with _id > after_id (for checkpoint filtering)
+        """
+        query = {
+            "model_repo_config_id": ObjectId(config_id),
+            "status": ModelImportBuildStatus.MISSING_RESOURCE.value,
+        }
+        if after_id:
+            query["_id"] = {"$gt": after_id}
+        return self.find_many(query)
 
     def get_failed_with_errors(self, config_id: str, limit: int = 50) -> List[dict]:
         """
@@ -94,7 +124,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             {
                 "$match": {
                     "model_repo_config_id": ObjectId(config_id),
-                    "status": ModelImportBuildStatus.FAILED.value,
+                    "status": ModelImportBuildStatus.MISSING_RESOURCE.value,
                 }
             },
             {"$limit": limit},
@@ -144,32 +174,6 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         """
         pipeline = [
             {"$match": {"model_repo_config_id": ObjectId(config_id)}},
-            {"$group": {"_id": "$status", "count": {"$sum": 1}}},
-        ]
-        results = list(self.collection.aggregate(pipeline))
-        return {r["_id"]: r["count"] for r in results}
-
-    def count_by_status_for_batch(self, config_id: str, batch_id: str) -> dict:
-        """
-        Get count of builds by status for a specific batch (current sync).
-
-        Used for checkpoint-based progress tracking to show only builds
-        from the current sync batch, not all builds.
-
-        Args:
-            config_id: ModelRepoConfig ID
-            batch_id: The batch UUID to filter on
-
-        Returns:
-            Dict mapping status -> count for builds in this batch only
-        """
-        pipeline = [
-            {
-                "$match": {
-                    "model_repo_config_id": ObjectId(config_id),
-                    "batch_id": batch_id,
-                }
-            },
             {"$group": {"_id": "$status", "count": {"$sum": 1}}},
         ]
         results = list(self.collection.aggregate(pipeline))
@@ -233,7 +237,6 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         status: ModelImportBuildStatus,
         ci_run_id: str,
         commit_sha: str,
-        batch_id: Optional[str] = None,
     ) -> ModelImportBuild:
         """
         Atomic upsert by business key (config + raw_build_run).
@@ -248,9 +251,6 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             "ci_run_id": ci_run_id,
             "commit_sha": commit_sha,
         }
-
-        if batch_id:
-            update_data["batch_id"] = batch_id
 
         doc = self.collection.find_one_and_update(
             {

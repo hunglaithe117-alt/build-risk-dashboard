@@ -199,14 +199,10 @@ def ingest_model_builds(
 
     logger.info(f"{corr_prefix}[model_ingestion] Starting for {repo_config.full_name}")
 
-    # Generate new batch_id for this sync session
-    new_batch_id = str(uuid.uuid4())
-
-    # Update repo_config with new batch_id
+    # Update repo_config status
     repo_config_repo.update_repository(
         repo_config_id,
         {
-            "current_batch_id": new_batch_id,
             "status": ModelImportStatus.FETCHING.value,
         },
     )
@@ -223,7 +219,6 @@ def ingest_model_builds(
             batch_size=batch_size,
             only_with_logs=only_with_logs,
             correlation_id=correlation_id,
-            batch_id=new_batch_id,
         )
         return {
             "status": "dispatched",
@@ -249,7 +244,6 @@ def ingest_model_builds(
                 since_days=since_days,
                 only_with_logs=only_with_logs,
                 correlation_id=correlation_id,
-                batch_id=new_batch_id,
             )
         )
         if remaining:
@@ -292,7 +286,6 @@ def fetch_builds_until_existing(
     batch_size: int,
     only_with_logs: bool = False,
     correlation_id: str = "",
-    batch_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Sequential fetch that stops when hitting existing builds.
@@ -433,14 +426,13 @@ def fetch_builds_until_existing(
                 is_bot_commit=build.is_bot_commit or False,
             )
 
-            # Atomic upsert ModelImportBuild with batch_id
+            # Atomic upsert ModelImportBuild
             import_build_repo.upsert_by_business_key(
                 config_id=repo_config_id,
                 raw_build_run_id=str(raw_build_run.id),
                 status=ModelImportBuildStatus.FETCHED,
                 ci_run_id=raw_build_run.ci_run_id,
                 commit_sha=build.commit_sha or "",
-                batch_id=batch_id,
             )
 
             new_on_page += 1
@@ -499,7 +491,7 @@ def fetch_builds_until_existing(
         stats={
             "builds_fetched": total_new_builds,
             "builds_processed": 0,
-            "builds_failed": 0,
+            "builds_missing_resource": 0,
         },
     )
 
@@ -527,7 +519,6 @@ def fetch_builds_batch(
     since_days: Optional[int] = None,
     only_with_logs: bool = False,
     correlation_id: str = "",
-    batch_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Fetch a single page of builds and create ModelImportBuild records.
@@ -644,14 +635,13 @@ def fetch_builds_batch(
         if existing:
             continue  # Already created
 
-        # Create ModelImportBuild with batch_id
+        # Create ModelImportBuild
         import_build = ModelImportBuild(
             model_repo_config_id=ObjectId(repo_config_id),
             raw_build_run_id=raw_build_run.id,
             status=ModelImportBuildStatus.FETCHED,
             ci_run_id=raw_build_run.ci_run_id,
             commit_sha=build.commit_sha or "",
-            batch_id=batch_id,
         )
         import_builds_to_insert.append(import_build)
 
@@ -985,7 +975,7 @@ def aggregate_model_ingestion_results(
         import_build_repo.update_many_by_status(
             repo_config_id,
             from_status=ModelImportBuildStatus.INGESTING.value,
-            updates={"status": ModelImportBuildStatus.FAILED.value},
+            updates={"status": ModelImportBuildStatus.MISSING_RESOURCE.value},
         )
     else:
         # Mark builds with failed worktrees as FAILED
@@ -996,7 +986,7 @@ def aggregate_model_ingestion_results(
                     "status": ModelImportBuildStatus.INGESTING.value,
                     "commit_sha": {"$in": failed_commits},
                 },
-                {"$set": {"status": ModelImportBuildStatus.FAILED.value}},
+                {"$set": {"status": ModelImportBuildStatus.MISSING_RESOURCE.value}},
             )
 
         # Mark builds with failed logs as FAILED
@@ -1007,7 +997,7 @@ def aggregate_model_ingestion_results(
                     "status": ModelImportBuildStatus.INGESTING.value,
                     "ci_run_id": {"$in": all_failed_logs},
                 },
-                {"$set": {"status": ModelImportBuildStatus.FAILED.value}},
+                {"$set": {"status": ModelImportBuildStatus.MISSING_RESOURCE.value}},
             )
 
         # Mark remaining INGESTING builds as INGESTED
@@ -1023,19 +1013,22 @@ def aggregate_model_ingestion_results(
     # Count by status to determine final state
     status_counts = import_build_repo.count_by_status(repo_config_id)
     ingested = status_counts.get(ModelImportBuildStatus.INGESTED.value, 0)
-    failed = status_counts.get(ModelImportBuildStatus.FAILED.value, 0)
+    missing_resource = status_counts.get(ModelImportBuildStatus.MISSING_RESOURCE.value, 0)
 
     # Determine final ingestion status - always INGESTED
     # User accepts current state (with or without failures) when starting processing
     final_status = ModelImportStatus.INGESTED
-    if failed > 0:
-        msg = f"Ingestion done: {ingested} ok, {failed} failed. Review or start processing."
+    if missing_resource > 0:
+        msg = (
+            f"Ingestion done: {ingested} ready, {missing_resource} missing resources. "
+            "Review or start processing."
+        )
     else:
         msg = f"Ingestion complete: {ingested} builds ready. Start processing when ready."
 
     # Update repo config with final status and timestamps
     now = datetime.utcnow()
-    total_builds = ingested + failed
+    total_builds = ingested + missing_resource
     repo_config_repo.update_repository(
         repo_config_id,
         {
@@ -1043,7 +1036,7 @@ def aggregate_model_ingestion_results(
             "last_synced_at": now,
             "builds_fetched": total_builds,
             "builds_ingested": ingested,
-            "builds_failed": failed,
+            "builds_missing_resource": missing_resource,
         },
     )
 
@@ -1059,7 +1052,7 @@ def aggregate_model_ingestion_results(
         stats={
             "builds_fetched": total_builds,
             "builds_ingested": ingested,
-            "builds_failed": failed,
+            "builds_missing_resource": missing_resource,
             "last_synced_at": now.isoformat(),
             "resource_status": resource_summary,
         },
@@ -1069,7 +1062,7 @@ def aggregate_model_ingestion_results(
         "status": "completed",
         "final_status": final_status.value,
         "builds_ingested": ingested,
-        "builds_failed": failed,
+        "builds_missing_resource": missing_resource,
         "resource_status": resource_summary,
     }
 
@@ -1118,7 +1111,7 @@ def handle_ingestion_chord_error(
         repo_config_id,
         from_status=ModelImportBuildStatus.INGESTING.value,
         updates={
-            "status": ModelImportBuildStatus.FAILED.value,
+            "status": ModelImportBuildStatus.MISSING_RESOURCE.value,
             "ingestion_error": f"Ingestion chord failed: {error_msg}",
         },
     )
@@ -1151,7 +1144,7 @@ def handle_ingestion_chord_error(
             f"Review and retry or start processing.",
             stats={
                 "builds_ingested": len(ingested_builds),
-                "builds_failed": failed_count,
+                "builds_missing_resource": failed_count,
             },
         )
     else:
@@ -1195,31 +1188,40 @@ def reingest_failed_builds(
     repo_config_id: str,
 ) -> Dict[str, Any]:
     """
-    Retry only FAILED import builds.
+    Retry FAILED import builds that haven't been processed yet.
 
-    This task finds all ModelImportBuild with status=FAILED,
-    resets them to FETCHED, and re-triggers the ingestion pipeline.
+    Only retries builds with _id > last_processed_import_build_id (checkpoint).
+    This ensures we only retry builds pending for the next processing phase.
     """
     import_build_repo = ModelImportBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
 
-    # Find failed imports
-    failed_imports = import_build_repo.find_failed_imports(repo_config_id)
-
-    if not failed_imports:
-        logger.info(f"No failed imports found for {repo_config_id}")
-        return {"status": "no_failed_imports", "count": 0}
-
-    correlation_id = str(uuid.uuid4())[:8]
-    logger.info(
-        f"[corr={correlation_id}] Found {len(failed_imports)} failed imports for {repo_config_id}"
-    )
-
-    # Get repo config for metadata
+    # Get repo config for checkpoint
     repo_config = repo_config_repo.find_by_id(repo_config_id)
     if not repo_config:
         logger.error(f"Repo config not found: {repo_config_id}")
         return {"status": "error", "message": "Repo config not found"}
+
+    # Find failed imports after checkpoint
+    checkpoint_id = repo_config.last_processed_import_build_id
+    failed_imports = import_build_repo.find_failed_imports(repo_config_id, after_id=checkpoint_id)
+
+    if not failed_imports:
+        msg = "No failed imports found" + (
+            f" after checkpoint {checkpoint_id}" if checkpoint_id else ""
+        )
+        logger.info(f"{msg} for {repo_config_id}")
+        return {
+            "status": "no_failed_imports",
+            "count": 0,
+            "checkpoint": str(checkpoint_id) if checkpoint_id else None,
+        }
+
+    correlation_id = str(uuid.uuid4())[:8]
+    logger.info(
+        f"[corr={correlation_id}] Found {len(failed_imports)} failed imports "
+        f"after checkpoint {checkpoint_id} for {repo_config_id}"
+    )
 
     # Collect commit SHAs and CI run IDs from failed imports
     commit_shas = []

@@ -29,11 +29,9 @@ interface IssuesTabProps {
     failedExtractionCount: number;
     failedPredictionCount: number;
     onRetryIngestion: () => void;
-    onRetryExtraction: () => void;
-    onRetryPrediction: () => void;
+    onRetryFailed: () => void; // Unified: handles both extraction + prediction
     retryIngestionLoading: boolean;
-    retryExtractionLoading: boolean;
-    retryPredictionLoading: boolean;
+    retryFailedLoading: boolean;
 }
 
 export function IssuesTab({
@@ -42,11 +40,9 @@ export function IssuesTab({
     failedExtractionCount,
     failedPredictionCount,
     onRetryIngestion,
-    onRetryExtraction,
-    onRetryPrediction,
+    onRetryFailed,
     retryIngestionLoading,
-    retryExtractionLoading,
-    retryPredictionLoading,
+    retryFailedLoading,
 }: IssuesTabProps) {
     const [failedImports, setFailedImports] = useState<FailedImportBuild[]>([]);
     const [loading, setLoading] = useState(true);
@@ -156,67 +152,46 @@ export function IssuesTab({
                 </Card>
             )}
 
-            {/* Failed Extraction */}
-            {failedExtractionCount > 0 && (
+            {/* Processing Failures (Extraction + Prediction) */}
+            {(failedExtractionCount > 0 || failedPredictionCount > 0) && (
                 <Card>
                     <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                             <div>
-                                <CardTitle className="text-base">Failed Extraction</CardTitle>
-                                <CardDescription>{failedExtractionCount} build(s) failed during feature extraction</CardDescription>
+                                <CardTitle className="text-base">Processing Failures</CardTitle>
+                                <CardDescription>
+                                    {failedExtractionCount > 0 && failedPredictionCount > 0
+                                        ? `${failedExtractionCount} extraction + ${failedPredictionCount} prediction failures`
+                                        : failedExtractionCount > 0
+                                            ? `${failedExtractionCount} build(s) failed during feature extraction`
+                                            : `${failedPredictionCount} build(s) failed during risk prediction`
+                                    }
+                                </CardDescription>
                             </div>
                             <Button
                                 size="sm"
                                 variant="outline"
-                                onClick={onRetryExtraction}
-                                disabled={retryExtractionLoading}
+                                onClick={onRetryFailed}
+                                disabled={retryFailedLoading}
                             >
-                                {retryExtractionLoading ? (
+                                {retryFailedLoading ? (
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 ) : (
                                     <RotateCcw className="mr-2 h-4 w-4" />
                                 )}
-                                Retry All
+                                Retry All ({failedExtractionCount + failedPredictionCount})
                             </Button>
                         </div>
                     </CardHeader>
                     <CardContent>
                         <p className="text-sm text-muted-foreground">
-                            {failedExtractionCount} builds failed during feature extraction.
-                            Check the Builds tab for details. Click &quot;Retry All&quot; to re-process.
-                        </p>
-                    </CardContent>
-                </Card>
-            )}
-
-            {/* Failed Prediction */}
-            {failedPredictionCount > 0 && (
-                <Card>
-                    <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <CardTitle className="text-base">Failed Prediction</CardTitle>
-                                <CardDescription>{failedPredictionCount} build(s) failed during risk prediction</CardDescription>
-                            </div>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={onRetryPrediction}
-                                disabled={retryPredictionLoading}
-                            >
-                                {retryPredictionLoading ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                    <RotateCcw className="mr-2 h-4 w-4" />
-                                )}
-                                Retry All
-                            </Button>
-                        </div>
-                    </CardHeader>
-                    <CardContent>
-                        <p className="text-sm text-muted-foreground">
-                            {failedPredictionCount} builds have completed extraction but failed prediction.
-                            Click &quot;Retry All&quot; to re-run predictions.
+                            {failedExtractionCount > 0 && (
+                                <span>{failedExtractionCount} builds failed extraction. </span>
+                            )}
+                            {failedPredictionCount > 0 && (
+                                <span>{failedPredictionCount} builds failed prediction. </span>
+                            )}
+                            Click &quot;Retry All&quot; to retry all failed builds.
                         </p>
                     </CardContent>
                 </Card>

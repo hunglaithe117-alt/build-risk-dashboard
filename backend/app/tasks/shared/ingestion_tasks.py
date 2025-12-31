@@ -12,7 +12,7 @@ import json
 import logging
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from app.entities.raw_build_run import RawBuildRun
@@ -239,7 +239,7 @@ def create_worktree_chunk(
     self: PipelineTask,
     raw_repo_id: str = "",
     github_repo_id: int = 0,
-    commit_shas: List[str] | None = None,
+    commit_shas: Optional[List[str]] = None,
     chunk_index: int = 0,
     total_chunks: int = 1,
     correlation_id: str = "",
@@ -451,9 +451,9 @@ def _process_worktree_commit(
     repo_path: Path,
     worktrees_dir: Path,
     redis_client: redis.Redis,
-    raw_repo: RawRepository | None,
-    github_client: GitHubClient | None,
-    build_run: RawBuildRun | None,
+    raw_repo: "Optional[RawRepository]",
+    github_client: "Optional[GitHubClient]",
+    build_run: "Optional[RawBuildRun]",
     build_run_repo: RawBuildRunRepository,
 ) -> Dict[str, int]:
     """Process a single commit for worktree creation."""
@@ -748,7 +748,7 @@ def download_logs_chunk(
     raw_repo_id: str = "",
     github_repo_id: int = 0,
     full_name: str = "",
-    build_ids: List[str] | None = None,
+    build_ids: Optional[List[str]] = None,
     ci_provider: str = CIProvider.GITHUB_ACTIONS.value,
     chunk_index: int = 0,
     total_chunks: int = 1,

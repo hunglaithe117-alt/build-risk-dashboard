@@ -23,11 +23,9 @@ interface ProcessingCardProps {
     status: string;
     canStartProcessing: boolean;
     onStartProcessing: () => void;
-    onRetryExtraction: () => void;
-    onRetryPrediction: () => void;
+    onRetryFailed: () => void; // Unified: handles both extraction + prediction
     startLoading: boolean;
-    retryExtractionLoading: boolean;
-    retryPredictionLoading: boolean;
+    retryFailedLoading: boolean;
 }
 
 export function ProcessingCard({
@@ -40,19 +38,19 @@ export function ProcessingCard({
     status,
     canStartProcessing,
     onStartProcessing,
-    onRetryExtraction,
-    onRetryPrediction,
+    onRetryFailed,
     startLoading,
-    retryExtractionLoading,
-    retryPredictionLoading,
+    retryFailedLoading,
 }: ProcessingCardProps) {
     const s = status.toLowerCase();
     const isProcessing = s === "processing";
-    const isComplete = s === "imported" || s === "partial";
-    const notStarted = ["ingestion_complete", "ingestion_partial"].includes(s);
+    const isComplete = s === "imported" || s === "partial" || s === "processed";
+    const notStarted = ["ingested", "ingestion_complete", "ingestion_partial"].includes(s);
 
     const extractionPercent = extractedTotal > 0 ? Math.round((extractedCount / extractedTotal) * 100) : 0;
     const predictionPercent = predictedTotal > 0 ? Math.round((predictedCount / predictedTotal) * 100) : 0;
+
+    const totalFailed = failedExtractionCount + failedPredictionCount;
 
     return (
         <Card>
@@ -129,39 +127,30 @@ export function ProcessingCard({
                     </div>
                 </div>
 
-                {/* Retry Actions */}
-                {(failedExtractionCount > 0 || failedPredictionCount > 0) && (
+                {/* Unified Retry Action */}
+                {totalFailed > 0 && (
                     <div className="flex gap-2">
-                        {failedExtractionCount > 0 && (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={onRetryExtraction}
-                                disabled={retryExtractionLoading || isProcessing}
-                            >
-                                {retryExtractionLoading ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                    <RotateCcw className="mr-2 h-4 w-4" />
-                                )}
-                                Retry Extraction ({failedExtractionCount})
-                            </Button>
-                        )}
-                        {failedPredictionCount > 0 && (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={onRetryPrediction}
-                                disabled={retryPredictionLoading || isProcessing}
-                            >
-                                {retryPredictionLoading ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                    <RotateCcw className="mr-2 h-4 w-4" />
-                                )}
-                                Retry Prediction ({failedPredictionCount})
-                            </Button>
-                        )}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onRetryFailed}
+                            disabled={retryFailedLoading || isProcessing}
+                        >
+                            {retryFailedLoading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <RotateCcw className="mr-2 h-4 w-4" />
+                            )}
+                            Retry Failed ({totalFailed})
+                        </Button>
+                        <span className="text-xs text-muted-foreground self-center">
+                            {failedExtractionCount > 0 && failedPredictionCount > 0
+                                ? `${failedExtractionCount} extraction + ${failedPredictionCount} prediction`
+                                : failedExtractionCount > 0
+                                    ? `${failedExtractionCount} extraction failures`
+                                    : `${failedPredictionCount} prediction failures`
+                            }
+                        </span>
                     </div>
                 )}
             </CardContent>

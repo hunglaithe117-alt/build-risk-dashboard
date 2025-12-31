@@ -167,16 +167,16 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         )
         return ModelRepoConfig(**doc) if doc else None
 
-    def increment_builds_failed(
+    def increment_builds_processing_failed(
         self,
         config_id: ObjectId,
         count: int = 1,
     ) -> Optional[ModelRepoConfig]:
-        """Increment the builds failed count."""
+        """Increment the builds extraction failed count (processing phase)."""
         doc = self.collection.find_one_and_update(
             {"_id": config_id},
             {
-                "$inc": {"builds_failed": count},
+                "$inc": {"builds_processing_failed": count},
                 "$set": {"updated_at": datetime.utcnow()},
             },
             return_document=True,

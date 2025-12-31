@@ -33,8 +33,8 @@ class ModelImportBuildStatus(str, Enum):
     INGESTING = "ingesting"  # Ingestion in progress
     INGESTED = "ingested"  # Resources ready for processing
 
-    # Error state
-    FAILED = "failed"  # Any stage failed
+    # Missing resources (graceful degradation)
+    MISSING_RESOURCE = "missing_resource"  # Some resources unavailable (logs, worktree, etc.)
 
 
 class ResourceStatus(str, Enum):
@@ -122,10 +122,4 @@ class ModelImportBuild(BaseEntity):
     ingested_at: Optional[datetime] = Field(
         None,
         description="When ingestion completed successfully",
-    )
-
-    # Batch tracking for checkpoint system
-    batch_id: Optional[str] = Field(
-        None,
-        description="UUID of the sync batch this build belongs to (for checkpoint tracking)",
     )

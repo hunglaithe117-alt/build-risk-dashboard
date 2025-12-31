@@ -101,6 +101,10 @@ class ModelTrainingBuild(BaseEntity):
     )
 
     # Prediction results from Bayesian model
+    prediction_status: ExtractionStatus = Field(
+        default=ExtractionStatus.PENDING,
+        description="Prediction status: PENDING, IN_PROGRESS, COMPLETED, FAILED",
+    )
     predicted_label: Optional[str] = Field(
         None,
         description="Predicted risk level (LOW, MEDIUM, HIGH)",

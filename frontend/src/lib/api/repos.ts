@@ -109,7 +109,8 @@ export const reposApi = {
             summary: {
                 builds_fetched: number;
                 builds_completed: number;
-                builds_failed: number;
+                builds_missing_resource: number;
+                builds_processing_failed: number;
             };
         }>(`/repos/${repoId}/import-progress`);
         return response.data;
@@ -129,12 +130,6 @@ export const reposApi = {
         }>(`/repos/${repoId}/import-progress/failed`, {
             params: { limit },
         });
-        return response.data;
-    },
-    retryPredictions: async (repoId: string) => {
-        const response = await api.post<{ status: string; message?: string }>(
-            `/repos/${repoId}/retry-predictions`
-        );
         return response.data;
     },
 };

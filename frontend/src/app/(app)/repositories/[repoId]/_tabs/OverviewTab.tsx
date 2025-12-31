@@ -63,14 +63,12 @@ interface OverviewTabProps {
     onSync: () => void;
     onRetryIngestion: () => void;
     onStartProcessing: () => void;
-    onRetryProcessing: () => void;
-    onRetryPrediction: () => void;
+    onRetryFailed: () => void;
     // Loading states
     syncLoading: boolean;
     retryIngestionLoading: boolean;
     startProcessingLoading: boolean;
-    retryProcessingLoading: boolean;
-    retryPredictionLoading: boolean;
+    retryFailedLoading: boolean;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -132,13 +130,11 @@ export function OverviewTab({
     onSync,
     onRetryIngestion,
     onStartProcessing,
-    onRetryProcessing,
-    onRetryPrediction,
+    onRetryFailed,
     syncLoading,
     retryIngestionLoading,
     startProcessingLoading,
-    retryProcessingLoading,
-    retryPredictionLoading,
+    retryFailedLoading,
 }: OverviewTabProps) {
     const router = useRouter();
     const repoId = repo.id;
@@ -180,11 +176,9 @@ export function OverviewTab({
                 status={status}
                 canStartProcessing={canStartProcessing}
                 onStartProcessing={onStartProcessing}
-                onRetryExtraction={onRetryProcessing}
-                onRetryPrediction={onRetryPrediction}
+                onRetryFailed={onRetryFailed}
                 startLoading={startProcessingLoading}
-                retryExtractionLoading={retryProcessingLoading}
-                retryPredictionLoading={retryPredictionLoading}
+                retryFailedLoading={retryFailedLoading}
             />
 
             {/* Recent Builds Preview */}

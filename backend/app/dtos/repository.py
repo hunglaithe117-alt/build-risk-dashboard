@@ -56,7 +56,8 @@ class RepoResponse(BaseModel):
     builds_fetched: int = 0
     builds_ingested: int = 0
     builds_completed: int = 0
-    builds_failed: int = 0
+    builds_missing_resource: int = 0  # Ingestion phase failures
+    builds_processing_failed: int = 0  # Processing phase failures
     status: Optional[str] = Field(
         default="imported",
         description="Pipeline status: queued, fetching, ingesting, processing, imported, failed",

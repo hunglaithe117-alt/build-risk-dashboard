@@ -57,7 +57,7 @@ class DatasetVersionRepository(BaseRepository[DatasetVersion]):
         doc = self.collection.find_one(
             {
                 "dataset_id": oid,
-                "status": {"$in": [VersionStatus.PENDING, VersionStatus.PROCESSING]},
+                "status": {"$in": [VersionStatus.QUEUED, VersionStatus.PROCESSING]},
             }
         )
         if doc:
@@ -68,7 +68,7 @@ class DatasetVersionRepository(BaseRepository[DatasetVersion]):
         """Find the latest completed version for a dataset."""
         oid = self.ensure_object_id(dataset_id)
         doc = self.collection.find_one(
-            {"dataset_id": oid, "status": VersionStatus.COMPLETED},
+            {"dataset_id": oid, "status": VersionStatus.PROCESSED},
             sort=[("version_number", -1)],
         )
         if doc:
@@ -153,6 +153,10 @@ class DatasetVersionRepository(BaseRepository[DatasetVersion]):
         )
         return result.modified_count > 0
 
+    def increment_processed_rows(self, version_id: Union[str, ObjectId], count: int = 1) -> bool:
+        """Increment processed_rows counter by 1 (or specified count)."""
+        return self.increment_progress(version_id, processed_rows=count)
+
     def mark_started(self, version_id: Union[str, ObjectId], task_id: Optional[str] = None) -> bool:
         """Mark version as started processing."""
         updates: Dict[str, Any] = {
@@ -174,7 +178,7 @@ class DatasetVersionRepository(BaseRepository[DatasetVersion]):
             {"_id": self.ensure_object_id(version_id)},
             {
                 "$set": {
-                    "status": VersionStatus.COMPLETED,
+                    "status": VersionStatus.PROCESSED,
                     "completed_at": datetime.now(timezone.utc),
                     "updated_at": datetime.now(timezone.utc),
                 }
@@ -197,17 +201,24 @@ class DatasetVersionRepository(BaseRepository[DatasetVersion]):
         )
         return result.modified_count > 0
 
-    def mark_cancelled(self, version_id: Union[str, ObjectId]) -> bool:
-        """Mark version as cancelled."""
+    def mark_status(self, version_id: Union[str, ObjectId], status: str) -> bool:
+        """Mark version with a specific status.
+
+        Args:
+            version_id: Version ID to update
+            status: Target status value (e.g., 'processed', 'failed')
+        """
+        updates: Dict[str, Any] = {
+            "status": status,
+            "updated_at": datetime.now(timezone.utc),
+        }
+        # Set completed_at for terminal statuses
+        if status in (VersionStatus.PROCESSED.value, VersionStatus.FAILED.value):
+            updates["completed_at"] = datetime.now(timezone.utc)
+
         result = self.collection.update_one(
             {"_id": self.ensure_object_id(version_id)},
-            {
-                "$set": {
-                    "status": VersionStatus.CANCELLED,
-                    "completed_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
-                }
-            },
+            {"$set": updates},
         )
         return result.modified_count > 0
 
@@ -245,9 +256,8 @@ class DatasetVersionRepository(BaseRepository[DatasetVersion]):
             {
                 "status": {
                     "$in": [
-                        VersionStatus.COMPLETED,
+                        VersionStatus.PROCESSED,
                         VersionStatus.FAILED,
-                        VersionStatus.CANCELLED,
                     ]
                 },
                 "completed_at": {"$lt": cutoff},
@@ -264,5 +274,5 @@ class DatasetVersionRepository(BaseRepository[DatasetVersion]):
         """Count completed versions for a dataset."""
         oid = self.ensure_object_id(dataset_id)
         return self.collection.count_documents(
-            {"dataset_id": oid, "status": VersionStatus.COMPLETED}
+            {"dataset_id": oid, "status": VersionStatus.PROCESSED}
         )

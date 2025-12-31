@@ -29,7 +29,7 @@ TEMPORAL_FEATURES = {
     "prev_fail_streak",
     "fail_rate_last_10",
     "avg_src_churn_last_5",
-    # Note: "time_since_prev_build" is computed during prediction, not stored
+    "time_since_prev_build",
 }
 
 # Static features (used as point-in-time values)

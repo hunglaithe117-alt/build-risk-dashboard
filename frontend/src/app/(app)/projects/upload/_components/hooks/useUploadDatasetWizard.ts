@@ -35,7 +35,7 @@ export function useUploadDatasetWizard({
 
     // Validation state (for Step 2)
     const [validationStatus, setValidationStatus] = useState<
-        "pending" | "validating" | "completed" | "failed" | "cancelled"
+        "pending" | "validating" | "completed" | "failed"
     >("pending");
     const [validationProgress, setValidationProgress] = useState(0);
     const [validationStats, setValidationStats] = useState<ValidationStats | null>(null);
@@ -91,7 +91,7 @@ export function useUploadDatasetWizard({
             setCreatedDataset(dataset);
 
             // Stop polling on completion
-            if (["completed", "failed", "cancelled"].includes(dataset.validation_status || "")) {
+            if (["completed", "failed"].includes(dataset.validation_status || "")) {
                 stopPolling();
             }
         } catch (err) {
@@ -131,7 +131,7 @@ export function useUploadDatasetWizard({
 
         const validationStatus = existingDataset.validation_status;
 
-        if (validationStatus && ["validating", "completed", "failed", "cancelled"].includes(validationStatus)) {
+        if (validationStatus && ["validating", "completed", "failed"].includes(validationStatus)) {
             setStep(2);
             setValidationStatus(validationStatus as typeof validationStatus);
             setValidationProgress(existingDataset.validation_progress || 0);
@@ -225,33 +225,6 @@ export function useUploadDatasetWizard({
         resetAll();
     };
 
-    // Cancel validation (if running)
-    const cancelValidation = useCallback(async () => {
-        if (!datasetId) return;
-
-        try {
-            await datasetsApi.cancelValidation(datasetId);
-            stopPolling();
-            setValidationStatus("cancelled");
-        } catch (err) {
-            console.error("Failed to cancel validation:", err);
-        }
-    }, [datasetId, stopPolling]);
-
-    // Resume validation after cancel
-    const resumeValidation = useCallback(async () => {
-        if (!datasetId) return;
-
-        try {
-            await datasetsApi.startValidation(datasetId);
-            setValidationStatus("validating");
-            setValidationError(null);
-            startValidationPolling(datasetId);
-        } catch (err) {
-            console.error("Failed to resume validation:", err);
-        }
-    }, [datasetId, startValidationPolling]);
-
     // Retry validation
     const retryValidation = useCallback(async () => {
         if (!datasetId) return;
@@ -318,8 +291,6 @@ export function useUploadDatasetWizard({
         // Actions
         proceedToStep2,
         handleSubmit,
-        cancelValidation,
-        resumeValidation,
         retryValidation,
         deleteDataset,
         goBackToStep1,

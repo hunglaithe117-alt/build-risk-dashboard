@@ -130,7 +130,11 @@ class ImportBuildSummary(BaseModel):
     branch: str = ""
     conclusion: str = "unknown"  # Build result (success/failure)
     created_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
     web_url: Optional[str] = None
+    commit_message: Optional[str] = None
+    commit_author: Optional[str] = None
+    duration_seconds: Optional[float] = None
 
     # From ModelImportBuild
     status: str = "fetched"  # pending, fetched, ingesting, ingested, failed

@@ -66,8 +66,8 @@ export function BuildsTab({ repoId, repoName }: BuildsTabProps) {
                     onValueChange={(v) => setActiveSubTab(v as "ingestion" | "processing")}
                 >
                     <TabsList>
-                        <TabsTrigger value="ingestion">Ingestion</TabsTrigger>
-                        <TabsTrigger value="processing">Processing</TabsTrigger>
+                        <TabsTrigger value="ingestion">Data Collection</TabsTrigger>
+                        <TabsTrigger value="processing">Features & Predictions</TabsTrigger>
                     </TabsList>
                 </Tabs>
                 <div className="flex items-center gap-2">

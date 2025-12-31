@@ -9,7 +9,7 @@ interface ImportProgress {
         fetched: number;
         ingesting: number;
         ingested: number;
-        failed: number;
+        missing_resource: number;
         total: number;
     };
     training_builds: {
@@ -58,43 +58,38 @@ function getStepState(
             if (progress && progress.import_builds.total > 0) {
                 return "completed";
             }
-            if (statusLower === "queued") {
+            if (statusLower === "queued" || statusLower === "fetching") {
                 return "active";
             }
             return "pending";
 
         case "ingest":
-            if (statusLower === "ingestion_complete") {
+            if (statusLower === "ingested") {
                 return "completed";
             }
-            if (statusLower === "ingestion_partial") {
-                return progress?.import_builds.failed ? "error" : "completed";
-            }
-            if (statusLower === "processing" || statusLower === "imported" || statusLower === "partial") {
+            if (["processing", "processed"].includes(statusLower)) {
                 return "completed"; // Already past ingestion
             }
             if (statusLower === "ingesting") {
                 return "active";
             }
+            // If failed but we have ingested builds, it might be partial? 
+            // But backend status only has FAILED or INGESTING/INGESTED.
+            // Let's rely on valid statuses.
             if (statusLower === "failed" && progress?.import_builds.ingested === 0) {
                 return "error";
             }
             return "pending";
 
         case "extract":
-            if (statusLower === "imported") {
+            if (statusLower === "processed") {
                 return "completed";
-            }
-            if (statusLower === "partial") {
-                return progress?.training_builds.failed ? "error" : "completed";
             }
             if (statusLower === "processing") {
                 return "active";
             }
-            if (
-                statusLower === "ingestion_complete" ||
-                statusLower === "ingestion_partial"
-            ) {
+            // If ingestion is done, extraction is next (pending or active)
+            if (statusLower === "ingested") {
                 return "pending";
             }
             return "pending";
@@ -104,7 +99,7 @@ function getStepState(
                 progress?.training_builds.with_prediction &&
                 progress.training_builds.with_prediction >= progress.training_builds.completed;
 
-            if (hasAllPredictions && statusLower === "imported") {
+            if (hasAllPredictions && statusLower === "processed") {
                 return "completed";
             }
             if (progress?.training_builds.prediction_failed) {
@@ -116,7 +111,7 @@ function getStepState(
             ) {
                 return "active";
             }
-            if (statusLower === "imported" || statusLower === "partial") {
+            if (statusLower === "processed") {
                 // Check if prediction is in progress
                 if (progress?.training_builds.with_prediction) {
                     return progress.training_builds.with_prediction >=

@@ -18,17 +18,10 @@ import type { Build, RepoDetail } from "@/types";
 import { MiniStepper } from "../../_components/MiniStepper";
 import { CollectionCard } from "../../_components/CollectionCard";
 import { ProcessingCard } from "../../_components/ProcessingCard";
+import { CurrentPhaseCard } from "../../_components/CurrentPhaseCard";
 
 interface ImportProgress {
-    current_batch: {
-        batch_id: string | null;
-        pending: number;
-        fetched: number;
-        ingesting: number;
-        ingested: number;
-        failed: number;
-        total: number;
-    };
+
     checkpoint: {
         has_checkpoint: boolean;
         last_checkpoint_at: string | null;
@@ -40,9 +33,10 @@ interface ImportProgress {
         fetched: number;
         ingesting: number;
         ingested: number;
-        failed: number;
+        missing_resource: number;
         total: number;
     };
+    resource_status?: Record<string, Record<string, number>>;
     training_builds: {
         pending: number;
         completed: number;
@@ -147,12 +141,22 @@ export function OverviewTab({
             {/* Mini Stepper */}
             <MiniStepper status={status} progress={progress} />
 
+            {/* Current Phase Details - shown during active phases */}
+            {["queued", "ingesting", "processing"].includes(status.toLowerCase()) && (
+                <CurrentPhaseCard
+                    status={status}
+                    progress={progress}
+                    isLoading={false}
+                    onRetryFailed={onRetryIngestion}
+                />
+            )}
+
             {/* Collection Card - shows current batch (after checkpoint) */}
             <CollectionCard
-                fetchedCount={progress?.current_batch?.total || progress?.import_builds.total || 0}
-                ingestedCount={progress?.current_batch?.ingested || progress?.import_builds.ingested || 0}
-                totalCount={progress?.current_batch?.total || progress?.import_builds.total || 0}
-                failedCount={progress?.current_batch?.failed || progress?.import_builds.failed || 0}
+                fetchedCount={progress?.import_builds.total || 0}
+                ingestedCount={progress?.import_builds.ingested || 0}
+                totalCount={progress?.import_builds.total || 0}
+                failedCount={progress?.import_builds.missing_resource || 0}
                 lastSyncedAt={repo.last_synced_at}
                 status={status}
                 onSync={onSync}
@@ -180,80 +184,6 @@ export function OverviewTab({
                 startLoading={startProcessingLoading}
                 retryFailedLoading={retryFailedLoading}
             />
-
-            {/* Recent Builds Preview */}
-            <Card>
-                <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <CardTitle className="text-lg">Recent Builds</CardTitle>
-                            <CardDescription>
-                                Showing {builds.length} of {progress?.import_builds.total || 0} builds
-                            </CardDescription>
-                        </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.push(`/repositories/${repoId}?tab=builds`)}
-                            className="gap-1"
-                        >
-                            View All <ArrowRight className="h-4 w-4" />
-                        </Button>
-                    </div>
-                </CardHeader>
-                <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
-                            <thead className="bg-slate-50 dark:bg-slate-900/40">
-                                <tr>
-                                    <th className="px-4 py-2 text-left font-medium text-slate-500">Build</th>
-                                    <th className="px-4 py-2 text-left font-medium text-slate-500">Status</th>
-                                    <th className="px-4 py-2 text-left font-medium text-slate-500">Commit</th>
-                                    <th className="px-4 py-2 text-left font-medium text-slate-500">Date</th>
-                                    <th className="px-4 py-2 text-left font-medium text-slate-500">Extraction</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                                {builds.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
-                                            No builds yet
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    builds.map((build) => (
-                                        <tr
-                                            key={build.id}
-                                            className="cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-900/40 transition"
-                                            onClick={() => router.push(`/repositories/${repoId}/builds/${build.id}`)}
-                                        >
-                                            <td className="px-4 py-3 font-medium">#{build.build_number || "—"}</td>
-                                            <td className="px-4 py-3">
-                                                <StatusBadge status={build.conclusion} />
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-1 font-mono text-xs">
-                                                    <GitCommit className="h-3 w-3" />
-                                                    {build.commit_sha?.substring(0, 7)}
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-muted-foreground">
-                                                {formatTimestamp(build.created_at)}
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <ExtractionBadge
-                                                    status={build.extraction_status}
-                                                    hasTrainingData={build.has_training_data}
-                                                />
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </CardContent>
-            </Card>
 
             {/* Repository Info */}
             <Card>

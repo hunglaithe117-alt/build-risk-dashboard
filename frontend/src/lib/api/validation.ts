@@ -34,13 +34,6 @@ export const datasetValidationApi = {
         return response.data;
     },
 
-    cancel: async (datasetId: string): Promise<{ message: string }> => {
-        const response = await api.delete<{ message: string }>(
-            `/datasets/${datasetId}/validation`
-        );
-        return response.data;
-    },
-
     getSummary: async (datasetId: string): Promise<ValidationSummary> => {
         const response = await api.get<ValidationSummary>(
             `/datasets/${datasetId}/validation-summary`

@@ -9,7 +9,7 @@ interface ImportProgress {
         fetched: number;
         ingesting: number;
         ingested: number;
-        failed: number;
+        missing_resource: number;
         total: number;
     };
     training_builds: {
@@ -42,7 +42,7 @@ const STEPS: Step[] = [
         getTotal: (p) => p?.import_builds.total || 0,
         getState: (status, p) => {
             if (p && p.import_builds.total > 0) return "completed";
-            if (["queued", "fetching"].includes(status)) return "active";
+            if (["queued", "fetching"].includes(status.toLowerCase())) return "active";
             return "pending";
         },
     },
@@ -53,8 +53,8 @@ const STEPS: Step[] = [
         getTotal: (p) => p?.import_builds.total || 0,
         getState: (status, p) => {
             const s = status.toLowerCase();
-            if (["ingestion_complete", "processing", "imported", "partial"].includes(s)) return "completed";
-            if (s === "ingestion_partial") return p?.import_builds.failed ? "completed" : "completed";
+            // Ingested means ingestion is done and ready for processing
+            if (["ingested", "processing", "processed"].includes(s)) return "completed";
             if (s === "ingesting") return "active";
             return "pending";
         },
@@ -66,7 +66,8 @@ const STEPS: Step[] = [
         getTotal: (p) => p?.training_builds.total || p?.import_builds.ingested || 0,
         getState: (status, p) => {
             const s = status.toLowerCase();
-            if (s === "imported" || s === "partial") return "completed";
+            // Processed means extraction is done
+            if (s === "processed") return "completed";
             if (s === "processing") return "active";
             return "pending";
         },
@@ -79,8 +80,13 @@ const STEPS: Step[] = [
         getState: (status, p) => {
             const done = p?.training_builds.with_prediction || 0;
             const total = (p?.training_builds.completed || 0) + (p?.training_builds.partial || 0);
+
+            // Prediction depends on extraction logic completion (total > 0)
             if (total > 0 && done >= total) return "completed";
+
+            // If processing/processed, prediction might be active or pending
             if (p?.training_builds.pending_prediction && p.training_builds.pending_prediction > 0) return "active";
+
             return "pending";
         },
     },

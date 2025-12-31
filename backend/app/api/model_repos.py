@@ -12,7 +12,12 @@ from app.dtos import (
     RepoSearchResponse,
     RepoSuggestionListResponse,
 )
-from app.dtos.build import BuildDetail, BuildListResponse
+from app.dtos.build import (
+    BuildDetail,
+    BuildListResponse,
+    ImportBuildListResponse,
+    TrainingBuildListResponse,
+)
 from app.middleware.auth import get_current_user
 from app.middleware.rbac import Permission, RequirePermission
 from app.services.model_build_service import BuildService
@@ -258,6 +263,7 @@ def get_repo_builds(
 
 @router.get(
     "/{repo_id}/import-builds",
+    response_model=ImportBuildListResponse,
     response_model_by_alias=False,
 )
 def get_import_builds(
@@ -284,6 +290,7 @@ def get_import_builds(
 
 @router.get(
     "/{repo_id}/training-builds",
+    response_model=TrainingBuildListResponse,
     response_model_by_alias=False,
 )
 def get_training_builds(

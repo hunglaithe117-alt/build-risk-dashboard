@@ -10,7 +10,7 @@ export interface DatasetVersion {
     name: string;
     description: string | null;
     selected_features: string[];
-    status: "pending" | "ingesting" | "ingesting_complete" | "ingesting_partial" | "processing" | "completed" | "partial" | "failed" | "cancelled";
+    status: "queued" | "ingesting" | "ingested" | "processing" | "processed" | "failed";
     total_rows: number;
     processed_rows: number;
     enriched_rows: number;
@@ -75,7 +75,6 @@ export interface UseDatasetVersionsReturn {
     refresh: () => Promise<void>;
     loadMore: () => Promise<void>;
     createVersion: (request: CreateVersionRequest) => Promise<DatasetVersion | null>;
-    cancelVersion: (versionId: string) => Promise<void>;
     deleteVersion: (versionId: string) => Promise<void>;
     downloadVersion: (versionId: string, format?: "csv" | "json") => void;
     // Processing control
@@ -97,7 +96,7 @@ export function useDatasetVersions(datasetId: string): UseDatasetVersionsReturn 
 
     // Find active (processing or ingesting) version
     const activeVersion = versions.find(
-        (v) => ["pending", "ingesting", "ingesting_complete", "ingesting_partial", "processing"].includes(v.status)
+        (v) => ["queued", "ingesting", "ingested", "processing"].includes(v.status)
     ) || null;
 
     const hasMore = skip + versions.length < total;
@@ -181,21 +180,6 @@ export function useDatasetVersions(datasetId: string): UseDatasetVersionsReturn 
             }
         },
         [datasetId]
-    );
-
-    // Cancel a version
-    const cancelVersion = useCallback(
-        async (versionId: string) => {
-            try {
-                await api.post(`/datasets/${datasetId}/versions/${versionId}/cancel`);
-                await refresh();
-            } catch (err: unknown) {
-                console.error("Failed to cancel version:", err);
-                const message = err instanceof Error ? err.message : "Failed to cancel version";
-                setError(message);
-            }
-        },
-        [datasetId, refresh]
     );
 
     // Delete a version
@@ -309,7 +293,6 @@ export function useDatasetVersions(datasetId: string): UseDatasetVersionsReturn 
         refresh,
         loadMore,
         createVersion,
-        cancelVersion,
         deleteVersion,
         downloadVersion,
         // Processing control

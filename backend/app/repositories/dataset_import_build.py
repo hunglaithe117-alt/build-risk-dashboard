@@ -60,9 +60,9 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
         """Find successfully ingested builds."""
         return self.find_by_version(version_id, status=DatasetImportBuildStatus.INGESTED)
 
-    def find_failed_imports(self, version_id: str) -> List[DatasetImportBuild]:
-        """Find failed import builds for retry."""
-        return self.find_by_version(version_id, status=DatasetImportBuildStatus.FAILED)
+    def find_missing_resource_imports(self, version_id: str) -> List[DatasetImportBuild]:
+        """Find builds with missing resources for retry."""
+        return self.find_by_version(version_id, status=DatasetImportBuildStatus.MISSING_RESOURCE)
 
     def count_by_status(self, version_id: str) -> dict:
         """
@@ -454,20 +454,20 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
         )
         return result.modified_count
 
-    def mark_failed_by_resource(
+    def mark_missing_resource_by_resource(
         self,
         version_id: str,
         resource: str,
     ) -> int:
         """
-        Mark builds as FAILED if a specific resource failed.
+        Mark builds as MISSING_RESOURCE if a specific resource failed.
 
         Args:
             version_id: DatasetVersion ID
             resource: Resource that failed
 
         Returns:
-            Number of builds marked as failed
+            Number of builds marked as missing resource
         """
         result = self.collection.update_many(
             {
@@ -477,18 +477,18 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
             },
             {
                 "$set": {
-                    "status": DatasetImportBuildStatus.FAILED.value,
+                    "status": DatasetImportBuildStatus.MISSING_RESOURCE.value,
                 }
             },
         )
         return result.modified_count
 
-    def find_by_failed_resource(
+    def find_by_missing_resource(
         self,
         version_id: str,
         resource: str,
     ) -> List[DatasetImportBuild]:
-        """Find builds with a specific failed resource."""
+        """Find builds with a specific missing/failed resource."""
         return self.find_many(
             {
                 "dataset_version_id": ObjectId(version_id),
@@ -654,7 +654,7 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
                     "pending": {"$sum": {"$cond": [{"$eq": ["$status", "pending"]}, 1, 0]}},
                     "ingesting": {"$sum": {"$cond": [{"$eq": ["$status", "ingesting"]}, 1, 0]}},
                     "ingested": {"$sum": {"$cond": [{"$eq": ["$status", "ingested"]}, 1, 0]}},
-                    "failed": {"$sum": {"$cond": [{"$eq": ["$status", "failed"]}, 1, 0]}},
+                    "missing_resource": {"$sum": {"$cond": [{"$eq": ["$status", "missing_resource"]}, 1, 0]}},
                     "total": {"$sum": 1},
                 }
             },

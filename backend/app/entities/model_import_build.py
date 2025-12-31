@@ -36,6 +36,9 @@ class ModelImportBuildStatus(str, Enum):
     # Missing resources (graceful degradation)
     MISSING_RESOURCE = "missing_resource"  # Some resources unavailable (logs, worktree, etc.)
 
+    # Failed (generic)
+    FAILED = "failed"  # Critical error (e.g. database error, crash)
+
 
 class ResourceStatus(str, Enum):
     """Status of a single resource in ingestion."""

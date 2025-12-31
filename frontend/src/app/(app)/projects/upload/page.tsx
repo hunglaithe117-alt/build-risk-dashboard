@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Play, Pause, RotateCcw, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Loader2, Play, RotateCcw, CheckCircle2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useUploadDatasetWizard } from "./_components/hooks/useUploadDatasetWizard";
@@ -159,18 +159,10 @@ export default function UploadDatasetPage() {
                             {step === 2 && (
                                 <>
                                     {validationStatus === "validating" && (
-                                        <Button
-                                            onClick={wizard.cancelValidation}
-                                            variant="outline"
-                                            className="text-amber-600 border-amber-200 hover:bg-amber-50"
-                                        >
-                                            <Pause className="mr-2 h-4 w-4" /> Pause
-                                        </Button>
-                                    )}
-                                    {validationStatus === "cancelled" && (
-                                        <Button onClick={wizard.resumeValidation}>
-                                            <Play className="mr-2 h-4 w-4" /> Resume
-                                        </Button>
+                                        <div className="flex items-center gap-2 text-muted-foreground">
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            <span>Validating...</span>
+                                        </div>
                                     )}
                                     {validationStatus === "failed" && (
                                         <Button onClick={wizard.retryValidation} variant="outline">

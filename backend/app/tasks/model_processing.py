@@ -757,7 +757,6 @@ def retry_failed_builds(self: PipelineTask, repo_config_id: str) -> Dict[str, An
         workflow = chain(
             *processing_tasks,
             finalize_model_processing.si(
-                results=[],
                 repo_config_id=repo_config_id,
                 created_count=len(extraction_build_ids),
                 correlation_id=correlation_id,
@@ -909,8 +908,6 @@ def predict_builds_batch(
 ) -> Dict[str, Any]:
     """
     Batch prediction for multiple builds.
-
-    More efficient than individual predict calls.
     Fetches features from FeatureVector collection.
     After prediction, increments builds_completed count on repo config.
     """
@@ -971,8 +968,7 @@ def predict_builds_batch(
                         max_depth=5,
                     )
                     if history_vectors:
-                        # Convert to list of feature dicts (newest to oldest)
-                        temporal_history = [v.features for v in history_vectors]
+                        temporal_history = [v.features for v in reversed(history_vectors)]
                 except Exception as e:
                     logger.warning(f"Failed to fetch temporal history for {build_id}: {e}")
 
@@ -980,6 +976,7 @@ def predict_builds_batch(
                 {
                     "id": build_id,
                     "features": feature_vector.features,
+                    "feature_vector_id": feature_vector.id,
                     "temporal_history": temporal_history,
                     "repo_config_id": model_build.model_repo_config_id,
                 }
@@ -996,16 +993,32 @@ def predict_builds_batch(
                 {"prediction_status": ExtractionStatus.IN_PROGRESS.value},
             )
 
-        # Predict with temporal history
+        # Normalize features BEFORE prediction and save to FeatureVector
+        for build_info in builds_to_predict:
+            normalized = prediction_service.normalize_features(build_info["features"])
+            build_info["normalized_features"] = normalized
+            # Save normalized features to FeatureVector (single source of truth)
+            feature_vector_repo.update_normalized_features(
+                build_info["feature_vector_id"],
+                normalized,
+            )
+            # Also normalize temporal history for consistent scaling
+            if build_info["temporal_history"]:
+                build_info["normalized_history"] = [
+                    prediction_service.normalize_features(h) for h in build_info["temporal_history"]
+                ]
+            else:
+                build_info["normalized_history"] = None
+
+        # Predict with pre-scaled features (skip internal scaling)
         results = []
         for build_info in builds_to_predict:
             result = prediction_service.predict(
-                features=build_info["features"],
-                temporal_history=build_info["temporal_history"],
+                features=build_info["normalized_features"],
+                temporal_history=build_info["normalized_history"],
+                use_prescaled=True,
             )
-            # Normalize features for storage
-            normalized = prediction_service.normalize_features(build_info["features"])
-            results.append((normalized, result))
+            results.append(result)
 
         # Store results and count by repo_config
         succeeded = 0
@@ -1018,10 +1031,9 @@ def predict_builds_batch(
                 failed += 1
                 continue
 
-            normalized, prediction = results[i]
+            prediction = results[i]
 
             updates = {
-                "normalized_features": normalized,
                 "predicted_label": prediction.risk_level,
                 "prediction_confidence": prediction.risk_score,
                 "prediction_uncertainty": prediction.uncertainty,
@@ -1088,7 +1100,10 @@ def predict_builds_batch(
         for build_id in model_build_ids:
             model_build_repo.update_one(
                 build_id,
-                {"prediction_error": f"Prediction failed: {str(e)}"},
+                {
+                    "prediction_status": ExtractionStatus.FAILED.value,
+                    "prediction_error": f"Prediction failed: {str(e)}",
+                },
             )
         return {
             "status": "failed",

@@ -16,19 +16,14 @@ from app.entities.repo_config_base import FeatureConfigBase
 
 
 class VersionStatus(str, Enum):
-    """Dataset version status."""
+    """Dataset version status"""
 
-    PENDING = "pending"
+    QUEUED = "queued"  # Initial state, waiting to start
     INGESTING = "ingesting"  # Clone/worktree/download logs phase
-    INGESTING_COMPLETE = (
-        "ingesting_complete"  # Ingestion done, waiting for user to start processing
-    )
-    INGESTING_PARTIAL = "ingesting_partial"  # Some builds failed ingestion
+    INGESTED = "ingested"  # Ingestion done, waiting for user to start processing
     PROCESSING = "processing"  # Feature extraction phase
-    COMPLETED = "completed"  # All builds processed successfully
-    PARTIAL = "partial"  # Some builds succeeded, some failed processing
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+    PROCESSED = "processed"  # Processing complete (features extracted)
+    FAILED = "failed"  # Critical error, pipeline failed
 
 
 class DatasetVersion(FeatureConfigBase):
@@ -58,7 +53,7 @@ class DatasetVersion(FeatureConfigBase):
         description="Scan tool config: {'sonarqube': {...}, 'trivy': {...}}",
     )
 
-    status: VersionStatus = VersionStatus.PENDING
+    status: VersionStatus = VersionStatus.QUEUED
 
     total_rows: int = Field(default=0, description="Total rows to process")
     processed_rows: int = Field(default=0, description="Rows processed so far")
@@ -86,18 +81,13 @@ class DatasetVersion(FeatureConfigBase):
 
     def mark_completed(self) -> None:
         """Mark version as completed."""
-        self.status = VersionStatus.COMPLETED
+        self.status = VersionStatus.PROCESSED
         self.completed_at = datetime.now(timezone.utc)
 
     def mark_failed(self, error: str) -> None:
         """Mark version as failed."""
         self.status = VersionStatus.FAILED
         self.error_message = error
-        self.completed_at = datetime.now(timezone.utc)
-
-    def mark_cancelled(self) -> None:
-        """Mark version as cancelled."""
-        self.status = VersionStatus.CANCELLED
         self.completed_at = datetime.now(timezone.utc)
 
     @property

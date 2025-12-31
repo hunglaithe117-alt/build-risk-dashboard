@@ -5,11 +5,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 import {
   CheckCircle2,
   Loader2,
-  MoreVertical,
-  Play,
   Plus,
-  RefreshCw,
-  RotateCcw,
   Trash2,
 } from "lucide-react";
 import {
@@ -29,13 +25,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/use-toast";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { reposApi } from "@/lib/api";
@@ -133,75 +122,7 @@ export default function AdminReposPage() {
 
 
 
-  const [rescanLoading, setRescanLoading] = useState<Record<string, boolean>>({});
-  const [reprocessLoading, setReprocessLoading] = useState<Record<string, boolean>>({});
-  const [reingestLoading, setReingestLoading] = useState<Record<string, boolean>>({});
-  const [startProcessingLoading, setStartProcessingLoading] = useState<Record<string, boolean>>({});
   const [deleteLoading, setDeleteLoading] = useState<Record<string, boolean>>({});
-
-  const handleRescan = async (repo: RepositoryRecord, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (rescanLoading[repo.id]) return;
-
-    setRescanLoading((prev) => ({ ...prev, [repo.id]: true }));
-    try {
-      await reposApi.triggerLazySync(repo.id);
-      setFeedback("Repository queued for sync (fetching new builds).");
-      loadRepositories(page);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setRescanLoading((prev) => ({ ...prev, [repo.id]: false }));
-    }
-  };
-
-  const handleReprocessFailed = async (repo: RepositoryRecord, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (reprocessLoading[repo.id]) return;
-
-    setReprocessLoading((prev) => ({ ...prev, [repo.id]: true }));
-    try {
-      await reposApi.reprocessFailed(repo.id);
-      setFeedback("Failed builds queued for retry.");
-      loadRepositories(page);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setReprocessLoading((prev) => ({ ...prev, [repo.id]: false }));
-    }
-  };
-
-  const handleReingestFailed = async (repo: RepositoryRecord, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (reingestLoading[repo.id]) return;
-
-    setReingestLoading((prev) => ({ ...prev, [repo.id]: true }));
-    try {
-      await reposApi.reingestFailed(repo.id);
-      setFeedback("Failed ingestion builds queued for retry.");
-      loadRepositories(page);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setReingestLoading((prev) => ({ ...prev, [repo.id]: false }));
-    }
-  };
-
-  const handleStartProcessing = async (repo: RepositoryRecord, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (startProcessingLoading[repo.id]) return;
-
-    setStartProcessingLoading((prev) => ({ ...prev, [repo.id]: true }));
-    try {
-      await reposApi.startProcessing(repo.id);
-      setFeedback("Processing phase started. Feature extraction will begin shortly.");
-      loadRepositories(page);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setStartProcessingLoading((prev) => ({ ...prev, [repo.id]: false }));
-    }
-  };
 
   const handleDelete = async (repo: RepositoryRecord, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -369,113 +290,24 @@ export default function AdminReposPage() {
                         />
                       </td>
                       <td className="px-6 py-4">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-8 w-8 p-0"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MoreVertical className="h-4 w-4" />
-                              <span className="sr-only">Open menu</span>
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {/* Start Processing - only when ingestion is complete */}
-                            {(repo.status === "ingestion_complete" || repo.status === "ingestion_partial") && (
-                              <DropdownMenuItem
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStartProcessing(repo, e as unknown as React.MouseEvent);
-                                }}
-                                disabled={startProcessingLoading[repo.id]}
-                                className="text-green-600 focus:text-green-600 focus:bg-green-50 dark:text-green-400 dark:focus:bg-green-900/20"
-                              >
-                                {startProcessingLoading[repo.id] ? (
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <Play className="mr-2 h-4 w-4" />
-                                )}
-                                Start Processing
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRescan(repo, e as unknown as React.MouseEvent);
-                              }}
-                              disabled={
-                                rescanLoading[repo.id] ||
-                                repo.status === "queued" ||
-                                repo.status === "ingesting" ||
-                                repo.status === "processing"
-                              }
-                            >
-                              {rescanLoading[repo.id] ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                              )}
-                              Sync New Builds
-                            </DropdownMenuItem>
-                            {/* Reingest Failed - for ingestion failures */}
-                            {(repo.status === "ingestion_partial" || repo.status === "failed") && (
-                              <DropdownMenuItem
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleReingestFailed(repo, e as unknown as React.MouseEvent);
-                                }}
-                                disabled={reingestLoading[repo.id]}
-                              >
-                                {reingestLoading[repo.id] ? (
-                                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <RotateCcw className="mr-2 h-4 w-4" />
-                                )}
-                                Retry Failed Ingestion
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleReprocessFailed(repo, e as unknown as React.MouseEvent);
-                              }}
-                              disabled={
-                                reprocessLoading[repo.id] ||
-                                repo.status === "queued" ||
-                                repo.status === "ingesting" ||
-                                repo.status === "ingestion_complete" ||
-                                repo.status === "ingestion_partial" ||
-                                repo.status === "processing" ||
-                                repo.builds_processing_failed === 0
-                              }
-                            >
-                              {reprocessLoading[repo.id] ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <RotateCcw className="mr-2 h-4 w-4" />
-                              )}
-                              Retry Failed Processing{repo.builds_processing_failed > 0 && ` (${repo.builds_processing_failed})`}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete(repo, e as unknown as React.MouseEvent);
-                              }}
-                              disabled={deleteLoading[repo.id]}
-                              className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:text-red-400 dark:focus:bg-red-900/20"
-                            >
-                              {deleteLoading[repo.id] ? (
-                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="mr-2 h-4 w-4" />
-                              )}
-                              Delete Repository
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(repo, e as unknown as React.MouseEvent);
+                          }}
+                          disabled={deleteLoading[repo.id]}
+                          title="Delete Repository"
+                        >
+                          {deleteLoading[repo.id] ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                          <span className="sr-only">Delete</span>
+                        </Button>
                       </td>
                     </tr>
                   ))

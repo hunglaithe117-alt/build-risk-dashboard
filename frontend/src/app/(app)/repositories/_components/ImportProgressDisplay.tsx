@@ -25,7 +25,7 @@ interface ImportProgress {
         fetched: number;
         ingesting: number;
         ingested: number;
-        failed: number;
+        missing_resource: number;
         total: number;
     };
     training_builds: {
@@ -68,78 +68,82 @@ export function ImportProgressDisplay({
         }
     }, [isOpen, repoId, progress, loading]);
 
-    // Smart display based on status phase
-    const isFetchingPhase = importStatus === "fetching" || importStatus === "queued";
-    const isIngestionPhase = importStatus === "ingesting" || importStatus === "ingestion_complete" || importStatus === "ingestion_partial";
-    const isProcessingPhase = importStatus === "processing" || importStatus === "imported" || importStatus === "partial";
+    // Display logic based on phase
+    const isFetching = ["queued", "fetching"].includes(importStatus);
+    const isIngesting = ["ingesting", "ingestion_partial"].includes(importStatus);
+    const isIngested = ["ingested", "ingestion_complete"].includes(importStatus);
+    const isProcessing = ["processing"].includes(importStatus);
+    const isProcessed = ["processed", "imported", "partial"].includes(importStatus);
 
-    // Display logic based on phase:
-    // - Fetching: show fetched builds (no denominator until complete)
-    // - Ingestion: show ingested/fetched
-    // - Processing: show completed/ingested
-    let displayCount: number;
-    let displayTotal: number;
+    let mainText = "";
+    let subText = "";
+    let progressValue = 0;
+    let progressColor = "bg-slate-200";
 
-    if (isProcessingPhase) {
-        displayCount = totalProcessed;
-        displayTotal = totalIngested > 0 ? totalIngested : totalFetched;
-    } else if (isIngestionPhase) {
-        displayCount = totalIngested;
-        displayTotal = totalFetched;
+    if (isFetching) {
+        mainText = totalFetched > 0 ? `${totalFetched} fetched` : "Fetching...";
+        progressValue = 100; // Indeterminate pulse
+        progressColor = "bg-cyan-500 animate-pulse";
+    } else if (isIngesting) {
+        mainText = `${totalIngested}/${totalFetched} ingested`;
+        progressValue = totalFetched > 0 ? (totalIngested / totalFetched) * 100 : 0;
+        progressColor = "bg-blue-500 animate-pulse";
+    } else if (isIngested) {
+        mainText = `${totalIngested} ready`;
+        subText = "Ready to process";
+        progressValue = 100;
+        progressColor = "bg-blue-500";
+    } else if (isProcessing) {
+        const totalToProcess = totalIngested > 0 ? totalIngested : totalFetched;
+        mainText = `${totalProcessed}/${totalToProcess} processed`;
+        progressValue = totalToProcess > 0 ? (totalProcessed / totalToProcess) * 100 : 0;
+        progressColor = "bg-purple-500 animate-pulse";
+    } else if (isProcessed) {
+        mainText = `${totalProcessed} processed`;
+        progressValue = 100;
+        progressColor = "bg-green-500";
     } else {
-        // Fetching/queued - show fetched so far
-        displayCount = totalFetched;
-        displayTotal = 0; // Unknown during fetching
+        // Fallback for unknown states or 'failed'
+        mainText = totalProcessed > 0 ? `${totalProcessed} processed` :
+            totalIngested > 0 ? `${totalIngested} ingested` :
+                totalFetched > 0 ? `${totalFetched} fetched` : "—";
+        progressValue = 0;
     }
 
-    const processedPercent =
-        displayTotal > 0 ? Math.round((displayCount / displayTotal) * 100) : 0;
-
-    const isActive = importStatus === "fetching" || importStatus === "ingesting" || importStatus === "processing" || importStatus === "queued";
-    const isComplete = displayTotal > 0 && displayCount >= displayTotal && totalFailed === 0;
+    // Override coloring for failures
+    if (totalFailed > 0 && !isProcessing && !isIngesting && !isFetching) {
+        progressColor = "bg-amber-500";
+    }
 
     return (
         <TooltipProvider>
             <Tooltip open={isOpen} onOpenChange={setIsOpen}>
                 <TooltipTrigger asChild>
                     <div
-                        className="space-y-1 cursor-help"
+                        className="space-y-1.5 cursor-help"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="flex items-center gap-2 text-sm">
-                            <span className="font-medium">
-                                {isFetchingPhase ? (
-                                    displayCount > 0 ? `${displayCount} fetched` : "—"
-                                ) : (
-                                    `${displayCount}/${displayTotal}`
-                                )}
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="font-medium truncate mr-2">
+                                {mainText}
                             </span>
-                            {isComplete ? (
-                                <span className="text-green-600 dark:text-green-400">✓</span>
-                            ) : totalFailed > 0 ? (
-                                <span className="text-red-500 text-xs">
-                                    ({totalFailed} failed)
-                                </span>
-                            ) : null}
-                            {!isFetchingPhase && (
-                                <span className="text-muted-foreground text-xs">
-                                    ({processedPercent}%)
+                            {totalFailed > 0 && (
+                                <span className="text-red-500 text-xs font-medium whitespace-nowrap">
+                                    {totalFailed} missing
                                 </span>
                             )}
                         </div>
-                        {displayTotal > 0 && (
-                            <div className="h-1.5 w-28 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                                <div
-                                    className={`h-full transition-all ${totalFailed > 0
-                                        ? "bg-red-500"
-                                        : isFetchingPhase
-                                            ? "bg-cyan-500 animate-pulse"
-                                            : isActive
-                                                ? "bg-blue-500 animate-pulse"
-                                                : "bg-green-500"
-                                        }`}
-                                    style={{ width: `${processedPercent}%` }}
-                                />
+
+                        <div className="h-2 w-full max-w-[140px] rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                            <div
+                                className={`h-full transition-all duration-500 ${progressColor}`}
+                                style={{ width: `${Math.max(5, progressValue)}%` }}
+                            />
+                        </div>
+
+                        {subText && (
+                            <div className="text-xs text-muted-foreground">
+                                {subText}
                             </div>
                         )}
                     </div>
@@ -184,11 +188,11 @@ export function ImportProgressDisplay({
                                             {progress.import_builds.ingested}
                                         </span>
                                     </div>
-                                    {progress.import_builds.failed > 0 && (
+                                    {progress.import_builds.missing_resource > 0 && (
                                         <div className="flex justify-between col-span-2">
-                                            <span className="text-muted-foreground">Failed:</span>
+                                            <span className="text-muted-foreground">Missing Res:</span>
                                             <span className="text-red-500">
-                                                {progress.import_builds.failed}
+                                                {progress.import_builds.missing_resource}
                                             </span>
                                         </div>
                                     )}

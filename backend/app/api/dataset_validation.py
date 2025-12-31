@@ -37,16 +37,6 @@ async def get_validation_status(
     return ValidationStatusResponse(**result)
 
 
-@router.delete("/{dataset_id}/validation")
-async def cancel_validation(
-    dataset_id: str,
-    db: Database = Depends(get_db),
-):
-    """Cancel ongoing validation."""
-    service = DatasetValidationService(db)
-    return await service.cancel_validation(dataset_id)
-
-
 @router.get("/{dataset_id}/validation-summary", response_model=ValidationSummaryResponse)
 async def get_validation_summary(
     dataset_id: str,

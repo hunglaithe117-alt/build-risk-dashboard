@@ -172,9 +172,6 @@ export default function DatasetsPage() {
     if (validationStatus === "validating") {
       return <Badge variant="outline" className="border-blue-500 text-blue-600">Validating...</Badge>;
     }
-    if (validationStatus === "cancelled") {
-      return <Badge variant="outline" className="border-amber-500 text-amber-600">Cancelled</Badge>;
-    }
     if (validationStatus === "failed") {
       return <Badge variant="destructive">Validation Failed</Badge>;
     }

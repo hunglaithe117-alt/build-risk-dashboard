@@ -119,11 +119,6 @@ def cleanup_validation_stats(redis_client: redis.Redis, dataset_id: str) -> None
         r.delete(*keys)
 
 
-def is_validation_cancelled(redis_client: redis.Redis, dataset_id: str) -> bool:
-    """Check if validation was cancelled via Redis flag."""
-    return redis_client.get(f"dataset_validation:{dataset_id}:cancelled") == "1"
-
-
 def read_csv_chunks(
     file_path: str,
     build_id_column: str,

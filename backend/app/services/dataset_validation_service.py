@@ -4,7 +4,6 @@ from bson import ObjectId
 from fastapi import HTTPException
 from pymongo.database import Database
 
-from app.core.redis import get_async_redis
 from app.entities.dataset import DatasetProject, DatasetValidationStatus
 from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.repositories.dataset_repo_stats import DatasetRepoStatsRepository
@@ -42,10 +41,6 @@ class DatasetValidationService:
                 status_code=400,
                 detail="Dataset mapping not configured. Please map build_id and repo_name columns.",
             )
-
-        # Clear any existing cancel flag before starting/resuming
-        redis = await get_async_redis()
-        await redis.delete(f"dataset_validation:{dataset_id}:cancelled")
 
         task = dataset_validation_orchestrator.delay(dataset_id)
         return {"task_id": task.id, "message": "Validation started"}
@@ -162,35 +157,9 @@ class DatasetValidationService:
             "limit": limit,
         }
 
-    async def cancel_validation(self, dataset_id: str) -> dict:
-        """Cancel ongoing validation (resumable)."""
-        dataset = self._get_dataset_or_404(dataset_id)
-
-        if dataset.validation_status != DatasetValidationStatus.VALIDATING:
-            raise HTTPException(status_code=400, detail="No validation in progress")
-
-        redis = await get_async_redis()
-        await redis.set(
-            f"dataset_validation:{dataset_id}:cancelled",
-            "1",
-            ex=3600,
-        )
-
-        # Update status to CANCELLED (allows resume)
-        self.dataset_repo.update_one(
-            dataset_id,
-            {"validation_status": DatasetValidationStatus.CANCELLED},
-        )
-
-        return {"message": "Validation paused. You can resume later.", "can_resume": True}
-
     async def reset_validation(self, dataset_id: str) -> dict:
         """Reset validation state and delete build records."""
         self._get_dataset_or_404(dataset_id)
-
-        # Cancel any running task
-        redis = await get_async_redis()
-        await redis.set(f"dataset_validation:{dataset_id}:cancelled", "1", ex=3600)
 
         # Reset validation status
         self.dataset_repo.update_one(

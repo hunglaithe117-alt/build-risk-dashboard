@@ -566,6 +566,12 @@ def aggregate_logs_results(
     chunks_with_errors = []
     successful_chunks = []
 
+    # Aggregate log IDs from all chunks
+    all_failed_log_ids: list[str] = []
+    all_expired_log_ids: list[str] = []
+    all_downloaded_log_ids: list[str] = []
+    all_skipped_log_ids: list[str] = []
+
     for r in chunk_results:
         if not isinstance(r, dict):
             continue
@@ -575,6 +581,12 @@ def aggregate_logs_results(
             logger.warning(f"{log_ctx} Chunk {chunk_idx} had error: {r.get('error')}")
         else:
             successful_chunks.append(r)
+
+        # Collect log IDs from each chunk
+        all_failed_log_ids.extend(r.get("failed_log_ids", []))
+        all_expired_log_ids.extend(r.get("expired_log_ids", []))
+        all_downloaded_log_ids.extend(r.get("downloaded_log_ids", []))
+        all_skipped_log_ids.extend(r.get("skipped_log_ids", []))
 
     # Aggregate results from all chunks (including those with partial success)
     total_downloaded = sum(
@@ -607,6 +619,10 @@ def aggregate_logs_results(
         "chunks_with_errors": len(chunks_with_errors),
         "error_details": chunks_with_errors if chunks_with_errors else None,
         "correlation_id": correlation_id,
+        "failed_log_ids": all_failed_log_ids,
+        "expired_log_ids": all_expired_log_ids,
+        "downloaded_log_ids": all_downloaded_log_ids,
+        "skipped_log_ids": all_skipped_log_ids,
     }
 
     save_ingestion_result(self.redis, correlation_id, result)

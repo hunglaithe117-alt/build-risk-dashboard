@@ -39,7 +39,6 @@ import {
     RefreshCw,
     Trash2,
     XCircle,
-    AlertCircle,
 } from "lucide-react";
 import type { DatasetVersion } from "../_hooks/useDatasetVersions";
 
@@ -68,9 +67,9 @@ export function VersionHistoryTable({
     const [currentPage, setCurrentPage] = useState(1);
     const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
-    // Filter completed versions (not pending/ingesting/processing)
+    // Filter completed versions (not queued/ingesting/processing/ingested)
     const completedVersions = versions.filter(
-        (version) => version.status !== "pending" && version.status !== "ingesting" && version.status !== "processing"
+        (version) => version.status !== "queued" && version.status !== "ingesting" && version.status !== "processing" && version.status !== "ingested"
     );
 
     // Pagination
@@ -113,9 +112,8 @@ export function VersionHistoryTable({
     // Status config
     const getStatusConfig = (status: string) => {
         const config: Record<string, { icon: typeof CheckCircle2; color: string; label: string }> = {
-            completed: { icon: CheckCircle2, color: "text-green-500", label: "Completed" },
+            processed: { icon: CheckCircle2, color: "text-green-500", label: "Processed" },
             failed: { icon: XCircle, color: "text-red-500", label: "Failed" },
-            cancelled: { icon: AlertCircle, color: "text-slate-500", label: "Cancelled" },
         };
         return config[status] || config.failed;
     };
@@ -211,7 +209,7 @@ export function VersionHistoryTable({
                                                     className="flex items-center justify-end gap-1"
                                                     onClick={(e) => e.stopPropagation()}
                                                 >
-                                                    {version.status === "completed" && (
+                                                    {version.status === "processed" && (
                                                         <DropdownMenu>
                                                             <DropdownMenuTrigger asChild>
                                                                 <Button

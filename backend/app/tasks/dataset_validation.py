@@ -51,7 +51,6 @@ from app.tasks.dataset_validation_helpers import (
     group_builds_by_repo,
     increment_validation_stat,
     init_validation_stats,
-    is_validation_cancelled,
     read_csv_chunks,
 )
 from app.utils.datetime import utc_now
@@ -304,9 +303,10 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
             ),  # Final: Aggregate results
         ).apply_async()
 
+        workflow_id = workflow.id if workflow else None
         logger.info(
             f"{corr_prefix}[dataset_validation] Dispatched {len(repo_chunks)} repo chunks, "
-            f"workflow_id={workflow.id}"
+            f"workflow_id={workflow_id}"
         )
 
         return {
@@ -314,7 +314,7 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
             "total_repos": total_repos,
             "total_builds": total_builds,
             "chunks": len(repo_chunks),
-            "workflow_id": str(workflow.id),
+            "workflow_id": str(workflow_id) if workflow_id else None,
             "correlation_id": correlation_id,
         }
 
@@ -361,16 +361,9 @@ def validate_repo_chunk(
     Returns:
         Dict with validation results for this chunk
     """
-    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
-    log_ctx = f"{corr_prefix}[validate_repo_chunk][chunk={chunk_index}]"
     db = get_database()
     raw_repo_repo = RawRepositoryRepository(db)
     dataset_repo_stats_repo = DatasetRepoStatsRepository(db)
-
-    # Check if cancelled before starting
-    if is_validation_cancelled(self.redis, dataset_id):
-        logger.info(f"{log_ctx} Validation cancelled, skipping chunk")
-        return {"chunk_index": chunk_index, "cancelled": True, "correlation_id": correlation_id}
 
     repos_valid = 0
     repos_not_found = 0
@@ -379,10 +372,6 @@ def validate_repo_chunk(
 
     with get_public_github_client() as client:
         for repo_name, builds in repo_builds_chunk.items():
-            # Check cancellation periodically
-            if is_validation_cancelled(self.redis, dataset_id):
-                logger.info(f"Validation cancelled mid-chunk for {dataset_id}")
-                break
             try:
                 # Check repo exists using shared client
                 repo_data = client.get_repository(repo_name)
@@ -498,10 +487,6 @@ def validate_builds_chunk(
     raw_build_run_repo = RawBuildRunRepository(db)
     raw_repo_repo = RawRepositoryRepository(db)
 
-    # Check if cancelled before starting
-    if is_validation_cancelled(self.redis, dataset_id):
-        return {"repo_name": repo_name, "cancelled": True, "correlation_id": correlation_id}
-
     # Lookup raw_repo_id if not provided (dispatched from orchestrator)
     if raw_repo_id is None:
         raw_repo = raw_repo_repo.find_by_full_name(repo_name)
@@ -568,7 +553,7 @@ def validate_builds_chunk(
             builds_to_validate.append(build_info)
 
     # Fetch all build details concurrently
-    async def fetch_build_details_batch() -> List[Optional[BuildData]]:
+    async def fetch_build_details_batch() -> List[Any]:
         """Fetch all build data concurrently using fetch_build_details."""
         tasks = []
         for build_info in builds_to_validate:
@@ -610,10 +595,6 @@ def validate_builds_chunk(
     # Process results
     for build_info, build_data in zip(builds_to_validate, build_results, strict=False):
         build_id = build_info["build_id"]
-
-        # Check cancellation periodically
-        if is_validation_cancelled(self.redis, dataset_id):
-            break
 
         try:
             # Handle fetch errors
@@ -688,6 +669,7 @@ def validate_builds_chunk(
                         raw_repo_id=ObjectId(raw_repo_id),
                         status=DatasetBuildStatus.NOT_FOUND,
                         validation_error="Build not found or incomplete",
+                        raw_run_id=None,
                         validated_at=utc_now(),
                     )
                 )
@@ -704,6 +686,7 @@ def validate_builds_chunk(
                     raw_repo_id=ObjectId(raw_repo_id),
                     status=DatasetBuildStatus.ERROR,
                     validation_error=str(e),
+                    raw_run_id=None,
                     validated_at=utc_now(),
                 )
             )
@@ -854,6 +837,7 @@ def aggregate_validation_results(
 
     # Publish completion
     publish_dataset_update(
+        self.redis,
         dataset_id,
         "completed",
         progress=100,
@@ -861,7 +845,7 @@ def aggregate_validation_results(
     )
 
     # Cleanup Redis
-    cleanup_validation_stats(dataset_id)
+    cleanup_validation_stats(self.redis, dataset_id)
 
     logger.info(
         f"Dataset validation completed: {dataset_id}, "

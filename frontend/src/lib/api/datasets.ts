@@ -47,12 +47,6 @@ export const datasetsApi = {
         const response = await api.patch<DatasetRecord>(`/datasets/${datasetId}`, payload);
         return response.data;
     },
-    cancelValidation: async (datasetId: string) => {
-        const response = await api.delete<{ message: string; can_resume: boolean }>(
-            `/datasets/${datasetId}/validation`
-        );
-        return response.data;
-    },
     startValidation: async (datasetId: string) => {
         const response = await api.post<{ task_id: string; message: string }>(
             `/datasets/${datasetId}/validate`

@@ -17,12 +17,18 @@ interface ResourceStatus {
 }
 
 interface ImportProgress {
+    checkpoint?: {
+        has_checkpoint: boolean;
+        last_checkpoint_at: string | null;
+        accepted_failed: number;
+        stats: Record<string, number>;
+    };
     import_builds: {
         pending: number;
         fetched: number;
         ingesting: number;
         ingested: number;
-        failed: number;
+        missing_resource: number;
         total: number;
     };
     resource_status?: ResourceStatus;
@@ -152,31 +158,31 @@ function getPhaseInfo(status: string, progress: ImportProgress | null): PhaseInf
 
     // Ingesting phase
     if (statusLower === "ingesting") {
-        const { ingested, ingesting, total, failed } = progress.import_builds;
+        const { ingested, ingesting, total, missing_resource } = progress.import_builds;
         return {
             title: "Ingestion",
             description: "Cloning repository, creating worktrees, downloading logs",
             current: ingested + ingesting,
             total,
-            failed,
+            failed: missing_resource,
             isActive: true,
-            canRetry: failed > 0,
+            canRetry: missing_resource > 0,
         };
     }
 
     // Ingestion complete/partial - waiting for user to start processing
     if (statusLower === "ingestion_complete" || statusLower === "ingestion_partial") {
-        const { ingested, total, failed } = progress.import_builds;
+        const { ingested, total, missing_resource } = progress.import_builds;
         return {
             title: "Ingestion Complete",
-            description: failed > 0
+            description: missing_resource > 0
                 ? "Some builds failed ingestion. You can retry or start processing."
                 : "All builds ingested successfully. Ready to start processing.",
             current: ingested,
             total,
-            failed,
+            failed: missing_resource,
             isActive: false,
-            canRetry: failed > 0,
+            canRetry: missing_resource > 0,
         };
     }
 

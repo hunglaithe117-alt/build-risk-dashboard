@@ -3,7 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Loader2, AlertCircle, Sparkles, X } from "lucide-react";
+import { Loader2, AlertCircle, Sparkles } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
     Card,
@@ -38,7 +38,6 @@ export function EnrichmentTab({
         loading,
         error,
         refresh,
-        cancelVersion,
         deleteVersion,
         downloadVersion,
         startProcessing,
@@ -48,12 +47,12 @@ export function EnrichmentTab({
 
     // Find version waiting for user action
     const waitingVersion = versions.find(
-        (v) => v.status === "ingesting_complete" || v.status === "ingesting_partial"
+        (v) => v.status === "ingested"
     );
 
-    // Find version with failed/partial processing
+    // Find version with failed processing
     const failedVersion = versions.find(
-        (v) => v.status === "partial" || v.status === "failed"
+        (v) => v.status === "failed"
     );
 
     // WebSocket subscription for real-time enrichment updates
@@ -90,12 +89,6 @@ export function EnrichmentTab({
     const mappingReady = Boolean(
         dataset.mapped_fields?.build_id && dataset.mapped_fields?.repo_name
     );
-
-    // Handle cancel
-    const handleCancel = async (versionId: string) => {
-        await cancelVersion(versionId);
-        notifyParent();
-    };
 
     // Navigate to full-page wizard
     const handleCreateVersion = () => {
@@ -166,7 +159,7 @@ export function EnrichmentTab({
 
             {/* Active Version Progress */}
             {activeVersion && (
-                <ActiveVersionCard version={activeVersion} onCancel={handleCancel} />
+                <ActiveVersionCard version={activeVersion} />
             )}
 
             {/* Failed/Partial Processing - Show retry */}
@@ -210,10 +203,9 @@ interface ActiveVersionCardProps {
         failed_rows: number;
         enriched_rows?: number;
     };
-    onCancel: (versionId: string) => void;
 }
 
-function ActiveVersionCard({ version, onCancel }: ActiveVersionCardProps) {
+function ActiveVersionCard({ version }: ActiveVersionCardProps) {
     // Determine current phase
     const isIngesting = version.status.startsWith("ingesting");
     const isProcessing = version.status === "processing";
@@ -226,15 +218,6 @@ function ActiveVersionCard({ version, onCancel }: ActiveVersionCardProps) {
                         <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                         {isIngesting ? "Ingesting" : "Processing"}: {version.name}
                     </CardTitle>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onCancel(version.id)}
-                        className="text-destructive hover:text-destructive"
-                    >
-                        <X className="mr-1 h-4 w-4" />
-                        Cancel
-                    </Button>
                 </div>
             </CardHeader>
             <CardContent className="space-y-3">

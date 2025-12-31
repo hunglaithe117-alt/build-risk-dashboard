@@ -10,13 +10,12 @@ from .base import BaseEntity, PyObjectId
 
 
 class DatasetValidationStatus(str, Enum):
-    """Dataset validation status (unified validation)."""
+    """Dataset validation status."""
 
     PENDING = "pending"
     VALIDATING = "validating"
     COMPLETED = "completed"
     FAILED = "failed"
-    CANCELLED = "cancelled"
 
 
 class DatasetMapping(BaseModel):

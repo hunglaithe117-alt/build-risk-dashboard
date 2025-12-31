@@ -64,13 +64,15 @@ class PredictionService:
         self,
         features: Dict[str, Any],
         temporal_history: Optional[List[Dict[str, Any]]] = None,
+        use_prescaled: bool = False,
     ) -> PredictionResult:
         """
         Make prediction using local model.
 
         Args:
-            features: Current build features dict
+            features: Current build features dict (raw or pre-scaled)
             temporal_history: Optional list of previous builds' features for LSTM
+            use_prescaled: If True, skip scaling (features are already normalized)
 
         Returns:
             PredictionResult with prediction or error.
@@ -89,6 +91,7 @@ class PredictionService:
                 features=features,
                 temporal_history=temporal_history,
                 n_samples=30,
+                use_prescaled=use_prescaled,
             )
 
             if result.get("error"):
@@ -120,17 +123,88 @@ class PredictionService:
     def normalize_features(
         self,
         features: Dict[str, Any],
-    ) -> Dict[str, Any]:
+    ) -> Dict[str, float]:
         """
-        Normalize features for storage/display.
+        Normalize features for model input using the model's scalers.
 
-        Extracts only the model-relevant features and ensures correct types.
+        This performs ACTUAL normalization/standardization using the same
+        scalers that RiskModelService uses for prediction.
+
+        Args:
+            features: Raw feature dict from Hamilton DAG
+
+        Returns:
+            Dict with scaled feature values (TEMPORAL + STATIC features only)
         """
         if not self.is_model_loaded():
-            return features
+            # Fallback: just filter and convert types without scaling
+            return self._filter_model_features(features)
 
         try:
-            # Get feature names from model service
+            import numpy as np
+            import pandas as pd
+
+            from app.services.risk_model.inference import STATIC_FEATURES, TEMPORAL_FEATURES
+
+            model_service = PredictionService._risk_model_service
+
+            # Extract temporal features
+            temporal_values = []
+            for f in TEMPORAL_FEATURES:
+                val = features.get(f)
+                if val is None:
+                    val = 0.0
+                elif isinstance(val, bool):
+                    val = 1.0 if val else 0.0
+                temporal_values.append(float(val))
+
+            # Extract static features
+            static_values = []
+            for f in STATIC_FEATURES:
+                val = features.get(f)
+                if val is None:
+                    val = 0.0
+                elif isinstance(val, bool):
+                    val = 1.0 if val else 0.0
+                static_values.append(float(val))
+
+            # Scale temporal features
+            temporal_arr = np.array([temporal_values], dtype=np.float32)
+            if model_service._scaler_temporal:
+                temporal_df = pd.DataFrame(temporal_arr, columns=TEMPORAL_FEATURES)
+                temporal_scaled = model_service._scaler_temporal.transform(temporal_df)
+                temporal_values = temporal_scaled[0].tolist()
+
+            # Scale static features
+            static_arr = np.array([static_values], dtype=np.float32)
+            if model_service._scaler_static:
+                static_df = pd.DataFrame(static_arr, columns=STATIC_FEATURES)
+                static_scaled = model_service._scaler_static.transform(static_df)
+                static_values = static_scaled[0].tolist()
+
+            # Build normalized dict
+            normalized = {}
+            for i, f in enumerate(TEMPORAL_FEATURES):
+                normalized[f] = round(float(temporal_values[i]), 6)
+            for i, f in enumerate(STATIC_FEATURES):
+                normalized[f] = round(float(static_values[i]), 6)
+
+            return normalized
+
+        except Exception as e:
+            logger.warning(f"Failed to normalize features: {e}")
+            return self._filter_model_features(features)
+
+    def _filter_model_features(
+        self,
+        features: Dict[str, Any],
+    ) -> Dict[str, float]:
+        """
+        Filter and convert features to model format without scaling.
+
+        Fallback when model/scalers are not available.
+        """
+        try:
             from app.services.risk_model.inference import STATIC_FEATURES, TEMPORAL_FEATURES
 
             normalized = {}
@@ -144,7 +218,7 @@ class PredictionService:
                     normalized[f] = float(val) if val is not None else 0.0
             return normalized
         except Exception:
-            return features
+            return {}
 
     def predict_batch(
         self,

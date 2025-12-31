@@ -33,7 +33,6 @@ import {
     RefreshCw,
     RotateCcw,
     Trash2,
-    X,
     XCircle,
 } from "lucide-react";
 import type { DatasetVersion } from "../_hooks/useDatasetVersions";
@@ -47,7 +46,6 @@ interface VersionHistoryProps {
     onRefresh: () => void;
     onDownload: (versionId: string, format?: ExportFormat) => void;
     onDelete: (versionId: string) => void;
-    onCancel: (versionId: string) => void;
     // Processing control
     onStartProcessing: (versionId: string) => void;
     onRetryIngestion: (versionId: string) => void;
@@ -55,9 +53,9 @@ interface VersionHistoryProps {
 }
 
 // Status types that are "active" (in progress)
-const ACTIVE_STATUSES = ["pending", "ingesting", "processing"];
+const ACTIVE_STATUSES = ["queued", "ingesting", "processing"];
 // Status types that can trigger start processing
-const CAN_START_PROCESSING = ["ingesting_complete", "ingesting_partial"];
+const CAN_START_PROCESSING = ["ingested"];
 
 export const VersionHistory = memo(function VersionHistory({
     datasetId,
@@ -66,7 +64,6 @@ export const VersionHistory = memo(function VersionHistory({
     onRefresh,
     onDownload,
     onDelete,
-    onCancel,
     onStartProcessing,
     onRetryIngestion,
     onRetryProcessing,
@@ -85,7 +82,7 @@ export const VersionHistory = memo(function VersionHistory({
         <div className="space-y-4">
             {/* Active Version Progress */}
             {activeVersion && (
-                <ActiveVersionCard version={activeVersion} onCancel={onCancel} />
+                <ActiveVersionCard version={activeVersion} />
             )}
 
             {/* Waiting for user action - Start Processing */}
@@ -156,27 +153,21 @@ export const VersionHistory = memo(function VersionHistory({
 
 interface ActiveVersionCardProps {
     version: DatasetVersion;
-    onCancel: (versionId: string) => void;
 }
 
-function ActiveVersionCard({ version, onCancel }: ActiveVersionCardProps) {
+function ActiveVersionCard({ version }: ActiveVersionCardProps) {
+    // Determine current phase
+    const isIngesting = version.status.startsWith("ingesting");
+    const isProcessing = version.status === "processing";
+
     return (
         <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2 text-base">
                         <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                        Processing: {version.name}
+                        {isIngesting ? "Ingesting" : "Processing"}: {version.name}
                     </CardTitle>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onCancel(version.id)}
-                        className="text-destructive hover:text-destructive"
-                    >
-                        <X className="mr-1 h-4 w-4" />
-                        Cancel
-                    </Button>
                 </div>
             </CardHeader>
             <CardContent className="space-y-2">
@@ -206,21 +197,21 @@ interface WaitingVersionCardProps {
 }
 
 function WaitingVersionCard({ version, onStartProcessing, onRetryIngestion }: WaitingVersionCardProps) {
-    const isPartial = version.status === "ingesting_partial";
+    const hasFailedRows = version.failed_rows > 0;
 
     return (
-        <Card className={isPartial
+        <Card className={hasFailedRows
             ? "border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20"
             : "border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20"
         }>
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2 text-base">
-                        <CheckCircle2 className={`h-4 w-4 ${isPartial ? "text-amber-500" : "text-green-500"}`} />
-                        {isPartial ? "Ingestion Partial" : "Ingestion Complete"}: {version.name}
+                        <CheckCircle2 className={`h-4 w-4 ${hasFailedRows ? "text-amber-500" : "text-green-500"}`} />
+                        Ingestion Complete: {version.name}
                     </CardTitle>
                     <div className="flex items-center gap-2">
-                        {isPartial && (
+                        {hasFailedRows && (
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -244,7 +235,7 @@ function WaitingVersionCard({ version, onStartProcessing, onRetryIngestion }: Wa
             <CardContent>
                 <p className="text-sm text-muted-foreground">
                     {version.enriched_rows} / {version.total_rows} builds ingested.
-                    {isPartial && ` ${version.failed_rows} failed.`}
+                    {hasFailedRows && ` ${version.failed_rows} failed.`}
                     {" "}Click &quot;Start Processing&quot; to begin feature extraction.
                 </p>
             </CardContent>
@@ -267,25 +258,15 @@ function VersionCard({ version, onView, onDownload, onDelete, onRetryProcessing 
         string,
         { icon: typeof CheckCircle2; color: string; label: string }
     > = {
-        completed: {
+        processed: {
             icon: CheckCircle2,
             color: "text-green-500",
-            label: "Completed",
-        },
-        partial: {
-            icon: AlertCircle,
-            color: "text-amber-500",
-            label: "Partial",
+            label: "Processed",
         },
         failed: {
             icon: XCircle,
             color: "text-red-500",
             label: "Failed",
-        },
-        cancelled: {
-            icon: AlertCircle,
-            color: "text-slate-500",
-            label: "Cancelled",
         },
     };
 

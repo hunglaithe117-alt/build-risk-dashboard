@@ -217,6 +217,23 @@ def extract_features_for_build(
         skipped_features = list(pipeline.skipped_features) if pipeline else []
         missing_resources = list(pipeline.missing_resources) if pipeline else []
 
+        # Validate required model features are present
+        try:
+            from app.services.risk_model.inference import STATIC_FEATURES, TEMPORAL_FEATURES
+
+            required_features = set(TEMPORAL_FEATURES + STATIC_FEATURES)
+            extracted_features = set(formatted_features.keys())
+            missing_model_features = required_features - extracted_features
+
+            if missing_model_features:
+                logger.warning(
+                    f"Build {raw_build_run.ci_run_id} missing {len(missing_model_features)} "
+                    f"model features: {sorted(missing_model_features)}"
+                )
+        except ImportError:
+            # Model not available, skip validation
+            missing_model_features = set()
+
         # Determine extraction status
         if skipped_features:
             extraction_status = ExtractionStatus.PARTIAL
@@ -256,6 +273,12 @@ def extract_features_for_build(
             result["warnings"].append(
                 f"Skipped {len(skipped_features)} features: {skipped_features}. "
                 f"Missing resources: {missing_resources}"
+            )
+
+        if missing_model_features:
+            result["warnings"].append(
+                f"Missing {len(missing_model_features)} model features: "
+                f"{sorted(missing_model_features)}"
             )
 
         if not prepared.is_commit_available:

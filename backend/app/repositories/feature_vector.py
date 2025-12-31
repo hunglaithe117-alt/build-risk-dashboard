@@ -269,6 +269,35 @@ class FeatureVectorRepository(BaseRepository[FeatureVector]):
 
         return result
 
+    def update_normalized_features(
+        self,
+        feature_vector_id: ObjectId,
+        normalized_features: Dict[str, float],
+    ) -> Optional[FeatureVector]:
+        """
+        Update normalized features for a feature vector.
+
+        Called during prediction phase to store model-ready features.
+
+        Args:
+            feature_vector_id: The FeatureVector ObjectId
+            normalized_features: Dict of normalized feature values (TEMPORAL + STATIC)
+
+        Returns:
+            Updated FeatureVector or None if not found
+        """
+        doc = self.collection.find_one_and_update(
+            {"_id": feature_vector_id},
+            {
+                "$set": {
+                    "normalized_features": normalized_features,
+                    "updated_at": datetime.utcnow(),
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+        return FeatureVector(**doc) if doc else None
+
     def delete_by_raw_repo(
         self,
         raw_repo_id: ObjectId,

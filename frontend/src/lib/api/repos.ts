@@ -68,16 +68,6 @@ export const reposApi = {
         const response = await api.get<{
             repo_id: string;
             status: string;
-            // Current batch (after checkpoint)
-            current_batch: {
-                batch_id: string | null;
-                pending: number;
-                fetched: number;
-                ingesting: number;
-                ingested: number;
-                failed: number;
-                total: number;
-            };
             // Checkpoint info
             checkpoint: {
                 has_checkpoint: boolean;
@@ -91,13 +81,12 @@ export const reposApi = {
                 fetched: number;
                 ingesting: number;
                 ingested: number;
-                failed: number;
+                missing_resource: number;
                 total: number;
             };
             resource_status: Record<string, Record<string, number>>;
             training_builds: {
                 pending: number;
-                in_progress: number;
                 completed: number;
                 partial: number;
                 failed: number;
@@ -119,7 +108,7 @@ export const reposApi = {
         const response = await api.get<{
             repo_id: string;
             total: number;
-            failed_builds: Array<{
+            missing_resource_builds: Array<{
                 id: string;
                 ci_run_id: string;
                 commit_sha: string;

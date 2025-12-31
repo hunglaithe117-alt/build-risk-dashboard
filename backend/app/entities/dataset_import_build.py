@@ -30,8 +30,8 @@ class DatasetImportBuildStatus(str, Enum):
     INGESTING = "ingesting"  # Ingestion in progress
     INGESTED = "ingested"  # Resources ready for enrichment
 
-    # Error state
-    FAILED = "failed"  # Ingestion failed
+    # Missing resources (graceful degradation - can still process)
+    MISSING_RESOURCE = "missing_resource"  # Some resources unavailable but can still process
 
 
 class ResourceStatus(str, Enum):
@@ -90,7 +90,7 @@ class DatasetImportBuild(BaseEntity):
     # Pipeline status
     status: DatasetImportBuildStatus = Field(
         default=DatasetImportBuildStatus.PENDING,
-        description="Pipeline status: PENDING → INGESTING → INGESTED or FAILED",
+        description="Pipeline status: PENDING → INGESTING → INGESTED or MISSING_RESOURCE",
     )
 
     # Per-resource status tracking (extensible)

@@ -94,10 +94,10 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         """Find successfully fetched builds."""
         return self.find_by_repo_config(config_id, status=ModelImportBuildStatus.FETCHED)
 
-    def find_failed_imports(
+    def find_missing_resource_builds(
         self, config_id: str, after_id: Optional[ObjectId] = None
     ) -> List[ModelImportBuild]:
-        """Find failed import builds for retry.
+        """Find builds with missing resources for retry.
 
         Args:
             config_id: ModelRepoConfig ID
@@ -111,9 +111,11 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             query["_id"] = {"$gt": after_id}
         return self.find_many(query)
 
-    def get_failed_with_errors(self, config_id: str, limit: int = 50) -> List[dict]:
+    def get_missing_resource_builds_with_errors(
+        self, config_id: str, limit: int = 50
+    ) -> List[dict]:
         """
-        Get failed import builds with error details for UI display.
+        Get builds with missing resources and error details for UI display.
 
         Returns list of dicts with:
         - ci_run_id, commit_sha, status

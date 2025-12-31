@@ -43,6 +43,7 @@ from app.repositories.raw_repository import RawRepositoryRepository
 from app.tasks.base import PipelineTask
 from app.tasks.shared import extract_features_for_build
 from app.tasks.shared.events import publish_enrichment_update
+from app.tasks.shared.processing_tracker import ProcessingTracker
 
 logger = logging.getLogger(__name__)
 
@@ -453,15 +454,15 @@ def aggregate_ingestion_results(
     # A build is INGESTED if all required resources are COMPLETED
     # A build is FAILED if any required resource is FAILED
 
-    # Mark builds as FAILED if clone failed (all builds)
+    # Mark builds as MISSING_RESOURCE if clone failed (all builds)
     if clone_failed:
         import_build_repo.update_many_by_status(
             version_id,
             from_status=DatasetImportBuildStatus.INGESTING.value,
-            updates={"status": DatasetImportBuildStatus.FAILED.value},
+            updates={"status": DatasetImportBuildStatus.MISSING_RESOURCE.value},
         )
     else:
-        # Mark builds with failed worktrees as FAILED
+        # Mark builds with failed worktrees as MISSING_RESOURCE
         if failed_commits:
             import_build_repo.collection.update_many(
                 {
@@ -469,7 +470,7 @@ def aggregate_ingestion_results(
                     "status": DatasetImportBuildStatus.INGESTING.value,
                     "commit_sha": {"$in": failed_commits},
                 },
-                {"$set": {"status": DatasetImportBuildStatus.FAILED.value}},
+                {"$set": {"status": DatasetImportBuildStatus.MISSING_RESOURCE.value}},
             )
         # Mark remaining INGESTING builds as INGESTED
         import_build_repo.mark_ingested_batch(version_id)
@@ -477,14 +478,15 @@ def aggregate_ingestion_results(
     # Count by status to determine final state
     status_counts = import_build_repo.count_by_status(version_id)
     ingested = status_counts.get(DatasetImportBuildStatus.INGESTED.value, 0)
-    failed = status_counts.get(DatasetImportBuildStatus.FAILED.value, 0)
+    missing_resource = status_counts.get(DatasetImportBuildStatus.MISSING_RESOURCE.value, 0)
 
     # Determine final ingestion status
-    if failed > 0:
-        final_status = VersionStatus.INGESTING_PARTIAL
-        msg = f"Ingestion partial: {ingested} ok, {failed} failed. Review or start processing."
+    # Note: MISSING_RESOURCE builds can still be processed (graceful degradation)
+    # Always set to INGESTED - missing_resource count is tracked in repos_failed
+    final_status = VersionStatus.INGESTED
+    if missing_resource > 0:
+        msg = f"Ingestion complete with warnings: {ingested} ok, {missing_resource} missing resources. Start processing when ready."
     else:
-        final_status = VersionStatus.INGESTING_COMPLETE
         msg = f"Ingestion complete: {ingested} builds ready. Start processing when ready."
 
     version_repo.update_one(
@@ -493,7 +495,7 @@ def aggregate_ingestion_results(
             "status": final_status.value,
             "ingestion_progress": 100,
             "repos_ingested": ingested,
-            "repos_failed": failed,
+            "repos_failed": missing_resource,
         },
     )
 
@@ -507,14 +509,14 @@ def aggregate_ingestion_results(
         version_id=version_id,
         status=final_status.value,
         processed_rows=0,
-        total_rows=ingested + failed,
+        total_rows=ingested + missing_resource,
     )
 
     return {
         "status": "completed",
         "final_status": final_status.value,
         "builds_ingested": ingested,
-        "builds_failed": failed,
+        "builds_missing_resource": missing_resource,
         "resource_status": resource_summary,
     }
 
@@ -540,8 +542,8 @@ def handle_enrichment_chord_error(
     Error callback for ingestion chord failure.
 
     When ingestion chord fails (clone_repo, create_worktrees, etc.):
-    1. Mark all INGESTING builds as FAILED with error
-    2. Update version status to INGESTING_PARTIAL or FAILED
+    1. Mark all INGESTING builds as MISSING_RESOURCE with error
+    2. Update version status to INGESTED or FAILED
     3. User can review and retry
     """
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
@@ -552,37 +554,37 @@ def handle_enrichment_chord_error(
     import_build_repo = DatasetImportBuildRepository(self.db)
     version_repo = DatasetVersionRepository(self.db)
 
-    # Mark all INGESTING builds as FAILED
-    failed_count = import_build_repo.update_many_by_status(
+    # Mark all INGESTING builds as MISSING_RESOURCE
+    missing_resource_count = import_build_repo.update_many_by_status(
         version_id,
         from_status=DatasetImportBuildStatus.INGESTING.value,
         updates={
-            "status": DatasetImportBuildStatus.FAILED.value,
+            "status": DatasetImportBuildStatus.MISSING_RESOURCE.value,
         },
     )
 
-    logger.warning(f"{corr_prefix} Marked {failed_count} builds as FAILED")
+    logger.warning(f"{corr_prefix} Marked {missing_resource_count} builds as MISSING_RESOURCE")
 
     # Check if any builds made it to INGESTED before failure
     ingested_builds = import_build_repo.find_ingested_builds(version_id)
 
     if ingested_builds:
-        # Some builds made it through - set INGESTING_PARTIAL
+        # Some builds made it through - still mark as INGESTED
         logger.info(
             f"{corr_prefix} {len(ingested_builds)} builds were INGESTED before failure. "
-            f"Marked as INGESTING_PARTIAL for user review."
+            f"Processing can still proceed."
         )
         version_repo.update_one(
             version_id,
             {
-                "status": VersionStatus.INGESTING_PARTIAL.value,
+                "status": VersionStatus.INGESTED.value,
                 "repos_ingested": len(ingested_builds),
-                "repos_failed": failed_count,
+                "repos_failed": missing_resource_count,
             },
         )
         publish_enrichment_update(
             version_id=version_id,
-            status=VersionStatus.INGESTING_PARTIAL.value,
+            status=VersionStatus.INGESTED.value,
         )
     else:
         # No builds made it - mark as failed
@@ -595,7 +597,7 @@ def handle_enrichment_chord_error(
 
     return {
         "status": "handled",
-        "failed_builds": failed_count,
+        "missing_resource_builds": missing_resource_count,
         "ingested_builds": len(ingested_builds) if ingested_builds else 0,
         "error": error_msg,
     }
@@ -618,7 +620,7 @@ def start_enrichment_processing(
     Phase 2: Start processing phase (manually triggered by user).
 
     Validates that ingestion is complete before starting feature extraction.
-    Only proceeds if status is INGESTING_COMPLETE or INGESTING_PARTIAL.
+    Only proceeds if status is INGESTED.
     """
     import uuid
 
@@ -635,8 +637,7 @@ def start_enrichment_processing(
         return {"status": "error", "message": "Version not found"}
 
     valid_statuses = [
-        VersionStatus.INGESTING_COMPLETE.value,
-        VersionStatus.INGESTING_PARTIAL.value,
+        VersionStatus.INGESTED.value,
     ]
     if version.status not in valid_statuses:
         msg = f"Cannot start processing: status is {version.status}. " f"Expected: {valid_statuses}"
@@ -738,7 +739,7 @@ def handle_enrichment_processing_chain_error(
 
     When processing chain fails (feature extraction error, worker crash, etc.):
     1. Mark all IN_PROGRESS enrichment builds as FAILED with error
-    2. Update version status to PARTIAL or FAILED
+    2. Update version status to PROCESSED or FAILED
     3. Publish update for UI
 
     This ensures temporal feature integrity - if one build fails,
@@ -771,12 +772,11 @@ def handle_enrichment_processing_chain_error(
         ObjectId(version_id), ExtractionStatus.FAILED.value
     )
 
-    # Determine final status
-    final_status = "failed"
-    if completed_count > 0 and failed_count > 0:
-        final_status = "partial"
-    elif completed_count > 0:
-        final_status = "completed"
+    # Determine final status - always PROCESSED if any succeeded, else FAILED
+    if completed_count > 0:
+        final_status = VersionStatus.PROCESSED.value
+    else:
+        final_status = VersionStatus.FAILED.value
 
     version_repo.mark_status(version_id, final_status)
 
@@ -887,6 +887,10 @@ def dispatch_enrichment_batches(
 
     # Step 3: Dispatch sequential processing (oldest → newest for temporal features)
     total_builds = len(enrichment_build_ids)
+
+    # Initialize ProcessingTracker for this enrichment batch
+    tracker = ProcessingTracker(self.redis, version_id, correlation_id)
+    tracker.initialize(total_builds)
 
     sequential_tasks = [
         process_single_enrichment.si(
@@ -1032,6 +1036,14 @@ def process_single_enrichment(
     # Update version progress
     version_repo.increment_processed_rows(version_id)
 
+    # Track result in Redis for finalize aggregation (matching model pipeline)
+    if correlation_id:
+        tracker = ProcessingTracker(self.redis, version_id, correlation_id)
+        if result["status"] in ("completed", "partial"):
+            tracker.record_success(enrichment_build_id)
+        else:
+            tracker.record_failure(enrichment_build_id)
+
     logger.debug(
         f"{corr_prefix} Processed enrichment build {enrichment_build_id}: "
         f"status={result['status']}"
@@ -1168,21 +1180,21 @@ def reprocess_failed_enrichment_builds(
 @celery_app.task(
     bind=True,
     base=EnrichmentTask,
-    name="app.tasks.version_enrichment.reingest_failed_builds",
+    name="app.tasks.version_enrichment.reingest_missing_resource_builds",
     queue="processing",
     soft_time_limit=300,
     time_limit=360,
 )
-def reingest_failed_builds(
+def reingest_missing_resource_builds(
     self: PipelineTask,
     version_id: str,
 ) -> Dict[str, Any]:
     """
-    Re-ingest only FAILED import builds for a version.
+    Re-ingest only MISSING_RESOURCE import builds for a version.
 
     This is useful when:
-    - Some builds failed ingestion due to transient errors
-    - Clone/worktree/log download failures
+    - Some builds have missing resources due to transient errors
+    - Clone/worktree/log download failures that may be recoverable
     """
     import uuid
 
@@ -1198,24 +1210,24 @@ def reingest_failed_builds(
     if not version:
         return {"status": "error", "message": "Version not found"}
 
-    # Find FAILED import builds
-    failed_imports = import_build_repo.find_many(
+    # Find MISSING_RESOURCE import builds
+    missing_resource_imports = import_build_repo.find_many(
         {
             "dataset_version_id": ObjectId(version_id),
-            "status": DatasetImportBuildStatus.FAILED.value,
+            "status": DatasetImportBuildStatus.MISSING_RESOURCE.value,
         }
     )
 
-    if not failed_imports:
+    if not missing_resource_imports:
         return {
             "status": "completed",
             "builds_queued": 0,
-            "message": "No failed ingestion builds to retry",
+            "message": "No missing resource builds to retry",
         }
 
     # Reset to PENDING
     reset_count = 0
-    for build in failed_imports:
+    for build in missing_resource_imports:
         try:
             import_build_repo.update_one(
                 str(build.id),
@@ -1234,12 +1246,12 @@ def reingest_failed_builds(
     # Re-trigger ingestion for this version
     start_enrichment.delay(version_id)
 
-    logger.info(f"Re-triggered ingestion for {reset_count} failed imports")
+    logger.info(f"Re-triggered ingestion for {reset_count} missing resource imports")
 
     return {
         "status": "queued",
         "builds_reset": reset_count,
-        "total_failed": len(failed_imports),
+        "total_missing_resource": len(missing_resource_imports),
         "correlation_id": correlation_id,
     }
 
@@ -1263,14 +1275,29 @@ def finalize_enrichment(
     Finalize enrichment after all sequential builds processed.
 
     Called at end of chain: B1 → B2 → ... → finalize_enrichment
+    Uses ProcessingTracker for real-time results (matching model pipeline).
     """
 
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+    logger.info(f"{corr_prefix} Finalizing enrichment for version {version_id}")
 
     version_repo = DatasetVersionRepository(self.db)
     enrichment_build_repo = DatasetEnrichmentBuildRepository(self.db)
 
-    # Get stats from enrichment builds
+    # Get results from Redis tracker (matching model pipeline pattern)
+    tracker = ProcessingTracker(self.redis, version_id, correlation_id)
+    tracker_results = tracker.get_results()
+
+    tracker_success = tracker_results["success_count"]
+    tracker_failed = tracker_results["failed_count"]
+    tracker_skipped = tracker_results["skipped_count"]
+
+    logger.info(
+        f"{corr_prefix} Processing results from tracker: "
+        f"success={tracker_success}, failed={tracker_failed}, skipped={tracker_skipped}"
+    )
+
+    # Also get aggregated stats from DB for verification
     stats = enrichment_build_repo.aggregate_stats_by_version(version_id)
     completed = stats.get("completed", 0)
     partial = stats.get("partial", 0)
@@ -1278,12 +1305,11 @@ def finalize_enrichment(
     total = completed + partial + failed
 
     # Determine final status
+    # Always PROCESSED unless all builds failed
     if failed > 0 and completed == 0:
         final_status = VersionStatus.FAILED
-    elif failed > 0 and completed > 0:
-        final_status = VersionStatus.PARTIAL
     else:
-        final_status = VersionStatus.COMPLETED
+        final_status = VersionStatus.PROCESSED
 
     # Update version
     version_repo.update_one(
@@ -1307,7 +1333,7 @@ def finalize_enrichment(
 
     # Auto-trigger quality evaluation after successful enrichment
     dataset_version = version_repo.find_by_id(version_id)
-    if dataset_version and final_status in (VersionStatus.COMPLETED, VersionStatus.PARTIAL):
+    if dataset_version and final_status == VersionStatus.PROCESSED:
         try:
             from app.services.data_quality_service import DataQualityService
 
@@ -1328,12 +1354,20 @@ def finalize_enrichment(
         f"{completed + partial}/{total} rows enriched, {failed} failed"
     )
 
+    # Cleanup tracker after finalization (matching model pipeline)
+    tracker.cleanup()
+
     return {
         "status": final_status.value,
         "version_id": version_id,
         "enriched_rows": completed + partial,
         "failed_rows": failed,
         "total_rows": total,
+        "tracker_stats": {
+            "success": tracker_success,
+            "failed": tracker_failed,
+            "skipped": tracker_skipped,
+        },
     }
 
 

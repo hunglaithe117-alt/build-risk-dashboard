@@ -73,9 +73,7 @@ class DatasetVersionService:
         description: Optional[str] = None,
     ) -> DatasetVersion:
         """Create a new version and start enrichment task. Permission validated at API layer."""
-        from datetime import datetime, timezone
-
-        from app.core.redis import RedisLock, get_redis
+        from app.core.redis import RedisLock
 
         dataset = self._verify_dataset_access(dataset_id, user_id)
 
@@ -93,27 +91,8 @@ class DatasetVersionService:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Version v{active_version.version_number} is still processing. "
-                    "Wait for it to complete or cancel it.",
+                    "Wait for it to complete.",
                 )
-
-            redis = get_redis()
-            cooldown_key = f"version_cancelled:{dataset_id}"
-            cooldown_until = redis.get(cooldown_key)
-            if cooldown_until:
-                try:
-                    cooldown_ts = float(cooldown_until)
-                    now_ts = datetime.now(timezone.utc).timestamp()
-                    if now_ts < cooldown_ts:
-                        remaining = int(cooldown_ts - now_ts)
-                        raise HTTPException(
-                            status_code=400,
-                            detail=(
-                                f"Please wait {remaining} seconds before creating a new version. "
-                                "Previous version is cleaning up."
-                            ),
-                        )
-                except (ValueError, TypeError):
-                    pass  # Invalid cooldown value, ignore
 
             version_number = self._repo.get_next_version_number(dataset_id)
 
@@ -130,8 +109,9 @@ class DatasetVersionService:
                 normalized_scan_config["trivy"] = scan_config.get("trivy", {})
 
             version = DatasetVersion(
-                dataset_id=dataset_id,
-                user_id=user_id,
+                _id=None,
+                dataset_id=ObjectId(dataset_id),
+                user_id=ObjectId(user_id),
                 version_number=version_number,
                 name=name or "",
                 description=description,
@@ -140,7 +120,7 @@ class DatasetVersionService:
                 scan_metrics=normalized_scan_metrics,
                 scan_config=normalized_scan_config,
                 total_rows=dataset.rows or 0,
-                status=VersionStatus.PENDING,
+                status=VersionStatus.QUEUED,
             )
 
             if not version.name:
@@ -173,7 +153,7 @@ class DatasetVersionService:
         dataset = self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
-        if version.status != VersionStatus.COMPLETED:
+        if version.status != VersionStatus.PROCESSED:
             raise HTTPException(
                 status_code=400,
                 detail=f"Version is not completed. Status: {version.status}",
@@ -246,6 +226,7 @@ class DatasetVersionService:
         else:
             return stream_json(cursor, format_feature_row, features)
 
+    # TODO: Implement incorrect handling for export dataset version
     # Async Export Methods (for large datasets)
     def create_export_job(
         self,
@@ -267,7 +248,7 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
-        if version.status != VersionStatus.COMPLETED:
+        if version.status != VersionStatus.PROCESSED:
             raise HTTPException(
                 status_code=400,
                 detail=f"Version is not completed. Status: {version.status}",
@@ -290,6 +271,7 @@ class DatasetVersionService:
         job_repo = ExportJobRepository(self._db)
 
         job = ExportJob(
+            _id=None,
             dataset_id=ObjectId(dataset_id),
             version_id=ObjectId(version_id),
             user_id=ObjectId(user_id),
@@ -420,7 +402,7 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
-        if version.status in (VersionStatus.PENDING, VersionStatus.PROCESSING):
+        if version.status in (VersionStatus.QUEUED, VersionStatus.PROCESSING):
             self._revoke_task(version.task_id)
 
         audit_log_repo = FeatureAuditLogRepository(self._db)
@@ -439,38 +421,6 @@ class DatasetVersionService:
             self._repo.delete(version_id, session=session)
             logger.info(f"Deleted version {version_id} for dataset {dataset_id}")
 
-    def cancel_version(self, dataset_id: str, version_id: str, user_id: str) -> DatasetVersion:
-        """Cancel a processing version. Permission validated at API layer.
-
-        Sets a cooldown period to allow ingestion tasks to cleanup before
-        a new version can be created.
-        """
-        from datetime import datetime, timezone
-
-        from app.core.redis import get_redis
-
-        self._verify_dataset_access(dataset_id, user_id)
-        version = self._get_version(dataset_id, version_id)
-
-        if version.status not in (VersionStatus.PENDING, VersionStatus.PROCESSING):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot cancel version with status: {version.status}",
-            )
-
-        self._revoke_task(version.task_id)
-        self._repo.mark_cancelled(version_id)
-        version.status = VersionStatus.CANCELLED
-
-        cooldown_seconds = 10
-        redis = get_redis()
-        cooldown_key = f"version_cancelled:{dataset_id}"
-        cooldown_until = datetime.now(timezone.utc).timestamp() + cooldown_seconds
-        redis.set(cooldown_key, str(cooldown_until), ex=cooldown_seconds + 5)
-
-        logger.info(f"Cancelled version {version_id}, cooldown set for {cooldown_seconds}s")
-        return version
-
     async def get_version_data(
         self,
         dataset_id: str,
@@ -486,7 +436,7 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
-        if version.status != VersionStatus.COMPLETED:
+        if version.status != VersionStatus.PROCESSED:
             raise HTTPException(
                 status_code=400,
                 detail=f"Version is not completed. Status: {version.status}",
@@ -931,8 +881,7 @@ class DatasetVersionService:
         version = self._get_version(dataset_id, version_id)
 
         valid_statuses = [
-            VersionStatus.INGESTING_COMPLETE,
-            VersionStatus.INGESTING_PARTIAL,
+            VersionStatus.INGESTED,
         ]
         if version.status not in valid_statuses:
             raise HTTPException(
@@ -965,9 +914,9 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
-        # Only allow retry if ingestion partial or failed
+        # Only allow retry if ingested (with missing resources) or failed
         valid_statuses = [
-            VersionStatus.INGESTING_PARTIAL,
+            VersionStatus.INGESTED,
             VersionStatus.FAILED,
         ]
         if version.status not in valid_statuses:
@@ -976,14 +925,14 @@ class DatasetVersionService:
                 detail=f"Cannot retry ingestion: status is {version.status}",
             )
 
-        from app.tasks.enrichment_processing import reingest_failed_builds
+        from app.tasks.enrichment_processing import reingest_missing_resource_builds
 
-        task = reingest_failed_builds.delay(version_id)
+        task = reingest_missing_resource_builds.delay(version_id)
 
         return {
             "status": "dispatched",
             "task_id": task.id,
-            "message": "Ingestion retry started",
+            "message": "Ingestion retry started for missing resource builds",
         }
 
     def retry_failed_processing(
@@ -1000,11 +949,10 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
-        # Only allow retry if partial or failed
+        # Only allow retry if failed or processed
         valid_statuses = [
-            VersionStatus.PARTIAL,
             VersionStatus.FAILED,
-            VersionStatus.COMPLETED,  # Allow retry even on completed
+            VersionStatus.PROCESSED,  # Allow retry even on completed
         ]
         if version.status not in valid_statuses:
             raise HTTPException(

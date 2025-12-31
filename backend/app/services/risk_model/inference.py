@@ -169,14 +169,16 @@ class RiskModelService:
         features: Dict[str, Any],
         temporal_history: Optional[List[Dict[str, Any]]] = None,
         n_samples: int = 30,
+        use_prescaled: bool = False,
     ) -> Dict[str, Any]:
         """
         Make risk prediction for a build.
 
         Args:
-            features: Current build features dict
+            features: Current build features dict (raw or pre-scaled)
             temporal_history: List of feature dicts from previous builds (for LSTM)
             n_samples: Number of MC Dropout samples for uncertainty
+            use_prescaled: If True, skip scaling (features are already normalized)
 
         Returns:
             Dict with keys:
@@ -207,23 +209,29 @@ class RiskModelService:
 
             seq = self._create_sequence(history_temporal)
 
-            if self._scaler_temporal:
-                seq_flat = seq.reshape(-1, len(TEMPORAL_FEATURES))
-                import pandas as pd
-
-                seq_df = pd.DataFrame(seq_flat, columns=TEMPORAL_FEATURES)
-                seq_flat = self._scaler_temporal.transform(seq_df)
-                seq = seq_flat.reshape(1, -1, len(TEMPORAL_FEATURES))
-            else:
+            # Scale only if not using pre-scaled features
+            if use_prescaled:
+                # Features are already scaled, just reshape
                 seq = seq.reshape(1, -1, len(TEMPORAL_FEATURES))
+                static_arr = np.array([static_values], dtype=np.float32)
+            else:
+                # Apply scaling
+                if self._scaler_temporal:
+                    seq_flat = seq.reshape(-1, len(TEMPORAL_FEATURES))
+                    import pandas as pd
 
-            static_arr = np.array([static_values], dtype=np.float32)
-            if self._scaler_static:
-                # Fix sklearn warning: pass DataFrame with column names
-                import pandas as pd
+                    seq_df = pd.DataFrame(seq_flat, columns=TEMPORAL_FEATURES)
+                    seq_flat = self._scaler_temporal.transform(seq_df)
+                    seq = seq_flat.reshape(1, -1, len(TEMPORAL_FEATURES))
+                else:
+                    seq = seq.reshape(1, -1, len(TEMPORAL_FEATURES))
 
-                static_df = pd.DataFrame(static_arr, columns=STATIC_FEATURES)
-                static_arr = self._scaler_static.transform(static_df)
+                static_arr = np.array([static_values], dtype=np.float32)
+                if self._scaler_static:
+                    import pandas as pd
+
+                    static_df = pd.DataFrame(static_arr, columns=STATIC_FEATURES)
+                    static_arr = self._scaler_static.transform(static_df)
 
             # Convert to tensors
             seq_tensor = torch.tensor(seq, dtype=torch.float32).to(self._device)

@@ -146,7 +146,7 @@ export function IngestionBuildsTable({
         });
     };
 
-    const failedCount = builds.filter((b) => b.status === "failed").length;
+    const failedCount = builds.filter((b) => b.status === "missing_resource").length;
     const totalPages = total > 0 ? Math.ceil(total / PAGE_SIZE) : 1;
     const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
     const pageEnd = total === 0 ? 0 : Math.min(page * PAGE_SIZE, total);
@@ -186,7 +186,7 @@ export function IngestionBuildsTable({
                         {retryAllLoading ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         ) : null}
-                        Retry All Failed ({failedCount})
+                        Retry Missing Resources ({failedCount})
                     </Button>
                 )}
             </CardHeader>
@@ -206,16 +206,7 @@ export function IngestionBuildsTable({
                                     Status
                                 </th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-500">
-                                    git_history
-                                </th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-500">
-                                    git_worktree
-                                </th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-500">
-                                    build_logs
-                                </th>
-                                <th className="px-4 py-3 text-left font-medium text-slate-500">
-                                    Date
+                                    Created At
                                 </th>
                             </tr>
                         </thead>
@@ -223,7 +214,7 @@ export function IngestionBuildsTable({
                             {builds.length === 0 ? (
                                 <tr>
                                     <td
-                                        colSpan={8}
+                                        colSpan={6}
                                         className="px-4 py-8 text-center text-muted-foreground"
                                     >
                                         No ingestion builds found.
@@ -245,92 +236,147 @@ export function IngestionBuildsTable({
                                         >
                                             <>
                                                 <tr
-                                                    className={`hover:bg-slate-50 dark:hover:bg-slate-900/40 transition ${hasErrors ? "cursor-pointer" : ""
-                                                        }`}
+                                                    className="hover:bg-slate-50 dark:hover:bg-slate-900/40 transition cursor-pointer"
+                                                    onClick={(e) => {
+                                                        if ((e.target as HTMLElement).closest("a, button")) return;
+                                                        toggleRow(build.id);
+                                                    }}
                                                 >
-                                                    <td className="px-4 py-3">
-                                                        {hasErrors && (
-                                                            <CollapsibleTrigger asChild>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    className="h-6 w-6 p-0"
-                                                                >
-                                                                    {isExpanded ? (
-                                                                        <ChevronDown className="h-4 w-4" />
-                                                                    ) : (
-                                                                        <ChevronRight className="h-4 w-4" />
-                                                                    )}
-                                                                </Button>
-                                                            </CollapsibleTrigger>
-                                                        )}
-                                                    </td>
-                                                    <td className="px-4 py-3 font-medium">
-                                                        #{build.build_number || "—"}
+                                                    <td className="px-4 py-3 w-[50px]">
+                                                        <CollapsibleTrigger asChild>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 w-6 p-0"
+                                                            >
+                                                                {isExpanded ? (
+                                                                    <ChevronDown className="h-4 w-4" />
+                                                                ) : (
+                                                                    <ChevronRight className="h-4 w-4" />
+                                                                )}
+                                                            </Button>
+                                                        </CollapsibleTrigger>
                                                     </td>
                                                     <td className="px-4 py-3">
-                                                        <div className="flex items-center gap-1 font-mono text-xs">
-                                                            <GitCommit className="h-3 w-3" />
-                                                            {build.commit_sha?.substring(0, 7)}
+                                                        <div className="flex flex-col gap-0.5">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-medium">
+                                                                    #{build.build_number || "—"}
+                                                                </span>
+                                                                {build.branch && (
+                                                                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 font-normal">
+                                                                        {build.branch}
+                                                                    </Badge>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <div className="flex flex-col gap-1">
+                                                            <div className="flex items-center gap-1 font-mono text-xs">
+                                                                <GitCommit className="h-3 w-3" />
+                                                                <span title={build.commit_message}>
+                                                                    {build.commit_sha?.substring(0, 7)}
+                                                                </span>
+                                                            </div>
+                                                            {build.commit_author && (
+                                                                <span className="text-xs text-muted-foreground truncate max-w-[150px]" title={build.commit_author}>
+                                                                    {build.commit_author}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <IngestionStatusBadge status={build.status} />
                                                     </td>
-                                                    <td className="px-4 py-3">
-                                                        <ResourceStatusIcon
-                                                            status={
-                                                                build.resource_status?.git_history?.status ||
-                                                                "pending"
-                                                            }
-                                                        />
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <ResourceStatusIcon
-                                                            status={
-                                                                build.resource_status?.git_worktree?.status ||
-                                                                "pending"
-                                                            }
-                                                        />
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <ResourceStatusIcon
-                                                            status={
-                                                                build.resource_status?.build_logs?.status ||
-                                                                "pending"
-                                                            }
-                                                        />
-                                                    </td>
-                                                    <td className="px-4 py-3 text-muted-foreground">
+
+                                                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                                                         {formatTimestamp(build.created_at)}
                                                     </td>
                                                 </tr>
-                                                {hasErrors && (
-                                                    <CollapsibleContent asChild>
-                                                        <tr className="bg-red-50 dark:bg-red-900/10">
-                                                            <td colSpan={8} className="px-4 py-3">
-                                                                <div className="space-y-2 text-sm">
-                                                                    <p className="font-medium text-red-600">
-                                                                        Resource Errors:
-                                                                    </p>
-                                                                    <ul className="list-disc list-inside space-y-1 text-muted-foreground">
+                                                <CollapsibleContent asChild>
+                                                    <tr className="bg-slate-50 dark:bg-slate-900/20 shadow-inner">
+                                                        <td colSpan={5} className="px-4 py-4">
+                                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                                {/* Build Info Column */}
+                                                                <div className="space-y-3">
+                                                                    <h4 className="font-medium text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                                                                        Build Details
+                                                                    </h4>
+                                                                    <div className="space-y-2 text-sm bg-white dark:bg-slate-950 p-3 rounded-lg border">
+                                                                        <div className="flex justify-between">
+                                                                            <span className="text-muted-foreground">CI Status:</span>
+                                                                            <span className={`flex items-center gap-1.5 capitalize font-medium ${build.conclusion === 'success' ? 'text-green-600' :
+                                                                                build.conclusion === 'failure' ? 'text-red-600' :
+                                                                                    'text-slate-600'
+                                                                                }`}>
+                                                                                {build.conclusion === "success" && <CheckCircle2 className="h-3.5 w-3.5" />}
+                                                                                {build.conclusion === "failure" && <XCircle className="h-3.5 w-3.5" />}
+                                                                                {build.conclusion || "Unknown"}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex justify-between">
+                                                                            <span className="text-muted-foreground">Duration:</span>
+                                                                            <span className="font-mono">
+                                                                                {build.duration_seconds ? `${Math.round(build.duration_seconds)}s` : "—"}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex justify-between">
+                                                                            <span className="text-muted-foreground">Link:</span>
+                                                                            <a
+                                                                                href={build.web_url || "#"}
+                                                                                target="_blank"
+                                                                                rel="noreferrer"
+                                                                                className="flex items-center gap-1 text-blue-500 hover:underline"
+                                                                            >
+                                                                                Open in CI <ExternalLink className="h-3 w-3" />
+                                                                            </a>
+                                                                        </div>
+                                                                        {build.commit_message && (
+                                                                            <div className="pt-2 border-t mt-2">
+                                                                                <p className="text-xs text-muted-foreground line-clamp-3 italic">
+                                                                                    &quot;{build.commit_message}&quot;
+                                                                                </p>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Resources Column */}
+                                                                <div className="md:col-span-2 space-y-3">
+                                                                    <h4 className="font-medium text-sm text-slate-900 dark:text-slate-100">
+                                                                        Resources
+                                                                    </h4>
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                                                         {Object.entries(
                                                                             build.resource_status || {}
-                                                                        ).map(
-                                                                            ([key, val]) =>
-                                                                                val.error && (
-                                                                                    <li key={key}>
-                                                                                        <span className="font-mono">{key}</span>:{" "}
-                                                                                        {val.error}
-                                                                                    </li>
-                                                                                )
-                                                                        )}
-                                                                    </ul>
+                                                                        ).map(([key, val]) => (
+                                                                            <div
+                                                                                key={key}
+                                                                                className="flex items-start gap-2.5 p-2.5 rounded-lg border bg-white dark:bg-slate-950"
+                                                                            >
+                                                                                <ResourceStatusIcon status={val.status} />
+                                                                                <div className="space-y-0.5 min-w-0">
+                                                                                    <p className="text-xs font-semibold font-mono truncate">
+                                                                                        {key}
+                                                                                    </p>
+                                                                                    <p className="text-[10px] text-muted-foreground capitalize">
+                                                                                        {val.status}
+                                                                                    </p>
+                                                                                    {val.error && (
+                                                                                        <p className="text-[10px] text-red-500 mt-1 break-words leading-tight">
+                                                                                            {val.error}
+                                                                                        </p>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
                                                                 </div>
-                                                            </td>
-                                                        </tr>
-                                                    </CollapsibleContent>
-                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </CollapsibleContent>
                                             </>
                                         </Collapsible>
                                     );

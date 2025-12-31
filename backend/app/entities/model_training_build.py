@@ -11,7 +11,7 @@ Key design principles:
 """
 
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Optional
 
 from pydantic import Field
 
@@ -92,12 +92,6 @@ class ModelTrainingBuild(BaseEntity):
     label: Optional[str] = Field(
         None,
         description="Ground truth label (e.g., 'pass', 'fail', 'LOW', 'MEDIUM', 'HIGH')",
-    )
-
-    # Normalized features for prediction input (cached for performance)
-    normalized_features: Dict[str, float] = Field(
-        default_factory=dict,
-        description="Standardized features sent to prediction API",
     )
 
     # Prediction results from Bayesian model

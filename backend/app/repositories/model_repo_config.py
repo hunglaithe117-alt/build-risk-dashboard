@@ -32,6 +32,14 @@ class ModelRepoConfigRepository(BaseRepository[ModelRepoConfig]):
         )
         return ModelRepoConfig(**doc) if doc else None
 
+    def find_by_raw_repo(
+        self,
+        raw_repo_id: ObjectId | str,
+    ) -> List[ModelRepoConfig]:
+        """Find all configs by raw repository ID."""
+        docs = self.collection.find({"raw_repo_id": self.ensure_object_id(raw_repo_id)})
+        return [ModelRepoConfig(**doc) for doc in docs]
+
     def list_by_user(
         self,
         user_id: ObjectId,

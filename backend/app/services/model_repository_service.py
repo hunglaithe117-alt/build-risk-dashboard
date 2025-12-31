@@ -586,7 +586,7 @@ class RepositoryService:
                 "fetched": import_status_counts.get("fetched", 0),
                 "ingesting": import_status_counts.get("ingesting", 0),
                 "ingested": import_status_counts.get("ingested", 0),
-                "failed": import_status_counts.get("failed", 0),
+                "missing_resource": import_status_counts.get("missing_resource", 0),
                 "total": sum(import_status_counts.values()),
             },
             # Per-resource status breakdown
@@ -627,12 +627,14 @@ class RepositoryService:
             raise HTTPException(status_code=404, detail="Repository not found")
 
         import_build_repo = ModelImportBuildRepository(self.db)
-        failed_builds = import_build_repo.get_failed_with_errors(repo_id, limit)
+        missing_resource_builds = import_build_repo.get_missing_resource_builds_with_errors(
+            repo_id, limit
+        )
 
         return {
             "repo_id": repo_id,
-            "total": len(failed_builds),
-            "failed_builds": failed_builds,
+            "total": len(missing_resource_builds),
+            "missing_resource_builds": missing_resource_builds,
         }
 
     def detect_languages(self, full_name: str, current_user: dict) -> dict:

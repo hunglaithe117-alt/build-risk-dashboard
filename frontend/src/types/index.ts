@@ -128,8 +128,8 @@ export interface DatasetRecord {
   preview: DatasetPreviewRow[];
   created_at?: string;
   updated_at?: string | null;
-  // Validation fields (unified validation)
-  validation_status?: "pending" | "validating" | "completed" | "failed" | "cancelled";
+  // Validation fields
+  validation_status?: "pending" | "validating" | "completed" | "failed";
   validation_task_id?: string;
   validation_started_at?: string;
   validation_completed_at?: string;
@@ -247,8 +247,11 @@ export interface ImportBuild {
   conclusion: string;
   created_at?: string;
   web_url?: string;
+  commit_message?: string;
+  commit_author?: string;
+  duration_seconds?: number;
   // Ingestion status from ModelImportBuild
-  status: string; // pending, fetched, ingesting, ingested, failed
+  status: string; // pending, fetched, ingesting, ingested, missing_resource
   ingestion_started_at?: string;
   ingested_at?: string;
   // Resource status breakdown
@@ -713,7 +716,7 @@ export interface EnrichmentStartResponse {
 export interface EnrichmentJob {
   id: string;
   dataset_id: string;
-  status: "pending" | "ingesting" | "processing" | "completed" | "failed" | "cancelled";
+  status: "queued" | "ingesting" | "processing" | "ingested" | "processed" | "failed";
   total_rows: number;
   processed_rows: number;
   enriched_rows: number;
@@ -812,7 +815,7 @@ export interface IngestionStats {
 
 export interface DatasetValidationStatus {
   dataset_id: string;
-  status: "pending" | "validating" | "completed" | "failed" | "cancelled";
+  status: "pending" | "validating" | "completed" | "failed";
   progress: number;
   task_id?: string;
   started_at?: string;

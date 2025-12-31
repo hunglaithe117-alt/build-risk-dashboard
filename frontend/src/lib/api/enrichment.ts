@@ -33,13 +33,6 @@ export const enrichmentApi = {
         return response.data;
     },
 
-    cancel: async (datasetId: string): Promise<EnrichmentJob> => {
-        const response = await api.post<EnrichmentJob>(
-            `/datasets/${datasetId}/enrich/cancel`
-        );
-        return response.data;
-    },
-
     listJobs: async (datasetId: string): Promise<EnrichmentJob[]> => {
         const response = await api.get<EnrichmentJob[]>(
             `/datasets/${datasetId}/enrich/jobs`

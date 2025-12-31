@@ -3,11 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-    AlertCircle,
     CheckCircle2,
     Loader2,
-    Pause,
-    Play,
     RotateCcw,
     X,
     AlertTriangle,
@@ -215,12 +212,6 @@ export function UploadDatasetModal({
                                         <div className="flex items-center gap-2 text-red-600">
                                             <AlertTriangle className="h-5 w-5" />
                                             <span className="font-medium">Validation failed</span>
-                                        </div>
-                                    )}
-                                    {validationStatus === "cancelled" && (
-                                        <div className="flex items-center gap-2 text-amber-600">
-                                            <AlertCircle className="h-5 w-5" />
-                                            <span className="font-medium">Validation cancelled</span>
                                         </div>
                                     )}
                                 </div>
@@ -456,27 +447,12 @@ export function UploadDatasetModal({
                                 </Button>
                             )}
 
-                            {/* Step 2: Cancel during validation */}
+                            {/* Step 2: Show validating indicator */}
                             {step === 2 && validationStatus === "validating" && (
-                                <Button
-                                    onClick={wizard.cancelValidation}
-                                    variant="outline"
-                                    className="gap-2 text-amber-600 border-amber-300 hover:bg-amber-50"
-                                >
-                                    <Pause className="h-4 w-4" />
-                                    Pause
-                                </Button>
-                            )}
-
-                            {/* Step 2: Resume if cancelled */}
-                            {step === 2 && validationStatus === "cancelled" && (
-                                <Button
-                                    onClick={wizard.resumeValidation}
-                                    className="gap-2"
-                                >
-                                    <Play className="h-4 w-4" />
-                                    Resume
-                                </Button>
+                                <div className="flex items-center gap-2 text-muted-foreground px-3">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <span className="text-sm">Validating...</span>
+                                </div>
                             )}
 
                             {/* Step 2: Retry if failed */}

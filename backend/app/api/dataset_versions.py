@@ -207,18 +207,6 @@ async def get_build_detail(
     )
 
 
-@router.post("/{version_id}/cancel", response_model=VersionResponse)
-async def cancel_version(
-    dataset_id: str,
-    version_id: str,
-    db=Depends(get_db),
-    current_user: dict = Depends(RequirePermission(Permission.MANAGE_DATASETS)),
-):
-    service = DatasetVersionService(db)
-    version = service.cancel_version(dataset_id, version_id, str(current_user["_id"]))
-    return _to_response(version)
-
-
 @router.get("/{version_id}/scan-status")
 async def get_scan_status(
     dataset_id: str,
@@ -316,7 +304,7 @@ async def start_version_processing(
     """
     Start processing phase after ingestion completes.
 
-    Only allowed when version status is INGESTING_COMPLETE or INGESTING_PARTIAL.
+    Only allowed when version status is INGESTED.
     Dispatches sequential feature extraction for temporal feature support.
     """
     version_service = DatasetVersionService(db)
@@ -337,8 +325,8 @@ async def retry_failed_ingestion(
     """
     Retry failed ingestion builds.
 
-    Resets FAILED DatasetImportBuild records and re-triggers ingestion.
-    Only allowed when status is INGESTING_PARTIAL or FAILED.
+    Resets MISSING_RESOURCE DatasetImportBuild records and re-triggers ingestion.
+    Only allowed when status is INGESTED or FAILED.
     """
     version_service = DatasetVersionService(db)
     return version_service.retry_failed_ingestion(

@@ -1170,11 +1170,7 @@ def handle_ingestion_chord_error(
     }
 
 
-# =============================================================================
 # REINGEST FAILED BUILDS
-# =============================================================================
-
-
 @celery_app.task(
     bind=True,
     base=PipelineTask,
@@ -1204,32 +1200,34 @@ def reingest_failed_builds(
 
     # Find failed imports after checkpoint
     checkpoint_id = repo_config.last_processed_import_build_id
-    failed_imports = import_build_repo.find_failed_imports(repo_config_id, after_id=checkpoint_id)
+    missing_resource_builds = import_build_repo.find_missing_resource_builds(
+        repo_config_id, after_id=checkpoint_id
+    )
 
-    if not failed_imports:
-        msg = "No failed imports found" + (
+    if not missing_resource_builds:
+        msg = "No missing resource builds found" + (
             f" after checkpoint {checkpoint_id}" if checkpoint_id else ""
         )
         logger.info(f"{msg} for {repo_config_id}")
         return {
-            "status": "no_failed_imports",
+            "status": "no_missing_resource_builds",
             "count": 0,
             "checkpoint": str(checkpoint_id) if checkpoint_id else None,
         }
 
     correlation_id = str(uuid.uuid4())[:8]
     logger.info(
-        f"[corr={correlation_id}] Found {len(failed_imports)} failed imports "
+        f"[corr={correlation_id}] Found {len(missing_resource_builds)} missing resource builds "
         f"after checkpoint {checkpoint_id} for {repo_config_id}"
     )
 
-    # Collect commit SHAs and CI run IDs from failed imports
+    # Collect commit SHAs and CI run IDs from missing resource builds
     commit_shas = []
     ci_run_ids = []
 
     # Reset status to FETCHED for retry
     reset_count = 0
-    for import_build in failed_imports:
+    for import_build in missing_resource_builds:
         try:
             import_build_repo.update_one(
                 str(import_build.id),
@@ -1285,7 +1283,7 @@ def reingest_failed_builds(
     return {
         "status": "queued",
         "imports_reset": reset_count,
-        "total_failed": len(failed_imports),
+        "total_missing_resource": len(missing_resource_builds),
         "correlation_id": correlation_id,
     }
 

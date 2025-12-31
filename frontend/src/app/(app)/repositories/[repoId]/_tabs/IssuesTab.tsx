@@ -52,7 +52,7 @@ export function IssuesTab({
         try {
             // Only fetch failed import builds - extraction failures come from parent progress
             const importRes = await reposApi.getFailedImportBuilds(repoId, 20);
-            setFailedImports(importRes.failed_builds);
+            setFailedImports(importRes.missing_resource_builds);
         } catch (err) {
             console.error(err);
         } finally {
@@ -97,14 +97,14 @@ export function IssuesTab({
                 </div>
             </div>
 
-            {/* Failed Ingestion */}
+            {/* Missing Resources (Ingestion) */}
             {failedIngestionCount > 0 && (
                 <Card>
                     <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                             <div>
-                                <CardTitle className="text-base">Failed Ingestion</CardTitle>
-                                <CardDescription>{failedIngestionCount} build(s) failed during data collection</CardDescription>
+                                <CardTitle className="text-base">Missing Resources</CardTitle>
+                                <CardDescription>{failedIngestionCount} build(s) missing resources during ingestion</CardDescription>
                             </div>
                             <Button
                                 size="sm"
@@ -183,16 +183,34 @@ export function IssuesTab({
                             </Button>
                         </div>
                     </CardHeader>
-                    <CardContent>
-                        <p className="text-sm text-muted-foreground">
-                            {failedExtractionCount > 0 && (
-                                <span>{failedExtractionCount} builds failed extraction. </span>
-                            )}
-                            {failedPredictionCount > 0 && (
-                                <span>{failedPredictionCount} builds failed prediction. </span>
-                            )}
-                            Click &quot;Retry All&quot; to retry all failed builds.
-                        </p>
+                    <CardContent className="space-y-4">
+                        {/* Extraction Failures */}
+                        {failedExtractionCount > 0 && (
+                            <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-900/50">
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="font-medium text-sm">Feature Extraction Failures</span>
+                                    <span className="text-xs text-red-600">{failedExtractionCount} builds</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    These builds failed during Hamilton DAG feature extraction.
+                                    Retry will <strong>re-extract features</strong> and then run prediction.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Prediction Failures */}
+                        {failedPredictionCount > 0 && (
+                            <div className="p-3 rounded-lg border bg-slate-50 dark:bg-slate-900/50">
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="font-medium text-sm">Risk Prediction Failures</span>
+                                    <span className="text-xs text-red-600">{failedPredictionCount} builds</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    These builds have extracted features but failed during LSTM prediction.
+                                    Retry will <strong>only run prediction</strong> (extraction is preserved).
+                                </p>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             )}

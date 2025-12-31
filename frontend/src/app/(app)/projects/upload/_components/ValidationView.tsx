@@ -120,17 +120,6 @@ export function ValidationView({ wizard }: ValidationViewProps) {
                         </div>
                     </div>
                 )}
-                {validationStatus === "cancelled" && (
-                    <div className="flex items-center gap-3 text-amber-600">
-                        <div className="rounded-full bg-amber-100 p-2 dark:bg-amber-900/30">
-                            <AlertCircle className="h-6 w-6" />
-                        </div>
-                        <div>
-                            <p className="font-semibold">Validation cancelled</p>
-                            <p className="text-sm text-amber-600/80">Process was stopped by user.</p>
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* Progress Bar for Validating */}

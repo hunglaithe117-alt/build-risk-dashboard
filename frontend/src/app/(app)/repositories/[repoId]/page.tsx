@@ -30,16 +30,6 @@ import { IssuesTab } from "./_tabs/IssuesTab";
 
 
 interface ImportProgress {
-    // Current batch (builds in the current sync session)
-    current_batch: {
-        batch_id: string | null;
-        pending: number;
-        fetched: number;
-        ingesting: number;
-        ingested: number;
-        failed: number;
-        total: number;
-    };
     // Checkpoint info (if processing was started)
     checkpoint: {
         has_checkpoint: boolean;
@@ -53,9 +43,10 @@ interface ImportProgress {
         fetched: number;
         ingesting: number;
         ingested: number;
-        failed: number;
+        missing_resource: number;
         total: number;
     };
+    resource_status?: Record<string, Record<string, number>>;
     training_builds: {
         pending: number;
         completed: number;
@@ -112,9 +103,9 @@ export default function RepoDetailPage() {
         try {
             const data = await reposApi.getImportProgress(repoId);
             setProgress({
-                current_batch: data.current_batch,
                 checkpoint: data.checkpoint,
                 import_builds: data.import_builds,
+                resource_status: data.resource_status,
                 training_builds: data.training_builds,
             });
         } catch (err) {
@@ -290,9 +281,9 @@ export default function RepoDetailPage() {
                     <TabsTrigger value="builds">Builds</TabsTrigger>
                     <TabsTrigger value="issues" className="gap-1">
                         Issues
-                        {((progress?.import_builds.failed || 0) + (progress?.training_builds.failed || 0) + (progress?.training_builds.prediction_failed || 0)) > 0 && (
+                        {((progress?.import_builds.missing_resource || 0) + (progress?.training_builds.failed || 0) + (progress?.training_builds.prediction_failed || 0)) > 0 && (
                             <Badge variant="destructive" className="ml-1 h-5 px-1.5 text-xs">
-                                {(progress?.import_builds.failed || 0) + (progress?.training_builds.failed || 0) + (progress?.training_builds.prediction_failed || 0)}
+                                {(progress?.import_builds.missing_resource || 0) + (progress?.training_builds.failed || 0) + (progress?.training_builds.prediction_failed || 0)}
                             </Badge>
                         )}
                     </TabsTrigger>
@@ -321,7 +312,7 @@ export default function RepoDetailPage() {
                 <TabsContent value="issues">
                     <IssuesTab
                         repoId={repoId}
-                        failedIngestionCount={progress?.import_builds.failed || 0}
+                        failedIngestionCount={progress?.import_builds.missing_resource || 0}
                         failedExtractionCount={progress?.training_builds.failed || 0}
                         failedPredictionCount={progress?.training_builds.prediction_failed || 0}
                         onRetryIngestion={handleRetryIngestion}

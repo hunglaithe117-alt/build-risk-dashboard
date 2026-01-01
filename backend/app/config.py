@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     # --- Ingestion Phase (fetching builds, cloning repos, downloading logs) ---
     INGESTION_BUILDS_PER_PAGE: int = 40  # Builds fetched per API page
     INGESTION_WORKTREES_PER_CHUNK: int = 20  # Worktrees created per task
-    INGESTION_LOGS_PER_CHUNK: int = 40  # Logs downloaded per task
+    INGESTION_LOGS_PER_CHUNK: int = 20  # Logs downloaded per task
 
     # --- Processing Phase (feature extraction) ---
     PROCESSING_BUILDS_PER_BATCH: int = 50  # Builds processed per enrichment batch
@@ -90,8 +90,8 @@ class Settings(BaseSettings):
     SCAN_BATCH_DELAY_SECONDS: float = 0.2  # Delay between batch dispatches
 
     # --- Rate Limiting (GitHub API) ---
-    GITHUB_API_RATE_PER_SECOND: float = 10.0  # Sustained request rate
-    GITHUB_API_BURST_ALLOWANCE: int = 5  # Burst before throttling
+    GITHUB_API_RATE_PER_SECOND: float = 100.0  # Sustained request rate
+    GITHUB_API_BURST_ALLOWANCE: int = 50  # Burst before throttling
 
     # --- CSV Dataset Limits ---
     CSV_MAX_FILE_SIZE_MB: int = 50  # Maximum CSV file size

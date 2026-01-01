@@ -18,7 +18,7 @@ from app.paths import get_worktree_path
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
 from app.tasks.base import PipelineTask
-from app.tasks.shared.events import publish_scan_update
+from app.tasks.shared.events import publish_scan_error, publish_scan_update
 
 logger = logging.getLogger(__name__)
 
@@ -175,6 +175,7 @@ def start_trivy_scan_for_version_commit(
 
     except Exception as exc:
         error_msg = str(exc)
+        retry_count = self.request.retries
         logger.error(f"{corr_prefix} Trivy scan failed for {commit_sha[:8]}: {error_msg}")
         trivy_scan_repo.mark_failed(scan_record.id, error_msg)
 
@@ -188,9 +189,23 @@ def start_trivy_scan_for_version_commit(
             error=error_msg,
         )
 
+        # Check if max retries exhausted
+        if retry_count >= 2:
+            # Publish dedicated error event when all retries failed
+            publish_scan_error(
+                version_id=version_id,
+                scan_id=str(scan_record.id),
+                commit_sha=commit_sha,
+                tool_type="trivy",
+                error=error_msg,
+                retry_count=retry_count,
+            )
+            logger.warning(f"{corr_prefix} Trivy scan exhausted all retries for {commit_sha[:8]}")
+            return {"status": "failed", "error": error_msg, "retries_exhausted": True}
+
         raise self.retry(
             exc=exc,
-            countdown=min(60 * (2**self.request.retries), 600),
+            countdown=min(60 * (2**retry_count), 600),
             max_retries=2,
         ) from exc
 

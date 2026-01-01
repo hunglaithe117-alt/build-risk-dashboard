@@ -165,6 +165,28 @@ export default function ScansPage() {
         };
     }, [versionId, fetchScans]);
 
+    // Listen for SCAN_ERROR events (max retries exhausted)
+    useEffect(() => {
+        const handleScanError = (event: CustomEvent<{
+            version_id: string;
+            scan_id: string;
+            commit_sha: string;
+            tool_type: string;
+            error: string;
+            retry_count: number;
+        }>) => {
+            if (event.detail.version_id === versionId) {
+                // Refresh when scan permanently fails
+                fetchScans(true);
+            }
+        };
+
+        window.addEventListener("SCAN_ERROR", handleScanError as EventListener);
+        return () => {
+            window.removeEventListener("SCAN_ERROR", handleScanError as EventListener);
+        };
+    }, [versionId, fetchScans]);
+
     const handleRetry = async (commitSha: string, toolType: string) => {
         setRetrying(`${toolType}-${commitSha}`);
         try {

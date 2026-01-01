@@ -285,6 +285,10 @@ def _run_git(cwd: Path, args: list) -> str:
 LOOKBACK_DAYS = 90
 CHUNK_SIZE = 50
 
+# Performance limits to prevent long-running operations
+MAX_FILES_TO_PROCESS = 100  # Limit files analyzed per feature
+MAX_COMMITS_FOR_HEAVY_OPS = 50  # Skip heavy features for large builds
+
 
 @tag(group="git")
 @requires_config(
@@ -344,8 +348,11 @@ def gh_num_commits_on_files_touched(
     if not files_touched:
         return 0
 
-    # Count commits on these files
-    paths = list(files_touched)
+    # Limit files to process for performance
+    paths = list(files_touched)[:MAX_FILES_TO_PROCESS]
+    if len(files_touched) > MAX_FILES_TO_PROCESS:
+        logger.info(f"Limiting file count from {len(files_touched)} to {MAX_FILES_TO_PROCESS}")
+
     start_iso = start_date.isoformat()
     trigger_sha = git_all_built_commits[0] if git_all_built_commits else effective_sha
 
@@ -550,6 +557,8 @@ def total_number_of_revisions(
     - For each commit in the build, get files changed
     - For each file, count revisions BEFORE that specific commit
     - No deduplication: if a file appears in multiple commits, count it multiple times
+
+    Performance: Skips for large builds (>50 commits) and limits files processed.
     """
     if not git_history.is_commit_available:
         return 0
@@ -557,9 +566,17 @@ def total_number_of_revisions(
     if not git_all_built_commits:
         return 0
 
-    repo_path = git_history.path
+    # Skip for large builds to prevent timeout
+    if len(git_all_built_commits) > MAX_COMMITS_FOR_HEAVY_OPS:
+        logger.info(
+            f"Skipping total_number_of_revisions for large build "
+            f"({len(git_all_built_commits)} commits > {MAX_COMMITS_FOR_HEAVY_OPS})"
+        )
+        return 0
 
+    repo_path = git_history.path
     total_revisions = 0
+    files_processed = 0
 
     # Process each commit separately (no file deduplication across commits)
     for sha in git_all_built_commits:
@@ -572,11 +589,17 @@ def total_number_of_revisions(
 
         # For each file in this commit, count revisions before THIS commit
         for f in diff_files:
+            # Check file limit
+            if files_processed >= MAX_FILES_TO_PROCESS:
+                logger.info(f"Reached MAX_FILES_TO_PROCESS limit ({MAX_FILES_TO_PROCESS})")
+                return total_revisions
+
             # Use b_path (destination path) as primary, fallback to a_path
             filepath = f.get("b_path") or f.get("a_path")
             if filepath:
                 revision_count = _count_file_revisions(repo_path, filepath, sha)
                 total_revisions += revision_count
+                files_processed += 1
 
     return total_revisions
 

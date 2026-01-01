@@ -20,6 +20,9 @@ from app.tasks.pipeline.utils.git_utils import (
 
 logger = logging.getLogger(__name__)
 
+# Performance limits
+MAX_FILES_TO_PROCESS = 100  # Limit files analyzed per feature
+
 
 def _calculate_shannon_entropy(file_changes: List[int]) -> float:
     """
@@ -105,7 +108,9 @@ def prev_build_history_features(
 
             # Use dedicated tr_prev_build field (or fallback to features dict)
             if feature_doc:
-                next_build_id = feature_doc.get("tr_prev_build") or feature_doc.get("features", {}).get("tr_prev_build")
+                next_build_id = feature_doc.get("tr_prev_build") or feature_doc.get(
+                    "features", {}
+                ).get("tr_prev_build")
                 if next_build_id:
                     current_build_id = next_build_id
                 else:
@@ -350,7 +355,7 @@ def author_experience_features(
 
         result["is_new_contributor"] = is_new
 
-        # 2. author_ownership - unchanged logic
+        # 2. author_ownership - with file limit for performance
         if touched_files and build_authors:
             total_commits = 0
             owned_commits = 0
@@ -363,7 +368,14 @@ def author_experience_features(
                     f"--until={build_run.created_at.isoformat()}",
                 ]
 
-            for filename in touched_files:
+            # Limit files to prevent timeout
+            files_to_check = list(touched_files)[:MAX_FILES_TO_PROCESS]
+            if len(touched_files) > MAX_FILES_TO_PROCESS:
+                logger.info(
+                    f"Limiting author_ownership file count from {len(touched_files)} to {MAX_FILES_TO_PROCESS}"
+                )
+
+            for filename in files_to_check:
                 if since_arg:
                     cmd = ["log"] + since_arg + ["--format=%an", "--", filename]
                 else:

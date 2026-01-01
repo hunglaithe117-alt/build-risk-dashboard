@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Database, BarChart3, Home, Lock } from "lucide-react";
 import { datasetVersionApi } from "@/lib/api";
 import { ExportVersionModal } from "@/components/datasets/ExportVersionModal";
+import { useToast } from "@/components/ui/use-toast";
 
 interface VersionData {
     id: string;
@@ -51,6 +52,7 @@ export default function VersionLayout({ children }: { children: ReactNode }) {
     const [version, setVersion] = useState<VersionData | null>(null);
     const [loading, setLoading] = useState(true);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const { toast } = useToast();
 
     // Determine active tab from pathname
     const getActiveTab = () => {
@@ -82,6 +84,49 @@ export default function VersionLayout({ children }: { children: ReactNode }) {
         }
         fetchVersion();
     }, [datasetId, versionId]);
+
+    // Listen for INGESTION_ERROR events
+    useEffect(() => {
+        const handleIngestionError = (event: CustomEvent<{
+            repo_id: string;
+            resource: string;
+            error: string;
+        }>) => {
+            toast({
+                variant: "destructive",
+                title: `Ingestion Error (${event.detail.resource})`,
+                description: event.detail.error.slice(0, 150),
+            });
+        };
+
+        window.addEventListener("INGESTION_ERROR", handleIngestionError as EventListener);
+        return () => {
+            window.removeEventListener("INGESTION_ERROR", handleIngestionError as EventListener);
+        };
+    }, [toast]);
+
+    // Listen for SCAN_ERROR events
+    useEffect(() => {
+        const handleScanError = (event: CustomEvent<{
+            version_id: string;
+            commit_sha: string;
+            tool_type: string;
+            error: string;
+        }>) => {
+            if (event.detail.version_id === versionId) {
+                toast({
+                    variant: "destructive",
+                    title: `${event.detail.tool_type} Scan Failed`,
+                    description: `Commit ${event.detail.commit_sha.slice(0, 7)}: ${event.detail.error.slice(0, 100)}`,
+                });
+            }
+        };
+
+        window.addEventListener("SCAN_ERROR", handleScanError as EventListener);
+        return () => {
+            window.removeEventListener("SCAN_ERROR", handleScanError as EventListener);
+        };
+    }, [versionId, toast]);
 
     if (loading || !version) {
         return (

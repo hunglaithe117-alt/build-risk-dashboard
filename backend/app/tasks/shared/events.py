@@ -174,3 +174,66 @@ def publish_scan_update(
         payload["metrics"] = metrics
 
     return publish_event("SCAN_UPDATE", payload)
+
+
+def publish_ingestion_error(
+    raw_repo_id: str,
+    resource: str,
+    chunk_index: int = 0,
+    error: str = "",
+    correlation_id: Optional[str] = None,
+) -> bool:
+    """
+    Publish ingestion error event for real-time UI notifications.
+
+    Args:
+        raw_repo_id: Repository ID
+        resource: Resource type that failed (build_logs, git_worktree, etc.)
+        chunk_index: Index of the chunk that failed
+        error: Error message
+        correlation_id: Correlation ID for tracing
+
+    Returns:
+        True if published successfully, False otherwise
+    """
+    payload = {
+        "repo_id": raw_repo_id,
+        "resource": resource,
+        "chunk_index": chunk_index,
+        "error": error,
+        "correlation_id": correlation_id,
+    }
+    return publish_event("INGESTION_ERROR", payload)
+
+
+def publish_scan_error(
+    version_id: str,
+    scan_id: str,
+    commit_sha: str,
+    tool_type: str,
+    error: str,
+    retry_count: int = 0,
+) -> bool:
+    """
+    Publish scan error event for real-time UI notifications.
+
+    Args:
+        version_id: DatasetVersion ID
+        scan_id: TrivyCommitScan or SonarCommitScan ID
+        commit_sha: The commit SHA that failed scanning
+        tool_type: "trivy" or "sonarqube"
+        error: Error message
+        retry_count: Number of retries attempted
+
+    Returns:
+        True if published successfully, False otherwise
+    """
+    payload = {
+        "version_id": version_id,
+        "scan_id": scan_id,
+        "commit_sha": commit_sha,
+        "tool_type": tool_type,
+        "error": error,
+        "retry_count": retry_count,
+    }
+    return publish_event("SCAN_ERROR", payload)

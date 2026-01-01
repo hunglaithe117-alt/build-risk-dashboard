@@ -29,6 +29,9 @@ AUTHOR_SIMILARITY_THRESHOLD = 0.9
 # Number of recent builds for "recent" metrics
 RECENT_BUILDS_COUNT = 5
 
+# Performance limit for MongoDB queries
+MAX_BUILDS_HISTORY = 500
+
 
 # =============================================================================
 # Time Features
@@ -203,7 +206,7 @@ def committer_fail_history_features(
         return result
 
     try:
-        # Get all previous builds for this repo
+        # Get previous builds for this repo (limited for performance)
         prev_builds = list(
             raw_build_runs.find(
                 {
@@ -211,7 +214,9 @@ def committer_fail_history_features(
                     "created_at": {"$lte": build_run.created_at},
                     "ci_run_id": {"$ne": build_run.ci_run_id},
                 }
-            ).sort("created_at", -1)
+            )
+            .sort("created_at", -1)
+            .limit(MAX_BUILDS_HISTORY)
         )
 
         if not prev_builds:
@@ -266,14 +271,14 @@ def committer_avg_exp(
         return None
 
     try:
-        # Get all previous builds
+        # Get previous builds (limited for performance)
         prev_builds = list(
             raw_build_runs.find(
                 {
                     "raw_repo_id": ObjectId(repo.id),
                     "created_at": {"$lt": build_run.created_at},
                 }
-            )
+            ).limit(MAX_BUILDS_HISTORY)
         )
 
         if not prev_builds:
@@ -341,7 +346,7 @@ def project_fail_history_features(
         return result
 
     try:
-        # Get all previous builds
+        # Get previous builds (limited for performance)
         prev_builds = list(
             raw_build_runs.find(
                 {
@@ -349,7 +354,9 @@ def project_fail_history_features(
                     "created_at": {"$lt": build_run.created_at},
                     "conclusion": {"$in": ["success", "failure"]},
                 }
-            ).sort("created_at", -1)
+            )
+            .sort("created_at", -1)
+            .limit(MAX_BUILDS_HISTORY)
         )
 
         if not prev_builds:

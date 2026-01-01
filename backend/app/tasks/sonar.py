@@ -19,7 +19,7 @@ from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepo
 from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.sonar_commit_scan import SonarCommitScanRepository
 from app.tasks.base import PipelineTask
-from app.tasks.shared.events import publish_scan_update
+from app.tasks.shared.events import publish_scan_error, publish_scan_update
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +123,7 @@ def start_sonar_scan_for_version_commit(
 
     except Exception as exc:
         error_msg = str(exc)
+        retry_count = self.request.retries
         logger.error(f"{corr_prefix} SonarQube scan failed for {component_key}: {error_msg}")
         scan_repo.mark_failed(scan_record.id, error_msg)
 
@@ -136,9 +137,25 @@ def start_sonar_scan_for_version_commit(
             error=error_msg,
         )
 
+        # Check if max retries exhausted
+        if retry_count >= 2:
+            # Publish dedicated error event when all retries failed
+            publish_scan_error(
+                version_id=version_id,
+                scan_id=str(scan_record.id),
+                commit_sha=commit_sha,
+                tool_type="sonarqube",
+                error=error_msg,
+                retry_count=retry_count,
+            )
+            logger.warning(
+                f"{corr_prefix} SonarQube scan exhausted all retries for {component_key}"
+            )
+            return {"status": "failed", "error": error_msg, "retries_exhausted": True}
+
         raise self.retry(
             exc=exc,
-            countdown=min(60 * (2**self.request.retries), 1800),
+            countdown=min(60 * (2**retry_count), 1800),
             max_retries=2,
         ) from exc
 

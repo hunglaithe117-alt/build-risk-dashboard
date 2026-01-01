@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useWebSocket } from "@/contexts/websocket-context";
+import { useToast } from "@/components/ui/use-toast";
 import { buildApi, reposApi } from "@/lib/api";
 import type { Build, RepoDetail } from "@/types";
 import { RepoContext, type ImportProgress, type RepoContextType } from "./repo-context";
@@ -44,6 +45,7 @@ export default function RepoLayout({ children }: { children: React.ReactNode }) 
     const [retryProcessingLoading, setRetryProcessingLoading] = useState(false);
 
     const { subscribe } = useWebSocket();
+    const { toast } = useToast();
 
     const loadRepo = useCallback(async () => {
         try {
@@ -85,7 +87,7 @@ export default function RepoLayout({ children }: { children: React.ReactNode }) 
         loadBuilds();
     }, [loadRepo, loadProgress, loadBuilds]);
 
-    // WebSocket subscription
+    // WebSocket subscription for REPO_UPDATE
     useEffect(() => {
         const unsubscribe = subscribe("REPO_UPDATE", (data: any) => {
             if (data.repo_id === repoId) {
@@ -96,6 +98,32 @@ export default function RepoLayout({ children }: { children: React.ReactNode }) 
         });
         return () => unsubscribe();
     }, [subscribe, loadRepo, loadProgress, loadBuilds, repoId]);
+
+    // Listen for INGESTION_ERROR events
+    useEffect(() => {
+        const handleIngestionError = (event: CustomEvent<{
+            repo_id: string;
+            resource: string;
+            chunk_index: number;
+            error: string;
+        }>) => {
+            // Check if error is for this repo (by id)
+            if (repo?.id === event.detail.repo_id) {
+                toast({
+                    variant: "destructive",
+                    title: `Ingestion Error (${event.detail.resource})`,
+                    description: event.detail.error.slice(0, 150),
+                });
+                loadProgress();
+            }
+        };
+
+        window.addEventListener("INGESTION_ERROR", handleIngestionError as EventListener);
+        return () => {
+            window.removeEventListener("INGESTION_ERROR", handleIngestionError as EventListener);
+        };
+    }, [repo?.id, loadProgress, toast]);
+
 
     // Action handlers
     const handleStartProcessing = async () => {

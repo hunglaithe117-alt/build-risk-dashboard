@@ -573,6 +573,13 @@ def aggregate_logs_results(
     all_skipped_log_ids: list[str] = []
 
     for r in chunk_results:
+        # Handle failed task results (exception objects from chord with chord_unlock_on_error)
+        if isinstance(r, Exception):
+            chunks_with_errors.append(
+                {"chunk_index": "?", "error": f"{type(r).__name__}: {str(r)}"}
+            )
+            logger.warning(f"{log_ctx} Chunk failed with exception: {type(r).__name__}: {r}")
+            continue
         if not isinstance(r, dict):
             continue
         chunk_idx = r.get("chunk_index", "?")
@@ -929,6 +936,16 @@ def download_logs_chunk(
         else:
             # Max retries exhausted - return error result, don't break chain
             logger.warning(f"{log_ctx} Max retries exhausted, returning error result")
+            # Publish error event to frontend
+            from app.tasks.shared.events import publish_ingestion_error
+
+            publish_ingestion_error(
+                raw_repo_id=raw_repo_id,
+                resource="build_logs",
+                chunk_index=chunk_index,
+                error=str(e),
+                correlation_id=correlation_id,
+            )
             result.update(
                 {
                     "error": str(e),

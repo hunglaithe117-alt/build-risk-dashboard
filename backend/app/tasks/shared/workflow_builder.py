@@ -246,4 +246,4 @@ def _build_logs_chord(
         correlation_id=correlation_id,
     )
 
-    return chord(group(chunk_tasks), callback)
+    return chord(group(chunk_tasks), callback).set(chord_unlock_on_error=True)

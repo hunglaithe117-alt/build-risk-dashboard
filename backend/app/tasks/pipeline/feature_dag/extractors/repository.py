@@ -29,6 +29,10 @@ from app.utils.datetime import ensure_naive_utc
 
 logger = logging.getLogger(__name__)
 
+# Performance limits
+MAX_FILES_TO_SCAN = 5000  # Limit files scanned for SLOC metrics
+MAX_COMMITS_FOR_COMMENTS = 10  # Limit commits checked for GitHub API calls
+
 
 @tag(group="repo")
 def gh_repo_age(git_history: GitHistoryInput) -> Optional[float]:
@@ -159,10 +163,17 @@ def _count_code_metrics(worktree_path: Path, languages: List[str]) -> Tuple[int,
     asserts = 0
 
     langs_to_check = languages if languages else [None]
+    files_scanned = 0
 
     for path in worktree_path.rglob("*"):
         if not path.is_file():
             continue
+
+        # Check file limit
+        files_scanned += 1
+        if files_scanned > MAX_FILES_TO_SCAN:
+            logger.info(f"Reached MAX_FILES_TO_SCAN limit ({MAX_FILES_TO_SCAN})")
+            break
 
         rel_path = str(path.relative_to(worktree_path))
 
@@ -243,9 +254,15 @@ def github_discussion_features(
         raw_build_runs, repo.id, build_run.ci_run_id, build_start_time
     )
 
-    # 1. Commit comments (same as before - no time filter needed)
+    # 1. Commit comments (limit commits checked for performance)
     num_commit_comments = 0
-    for sha in commits_to_check:
+    commits_limited = commits_to_check[:MAX_COMMITS_FOR_COMMENTS]
+    if len(commits_to_check) > MAX_COMMITS_FOR_COMMENTS:
+        logger.info(
+            f"Limiting commits checked from {len(commits_to_check)} to {MAX_COMMITS_FOR_COMMENTS}"
+        )
+
+    for sha in commits_limited:
         try:
             comments = client.list_commit_comments(full_name, sha)
             num_commit_comments += len(comments)

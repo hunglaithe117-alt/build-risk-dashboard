@@ -83,7 +83,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
                 // Also dispatch as window custom event for components not using subscribe
                 // This enables hooks that can't use useWebSocket to receive updates
-                if (type === "ENRICHMENT_UPDATE" || type === "DATASET_UPDATE") {
+                if (type === "ENRICHMENT_UPDATE" || type === "DATASET_UPDATE" || type === "SCAN_UPDATE") {
                     window.dispatchEvent(
                         new CustomEvent(type, { detail: payload })
                     );

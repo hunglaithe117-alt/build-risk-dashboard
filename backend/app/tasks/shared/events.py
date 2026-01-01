@@ -132,3 +132,45 @@ def publish_enrichment_update(
         payload["error"] = error
 
     return publish_event("ENRICHMENT_UPDATE", payload)
+
+
+def publish_scan_update(
+    version_id: str,
+    scan_id: str,
+    commit_sha: str,
+    tool_type: str,
+    status: str,
+    error: Optional[str] = None,
+    metrics: Optional[Dict[str, Any]] = None,
+    builds_affected: int = 0,
+) -> bool:
+    """
+    Publish scan status update for real-time UI updates.
+
+    Args:
+        version_id: DatasetVersion ID
+        scan_id: Scan record ID (TrivyCommitScan or SonarCommitScan)
+        commit_sha: The commit SHA being scanned
+        tool_type: "trivy" or "sonarqube"
+        status: Scan status (pending, scanning, completed, failed)
+        error: Optional error message
+        metrics: Optional scan metrics
+        builds_affected: Number of builds updated with scan results
+
+    Returns:
+        True if published successfully, False otherwise
+    """
+    payload = {
+        "version_id": version_id,
+        "scan_id": scan_id,
+        "commit_sha": commit_sha,
+        "tool_type": tool_type,
+        "status": status,
+        "builds_affected": builds_affected,
+    }
+    if error:
+        payload["error"] = error
+    if metrics:
+        payload["metrics"] = metrics
+
+    return publish_event("SCAN_UPDATE", payload)

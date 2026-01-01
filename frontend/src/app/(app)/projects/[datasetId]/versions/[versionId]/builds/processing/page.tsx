@@ -27,6 +27,7 @@ import {
     XCircle,
     AlertTriangle,
     Clock,
+    RotateCcw,
 } from "lucide-react";
 import { datasetVersionApi, type EnrichedBuildData } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -78,6 +79,8 @@ export default function ProcessingPage() {
     const [builds, setBuilds] = useState<EnrichedBuildData[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
+    const [retryLoading, setRetryLoading] = useState(false);
+    const [failedCount, setFailedCount] = useState(0);
 
     // Fetch enrichment builds
     useEffect(() => {
@@ -112,6 +115,21 @@ export default function ProcessingPage() {
         fetchBuilds();
     }, [datasetId, versionId, currentPage, searchQuery, statusFilter]);
 
+    // Fetch failed count for retry button
+    useEffect(() => {
+        async function fetchFailedCount() {
+            try {
+                const response = await datasetVersionApi.getEnrichmentBuilds(
+                    datasetId, versionId, 0, 1, "failed"
+                );
+                setFailedCount(response.total);
+            } catch (err) {
+                console.error("Failed to fetch failed count:", err);
+            }
+        }
+        fetchFailedCount();
+    }, [datasetId, versionId, builds]);
+
     const handleSearch = useCallback((query: string) => {
         setSearchQuery(query);
         setCurrentPage(1);
@@ -122,7 +140,21 @@ export default function ProcessingPage() {
         setCurrentPage(1);
     }, []);
 
+    const handleRetryProcessing = async () => {
+        setRetryLoading(true);
+        try {
+            await datasetVersionApi.retryProcessing(datasetId, versionId);
+            // Refresh builds
+            setCurrentPage(1);
+        } catch (err) {
+            console.error("Failed to retry processing:", err);
+        } finally {
+            setRetryLoading(false);
+        }
+    };
+
     const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
+    const canRetryProcessing = failedCount > 0;
 
     return (
         <div className="space-y-4">
@@ -149,10 +181,27 @@ export default function ProcessingPage() {
             ) : (
                 <Card>
                     <CardHeader className="pb-3">
-                        <CardTitle className="text-base">Enrichment Builds</CardTitle>
-                        <CardDescription>
-                            {total} builds with feature extraction
-                        </CardDescription>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="text-base">Enrichment Builds</CardTitle>
+                                <CardDescription>
+                                    {total} builds with feature extraction
+                                </CardDescription>
+                            </div>
+                            <Button
+                                variant="outline"
+                                onClick={handleRetryProcessing}
+                                disabled={retryLoading || failedCount === 0}
+                                className={cn("gap-2", failedCount === 0 && "opacity-50")}
+                            >
+                                {retryLoading ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <RotateCcw className="h-4 w-4" />
+                                )}
+                                Retry Failed ({failedCount})
+                            </Button>
+                        </div>
                     </CardHeader>
                     <CardContent>
                         <div className="rounded-md border overflow-hidden">
@@ -236,6 +285,6 @@ export default function ProcessingPage() {
                     </Button>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

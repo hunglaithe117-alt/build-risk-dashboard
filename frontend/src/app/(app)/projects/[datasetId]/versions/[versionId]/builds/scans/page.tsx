@@ -81,6 +81,7 @@ export default function ScansPage() {
     const [sonarData, setSonarData] = useState<ScanListResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [retrying, setRetrying] = useState<string | null>(null);
+    const [retryAllLoading, setRetryAllLoading] = useState(false);
     const [sonarPage, setSonarPage] = useState(1);
     const [trivyPage, setTrivyPage] = useState(1);
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -143,6 +144,27 @@ export default function ScansPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [versionId, trivyPage, sonarPage]);
 
+    // Listen for real-time SCAN_UPDATE events
+    useEffect(() => {
+        const handleScanUpdate = (event: CustomEvent<{
+            version_id: string;
+            scan_id: string;
+            commit_sha: string;
+            tool_type: string;
+            status: string;
+        }>) => {
+            if (event.detail.version_id === versionId) {
+                // Refresh scans when we receive an update for this version
+                fetchScans(true);
+            }
+        };
+
+        window.addEventListener("SCAN_UPDATE", handleScanUpdate as EventListener);
+        return () => {
+            window.removeEventListener("SCAN_UPDATE", handleScanUpdate as EventListener);
+        };
+    }, [versionId, fetchScans]);
+
     const handleRetry = async (commitSha: string, toolType: string) => {
         setRetrying(`${toolType}-${commitSha}`);
         try {
@@ -155,6 +177,36 @@ export default function ScansPage() {
             console.error("Retry failed:", err);
         } finally {
             setRetrying(null);
+        }
+    };
+
+    // Calculate failed counts
+    const trivyFailedCount = trivyData?.items?.filter(s => s.status === "failed").length || 0;
+    const sonarFailedCount = sonarData?.items?.filter(s => s.status === "failed").length || 0;
+    const totalFailedCount = trivyFailedCount + sonarFailedCount;
+
+    // Retry all failed scans
+    const handleRetryAllFailed = async () => {
+        setRetryAllLoading(true);
+        try {
+            const allFailed: { sha: string; tool: string }[] = [];
+            trivyData?.items?.forEach(s => s.status === "failed" && allFailed.push({ sha: s.commit_sha, tool: "trivy" }));
+            sonarData?.items?.forEach(s => s.status === "failed" && allFailed.push({ sha: s.commit_sha, tool: "sonarqube" }));
+
+            // Retry in parallel batches
+            await Promise.allSettled(
+                allFailed.map(({ sha, tool }) =>
+                    fetch(
+                        `${API_BASE}/datasets/${datasetId}/versions/${versionId}/commit-scans/${sha}/retry?tool_type=${tool}`,
+                        { method: "POST", credentials: "include" }
+                    )
+                )
+            );
+            await fetchScans();
+        } catch (err) {
+            console.error("Retry all failed:", err);
+        } finally {
+            setRetryAllLoading(false);
         }
     };
 
@@ -308,10 +360,26 @@ export default function ScansPage() {
                             SonarQube and Trivy security scans
                         </CardDescription>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => fetchScans()}>
-                        <RefreshCw className="h-4 w-4 mr-1" />
-                        Refresh
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleRetryAllFailed}
+                            disabled={retryAllLoading || totalFailedCount === 0}
+                            className={totalFailedCount === 0 ? "opacity-50" : ""}
+                        >
+                            {retryAllLoading ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            ) : (
+                                <RotateCcw className="h-4 w-4 mr-1" />
+                            )}
+                            Retry Failed ({totalFailedCount})
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => fetchScans()}>
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            Refresh
+                        </Button>
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>

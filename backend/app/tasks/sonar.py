@@ -19,6 +19,7 @@ from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepo
 from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.sonar_commit_scan import SonarCommitScanRepository
 from app.tasks.base import PipelineTask
+from app.tasks.shared.events import publish_scan_update
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ def start_sonar_scan_for_version_commit(
     raw_repo_id: str,
     github_repo_id: int,
     component_key: str,
-    config_file_path: str = None,
+    config_file_path: str = "",
     correlation_id: str = "",
 ):
     """
@@ -96,6 +97,15 @@ def start_sonar_scan_for_version_commit(
     # Mark as scanning
     scan_repo.mark_scanning(scan_record.id)
 
+    # Publish scanning status
+    publish_scan_update(
+        version_id=version_id,
+        scan_id=str(scan_record.id),
+        commit_sha=commit_sha,
+        tool_type="sonarqube",
+        status="scanning",
+    )
+
     try:
         project_key = component_key.rsplit("_", 1)[0]
         sonar_tool = SonarQubeTool(project_key=project_key, github_repo_id=github_repo_id)
@@ -115,6 +125,16 @@ def start_sonar_scan_for_version_commit(
         error_msg = str(exc)
         logger.error(f"{corr_prefix} SonarQube scan failed for {component_key}: {error_msg}")
         scan_repo.mark_failed(scan_record.id, error_msg)
+
+        # Publish failed status
+        publish_scan_update(
+            version_id=version_id,
+            scan_id=str(scan_record.id),
+            commit_sha=commit_sha,
+            tool_type="sonarqube",
+            status="failed",
+            error=error_msg,
+        )
 
         raise self.retry(
             exc=exc,
@@ -162,7 +182,18 @@ def export_metrics_from_webhook(
     try:
         # Handle failed analysis
         if analysis_status != "SUCCESS":
-            scan_repo.mark_failed(scan_record.id, f"Analysis failed: {analysis_status}")
+            error_msg = f"Analysis failed: {analysis_status}"
+            scan_repo.mark_failed(scan_record.id, error_msg)
+
+            # Publish failed status
+            publish_scan_update(
+                version_id=str(scan_record.dataset_version_id),
+                scan_id=str(scan_record.id),
+                commit_sha=scan_record.commit_sha,
+                tool_type="sonarqube",
+                status="failed",
+                error=error_msg,
+            )
             return {"status": "failed", "component_key": component_key}
 
         # Get version to determine which metrics to fetch
@@ -203,6 +234,17 @@ def export_metrics_from_webhook(
             f"for commit {scan_record.commit_sha[:8]} ({len(metrics)} metrics)"
         )
 
+        # Publish completed status
+        publish_scan_update(
+            version_id=str(scan_record.dataset_version_id),
+            scan_id=str(scan_record.id),
+            commit_sha=scan_record.commit_sha,
+            tool_type="sonarqube",
+            status="completed",
+            metrics=metrics,
+            builds_affected=updated_count,
+        )
+
         return {
             "status": "success",
             "builds_updated": updated_count,
@@ -212,4 +254,14 @@ def export_metrics_from_webhook(
     except Exception as exc:
         logger.error(f"Failed to export metrics for {component_key}: {exc}")
         scan_repo.mark_failed(scan_record.id, str(exc))
+
+        # Publish failed status
+        publish_scan_update(
+            version_id=str(scan_record.dataset_version_id),
+            scan_id=str(scan_record.id),
+            commit_sha=scan_record.commit_sha,
+            tool_type="sonarqube",
+            status="failed",
+            error=str(exc),
+        )
         raise

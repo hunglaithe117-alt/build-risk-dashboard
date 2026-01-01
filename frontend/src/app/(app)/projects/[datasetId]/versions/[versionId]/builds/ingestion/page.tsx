@@ -26,6 +26,7 @@ import {
     GitCommit,
     Timer,
     FileText,
+    RotateCcw,
 } from "lucide-react";
 import { datasetVersionApi, type ImportBuildItem } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -80,6 +81,8 @@ export default function IngestionPage() {
     const [loading, setLoading] = useState(true);
     const [versionStatus, setVersionStatus] = useState<string>("queued");
     const [startProcessingLoading, setStartProcessingLoading] = useState(false);
+    const [retryIngestionLoading, setRetryIngestionLoading] = useState(false);
+    const [failedCount, setFailedCount] = useState(0);
 
     // Fetch version status
     useEffect(() => {
@@ -134,6 +137,21 @@ export default function IngestionPage() {
         fetchBuilds();
     }, [datasetId, versionId, currentPage, searchQuery, statusFilter]);
 
+    // Fetch failed count for retry button
+    useEffect(() => {
+        async function fetchFailedCount() {
+            try {
+                const response = await datasetVersionApi.getImportBuilds(
+                    datasetId, versionId, 0, 1, "failed"
+                );
+                setFailedCount(response.total);
+            } catch (err) {
+                console.error("Failed to fetch failed count:", err);
+            }
+        }
+        fetchFailedCount();
+    }, [datasetId, versionId, builds]);
+
     const handleSearch = useCallback((query: string) => {
         setSearchQuery(query);
         setCurrentPage(1);
@@ -158,8 +176,24 @@ export default function IngestionPage() {
         }
     };
 
+    const handleRetryIngestion = async () => {
+        setRetryIngestionLoading(true);
+        try {
+            await datasetVersionApi.retryIngestion(datasetId, versionId);
+            // Refresh version and builds
+            const response = await datasetVersionApi.getVersionData(datasetId, versionId, 1, 1, false);
+            setVersionStatus(response.version.status);
+            setCurrentPage(1);
+        } catch (err) {
+            console.error("Failed to retry ingestion:", err);
+        } finally {
+            setRetryIngestionLoading(false);
+        }
+    };
+
     const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
     const canStartProcessing = versionStatus.toLowerCase() === "ingested";
+    const canRetryIngestion = failedCount > 0;
 
     return (
         <div className="space-y-4">
@@ -184,6 +218,10 @@ export default function IngestionPage() {
                     canStartProcessing={canStartProcessing}
                     onStartProcessing={handleStartProcessing}
                     startProcessingLoading={startProcessingLoading}
+                    canRetryIngestion={canRetryIngestion}
+                    onRetryIngestion={handleRetryIngestion}
+                    retryIngestionLoading={retryIngestionLoading}
+                    failedCount={failedCount}
                 />
             )}
 
@@ -227,12 +265,20 @@ function ImportBuildsTable({
     canStartProcessing = false,
     onStartProcessing,
     startProcessingLoading = false,
+    canRetryIngestion = false,
+    onRetryIngestion,
+    retryIngestionLoading = false,
+    failedCount = 0,
 }: {
     builds: ImportBuildItem[];
     total: number;
     canStartProcessing?: boolean;
     onStartProcessing?: () => void;
     startProcessingLoading?: boolean;
+    canRetryIngestion?: boolean;
+    onRetryIngestion?: () => void;
+    retryIngestionLoading?: boolean;
+    failedCount?: number;
 }) {
     const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -267,16 +313,33 @@ function ImportBuildsTable({
                             {total} builds in data collection phase
                         </CardDescription>
                     </div>
-                    {canStartProcessing && onStartProcessing && (
-                        <Button onClick={onStartProcessing} disabled={startProcessingLoading} className="gap-2">
-                            {startProcessingLoading ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Play className="h-4 w-4" />
-                            )}
-                            Start Processing
-                        </Button>
-                    )}
+                    <div className="flex items-center gap-2">
+                        {onRetryIngestion && (
+                            <Button
+                                variant="outline"
+                                onClick={onRetryIngestion}
+                                disabled={retryIngestionLoading || failedCount === 0}
+                                className={cn("gap-2", failedCount === 0 && "opacity-50")}
+                            >
+                                {retryIngestionLoading ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <RotateCcw className="h-4 w-4" />
+                                )}
+                                Retry Failed ({failedCount})
+                            </Button>
+                        )}
+                        {canStartProcessing && onStartProcessing && (
+                            <Button onClick={onStartProcessing} disabled={startProcessingLoading} className="gap-2">
+                                {startProcessingLoading ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                    <Play className="h-4 w-4" />
+                                )}
+                                Start Processing
+                            </Button>
+                        )}
+                    </div>
                 </div>
             </CardHeader>
             <CardContent className="space-y-2">

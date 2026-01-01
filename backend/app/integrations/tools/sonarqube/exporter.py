@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -14,10 +14,37 @@ class MetricsExporter:
     """Export metrics from SonarQube API for a given component."""
 
     def __init__(self):
-        self.host = settings.SONAR_HOST_URL.rstrip("/")
-        self.token = settings.SONAR_TOKEN
+        db_settings = self._get_db_settings()
+        self.host = db_settings["host_url"]
+        self.token = db_settings["token"]
         self.session = self._build_session()
         self.chunk_size = 25
+
+    def _get_db_settings(self) -> Dict[str, Any]:
+        """Load SonarQube settings from database (consistent with SonarQubeTool)."""
+        try:
+            from app.database.mongo import get_database
+            from app.services.settings_service import SettingsService
+
+            db = get_database()
+            service = SettingsService(db)
+            app_settings = service.get_settings()
+
+            # Get decrypted token for actual use
+            token = service.get_decrypted_token("sonarqube") or ""
+
+            return {
+                "host_url": app_settings.sonarqube.host_url.rstrip("/"),
+                "token": token,
+            }
+        except Exception as e:
+            logger.warning(f"Could not load SonarQube settings from DB: {e}")
+
+        # Fallback to ENV vars
+        return {
+            "host_url": settings.SONAR_HOST_URL.rstrip("/"),
+            "token": settings.SONAR_TOKEN or "",
+        }
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()

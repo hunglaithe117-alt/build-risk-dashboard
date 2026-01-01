@@ -1,8 +1,8 @@
 """
 Trivy Integration Tool
 
-Provides vulnerability and security scanning via Trivy.
-Supports both standalone CLI mode and server mode (client/server).
+Provides security scanning via Trivy Server mode.
+Scans for vulnerabilities, misconfigurations, and secrets.
 """
 
 import json
@@ -26,14 +26,13 @@ logger = logging.getLogger(__name__)
 
 class TrivyTool(IntegrationTool):
     """
-    Trivy integration for vulnerability scanning.
+    Trivy integration for security scanning (Server mode only).
 
-    Supports two modes:
-    - Server mode: Uses Trivy server via --server flag (recommended)
-    - Standalone: Runs trivy Docker image directly
+    Uses Trivy server via --server flag for efficient scanning.
+    Scans for vulnerabilities, misconfigurations, and secrets.
 
     Configuration:
-    - Connection: server_url from DB settings
+    - Connection: server_url from DB settings (required)
     - Scan config: default_config from DB settings (trivy.yaml content)
     """
 
@@ -49,7 +48,9 @@ class TrivyTool(IntegrationTool):
 
         # Load settings from DB
         trivy_settings = self._get_db_settings()
-        self._server_url = trivy_settings.get("server_url") or "http://localhost:4954"
+        self._server_url = trivy_settings.get("server_url")
+        if not self._server_url:
+            raise ValueError("Trivy server URL is required. Configure in settings.")
         self._default_config = trivy_settings.get("default_config", "")
         self._timeout = 600  # Default timeout 10 minutes
 
@@ -91,7 +92,6 @@ class TrivyTool(IntegrationTool):
 
     def is_available(self) -> bool:
         """Check if Trivy Server is available."""
-        # Only check server health, no standalone fallback
         return self._check_server_health()
 
     def _check_server_health(self) -> bool:
@@ -108,7 +108,6 @@ class TrivyTool(IntegrationTool):
         """Return Trivy configuration."""
         return {
             "server_url": self._server_url,
-            "server_mode": bool(self._server_url),
             "has_default_config": bool(self._default_config),
             "configured": self.is_available(),
         }
@@ -119,10 +118,10 @@ class TrivyTool(IntegrationTool):
 
     def get_health_status(self) -> Dict[str, Any]:
         """
-        Check Trivy tool health and return detailed status.
+        Check Trivy server health and return detailed status.
 
         Returns:
-            Dict with connected, server_mode, status, etc.
+            Dict with connected, status, server_url, etc.
         """
         import requests
 
@@ -130,55 +129,31 @@ class TrivyTool(IntegrationTool):
             "connected": False,
             "configured": bool(self._server_url),
             "server_url": self._server_url or "",
-            "server_mode": bool(self._server_url),
         }
 
-        # 1. Server Mode: If URL is configured, check server health
-        if self._server_url:
-            try:
-                resp = requests.get(f"{self._server_url}/healthz", timeout=5)
-                if resp.status_code == 200:
-                    result["connected"] = True
-                    result["status"] = "healthy"
-                else:
-                    result["error"] = f"Server returned HTTP {resp.status_code}"
-            except requests.exceptions.Timeout:
-                result["error"] = "Server connection timeout"
-            except requests.exceptions.ConnectionError:
-                result["error"] = "Server connection refused"
-            except Exception as e:
-                result["error"] = str(e)
-
+        if not self._server_url:
+            result["error"] = "Server URL not configured"
             return result
 
-        # 2. Standalone Mode: If NO URL configured, check Docker availability
-        # This mirrors "not configured" in SonarQube but falls back to Docker
-        result["status"] = "standalone"
-
         try:
-            docker_result = subprocess.run(
-                ["docker", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            result["docker_available"] = docker_result.returncode == 0
-            result["connected"] = docker_result.returncode == 0
-
-            if docker_result.returncode == 0:
-                result["docker_version"] = docker_result.stdout.strip()
+            resp = requests.get(f"{self._server_url}/healthz", timeout=5)
+            if resp.status_code == 200:
+                result["connected"] = True
+                result["status"] = "healthy"
             else:
-                result["error"] = "Docker command failed"
-
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            result["error"] = "Docker not available"
-            result["connected"] = False
+                result["error"] = f"Server returned HTTP {resp.status_code}"
+        except requests.exceptions.Timeout:
+            result["error"] = "Server connection timeout"
+        except requests.exceptions.ConnectionError:
+            result["error"] = "Server connection refused"
+        except Exception as e:
+            result["error"] = str(e)
 
         return result
 
     def get_scan_types(self) -> List[str]:
         """Return supported scan types."""
-        return ["vulnerability", "misconfiguration", "secret", "license"]
+        return ["vuln", "misconfig", "secret"]
 
     def get_metrics(self) -> List[MetricDefinition]:
         """Return all metric definitions."""
@@ -195,21 +170,19 @@ class TrivyTool(IntegrationTool):
         config_file_path: Optional[Path] = None,
     ) -> Dict[str, Any]:
         """
-        Run Trivy scan on a filesystem path.
-
-        If TRIVY_SERVER_URL is configured, uses server mode (--server flag).
-        Otherwise, runs Trivy CLI directly.
+        Run Trivy security scan on a filesystem path using server mode.
 
         Args:
-            target_path: Path to scan (usually a cloned git repo or worktree)
-            scan_types: Types of scans to run (vuln, config, secret, license)
+            target_path: Path to scan (usually a git worktree)
+            scan_types: Types of scans to run (default: ["vuln", "misconfig", "secret"])
             config_file_path: External config file path (trivy.yaml)
 
         Returns:
             Dict with scan results and metrics
         """
+        # Default to all scan types
         if scan_types is None:
-            scan_types = ["vuln", "config"]
+            scan_types = ["vuln", "misconfig", "secret"]
 
         start_time = time.time()
 
@@ -221,8 +194,10 @@ class TrivyTool(IntegrationTool):
         )
 
         try:
-            mode = "server" if self._server_url else "standalone"
-            logger.info(f"Running Trivy scan ({mode} mode) on {target_path}")
+            logger.info(
+                f"Running Trivy scan (server mode) on {target_path} "
+                f"with scanners: {scan_types}"
+            )
             logger.debug(f"Command: {' '.join(cmd)}")
 
             result = subprocess.run(
@@ -282,24 +257,22 @@ class TrivyTool(IntegrationTool):
         self,
         commit_sha: str,
         full_name: str,
-        scan_types: Optional[List[str]] = None,
-        config_content: Optional[str] = None,
+        config_file_path: Optional[Path] = None,
         shared_worktree_path: Optional[Path] = None,
     ) -> Dict[str, Any]:
         """
-        Run Trivy scan on a specific commit.
+        Run Trivy vulnerability scan on a specific commit.
 
         Creates or uses existing worktree for the commit.
 
         Args:
             commit_sha: Commit SHA to scan
             full_name: Repo full name (owner/repo)
-            scan_types: Types of scans to run
-            config_content: Optional trivy.yaml config content
+            config_file_path: Optional trivy.yaml config file path
             shared_worktree_path: Optional path to shared worktree from pipeline
 
         Returns:
-            Dict with scan results and metrics
+            Dict with scan results and vulnerability metrics
         """
 
         try:
@@ -326,8 +299,7 @@ class TrivyTool(IntegrationTool):
             # Use the regular scan method with the worktree path
             return self.scan(
                 target_path=str(worktree),
-                scan_types=scan_types,
-                config_content=config_content,
+                config_file_path=config_file_path,
             )
 
         except Exception as e:
@@ -344,51 +316,32 @@ class TrivyTool(IntegrationTool):
         config_file_path: Optional[Path] = None,
     ) -> List[str]:
         """
-        Build trivy scan command using Docker image.
+        Build trivy scan command using Docker image + Trivy server.
 
-        Uses aquasec/trivy Docker image. Requires Docker to be installed.
-        If TRIVY_SERVER_URL is configured, connects to Trivy server.
+        Uses aquasec/trivy Docker image as client connecting to Trivy server.
+        Scans for vulnerabilities, misconfigurations, and secrets based on scan_types.
         """
         from pathlib import Path as PathLib
 
         target_path_abs = str(PathLib(target_path).absolute())
 
-        # Build trivy args
+        # Build trivy args - use server mode with specified scan types
         trivy_args = [
             "fs",
-            "--format",
-            "json",
-            "--timeout",
-            f"{self._timeout}s",
+            "--format", "json",
+            "--timeout", f"{self._timeout}s",
+            "--server", self._server_url,
+            "--scanners", ",".join(scan_types),  # Use passed scan types
         ]
-
-        # Add server flag if configured (client/server mode)
-        if self._server_url:
-            trivy_args.extend(["--server", self._server_url])
-
-        # Add scan types if NOT using a config file (or if we want to override)
-        # However, for consistency with user request "just include trivy.yaml",
-        # if config file is present, we might want to respect it.
-        # But scan_types argument is passed from caller.
-        # Let's add --scanners only if no config file or if we strictly want to enforce it.
-        # For now, we'll keep adding it as it helps filter results even with config
-        # or we can omit it if config is present.
-        # Given the bugs with missing attributes, let's play it safe and
-        # prioritize the config file content.
-
-        if not config_file_path:
-            trivy_args.extend(["--scanners", ",".join(scan_types)])
 
         # Target path inside container
         trivy_args.append("/work")
 
         # Build docker command
         docker_cmd = [
-            "docker",
-            "run",
-            "--rm",
-            "-v",
-            f"{target_path_abs}:/work:ro",  # Mount as read-only
+            "docker", "run", "--rm",
+            "-v", f"{target_path_abs}:/work:ro",  # Mount source as read-only
+            "--network", "host",  # Access Trivy server
         ]
 
         # Mount config file if provided
@@ -397,12 +350,6 @@ class TrivyTool(IntegrationTool):
             docker_cmd.extend(["-v", f"{config_abs}:/work/trivy.yaml:ro"])
             trivy_args.extend(["--config", "/work/trivy.yaml"])
 
-        # Use host network to access Trivy server via localhost
-        docker_cmd.extend(["--network", "host"])
-
-        # Add trivy cache volume for DB
-        docker_cmd.extend(["-v", "trivy_cache:/root/.cache/trivy"])
-
         # Add image and args
         docker_cmd.append("aquasec/trivy:latest")
         docker_cmd.extend(trivy_args)
@@ -410,7 +357,7 @@ class TrivyTool(IntegrationTool):
         return docker_cmd
 
     def _parse_results(self, raw_results: Dict[str, Any], scan_duration_ms: int) -> Dict[str, Any]:
-        """Parse Trivy JSON output into structured metrics."""
+        """Parse Trivy JSON output into structured metrics (vuln, misconfig, secret)."""
         vuln_counts = {
             "critical": 0,
             "high": 0,
@@ -428,7 +375,6 @@ class TrivyTool(IntegrationTool):
         secrets_count = 0
         packages_scanned = 0
         files_scanned = 0
-        top_vulnerable_packages = []
 
         results = raw_results.get("Results", [])
 
@@ -442,18 +388,6 @@ class TrivyTool(IntegrationTool):
                     vuln_counts[severity] += 1
                 vuln_counts["total"] += 1
                 packages_scanned += 1
-
-                # Track top vulnerable packages
-                pkg_name = vuln.get("PkgName", "unknown")
-                if len(top_vulnerable_packages) < 10:
-                    top_vulnerable_packages.append(
-                        {
-                            "name": pkg_name,
-                            "severity": severity,
-                            "vulnerability_id": vuln.get("VulnerabilityID", ""),
-                            "title": vuln.get("Title", ""),
-                        }
-                    )
 
             # Count misconfigurations
             for misconf in result.get("Misconfigurations", []):
@@ -480,9 +414,8 @@ class TrivyTool(IntegrationTool):
             "scan_duration_ms": scan_duration_ms,
             "packages_scanned": packages_scanned,
             "files_scanned": files_scanned,
-            "has_critical": vuln_counts["critical"] > 0,
-            "has_high": vuln_counts["high"] > 0,
-            "top_vulnerable_packages": top_vulnerable_packages,
+            "has_critical": vuln_counts["critical"] > 0 or misconfig_counts["critical"] > 0,
+            "has_high": vuln_counts["high"] > 0 or misconfig_counts["high"] > 0,
         }
 
     def get_empty_metrics(self) -> Dict[str, Any]:
@@ -504,5 +437,4 @@ class TrivyTool(IntegrationTool):
             "files_scanned": 0,
             "has_critical": False,
             "has_high": False,
-            "top_vulnerable_packages": [],
         }

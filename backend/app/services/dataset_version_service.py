@@ -989,12 +989,17 @@ class DatasetVersionService:
             trivy_config = config_override or scan.scan_config or {}
             selected_metrics = scan.selected_metrics or []
 
+            from app.paths import get_trivy_config_path
             from app.tasks.trivy import start_trivy_scan_for_version_commit
 
             # Lookup github_repo_id from RawRepository
             raw_repo = raw_repo_repo.find_by_id(str(scan.raw_repo_id))
             if not raw_repo:
                 raise HTTPException(status_code=404, detail="Repository not found")
+
+            # Get config file path (may have been created during initial scan)
+            trivy_config_path = get_trivy_config_path(version_id, raw_repo.github_repo_id)
+            config_file_path = str(trivy_config_path) if trivy_config_path.exists() else None
 
             task = start_trivy_scan_for_version_commit.delay(
                 version_id=version_id,
@@ -1004,6 +1009,7 @@ class DatasetVersionService:
                 github_repo_id=raw_repo.github_repo_id,
                 trivy_config=trivy_config,
                 selected_metrics=selected_metrics,
+                config_file_path=config_file_path,
             )
 
             return {"status": "dispatched", "task_id": task.id, "tool": "trivy"}
@@ -1018,12 +1024,17 @@ class DatasetVersionService:
             # Increment retry count
             sonar_repo.increment_retry(scan.id)
 
+            from app.paths import get_sonarqube_config_path
             from app.tasks.sonar import start_sonar_scan_for_version_commit
 
             # Lookup github_repo_id from RawRepository
             raw_repo = raw_repo_repo.find_by_id(str(scan.raw_repo_id))
             if not raw_repo:
                 raise HTTPException(status_code=404, detail="Repository not found")
+
+            # Get config file path (may have been created during initial scan)
+            sonar_config_path = get_sonarqube_config_path(version_id, raw_repo.github_repo_id)
+            config_file_path = str(sonar_config_path) if sonar_config_path.exists() else None
 
             task = start_sonar_scan_for_version_commit.delay(
                 version_id=version_id,
@@ -1032,6 +1043,7 @@ class DatasetVersionService:
                 raw_repo_id=str(scan.raw_repo_id),
                 github_repo_id=raw_repo.github_repo_id,
                 component_key=scan.component_key,
+                config_file_path=config_file_path,
             )
 
             return {"status": "dispatched", "task_id": task.id, "tool": "sonarqube"}

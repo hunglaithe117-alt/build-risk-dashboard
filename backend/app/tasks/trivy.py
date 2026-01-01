@@ -18,6 +18,7 @@ from app.paths import get_worktree_path
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
 from app.tasks.base import PipelineTask
+from app.tasks.shared.events import publish_scan_update
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +39,9 @@ def start_trivy_scan_for_version_commit(
     repo_full_name: str,
     raw_repo_id: str,
     github_repo_id: int,
-    trivy_config: Dict[str, Any] = None,
-    config_file_path: str = None,
-    selected_metrics: List[str] = None,
+    trivy_config: Dict[str, Any],
+    selected_metrics: List[str],
+    config_file_path: str = "",
     correlation_id: str = "",
 ):
     """
@@ -97,6 +98,15 @@ def start_trivy_scan_for_version_commit(
     # Mark as scanning
     trivy_scan_repo.mark_scanning(scan_record.id)
 
+    # Publish scanning status
+    publish_scan_update(
+        version_id=version_id,
+        scan_id=str(scan_record.id),
+        commit_sha=commit_sha,
+        tool_type="trivy",
+        status="scanning",
+    )
+
     start_time = time.time()
 
     try:
@@ -145,6 +155,17 @@ def start_trivy_scan_for_version_commit(
             f"backfilled to {updated_count} builds ({scan_duration_ms}ms)"
         )
 
+        # Publish completed status
+        publish_scan_update(
+            version_id=version_id,
+            scan_id=str(scan_record.id),
+            commit_sha=commit_sha,
+            tool_type="trivy",
+            status="completed",
+            metrics=filtered_metrics,
+            builds_affected=updated_count,
+        )
+
         return {
             "status": "success",
             "builds_updated": updated_count,
@@ -157,6 +178,16 @@ def start_trivy_scan_for_version_commit(
         logger.error(f"{corr_prefix} Trivy scan failed for {commit_sha[:8]}: {error_msg}")
         trivy_scan_repo.mark_failed(scan_record.id, error_msg)
 
+        # Publish failed status
+        publish_scan_update(
+            version_id=version_id,
+            scan_id=str(scan_record.id),
+            commit_sha=commit_sha,
+            tool_type="trivy",
+            status="failed",
+            error=error_msg,
+        )
+
         raise self.retry(
             exc=exc,
             countdown=min(60 * (2**self.request.retries), 600),
@@ -165,8 +196,8 @@ def start_trivy_scan_for_version_commit(
 
 
 def _parse_scan_types(trivy_config: dict) -> List[str]:
-    """Parse scan types from config, default to all types."""
-    default_types = ["vuln", "config", "secret"]
+    """Parse scan types from config, default to all types for comprehensive scanning."""
+    default_types = ["vuln", "misconfig", "secret"]
 
     if not trivy_config.get("scanners"):
         return default_types

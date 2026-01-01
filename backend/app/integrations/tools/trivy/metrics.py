@@ -1,7 +1,7 @@
 """
 Trivy Metrics Definitions
 
-All metric definitions for Trivy vulnerability scanning tool.
+All metrics for Trivy security scanning (vulnerabilities, misconfigurations, secrets).
 """
 
 from typing import List
@@ -13,9 +13,6 @@ from app.integrations.base import (
 )
 
 TRIVY_METRICS: List[MetricDefinition] = [
-    # -------------------------------------------------------------------------
-    # Vulnerability Metrics
-    # -------------------------------------------------------------------------
     MetricDefinition(
         key="vuln_critical",
         display_name="Critical Vulnerabilities",
@@ -100,7 +97,7 @@ TRIVY_METRICS: List[MetricDefinition] = [
         example_value="15",
     ),
     # -------------------------------------------------------------------------
-    # Other Metrics
+    # Secrets Metrics
     # -------------------------------------------------------------------------
     MetricDefinition(
         key="secrets_count",
@@ -110,6 +107,9 @@ TRIVY_METRICS: List[MetricDefinition] = [
         data_type=MetricDataType.INTEGER,
         example_value="0",
     ),
+    # -------------------------------------------------------------------------
+    # Scan Metadata
+    # -------------------------------------------------------------------------
     MetricDefinition(
         key="scan_duration_ms",
         display_name="Scan Duration",
@@ -137,27 +137,21 @@ TRIVY_METRICS: List[MetricDefinition] = [
     ),
     MetricDefinition(
         key="has_critical",
-        display_name="Has Critical Vulnerabilities",
-        description="Whether any critical vulnerabilities were found",
+        display_name="Has Critical Issues",
+        description="Whether any critical vulnerabilities or misconfigurations were found",
         category=MetricCategory.SECURITY,
         data_type=MetricDataType.BOOLEAN,
         example_value="true",
     ),
     MetricDefinition(
         key="has_high",
-        display_name="Has High Vulnerabilities",
-        description="Whether any high severity vulnerabilities were found",
+        display_name="Has High Severity Issues",
+        description="Whether any high severity vulnerabilities or misconfigurations were found",
         category=MetricCategory.SECURITY,
         data_type=MetricDataType.BOOLEAN,
         example_value="true",
     ),
-    MetricDefinition(
-        key="top_vulnerable_packages",
-        display_name="Top Vulnerable Packages",
-        description="List of top 10 vulnerable packages with severity and CVE details",
-        category=MetricCategory.SECURITY,
-        data_type=MetricDataType.JSON,
-        nullable=True,
-        example_value='[{"name": "lodash", "severity": "high", "cve": "CVE-2021-23337"}]',
-    ),
 ]
+
+# Backward compatibility alias
+TRIVY_VULN_METRICS = TRIVY_METRICS

@@ -69,8 +69,8 @@ class StatisticsService:
         if str(version.dataset_id) != dataset_id:
             raise HTTPException(status_code=404, detail="Version not found in dataset")
 
-        # Get all enrichment builds
-        builds = self.build_repo.find_by_version(version_id)
+        # Get all enrichment builds with features from FeatureVector
+        builds = self.build_repo.find_by_version_with_features(version_id)
 
         # Calculate statistics
         stats = self._calculate_version_stats(version, builds)
@@ -135,8 +135,8 @@ class StatisticsService:
         if not target_features:
             return FeatureDistributionResponse(version_id=version_id, distributions={})
 
-        # Get all builds
-        builds = self.build_repo.find_by_version(version_id)
+        # Get all builds with features from FeatureVector
+        builds = self.build_repo.find_by_version_with_features(version_id)
 
         distributions: Dict[str, Any] = {}
 
@@ -144,8 +144,9 @@ class StatisticsService:
             # Collect all values for this feature
             values = []
             for build in builds:
-                if build.features and feature_name in build.features:
-                    values.append(build.features[feature_name])
+                features = build.get("features", {})
+                if features and feature_name in features:
+                    values.append(features[feature_name])
 
             if not values:
                 continue
@@ -199,8 +200,8 @@ class StatisticsService:
                 version_id=version_id, features=[], matrix=[], significant_pairs=[]
             )
 
-        # Get all builds
-        builds = self.build_repo.find_by_version(version_id)
+        # Get all builds with features from FeatureVector
+        builds = self.build_repo.find_by_version_with_features(version_id)
 
         # Build value matrix
         feature_values: Dict[str, List[Optional[float]]] = {f: [] for f in numeric_features}
@@ -208,9 +209,10 @@ class StatisticsService:
         for build in builds:
             for feature in numeric_features:
                 value = None
-                if build.features and feature in build.features:
+                features = build.get("features", {})
+                if features and feature in features:
                     try:
-                        value = float(build.features[feature])
+                        value = float(features[feature])
                     except (ValueError, TypeError):
                         pass
                 feature_values[feature].append(value)
@@ -332,16 +334,17 @@ class StatisticsService:
         if total == 0:
             return VersionStatistics(total_features_selected=len(version.selected_features or []))
 
-        enriched = sum(1 for b in builds if b.features and len(b.features) > 0)
-        failed = sum(1 for b in builds if b.extraction_status == "failed")
+        enriched = sum(1 for b in builds if b.get("features") and len(b.get("features", {})) > 0)
+        failed = sum(1 for b in builds if b.get("extraction_status") == "failed")
         partial = sum(
             1
             for b in builds
-            if b.features and 0 < len(b.features) < len(version.selected_features or [])
+            if b.get("features")
+            and 0 < len(b.get("features", {})) < len(version.selected_features or [])
         )
 
         # Calculate feature stats
-        total_features = sum(len(b.features) for b in builds if b.features)
+        total_features = sum(len(b.get("features", {})) for b in builds if b.get("features"))
         avg_features = total_features / enriched if enriched > 0 else 0
 
         # Processing duration
@@ -373,7 +376,7 @@ class StatisticsService:
         status_counts: Dict[str, int] = Counter()
 
         for build in builds:
-            status = build.extraction_status
+            status = build.get("extraction_status", "pending")
             if isinstance(status, str):
                 status_counts[status] += 1
             else:
@@ -400,7 +403,11 @@ class StatisticsService:
 
         for feature in selected_features:
             # Collect values for this feature
-            values = [b.features[feature] for b in builds if b.features and feature in b.features]
+            values = [
+                b.get("features", {})[feature]
+                for b in builds
+                if b.get("features") and feature in b.get("features", {})
+            ]
 
             non_null = sum(1 for v in values if v is not None)
             null_count = total - non_null

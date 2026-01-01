@@ -59,7 +59,10 @@ class DatasetVersion(FeatureConfigBase):
     builds_total: int = Field(default=0, description="Total validated builds in version")
     builds_ingested: int = Field(default=0, description="Builds with resources prepared")
     builds_missing_resource: int = Field(
-        default=0, description="Builds with missing resources during ingestion"
+        default=0, description="Builds with missing resources (not retryable)"
+    )
+    builds_ingestion_failed: int = Field(
+        default=0, description="Builds that failed with actual errors (retryable)"
     )
     builds_processed: int = Field(default=0, description="Builds with features extracted")
     builds_processing_failed: int = Field(

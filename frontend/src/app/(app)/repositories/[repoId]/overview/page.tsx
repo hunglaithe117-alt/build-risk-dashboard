@@ -1,6 +1,6 @@
 "use client";
 
-import { useRepo } from "../layout";
+import { useRepo } from "../repo-context";
 import { OverviewTab } from "../_tabs/OverviewTab";
 
 export default function OverviewPage() {

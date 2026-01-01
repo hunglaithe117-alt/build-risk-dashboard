@@ -74,12 +74,12 @@ class DataQualityService:
         if not version:
             raise HTTPException(status_code=404, detail="Version not found")
 
-        if version.status != "completed":
+        if version.status != "processed":
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Cannot evaluate version with status '{version.status}'. "
-                    "Must be 'completed'."
+                    "Must be 'processed'."
                 ),
             )
 

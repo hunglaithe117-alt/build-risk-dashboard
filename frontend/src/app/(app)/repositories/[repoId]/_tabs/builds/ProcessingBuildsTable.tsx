@@ -28,14 +28,22 @@ import {
     CollapsibleContent,
     CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+    SearchFilterBar,
+    PROCESSING_STATUS_OPTIONS,
+    ExtractionStatusBadge,
+    TablePagination,
+} from "@/components/builds";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { buildApi } from "@/lib/api";
-import { formatTimestamp } from "@/lib/utils";
+import { formatTimestamp, cn } from "@/lib/utils";
 import type { TrainingBuild } from "@/types";
 
 const PAGE_SIZE = 20;
 
-function ExtractionStatusBadge({ status }: { status: string }) {
+// ExtractionStatusBadge moved to @/components/builds
+function LocalExtractionStatusBadge({ status }: { status: string }) {
+    // Use shared badge but with local styling for inline display
     const s = (status || "pending").toLowerCase();
     if (s === "completed") {
         return (
@@ -62,6 +70,13 @@ function ExtractionStatusBadge({ status }: { status: string }) {
         return (
             <Badge variant="secondary" className="gap-1">
                 <Clock className="h-3 w-3" /> Pending
+            </Badge>
+        );
+    }
+    if (s === "in_progress") {
+        return (
+            <Badge variant="secondary" className="gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" /> Processing
             </Badge>
         );
     }
@@ -132,6 +147,10 @@ export function ProcessingBuildsTable({
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [reprocessingBuilds, setReprocessingBuilds] = useState<Record<string, boolean>>({});
 
+    // Search and filter state
+    const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
+
     const { subscribe } = useWebSocket();
 
     const loadBuilds = useCallback(
@@ -141,6 +160,8 @@ export function ProcessingBuildsTable({
                 const data = await buildApi.getTrainingBuilds(repoId, {
                     skip: (pageNumber - 1) * PAGE_SIZE,
                     limit: PAGE_SIZE,
+                    q: searchQuery || undefined,
+                    extraction_status: statusFilter !== "all" ? statusFilter : undefined,
                 });
                 setBuilds(data.items);
                 setTotal(data.total);
@@ -152,12 +173,24 @@ export function ProcessingBuildsTable({
                 setTableLoading(false);
             }
         },
-        [repoId]
+        [repoId, searchQuery, statusFilter]
     );
 
     useEffect(() => {
         loadBuilds(1, true);
     }, [loadBuilds]);
+
+    // Search handler - reset to page 1
+    const handleSearch = useCallback((query: string) => {
+        setSearchQuery(query);
+        setPage(1);
+    }, []);
+
+    // Status filter handler - reset to page 1
+    const handleStatusFilter = useCallback((status: string) => {
+        setStatusFilter(status);
+        setPage(1);
+    }, []);
 
     useEffect(() => {
         const unsubscribe = subscribe("BUILD_UPDATE", (data: any) => {
@@ -182,8 +215,6 @@ export function ProcessingBuildsTable({
 
     const failedCount = builds.filter((b) => b.extraction_status === "failed").length;
     const totalPages = total > 0 ? Math.ceil(total / PAGE_SIZE) : 1;
-    const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-    const pageEnd = total === 0 ? 0 : Math.min(page * PAGE_SIZE, total);
 
     const handlePageChange = (direction: "prev" | "next") => {
         const target =
@@ -203,26 +234,43 @@ export function ProcessingBuildsTable({
 
     return (
         <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                    <CardTitle>Processing Builds</CardTitle>
-                    <CardDescription>
-                        Feature extraction and risk prediction results
-                    </CardDescription>
+            <CardHeader className="space-y-4">
+                <div className="flex flex-row items-center justify-between">
+                    <div>
+                        <CardTitle>Processing Builds</CardTitle>
+                        <CardDescription>
+                            Feature extraction and risk prediction results
+                        </CardDescription>
+                    </div>
+                    {/* Retry Failed button - always visible, disabled when no failed builds */}
+                    {onRetryAllFailed && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onRetryAllFailed}
+                            disabled={retryAllLoading || failedCount === 0}
+                            className={cn(
+                                "text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30",
+                                failedCount === 0 && "opacity-50 cursor-not-allowed"
+                            )}
+                        >
+                            {retryAllLoading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <RotateCcw className="mr-2 h-4 w-4" />
+                            )}
+                            Retry Failed ({failedCount})
+                        </Button>
+                    )}
                 </div>
-                {onRetryAllFailed && failedCount > 0 && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onRetryAllFailed}
-                        disabled={retryAllLoading}
-                    >
-                        {retryAllLoading ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : null}
-                        Retry All Failed ({failedCount})
-                    </Button>
-                )}
+                {/* Search and Filter Bar */}
+                <SearchFilterBar
+                    placeholder="Search by commit SHA or build number..."
+                    statusOptions={PROCESSING_STATUS_OPTIONS}
+                    onSearch={handleSearch}
+                    onStatusFilter={handleStatusFilter}
+                    isLoading={tableLoading}
+                />
             </CardHeader>
             <CardContent className="p-0">
                 <div className="overflow-x-auto">
@@ -318,7 +366,7 @@ export function ProcessingBuildsTable({
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-3">
-                                                        <ExtractionStatusBadge
+                                                        <LocalExtractionStatusBadge
                                                             status={build.extraction_status}
                                                         />
                                                     </td>
@@ -425,35 +473,14 @@ export function ProcessingBuildsTable({
                     </table>
                 </div>
                 {/* Pagination */}
-                <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
-                    <div>
-                        {total > 0
-                            ? `Showing ${pageStart}-${pageEnd} of ${total}`
-                            : "No builds"}
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {tableLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handlePageChange("prev")}
-                            disabled={page === 1 || tableLoading}
-                        >
-                            Previous
-                        </Button>
-                        <span className="text-xs">
-                            Page {page} of {totalPages}
-                        </span>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handlePageChange("next")}
-                            disabled={page >= totalPages || tableLoading}
-                        >
-                            Next
-                        </Button>
-                    </div>
-                </div>
+                <TablePagination
+                    currentPage={page}
+                    totalPages={totalPages}
+                    totalItems={total}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={(newPage) => loadBuilds(newPage, true)}
+                    isLoading={tableLoading}
+                />
             </CardContent>
         </Card>
     );

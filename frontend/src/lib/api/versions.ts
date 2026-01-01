@@ -37,11 +37,42 @@ export interface EnrichedBuildData {
     extraction_status: string;
     feature_count: number;
     expected_feature_count: number;
-    skipped_features: string[];
     missing_resources: string[];
+    created_at: string | null;
     enriched_at: string | null;
     features: Record<string, unknown>;
 }
+
+/**
+ * Import build item for ingestion phase.
+ * Extended with RawBuildRun info for detailed view.
+ */
+export interface ImportBuildItem {
+    id: string;
+    build_id: string;
+    build_number?: number;
+    commit_sha: string;
+    branch: string;
+    conclusion: string;
+    created_at: string | null;
+    web_url?: string;
+    status: "pending" | "ingesting" | "ingested" | "missing_resource" | "failed";
+    ingested_at: string | null;
+    resource_status: Record<string, { status: string; error?: string }>;
+    required_resources: string[];
+
+    // RawBuildRun fields for detailed view
+    commit_message?: string;
+    commit_author?: string;
+    duration_seconds?: number;
+    started_at?: string | null;
+    completed_at?: string | null;
+    provider?: string;
+    logs_available?: boolean;
+    logs_expired?: boolean;
+    ingestion_error?: string | null;
+}
+
 
 export interface VersionDataResponse {
     version: {
@@ -52,6 +83,7 @@ export interface VersionDataResponse {
         builds_total: number;
         builds_ingested: number;
         builds_missing_resource: number;
+        builds_ingestion_failed: number;
         builds_processed: number;
         builds_processing_failed: number;
         selected_features: string[];
@@ -143,6 +175,50 @@ export const datasetVersionApi = {
         const response = await api.get<VersionDataResponse>(
             `/datasets/${datasetId}/versions/${versionId}/data`,
             { params: { page, page_size: pageSize, include_stats: includeStats } }
+        );
+        return response.data;
+    },
+
+    /**
+     * Get import builds for ingestion phase.
+     */
+    getImportBuilds: async (
+        datasetId: string,
+        versionId: string,
+        skip: number = 0,
+        limit: number = 20,
+        status?: string
+    ): Promise<{
+        items: ImportBuildItem[];
+        total: number;
+        page: number;
+        size: number;
+    }> => {
+        const response = await api.get(
+            `/datasets/${datasetId}/versions/${versionId}/import-builds`,
+            { params: { skip, limit, status } }
+        );
+        return response.data;
+    },
+
+    /**
+     * Get enrichment builds for processing phase.
+     */
+    getEnrichmentBuilds: async (
+        datasetId: string,
+        versionId: string,
+        skip: number = 0,
+        limit: number = 20,
+        extractionStatus?: string
+    ): Promise<{
+        items: EnrichedBuildData[];
+        total: number;
+        page: number;
+        size: number;
+    }> => {
+        const response = await api.get(
+            `/datasets/${datasetId}/versions/${versionId}/enrichment-builds`,
+            { params: { skip, limit, extraction_status: extractionStatus } }
         );
         return response.data;
     },
@@ -360,6 +436,7 @@ export interface EnrichmentBuildDetail {
     expected_feature_count: number;
     features: Record<string, unknown>;
     scan_metrics: Record<string, unknown>;
+    created_at: string | null;
     enriched_at: string | null;
 }
 

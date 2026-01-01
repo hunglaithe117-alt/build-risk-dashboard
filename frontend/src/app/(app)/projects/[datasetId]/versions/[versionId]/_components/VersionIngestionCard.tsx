@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2, RotateCcw } from "lucide-react";
+import { AlertCircle, AlertTriangle, Loader2, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,7 @@ interface VersionIngestionCardProps {
     buildsIngested: number;
     buildsTotal: number;
     buildsMissingResource: number;
+    buildsIngestionFailed?: number; // New: actual failures (retryable)
     status: string;
     onRetryFailed?: () => void;
     retryLoading?: boolean;
@@ -26,6 +27,7 @@ export function VersionIngestionCard({
     buildsIngested,
     buildsTotal,
     buildsMissingResource,
+    buildsIngestionFailed = 0,
     status,
     onRetryFailed,
     retryLoading = false,
@@ -34,8 +36,9 @@ export function VersionIngestionCard({
     const isIngesting = ["queued", "ingesting"].includes(s);
     const isComplete = ["ingested", "processing", "processed"].includes(s);
 
-    const totalIngested = buildsIngested + buildsMissingResource;
-    const percent = buildsTotal > 0 ? Math.round((totalIngested / buildsTotal) * 100) : 0;
+    // Total accountable = ingested + missing + failed
+    const totalAccounted = buildsIngested + buildsMissingResource + buildsIngestionFailed;
+    const percent = buildsTotal > 0 ? Math.round((totalAccounted / buildsTotal) * 100) : 0;
 
     return (
         <Card>
@@ -63,36 +66,53 @@ export function VersionIngestionCard({
                             "text-sm",
                             isComplete ? "text-green-600" : "text-muted-foreground"
                         )}>
-                            {totalIngested}/{buildsTotal}
+                            {buildsIngested}/{buildsTotal}
                         </span>
                     </div>
                     <Progress value={percent} className="h-2" />
-                    <div className="flex justify-between mt-2">
+                    <div className="flex justify-between mt-2 flex-wrap gap-1">
                         <p className="text-xs text-muted-foreground">
                             {isIngesting && "In progress..."}
                             {isComplete && "Complete"}
                             {!isIngesting && !isComplete && "Not started"}
                         </p>
-                        {buildsMissingResource > 0 && (
-                            <p className="text-xs text-amber-600">
-                                {buildsMissingResource} missing resources
-                            </p>
-                        )}
+                        <div className="flex gap-2">
+                            {buildsIngestionFailed > 0 && (
+                                <p className="text-xs text-red-600">
+                                    {buildsIngestionFailed} failed (retryable)
+                                </p>
+                            )}
+                            {buildsMissingResource > 0 && (
+                                <p className="text-xs text-amber-600">
+                                    {buildsMissingResource} missing resources
+                                </p>
+                            )}
+                        </div>
                     </div>
                 </div>
 
-                {/* Warning for missing resources */}
-                {buildsMissingResource > 0 && isComplete && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900">
-                        <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                        <span className="text-sm text-amber-700 dark:text-amber-400">
-                            {buildsMissingResource} build(s) missing resources. Features may be incomplete.
+                {/* Warning for failed builds (retryable) */}
+                {buildsIngestionFailed > 0 && isComplete && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900">
+                        <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm text-red-700 dark:text-red-400">
+                            {buildsIngestionFailed} build(s) failed with errors. You can retry these.
                         </span>
                     </div>
                 )}
 
-                {/* Actions */}
-                {onRetryFailed && buildsMissingResource > 0 && (
+                {/* Info for missing resources (not retryable) */}
+                {buildsMissingResource > 0 && isComplete && (
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900">
+                        <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm text-amber-700 dark:text-amber-400">
+                            {buildsMissingResource} build(s) have expired logs (not retryable).
+                        </span>
+                    </div>
+                )}
+
+                {/* Retry Action - only for FAILED builds (retryable) */}
+                {onRetryFailed && buildsIngestionFailed > 0 && (
                     <Button
                         variant="outline"
                         size="sm"
@@ -104,10 +124,11 @@ export function VersionIngestionCard({
                         ) : (
                             <RotateCcw className="mr-2 h-4 w-4" />
                         )}
-                        Retry Failed ({buildsMissingResource})
+                        Retry Failed ({buildsIngestionFailed})
                     </Button>
                 )}
             </CardContent>
         </Card>
     );
 }
+

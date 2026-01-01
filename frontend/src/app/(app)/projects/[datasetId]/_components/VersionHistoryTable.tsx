@@ -110,10 +110,14 @@ export function VersionHistoryTable({
     // Status config
     const getStatusConfig = (status: string) => {
         const config: Record<string, { icon: typeof CheckCircle2; color: string; label: string }> = {
+            queued: { icon: Clock, color: "text-gray-500", label: "Queued" },
+            ingesting: { icon: Loader2, color: "text-blue-500", label: "Ingesting" },
+            ingested: { icon: CheckCircle2, color: "text-emerald-500", label: "Ingested" },
+            processing: { icon: Loader2, color: "text-purple-500", label: "Processing" },
             processed: { icon: CheckCircle2, color: "text-green-500", label: "Processed" },
             failed: { icon: XCircle, color: "text-red-500", label: "Failed" },
         };
-        return config[status] || config.failed;
+        return config[status] || { icon: Clock, color: "text-gray-400", label: status };
     };
 
     const formatOptions: { format: ExportFormat; label: string; icon: typeof FileText }[] = [
@@ -253,35 +257,32 @@ export function VersionHistoryTable({
                         </Table>
 
                         {/* Pagination */}
-                        {totalPages > 1 && (
-                            <div className="mt-4 flex items-center justify-between">
-                                <p className="text-sm text-muted-foreground">
-                                    Showing {startIndex + 1}-{Math.min(startIndex + ITEMS_PER_PAGE, displayVersions.length)} of{" "}
-                                    {displayVersions.length}
-                                </p>
-                                <div className="flex items-center gap-2">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                                        disabled={currentPage === 1}
-                                    >
-                                        <ChevronLeft className="h-4 w-4" />
-                                    </Button>
-                                    <span className="text-sm">
-                                        Page {currentPage} of {totalPages}
-                                    </span>
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                                        disabled={currentPage === totalPages}
-                                    >
-                                        <ChevronRight className="h-4 w-4" />
-                                    </Button>
-                                </div>
+                        <div className="mt-4 flex items-center justify-between border-t pt-4">
+                            <p className="text-sm text-muted-foreground">
+                                Showing {paginatedVersions.length} of {displayVersions.length} versions
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                </Button>
+                                <span className="text-sm">
+                                    Page {currentPage} of {Math.max(1, totalPages)}
+                                </span>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage >= totalPages || totalPages <= 1}
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </Button>
                             </div>
-                        )}
+                        </div>
                     </>
                 )
                 }

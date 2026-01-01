@@ -264,8 +264,8 @@ class FeatureVectorRepository(BaseRepository[FeatureVector]):
             feature_vector = FeatureVector(**feature_doc)
             result.append(feature_vector)
 
-            # Get the tr_prev_build from features to continue the chain
-            current_ci_run_id = feature_vector.features.get("tr_prev_build")
+            # Get the tr_prev_build from the dedicated field (or fallback to features)
+            current_ci_run_id = feature_vector.tr_prev_build or feature_vector.features.get("tr_prev_build")
 
         return result
 

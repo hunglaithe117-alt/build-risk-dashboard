@@ -48,6 +48,16 @@ BUILD_FEATURES: Dict[str, FeatureDefinition] = {
         required_resources=[FeatureResource.BUILD_RUN],
         valid_values=["passed", "failed", "cancelled", "errored", "unknown"],
     ),
+    "tr_status_num": FeatureDefinition(
+        name="tr_status_num",
+        display_name="Build Status Numeric",
+        description="Numeric build status for model input (0=passed, 1=failed, -1=other)",
+        category=FeatureCategory.WORKFLOW,
+        data_type=FeatureDataType.INTEGER,
+        extractor_node="build",
+        required_resources=[FeatureResource.BUILD_RUN],
+        valid_values=[-1, 0, 1],
+    ),
     "tr_duration": FeatureDefinition(
         name="tr_duration",
         display_name="Build Duration",

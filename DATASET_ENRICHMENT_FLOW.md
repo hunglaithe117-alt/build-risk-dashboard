@@ -267,7 +267,7 @@ if has_sonarqube or has_trivy:
 | `download_logs_chunk` | ingestion | 300s | 2 | Download logs từ CI (parallel chunks) |
 | `aggregate_ingestion_results` | processing | 60s | N/A | Aggregate results (chord callback) |
 | `aggregate_logs_results` | ingestion | 120s | N/A | Aggregate log chunk results (chord callback) |
-| `reingest_missing_resource_builds` | processing | 360s | N/A | Retry failed ingestion |
+| `reingest_failed_builds` | processing | 360s | N/A | Retry FAILED builds (not MISSING_RESOURCE) |
 
 ### 2.3 Ingestion Workflow Diagram
 
@@ -537,24 +537,26 @@ def aggregate_ingestion_results(
 
 **Matching Model Pipeline**: Cùng design pattern với model_pipeline
 
-### 2.10 Retry Missing Resources
+### 2.10 Retry Failed Builds
 
-**reingest_missing_resource_builds** task:
+**reingest_failed_builds** task:
 
 ```python
-def reingest_missing_resource_builds(version_id: str):
-    # Find MISSING_RESOURCE builds
-    missing = find_by_status(version_id, MISSING_RESOURCE)
+def reingest_failed_builds(version_id: str):
+    # Find FAILED builds (retryable - actual errors like timeout, network)
+    # Does NOT retry MISSING_RESOURCE (not retryable - logs expired)
+    failed = find_by_status(version_id, FAILED)
     
-    # Reset them to PENDING
-    for build in missing:
+    # Reset them to PENDING, clear error fields
+    for build in failed:
         update_status(build.id, PENDING)
+        clear_error_fields(build.id)
     
     # Re-trigger ingestion
     start_enrichment.delay(version_id)
 ```
 
-Cho phép user thử lại ingestion nếu có transient errors.
+Cho phép user thử lại ingestion cho builds có transient errors (timeout, network).
 
 ---
 
@@ -1171,7 +1173,8 @@ filtered_metrics = _filter_trivy_metrics(
     status: "queued|ingesting|ingested|processing|processed|failed",
     builds_total: int,              # Total builds to process
     builds_ingested: int,           # Successfully ingested builds
-    builds_missing_resource: int,   # Builds with missing resources (graceful)
+    builds_missing_resource: int,   # Builds with missing resources (not retryable)
+    builds_ingestion_failed: int,   # Builds that failed ingestion (retryable)
     builds_processed: int,          # Successfully processed builds
     builds_processing_failed: int,  # Failed during feature extraction
     ingestion_progress: int,        # 0-100 percentage
@@ -1194,13 +1197,17 @@ filtered_metrics = _filter_trivy_metrics(
     raw_build_run_id: ObjectId,
     
     # Status
-    status: "pending|ingesting|ingested|missing_resource",
+    status: "pending|ingesting|ingested|missing_resource|failed",
     resource_status: {
         "git_history": {"status": "...", "error": "..."},
         "git_worktree": {...},
         "build_logs": {...},
     },
     required_resources: List[str],
+    
+    # Error tracking
+    ingestion_error: str,  # Detailed error message
+    failed_at: datetime,   # When the failure occurred
     
     # Denormalized fields
     ci_run_id: str,
@@ -1380,18 +1387,24 @@ Key repositories for enrichment:
 
 ### Phase 2: Ingestion Errors
 
-| Error | Handling | Recovery |
-|------|----------|----------|
-| Clone timeout | Retry up to 3 times | Automatic retry, then mark MISSING_RESOURCE |
-| Worktree creation fail | Mark specific commits as failed | Retry via reingest_missing_resource_builds |
-| Log download expired | Mark specific builds as failed | Logs may re-appear on CI, reingest to retry |
-| Fork commit replay fail | Skip worktree, mark MISSING_RESOURCE | User can retry if fork is updated |
-| Chord failure (worker crash) | handle_enrichment_chord_error callback | Mark all INGESTING as MISSING_RESOURCE |
+**Error Classification:**
+- **FAILED**: Actual error (timeout, network, exception) - **Retryable**
+- **MISSING_RESOURCE**: Expected condition (logs expired 90+ days) - **Not retryable**
+
+| Error | Status | Retryable | Recovery |
+|------|--------|-----------|----------|
+| Clone timeout | FAILED | ✅ | Automatic retry, then `reingest_failed_builds` |
+| Worktree creation fail | FAILED | ✅ | `reingest_failed_builds` |
+| Log download failed | FAILED | ✅ | `reingest_failed_builds` |
+| Logs expired (90+ days) | MISSING_RESOURCE | ❌ | Cannot retry - logs permanently unavailable |
+| Fork commit replay fail | MISSING_RESOURCE | ❌ | User can retry if fork is updated |
+| Chord failure (worker crash) | FAILED | ✅ | `reingest_failed_builds` |
 
 **Chord Error Callback**:
 ```
 If ANY task in chord fails:
-    ├─ Mark all IN_PROGRESS builds as MISSING_RESOURCE
+    ├─ Mark all IN_PROGRESS builds as FAILED (retryable)
+    ├─ Store error details (ingestion_error, failed_at)
     ├─ Check if any builds made it to INGESTED
     ├─ If yes → Version status = INGESTED (can proceed)
     ├─ If no → Version status = FAILED (cannot proceed)
@@ -1433,8 +1446,8 @@ countdown = min(60 * (2**retry_count), max_countdown)
 - start_sonar_scan: 2 retries
 
 **User-Triggered Retries**:
-- `reingest_missing_resource_builds` - Retry ingestion
-- `reprocess_failed_enrichment_builds` - Retry processing
+- `reingest_failed_builds` - Retry FAILED ingestion builds (not MISSING_RESOURCE)
+- `reprocess_failed_enrichment_builds` - Retry failed processing
 - Manual scan retry via UI (for SonarQube)
 
 ---
@@ -1551,8 +1564,9 @@ SCAN_BATCH_DELAY_SECONDS = 0.5
 VALIDATION PHASE (validate repos & builds)
     ↓
 INGESTION PHASE (clone, worktree, logs)
-    ├─ Graceful: INGESTED or MISSING_RESOURCE
-    └─ Can retry: reingest_missing_resource_builds
+    ├─ Success: INGESTED
+    ├─ Actual error: FAILED (retryable via reingest_failed_builds)
+    └─ Expected: MISSING_RESOURCE (not retryable - logs expired)
     ↓
 PROCESSING PHASE (extract features)
     ├─ Async: Scan metrics (Trivy, SonarQube)

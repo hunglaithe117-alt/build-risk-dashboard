@@ -82,7 +82,7 @@ FEATURES_REPO = {
     "gh_sloc",
     "gh_test_lines_per_kloc",
     "gh_test_cases_per_kloc",
-    "gh_asserts_case_per_kloc",
+    "gh_asserts_cases_per_kloc",
     # Metadata
     "gh_project_name",
     "gh_is_pr",

@@ -86,6 +86,48 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
 
         return self.find_many({"dataset_version_id": oid})
 
+    def find_by_version_with_features(
+        self,
+        dataset_version_id: str | ObjectId,
+    ) -> List[Dict[str, Any]]:
+        """
+        Find all builds for a version with features from FeatureVector.
+
+        Returns dicts with merged build info + features (for statistics).
+        """
+        oid = self._to_object_id(dataset_version_id)
+        if not oid:
+            return []
+
+        pipeline = [
+            {"$match": {"dataset_version_id": oid}},
+            {
+                "$lookup": {
+                    "from": "feature_vectors",
+                    "localField": "feature_vector_id",
+                    "foreignField": "_id",
+                    "as": "fv",
+                }
+            },
+            {"$unwind": {"path": "$fv", "preserveNullAndEmptyArrays": True}},
+            {
+                "$project": {
+                    "_id": 1,
+                    "extraction_status": 1,
+                    "extraction_error": 1,
+                    "enriched_at": 1,
+                    "feature_vector_id": 1,
+                    # Features from FeatureVector
+                    "features": {"$ifNull": ["$fv.features", {}]},
+                    "feature_count": {"$ifNull": ["$fv.feature_count", 0]},
+                    "skipped_features": {"$ifNull": ["$fv.skipped_features", []]},
+                    "missing_resources": {"$ifNull": ["$fv.missing_resources", []]},
+                }
+            },
+        ]
+
+        return list(self.collection.aggregate(pipeline))
+
     def find_by_import_build(
         self,
         import_build_id: str | ObjectId,

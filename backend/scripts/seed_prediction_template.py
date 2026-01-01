@@ -6,7 +6,7 @@ This minimal template ensures efficient ingestion by only fetching required reso
 
 Run with: python -m scripts.seed_prediction_template
 
-Features are extracted directly from RiskModelService's TEMPORAL_FEATURES and STATIC_FEATURES.
+Features are extracted directly from the trained model (hunglt/training.py).
 """
 
 import logging
@@ -20,10 +20,11 @@ logger = logging.getLogger(__name__)
 
 # =============================================================================
 # PREDICTION-REQUIRED FEATURES
-# These match exactly what RiskModelService uses for inference.
+# These match exactly what the Bayesian LSTM model uses for inference.
+# Ref: hunglt/training.py, backend/app/services/risk_model/inference.py
 # =============================================================================
 
-# Temporal features (used in LSTM sequence)
+# Temporal features (used in LSTM sequence - build history patterns)
 TEMPORAL_FEATURES = {
     "is_prev_failed",
     "prev_fail_streak",
@@ -32,38 +33,54 @@ TEMPORAL_FEATURES = {
     "time_since_prev_build",
 }
 
-# Static features (used as point-in-time values)
+# Static features (point-in-time values for current build)
 STATIC_FEATURES = {
-    # Git/Churn features
+    # Code churn features
     "git_diff_src_churn",
-    "change_entropy",
+    "gh_diff_files_added",
+    "gh_diff_files_deleted",
+    "gh_diff_files_modified",
+    "gh_diff_tests_added",
+    "gh_diff_tests_deleted",
+    "gh_diff_src_files",
+    "gh_diff_doc_files",
+    "gh_diff_other_files",
+    "gh_num_commits_on_files_touched",
     "files_modified_ratio",
+    "change_entropy",
     "churn_ratio_vs_avg",
-    # Repo metrics
+    # Repository metrics
     "gh_sloc",
     "gh_repo_age",
+    "gh_repo_num_commits",
     "gh_test_lines_per_kloc",
+    "gh_test_cases_per_kloc",
+    "gh_asserts_cases_per_kloc",  # Note: plural 'cases' to match model training
+    # Team features
     "gh_team_size",
-    # Author features
     "author_ownership",
     "is_new_contributor",
     "days_since_last_author_commit",
-    # PR/Build metadata
-    "gh_is_pr",
-    "gh_has_bug_label",
-    # Test/Duration features
+    # Test metrics from build logs
+    "tr_log_num_jobs",
+    "tr_log_tests_run_sum",
+    "tr_log_tests_failed_sum",
+    "tr_log_tests_skipped_sum",
+    "tr_log_tests_ok_sum",
+    "tr_log_testduration_sum",
     "tr_log_tests_fail_rate",
     "tr_duration",
+    "tr_status_num",
     # Time features
     "build_time_sin",
     "build_time_cos",
     "build_hour_risk_score",
 }
 
-# Additional features needed for temporal chain resolution
+# Chain features needed for temporal resolution
 CHAIN_FEATURES = {
     "tr_prev_build",  # Required for temporal feature chain
-    "tr_status",  # Build status
+    "tr_status",  # Build status (for tr_status_num derivation)
 }
 
 # All features for prediction

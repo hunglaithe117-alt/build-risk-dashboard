@@ -29,6 +29,21 @@ class SonarCommitScanRepository(BaseRepository[SonarCommitScan]):
             query["status"] = status.value
         return self.find_many(query, sort=[("created_at", -1)])
 
+    def list_by_version(
+        self,
+        version_id: ObjectId,
+        skip: int = 0,
+        limit: int = 10,
+        status: Optional[SonarScanStatus] = None,
+    ) -> tuple[List[SonarCommitScan], int]:
+        """List scans for a version with pagination. Returns (items, total)."""
+        query = {"dataset_version_id": version_id}
+        if status:
+            query["status"] = status.value
+        total = self.collection.count_documents(query)
+        items = list(self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit))
+        return [SonarCommitScan(**doc) for doc in items], total
+
     def count_by_version(self, version_id: ObjectId) -> int:
         """Count all scans for a version."""
         return self.collection.count_documents({"dataset_version_id": version_id})

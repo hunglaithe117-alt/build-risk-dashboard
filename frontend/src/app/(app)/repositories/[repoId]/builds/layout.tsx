@@ -8,7 +8,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { reposApi } from "@/lib/api";
-import { useRepo } from "../layout";
+import { useRepo } from "../repo-context";
 
 import { ExportPanel } from "../builds/_components/ExportPanel";
 

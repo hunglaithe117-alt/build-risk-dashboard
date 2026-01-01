@@ -109,13 +109,18 @@ class ModelRepoConfig(FeatureConfigBase):
     # Ingestion phase counter
     builds_missing_resource: int = Field(
         default=0,
-        description="Number of builds with missing resources during ingestion (logs, worktree)",
+        description="Builds with missing resources (logs expired, commit not found). "
+        "Not retryable.",
+    )
+    builds_ingestion_failed: int = Field(
+        default=0,
+        description="Builds that failed with actual errors (timeout, network). Retryable.",
     )
 
     # Processing phase counter (extraction + prediction failures)
     builds_processing_failed: int = Field(
         default=0,
-        description="Number of builds that failed during processing (extraction or prediction)",
+        description="Builds that failed during processing (extraction or prediction).",
     )
 
     last_processed_import_build_id: Optional[PyObjectId] = Field(

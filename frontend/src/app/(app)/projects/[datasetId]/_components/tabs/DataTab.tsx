@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
     Card,
     CardContent,
@@ -18,6 +19,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { useDebounce } from "@/hooks/use-debounce";
 import type { DatasetRecord } from "@/types";
 import {
     ChevronLeft,
@@ -27,6 +29,7 @@ import {
     Loader2,
     RefreshCw,
     AlertTriangle,
+    Search,
 } from "lucide-react";
 
 interface DataTabProps {
@@ -69,6 +72,10 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
     const [total, setTotal] = useState(0);
     const pageSize = 20;
 
+    // Search state
+    const [searchQuery, setSearchQuery] = useState("");
+    const debouncedSearch = useDebounce(searchQuery, 300);
+
     const isValidated = dataset.validation_status === "completed";
 
     // Load builds
@@ -76,7 +83,11 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
         if (!isValidated) return;
         setLoadingBuilds(true);
         try {
-            const buildsRes = await api.get<{ items: BuildItem[]; total: number }>(`/datasets/${datasetId}/builds?skip=${page * pageSize}&limit=${pageSize}&status_filter=found`);
+            let url = `/datasets/${datasetId}/builds?skip=${page * pageSize}&limit=${pageSize}&status_filter=found`;
+            if (debouncedSearch) {
+                url += `&q=${encodeURIComponent(debouncedSearch)}`;
+            }
+            const buildsRes = await api.get<{ items: BuildItem[]; total: number }>(url);
             setBuilds(buildsRes.data.items);
             setTotal(buildsRes.data.total);
         } catch (err) {
@@ -84,7 +95,12 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
         } finally {
             setLoadingBuilds(false);
         }
-    }, [datasetId, page, isValidated]);
+    }, [datasetId, page, isValidated, debouncedSearch]);
+
+    // Reset page when search changes
+    useEffect(() => {
+        setPage(0);
+    }, [debouncedSearch]);
 
     // Initial load
     useEffect(() => {
@@ -108,14 +124,31 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
 
     return (
         <Card>
-            <CardHeader className="border-b px-4 py-3 flex flex-row items-center justify-between">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                    <FolderGit2 className="h-4 w-4" />
-                    Build List
-                </CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => { onRefresh(); loadBuilds(); }} className="h-8 w-8 p-0">
-                    <RefreshCw className={`h-4 w-4 ${loadingBuilds ? "animate-spin" : ""}`} />
-                </Button>
+            <CardHeader className="border-b px-4 py-3">
+                <div className="flex items-center justify-between">
+                    <CardTitle className="text-base font-medium flex items-center gap-2">
+                        <FolderGit2 className="h-4 w-4" />
+                        Build List
+                        {total > 0 && (
+                            <Badge variant="secondary" className="ml-2 text-xs">
+                                {total}
+                            </Badge>
+                        )}
+                    </CardTitle>
+                    <Button variant="ghost" size="sm" onClick={() => { onRefresh(); loadBuilds(); }} className="h-8 w-8 p-0">
+                        <RefreshCw className={`h-4 w-4 ${loadingBuilds ? "animate-spin" : ""}`} />
+                    </Button>
+                </div>
+                {/* Search Input */}
+                <div className="mt-3 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Search by repository, build ID, or commit SHA..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9 h-9"
+                    />
+                </div>
             </CardHeader>
             <CardContent className="p-0">
                 {loadingBuilds ? (
@@ -164,7 +197,7 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
                                                 </TableCell>
                                                 <TableCell>
                                                     <Badge variant="secondary" className={`text-[10px] px-1.5 ${build.conclusion === "success" ? "bg-green-50 text-green-700 border-green-200" :
-                                                            build.conclusion === "failure" ? "bg-red-50 text-red-700 border-red-200" : ""
+                                                        build.conclusion === "failure" ? "bg-red-50 text-red-700 border-red-200" : ""
                                                         }`}>
                                                         {build.conclusion || build.status}
                                                     </Badge>
@@ -186,21 +219,29 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
                             </Table>
                         </div>
 
-                        {total > pageSize && (
-                            <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50 dark:bg-slate-900/50">
+                        {/* Pagination - always visible for consistency */}
+                        <div className="flex items-center justify-between px-4 py-3 border-t bg-slate-50/50 dark:bg-slate-900/50">
+                            <span className="text-xs text-muted-foreground">
+                                {total > 0
+                                    ? `Showing ${page * pageSize + 1}-${Math.min((page + 1) * pageSize, total)} of ${total} validated builds`
+                                    : "No validated builds"}
+                            </span>
+                            <div className="flex items-center gap-2">
                                 <span className="text-xs text-muted-foreground">
-                                    Showing {page * pageSize + 1}-{Math.min((page + 1) * pageSize, total)} of {total}
+                                    Page {page + 1} of {Math.max(Math.ceil(total / pageSize), 1)}
                                 </span>
-                                <div className="flex gap-2">
-                                    <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} className="h-7 w-7 p-0">
+                                <div className="flex gap-1">
+                                    <Button variant="outline" size="sm" disabled={page === 0 || loadingBuilds} onClick={() => setPage(p => p - 1)} className="h-7 px-2">
                                         <ChevronLeft className="h-4 w-4" />
+                                        <span className="ml-1 text-xs">Previous</span>
                                     </Button>
-                                    <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total} onClick={() => setPage(p => p + 1)} className="h-7 w-7 p-0">
+                                    <Button variant="outline" size="sm" disabled={(page + 1) * pageSize >= total || loadingBuilds} onClick={() => setPage(p => p + 1)} className="h-7 px-2">
+                                        <span className="mr-1 text-xs">Next</span>
                                         <ChevronRight className="h-4 w-4" />
                                     </Button>
                                 </div>
                             </div>
-                        )}
+                        </div>
                     </div>
                 )}
             </CardContent>

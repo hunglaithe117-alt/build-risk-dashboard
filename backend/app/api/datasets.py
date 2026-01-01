@@ -135,6 +135,7 @@ def list_dataset_builds(
     status_filter: str | None = Query(
         default=None, description="Filter by status: found/not_found/error"
     ),
+    q: str | None = Query(default=None, description="Search by repo name, build ID, or commit SHA"),
     db: Database = Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
@@ -148,6 +149,7 @@ def list_dataset_builds(
         skip=skip,
         limit=limit,
         status_filter=status_filter,
+        q=q,
     )
 
 

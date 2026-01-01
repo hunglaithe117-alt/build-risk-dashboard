@@ -30,8 +30,9 @@ class DatasetImportBuildStatus(str, Enum):
     INGESTING = "ingesting"  # Ingestion in progress
     INGESTED = "ingested"  # Resources ready for enrichment
 
-    # Missing resources (graceful degradation - can still process)
-    MISSING_RESOURCE = "missing_resource"  # Some resources unavailable but can still process
+    # Error states
+    MISSING_RESOURCE = "missing_resource"  # Expected: logs expired (not retryable)
+    FAILED = "failed"  # Actual error: timeout, network (retryable)
 
 
 class ResourceStatus(str, Enum):
@@ -135,4 +136,14 @@ class DatasetImportBuild(BaseEntity):
     ingested_at: Optional[datetime] = Field(
         None,
         description="When ingestion completed successfully",
+    )
+
+    # Error tracking fields
+    ingestion_error: Optional[str] = Field(
+        None,
+        description="Detailed error message if ingestion failed.",
+    )
+    failed_at: Optional[datetime] = Field(
+        None,
+        description="Timestamp when the build failed",
     )

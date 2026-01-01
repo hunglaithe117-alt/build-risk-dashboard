@@ -258,6 +258,26 @@ function VersionCard({ version, onView, onDownload, onDelete, onRetryProcessing 
         string,
         { icon: typeof CheckCircle2; color: string; label: string }
     > = {
+        queued: {
+            icon: Clock,
+            color: "text-gray-500",
+            label: "Queued",
+        },
+        ingesting: {
+            icon: Loader2,
+            color: "text-blue-500",
+            label: "Ingesting",
+        },
+        ingested: {
+            icon: CheckCircle2,
+            color: "text-emerald-500",
+            label: "Ingested",
+        },
+        processing: {
+            icon: Loader2,
+            color: "text-purple-500",
+            label: "Processing",
+        },
         processed: {
             icon: CheckCircle2,
             color: "text-green-500",
@@ -270,7 +290,7 @@ function VersionCard({ version, onView, onDownload, onDelete, onRetryProcessing 
         },
     };
 
-    const status = statusConfig[version.status] || statusConfig.failed;
+    const status = statusConfig[version.status] || { icon: Clock, color: "text-gray-400", label: version.status };
     const StatusIcon = status.icon;
 
     // Format relative time

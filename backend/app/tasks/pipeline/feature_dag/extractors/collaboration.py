@@ -103,8 +103,13 @@ def prev_build_history_features(
                 }
             )
 
-            if feature_doc and feature_doc.get("features", {}).get("tr_prev_build"):
-                current_build_id = feature_doc["features"]["tr_prev_build"]
+            # Use dedicated tr_prev_build field (or fallback to features dict)
+            if feature_doc:
+                next_build_id = feature_doc.get("tr_prev_build") or feature_doc.get("features", {}).get("tr_prev_build")
+                if next_build_id:
+                    current_build_id = next_build_id
+                else:
+                    break
             else:
                 break
 

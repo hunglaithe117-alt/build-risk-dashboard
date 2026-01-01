@@ -128,7 +128,9 @@ class PredictionService:
         Normalize features for model input using the model's scalers.
 
         This performs ACTUAL normalization/standardization using the same
-        scalers that RiskModelService uses for prediction.
+        scalers that RiskModelService uses for prediction:
+        1. Apply log1p transformation to specified features
+        2. Apply standard scaling using trained scalers
 
         Args:
             features: Raw feature dict from Hamilton DAG
@@ -144,14 +146,25 @@ class PredictionService:
             import numpy as np
             import pandas as pd
 
-            from app.services.risk_model.inference import STATIC_FEATURES, TEMPORAL_FEATURES
+            from app.services.risk_model.inference import (
+                LOG1P_FEATURES,
+                STATIC_FEATURES,
+                TEMPORAL_FEATURES,
+            )
 
             model_service = PredictionService._risk_model_service
+
+            # Apply log1p transformation first
+            features_copy = features.copy()
+            for f in LOG1P_FEATURES:
+                if f in features_copy and features_copy[f] is not None:
+                    val = float(features_copy[f])
+                    features_copy[f] = np.log1p(max(0, val))
 
             # Extract temporal features
             temporal_values = []
             for f in TEMPORAL_FEATURES:
-                val = features.get(f)
+                val = features_copy.get(f)
                 if val is None:
                     val = 0.0
                 elif isinstance(val, bool):
@@ -161,7 +174,7 @@ class PredictionService:
             # Extract static features
             static_values = []
             for f in STATIC_FEATURES:
-                val = features.get(f)
+                val = features_copy.get(f)
                 if val is None:
                     val = 0.0
                 elif isinstance(val, bool):
@@ -208,7 +221,7 @@ class PredictionService:
             from app.services.risk_model.inference import STATIC_FEATURES, TEMPORAL_FEATURES
 
             normalized = {}
-            for f in TEMPORAL_FEATURES + STATIC_FEATURES:
+            for f in list(TEMPORAL_FEATURES) + list(STATIC_FEATURES):
                 val = features.get(f)
                 if val is None:
                     normalized[f] = 0.0

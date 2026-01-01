@@ -14,19 +14,23 @@ Phase 1 (ingestion) is in enrichment_ingestion.py.
 """
 
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from bson import ObjectId
 from celery import chain
+from celery.canvas import group
 
 from app.celery_app import celery_app
+from app.config import settings
 from app.core.tracing import TracingContext
 from app.entities.dataset_version import VersionStatus
 from app.entities.enums import ExtractionStatus
 from app.entities.feature_audit_log import AuditLogCategory
 from app.paths import EXPORTS_DIR
+from app.repositories.dataset_build_repository import DatasetBuildRepository
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.dataset_import_build import DatasetImportBuildRepository
 from app.repositories.dataset_version import DatasetVersionRepository
@@ -826,3 +830,197 @@ def process_version_export_job(self: PipelineTask, job_id: str) -> Dict[str, Any
         logger.error(f"Export job {job_id} failed: {exc}")
         job_repo.update_status(job_id, "failed", error_message=str(exc))
         raise
+
+
+@celery_app.task(
+    bind=True,
+    base=EnrichmentTask,
+    name="app.tasks.version_enrichment.dispatch_version_scans",
+    queue="processing",
+    soft_time_limit=300,
+    time_limit=600,
+)
+def dispatch_version_scans(
+    self: PipelineTask,
+    version_id: str,
+    correlation_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Dispatch scans for all unique commits in version's validated builds.
+
+    Uses chunked processing to handle:
+    1. Paginate through builds using cursor pagination
+    2. Batch query RawBuildRuns and RawRepositories
+    3. Dispatch scan tasks in configurable batches
+
+    Config settings:
+        SCAN_BUILDS_PER_QUERY: Builds fetched per paginated query (default: 1000)
+        SCAN_COMMITS_PER_BATCH: Commits dispatched per batch (default: 100)
+        SCAN_BATCH_DELAY_SECONDS: Delay between batch dispatches (default: 0.5)
+    """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
+    version_repo = DatasetVersionRepository(self.db)
+    dataset_build_repo = DatasetBuildRepository(self.db)
+    raw_build_run_repo = RawBuildRunRepository(self.db)
+    raw_repo_repo = RawRepositoryRepository(self.db)
+
+    version = version_repo.find_by_id(version_id)
+    if not version:
+        return {"status": "error", "error": "Version not found"}
+
+    has_sonar = bool(version.scan_metrics.get("sonarqube"))
+    has_trivy = bool(version.scan_metrics.get("trivy"))
+
+    if not has_sonar and not has_trivy:
+        return {"status": "skipped", "reason": "No scan metrics selected"}
+
+    # Track unique commits to scan (avoid duplicates across pages)
+    commits_to_scan: Dict[tuple, Dict[str, Any]] = {}  # {(repo_id, commit_sha): commit_info}
+    repo_cache: Dict[str, Any] = {}  # Cache RawRepository lookups
+
+    # Config
+    builds_per_query = settings.SCAN_BUILDS_PER_QUERY
+    commits_per_batch = settings.SCAN_COMMITS_PER_BATCH
+    batch_delay = settings.SCAN_BATCH_DELAY_SECONDS
+
+    total_builds_processed = 0
+    total_batches_dispatched = 0
+
+    logger.info(
+        f"{corr_prefix} Starting chunked scan dispatch for version {version_id[:8]} "
+        f"(builds_per_query={builds_per_query}, commits_per_batch={commits_per_batch})"
+    )
+
+    # Import scan helper here
+    from app.tasks.enrichment_scan_helpers import dispatch_scan_for_commit
+
+    # Iterate through builds using cursor pagination
+    for build_batch in dataset_build_repo.iterate_builds_with_run_ids_paginated(
+        dataset_id=str(version.dataset_id),
+        batch_size=builds_per_query,
+    ):
+        total_builds_processed += len(build_batch)
+
+        # Collect workflow_run_ids from this batch (these are RawBuildRun ObjectIds)
+        workflow_run_ids = [b.raw_run_id for b in build_batch if b.raw_run_id]
+        if not workflow_run_ids:
+            continue
+
+        # Batch query RawBuildRuns for this page
+        raw_build_runs = raw_build_run_repo.find_by_ids(workflow_run_ids)
+        build_run_map = {str(r.id): r for r in raw_build_runs}
+
+        # Collect unique repo IDs needed for this batch
+        repo_ids_needed = set()
+        for build in build_batch:
+            if not build.raw_run_id:
+                continue
+            raw_build_run = build_run_map.get(str(build.raw_run_id))
+            if raw_build_run:
+                repo_id = str(raw_build_run.raw_repo_id)
+                if repo_id not in repo_cache:
+                    repo_ids_needed.add(repo_id)
+
+        # Batch query RawRepositories (only ones not in cache)
+        if repo_ids_needed:
+            raw_repos = raw_repo_repo.find_by_ids(list(repo_ids_needed))
+            for repo in raw_repos:
+                repo_cache[str(repo.id)] = repo
+
+        # Process builds and collect unique commits
+        for build in build_batch:
+            if not build.raw_run_id:
+                continue
+            raw_build_run = build_run_map.get(str(build.raw_run_id))
+            if not raw_build_run:
+                continue
+
+            repo_id = str(raw_build_run.raw_repo_id)
+            raw_repo = repo_cache.get(repo_id)
+            if not raw_repo:
+                continue
+
+            key = (repo_id, raw_build_run.commit_sha)
+            if key not in commits_to_scan:
+                commits_to_scan[key] = {
+                    "raw_repo_id": repo_id,
+                    "commit_sha": raw_build_run.commit_sha,
+                    "github_repo_id": raw_repo.github_repo_id,
+                    "repo_full_name": raw_repo.full_name,
+                }
+
+        # Check if we should dispatch a batch
+        if len(commits_to_scan) >= commits_per_batch:
+            batch_count = _dispatch_scan_batch(
+                version_id=version_id,
+                commits=list(commits_to_scan.values())[:commits_per_batch],
+                dispatch_scan_for_commit=dispatch_scan_for_commit,
+                corr_prefix=corr_prefix,
+            )
+            total_batches_dispatched += 1
+
+            # Remove dispatched commits
+            dispatched_keys = list(commits_to_scan.keys())[:commits_per_batch]
+            for k in dispatched_keys:
+                del commits_to_scan[k]
+
+            # Rate limiting between batches
+            if batch_delay > 0:
+                time.sleep(batch_delay)
+
+            logger.info(
+                f"{corr_prefix} Dispatched batch {total_batches_dispatched}: "
+                f"{batch_count} scan tasks "
+                f"(processed {total_builds_processed} builds so far)"
+            )
+
+    # Dispatch remaining commits
+    if commits_to_scan:
+        batch_count = _dispatch_scan_batch(
+            version_id=version_id,
+            commits=list(commits_to_scan.values()),
+            dispatch_scan_for_commit=dispatch_scan_for_commit,
+            corr_prefix=corr_prefix,
+        )
+        total_batches_dispatched += 1
+        logger.info(f"{corr_prefix} Dispatched final batch: {batch_count} scan tasks")
+
+    logger.info(
+        f"{corr_prefix} Scan dispatch complete: "
+        f"{total_builds_processed} builds processed, "
+        f"{total_batches_dispatched} batches dispatched"
+    )
+
+    return {
+        "status": "dispatched",
+        "builds_processed": total_builds_processed,
+        "batches_dispatched": total_batches_dispatched,
+        "has_sonar": has_sonar,
+        "has_trivy": has_trivy,
+    }
+
+
+def _dispatch_scan_batch(
+    version_id: str,
+    commits: List[Dict[str, Any]],
+    dispatch_scan_for_commit,
+    corr_prefix: str,
+) -> int:
+    """Helper to dispatch a batch of scan tasks."""
+    scan_tasks = []
+    for commit_info in commits:
+        scan_tasks.append(
+            dispatch_scan_for_commit.si(
+                version_id=version_id,
+                raw_repo_id=commit_info["raw_repo_id"],
+                github_repo_id=commit_info["github_repo_id"],
+                commit_sha=commit_info["commit_sha"],
+                repo_full_name=commit_info["repo_full_name"],
+            )
+        )
+
+    if scan_tasks:
+        group(scan_tasks).apply_async()
+
+    return len(scan_tasks)

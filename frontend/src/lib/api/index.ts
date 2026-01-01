@@ -62,6 +62,7 @@ export type {
     ScanResultsResponse,
     ScanSummaryResponse,
     EnrichedBuildData,
+    ImportBuildItem,
     VersionDataResponse,
     NodeExecutionDetail,
     AuditLogDetail,
@@ -69,6 +70,7 @@ export type {
     EnrichmentBuildDetail,
     EnrichmentBuildDetailResponse,
 } from './versions';
+
 
 export type {
     QualityIssue,

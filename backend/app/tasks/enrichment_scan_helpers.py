@@ -99,6 +99,21 @@ def dispatch_scan_for_commit(
     correlation_id = TracingContext.get_correlation_id()
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
 
+    # Check if worktree exists before dispatching any scans
+    from app.paths import get_worktree_path
+
+    worktree_path = get_worktree_path(github_repo_id, commit_sha)
+    if not worktree_path.exists():
+        logger.warning(
+            f"{corr_prefix} Skipping scans for {commit_sha[:8]} - "
+            f"worktree not found at {worktree_path}"
+        )
+        return {
+            "status": "skipped",
+            "reason": "worktree_not_found",
+            "commit_sha": commit_sha,
+        }
+
     version_repo = DatasetVersionRepository(self.db)
 
     version = version_repo.find_by_id(version_id)

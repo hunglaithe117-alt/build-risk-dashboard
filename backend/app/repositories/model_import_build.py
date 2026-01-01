@@ -97,7 +97,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
     def find_missing_resource_builds(
         self, config_id: str, after_id: Optional[ObjectId] = None
     ) -> List[ModelImportBuild]:
-        """Find builds with missing resources for retry.
+        """Find builds with missing resources (expected, not retryable).
 
         Args:
             config_id: ModelRepoConfig ID
@@ -110,6 +110,46 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         if after_id:
             query["_id"] = {"$gt": after_id}
         return self.find_many(query)
+
+    def find_failed_builds(
+        self, config_id: str, after_id: Optional[ObjectId] = None
+    ) -> List[ModelImportBuild]:
+        """Find builds with actual failures (retryable).
+
+        Args:
+            config_id: ModelRepoConfig ID
+            after_id: Only return builds with _id > after_id (for checkpoint filtering)
+
+        Returns:
+            List of builds with FAILED status that can be retried
+        """
+        query = {
+            "model_repo_config_id": ObjectId(config_id),
+            "status": ModelImportBuildStatus.FAILED.value,
+        }
+        if after_id:
+            query["_id"] = {"$gt": after_id}
+        return self.find_many(query)
+
+    def count_failed_after_checkpoint(
+        self, config_id: str, checkpoint_id: Optional[ObjectId] = None
+    ) -> int:
+        """Count failed builds after checkpoint.
+
+        Args:
+            config_id: ModelRepoConfig ID
+            checkpoint_id: Only count builds with _id > checkpoint_id
+
+        Returns:
+            Count of failed builds that can be retried
+        """
+        query = {
+            "model_repo_config_id": ObjectId(config_id),
+            "status": ModelImportBuildStatus.FAILED.value,
+        }
+        if checkpoint_id:
+            query["_id"] = {"$gt": checkpoint_id}
+        return self.collection.count_documents(query)
 
     def count_missing_resource_after_checkpoint(
         self, config_id: str, checkpoint_id: Optional[ObjectId] = None

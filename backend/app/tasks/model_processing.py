@@ -957,7 +957,9 @@ def predict_builds_batch(
                 )
                 continue
 
-            # Fetch temporal history (5 previous builds) for LSTM
+            # Fetch temporal history for LSTM
+            # Model uses seq_len=10, so fetch up to 9 previous builds
+            # (current build + 9 history = 10 total in sequence)
             temporal_history = None
             tr_prev_build_id = feature_vector.tr_prev_build
             if tr_prev_build_id:
@@ -965,7 +967,7 @@ def predict_builds_batch(
                     history_vectors = feature_vector_repo.walk_temporal_chain(
                         raw_repo_id=feature_vector.raw_repo_id,
                         starting_ci_run_id=tr_prev_build_id,
-                        max_depth=5,
+                        max_depth=9,  # seq_len - 1 = 10 - 1 = 9
                     )
                     if history_vectors:
                         temporal_history = [v.features for v in reversed(history_vectors)]

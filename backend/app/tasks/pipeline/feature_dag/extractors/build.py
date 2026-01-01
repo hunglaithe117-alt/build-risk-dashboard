@@ -68,6 +68,20 @@ def tr_status(build_run: BuildRunInput) -> str:
 
 
 @tag(group="build_log")
+def tr_status_num(tr_status: str) -> int:
+    """
+    Numeric build status for model input.
+
+    Maps:
+    - passed -> 0
+    - failed -> 1
+    - other -> -1
+    """
+    status_map = {"passed": 0, "failed": 1}
+    return status_map.get(tr_status, -1)
+
+
+@tag(group="build_log")
 def tr_duration(build_run: BuildRunInput) -> float:
     """
     Build duration in seconds.

@@ -61,8 +61,12 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
         return self.find_by_version(version_id, status=DatasetImportBuildStatus.INGESTED)
 
     def find_missing_resource_imports(self, version_id: str) -> List[DatasetImportBuild]:
-        """Find builds with missing resources for retry."""
+        """Find builds with missing resources (not retryable - logs expired, etc)."""
         return self.find_by_version(version_id, status=DatasetImportBuildStatus.MISSING_RESOURCE)
+
+    def find_failed_builds(self, version_id: str) -> List[DatasetImportBuild]:
+        """Find builds with FAILED status (retryable - actual errors like timeout, network)."""
+        return self.find_by_version(version_id, status=DatasetImportBuildStatus.FAILED)
 
     def count_by_status(self, version_id: str) -> dict:
         """
@@ -690,3 +694,77 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
             },
         ]
         return list(self.collection.aggregate(pipeline))
+
+    def list_by_version_with_details(
+        self,
+        version_id: ObjectId,
+        skip: int = 0,
+        limit: int = 20,
+        status_filter: Optional[str] = None,
+    ) -> tuple[list, int]:
+        """
+        List import builds for a version with RawBuildRun details.
+
+        Uses MongoDB aggregation to join with raw_build_runs collection.
+
+        Returns:
+            Tuple of (list of build dicts with RawBuildRun data, total count)
+        """
+        match_query: dict = {"dataset_version_id": version_id}
+        if status_filter:
+            match_query["status"] = status_filter
+
+        # Count total first
+        total = self.collection.count_documents(match_query)
+
+        # Build aggregation pipeline
+        pipeline = [
+            {"$match": match_query},
+            {"$sort": {"created_at": -1}},
+            {"$skip": skip},
+            {"$limit": limit},
+            # Join with raw_build_runs to get CI build details
+            {
+                "$lookup": {
+                    "from": "raw_build_runs",
+                    "localField": "raw_build_run_id",
+                    "foreignField": "_id",
+                    "as": "raw_build_run",
+                }
+            },
+            {"$unwind": {"path": "$raw_build_run", "preserveNullAndEmptyArrays": True}},
+            # Project final shape
+            {
+                "$project": {
+                    "_id": 1,
+                    "dataset_version_id": 1,
+                    "raw_build_run_id": 1,
+                    "raw_repo_id": 1,
+                    "status": 1,
+                    "resource_status": 1,
+                    "required_resources": 1,
+                    "ingested_at": 1,
+                    "created_at": 1,
+                    "ingestion_error": 1,
+                    # From RawBuildRun
+                    "ci_run_id": "$raw_build_run.ci_run_id",
+                    "build_number": "$raw_build_run.build_number",
+                    "commit_sha": "$raw_build_run.commit_sha",
+                    "branch": "$raw_build_run.branch",
+                    "conclusion": "$raw_build_run.conclusion",
+                    "web_url": "$raw_build_run.web_url",
+                    # Additional RawBuildRun fields for detailed view
+                    "commit_message": "$raw_build_run.commit_message",
+                    "commit_author": "$raw_build_run.commit_author",
+                    "duration_seconds": "$raw_build_run.duration_seconds",
+                    "started_at": "$raw_build_run.started_at",
+                    "completed_at": "$raw_build_run.completed_at",
+                    "provider": "$raw_build_run.provider",
+                    "logs_available": "$raw_build_run.logs_available",
+                    "logs_expired": "$raw_build_run.logs_expired",
+                }
+            },
+        ]
+
+        results = list(self.collection.aggregate(pipeline))
+        return results, total

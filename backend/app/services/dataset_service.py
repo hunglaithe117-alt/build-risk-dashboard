@@ -378,12 +378,15 @@ class DatasetService:
         skip: int = 0,
         limit: int = 50,
         status_filter: Optional[str] = None,
+        q: Optional[str] = None,
     ) -> dict:
         """
         List builds for a dataset with enriched details from RawBuildRun.
 
         Returns paginated list of builds with RawBuildRun enrichment.
         """
+        import re
+
         from app.repositories.raw_build_run import RawBuildRunRepository
 
         # Access check and dataset existence
@@ -396,6 +399,14 @@ class DatasetService:
         query: Dict = {"dataset_id": dataset_oid}
         if status_filter:
             query["status"] = status_filter
+
+        # Add search filter
+        if q:
+            search_regex = re.compile(re.escape(q), re.IGNORECASE)
+            query["$or"] = [
+                {"repo_name_from_csv": {"$regex": search_regex}},
+                {"build_id_from_csv": {"$regex": search_regex}},
+            ]
 
         # Get total and items
         total = self.build_repo.count_by_query(query)

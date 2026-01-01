@@ -7,7 +7,6 @@ import {
     Download,
     Loader2,
     Play,
-    Square,
     AlertTriangle,
     Zap,
 } from "lucide-react";
@@ -44,8 +43,7 @@ type EnrichmentState =
     | "starting"
     | "running"
     | "completed"
-    | "failed"
-    | "cancelled";
+    | "failed";
 
 export function EnrichmentPanel({
     datasetId,
@@ -112,12 +110,12 @@ export function EnrichmentPanel({
             setCurrentJob({
                 id: response.job_id,
                 dataset_id: datasetId,
-                status: "pending",
-                total_rows: validation.total_rows,
-                processed_rows: 0,
-                enriched_rows: 0,
-                failed_rows: 0,
-                skipped_rows: 0,
+                status: "queued",
+                builds_total: validation.total_rows,
+                builds_ingested: 0,
+                builds_missing_resource: 0,
+                builds_processed: 0,
+                builds_processing_failed: 0,
                 progress_percent: 0,
                 selected_features: selectedFeatures,
             });
@@ -147,8 +145,8 @@ export function EnrichmentPanel({
 
                     if (data.type === "progress") {
                         setProgress(data.progress_percent);
-                        setProcessedRows(data.processed_rows);
-                        setTotalRows(data.total_rows);
+                        setProcessedRows(data.builds_processed);
+                        setTotalRows(data.builds_total);
                         if ("current_repo" in data && data.current_repo) {
                             setCurrentRepo(data.current_repo);
                         }
@@ -190,10 +188,10 @@ export function EnrichmentPanel({
             try {
                 const status = await enrichmentApi.getStatus(datasetId);
                 setProgress(status.progress_percent);
-                setProcessedRows(status.processed_rows);
-                setTotalRows(status.total_rows);
+                setProcessedRows(status.builds_processed);
+                setTotalRows(status.builds_total);
 
-                if (["completed", "failed", "cancelled"].includes(status.status)) {
+                if (["completed", "failed"].includes(status.status)) {
                     setState(status.status as EnrichmentState);
                     if (pollingRef.current) {
                         clearInterval(pollingRef.current);
@@ -207,25 +205,6 @@ export function EnrichmentPanel({
         }, 2000);
     }, [datasetId, onEnrichmentComplete]);
 
-    // Cancel enrichment
-    const handleCancel = useCallback(async () => {
-        if (!currentJob) return;
-
-        try {
-            await enrichmentApi.cancel(datasetId);
-            setState("cancelled");
-
-            if (wsRef.current) {
-                wsRef.current.close();
-            }
-            if (pollingRef.current) {
-                clearInterval(pollingRef.current);
-                pollingRef.current = null;
-            }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to cancel");
-        }
-    }, [datasetId, currentJob]);
 
     // Download enriched dataset
     const handleDownload = useCallback(async () => {
@@ -371,15 +350,6 @@ export function EnrichmentPanel({
                                 {currentRepo && <span>Processing: {currentRepo}</span>}
                             </div>
                         </div>
-
-                        <Button
-                            variant="destructive"
-                            onClick={handleCancel}
-                            className="w-full gap-2"
-                        >
-                            <Square className="h-4 w-4" />
-                            Cancel Enrichment
-                        </Button>
                     </div>
                 );
 
@@ -440,31 +410,7 @@ export function EnrichmentPanel({
                     </div>
                 );
 
-            case "cancelled":
-                return (
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-3 text-amber-600">
-                            <Square className="h-6 w-6" />
-                            <div>
-                                <p className="font-medium">Enrichment Cancelled</p>
-                                <p className="text-sm text-muted-foreground">
-                                    Processed {processedRows.toLocaleString()} of {totalRows.toLocaleString()} rows
-                                </p>
-                            </div>
-                        </div>
 
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setState("validated");
-                                setProgress(0);
-                            }}
-                            className="w-full"
-                        >
-                            Start New Enrichment
-                        </Button>
-                    </div>
-                );
         }
     };
 

@@ -33,8 +33,11 @@ class ModelImportBuildStatus(str, Enum):
     INGESTING = "ingesting"  # Ingestion in progress
     INGESTED = "ingested"  # Resources ready for processing
 
-    # Missing resources (graceful degradation)
-    MISSING_RESOURCE = "missing_resource"  # Some resources unavailable (logs, worktree, etc.)
+    # Error states
+    MISSING_RESOURCE = (
+        "missing_resource"  # Expected: logs expired, commit not in repo (not retryable)
+    )
+    FAILED = "failed"  # Actual error: timeout, network, exception (retryable)
 
 
 class ResourceStatus(str, Enum):
@@ -122,4 +125,14 @@ class ModelImportBuild(BaseEntity):
     ingested_at: Optional[datetime] = Field(
         None,
         description="When ingestion completed successfully",
+    )
+
+    # Error tracking fields
+    ingestion_error: Optional[str] = Field(
+        None,
+        description="Detailed error message if ingestion failed.",
+    )
+    failed_at: Optional[datetime] = Field(
+        None,
+        description="Timestamp when the build failed",
     )

@@ -104,7 +104,7 @@ def gh_repo_num_commits(git_history: GitHistoryInput) -> Optional[int]:
         "gh_sloc": Optional[int],
         "gh_test_lines_per_kloc": Optional[float],
         "gh_test_cases_per_kloc": Optional[float],
-        "gh_asserts_case_per_kloc": Optional[float],
+        "gh_asserts_cases_per_kloc": Optional[float],
     }
 )
 @tag(group="repo")
@@ -122,7 +122,7 @@ def repo_code_metrics(
             "gh_sloc": None,
             "gh_test_lines_per_kloc": None,
             "gh_test_cases_per_kloc": None,
-            "gh_asserts_case_per_kloc": None,
+            "gh_asserts_cases_per_kloc": None,
         }
 
     worktree_path = git_worktree.worktree_path
@@ -134,14 +134,14 @@ def repo_code_metrics(
         "gh_sloc": src_lines,
         "gh_test_lines_per_kloc": None,
         "gh_test_cases_per_kloc": None,
-        "gh_asserts_case_per_kloc": None,
+        "gh_asserts_cases_per_kloc": None,
     }
 
     if src_lines > 0:
         kloc = src_lines / 1000.0
         metrics["gh_test_lines_per_kloc"] = test_lines / kloc
         metrics["gh_test_cases_per_kloc"] = test_cases / kloc
-        metrics["gh_asserts_case_per_kloc"] = asserts / kloc
+        metrics["gh_asserts_cases_per_kloc"] = asserts / kloc
 
     return metrics
 

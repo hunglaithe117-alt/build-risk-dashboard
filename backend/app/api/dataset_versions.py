@@ -35,6 +35,7 @@ def _to_response(version: DatasetVersion) -> VersionResponse:
         builds_total=version.builds_total,
         builds_ingested=version.builds_ingested,
         builds_missing_resource=version.builds_missing_resource,
+        builds_ingestion_failed=version.builds_ingestion_failed,
         builds_processed=version.builds_processed,
         builds_processing_failed=version.builds_processing_failed,
         progress_percent=version.progress_percent,
@@ -111,6 +112,66 @@ async def get_ingestion_progress(
         dataset_id=dataset_id,
         version_id=version_id,
         user_id=str(current_user["_id"]),
+    )
+
+
+@router.get("/{version_id}/import-builds")
+async def get_import_builds(
+    dataset_id: str,
+    version_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    status: Optional[str] = Query(
+        None,
+        description="Filter by status: pending, ingesting, ingested, missing_resource",
+    ),
+    db=Depends(get_db),
+    current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
+):
+    """
+    List import builds for a dataset version (Ingestion Phase).
+
+    Shows DatasetImportBuild data with resource status breakdown.
+    For the Ingestion phase - shows what resources have been fetched/failed.
+    """
+    service = DatasetVersionService(db)
+    return service.get_import_builds(
+        dataset_id=dataset_id,
+        version_id=version_id,
+        user_id=str(current_user["_id"]),
+        skip=skip,
+        limit=limit,
+        status_filter=status,
+    )
+
+
+@router.get("/{version_id}/enrichment-builds")
+async def get_enrichment_builds(
+    dataset_id: str,
+    version_id: str,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    extraction_status: Optional[str] = Query(
+        None,
+        description="Filter by extraction status: pending, completed, failed, partial",
+    ),
+    db=Depends(get_db),
+    current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
+):
+    """
+    List enrichment builds for a dataset version (Processing Phase).
+
+    Shows DatasetEnrichmentBuild data with extraction status and features.
+    For the Processing phase - shows feature extraction results.
+    """
+    service = DatasetVersionService(db)
+    return service.get_enrichment_builds(
+        dataset_id=dataset_id,
+        version_id=version_id,
+        user_id=str(current_user["_id"]),
+        skip=skip,
+        limit=limit,
+        extraction_status=extraction_status,
     )
 
 
@@ -244,52 +305,41 @@ async def get_scan_status(
     )
 
 
-@router.post("/{version_id}/retry-scan")
-async def retry_version_scans(
-    dataset_id: str,
-    version_id: str,
-    db=Depends(get_db),
-    current_user: dict = Depends(RequirePermission(Permission.START_SCANS)),
-):
-    """
-    Retry failed scans for a version.
-
-    Re-dispatches scans for commits that had scan failures.
-    """
-    service = DatasetVersionService(db)
-    return service.retry_scans(
-        dataset_id=dataset_id,
-        version_id=version_id,
-        user_id=str(current_user["_id"]),
-    )
-
-
 @router.get("/{version_id}/commit-scans")
 async def get_commit_scans(
     dataset_id: str,
     version_id: str,
+    tool_type: Optional[str] = Query(None, description="Tool type: trivy or sonarqube"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
     db=Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
     """
-    Get detailed commit scan status for a version.
+    Get detailed commit scan status for a version with pagination.
 
-    Returns separate lists for Trivy and SonarQube scans with status per commit.
+    Args:
+        tool_type: Optional filter by tool (trivy or sonarqube). If not provided, returns both.
+        skip: Number of items to skip
+        limit: Maximum items to return
     """
     service = DatasetVersionService(db)
     return service.get_commit_scans(
         dataset_id=dataset_id,
         version_id=version_id,
         user_id=str(current_user["_id"]),
+        tool_type=tool_type,
+        skip=skip,
+        limit=limit,
     )
 
 
-@router.post("/{version_id}/commits/{commit_sha}/retry/{tool_type}")
+@router.post("/{version_id}/commit-scans/{commit_sha}/retry")
 async def retry_commit_scan(
     dataset_id: str,
     version_id: str,
     commit_sha: str,
-    tool_type: str,
+    tool_type: str = Query(..., description="Tool type: trivy or sonarqube"),
     db=Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.START_SCANS)),
 ):

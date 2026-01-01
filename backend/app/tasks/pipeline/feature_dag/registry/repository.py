@@ -96,8 +96,8 @@ REPOSITORY_FEATURES: Dict[str, FeatureDefinition] = {
         required_resources=[FeatureResource.GIT_WORKTREE],
         nullable=True,
     ),
-    "gh_asserts_case_per_kloc": FeatureDefinition(
-        name="gh_asserts_case_per_kloc",
+    "gh_asserts_cases_per_kloc": FeatureDefinition(
+        name="gh_asserts_cases_per_kloc",
         display_name="Assertions / KLOC",
         description="Assertions per 1000 lines of source code",
         category=FeatureCategory.REPO_SNAPSHOT,

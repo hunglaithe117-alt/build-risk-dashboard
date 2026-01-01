@@ -8,6 +8,7 @@ import {
     RotateCcw,
     X,
     AlertTriangle,
+    AlertCircle,
     ArrowLeft,
     ChevronLeft,
     ChevronRight,

@@ -61,8 +61,8 @@ interface VersionMiniStepperProps {
 
 export function VersionMiniStepper({ status, progress }: VersionMiniStepperProps) {
     return (
-        <div className="flex items-center justify-center py-4 px-6 bg-slate-50 dark:bg-slate-900/50 rounded-lg w-full">
-            <div className="flex items-center gap-2 max-w-2xl w-full">
+        <div className="flex items-center justify-center py-4">
+            <div className="inline-flex items-center gap-2 py-3 px-6 bg-slate-50 dark:bg-slate-900/50 rounded-lg">
                 {STEPS.map((step, i) => {
                     const state = step.getState(status, progress);
                     const current = step.getCurrent(progress);
@@ -70,7 +70,7 @@ export function VersionMiniStepper({ status, progress }: VersionMiniStepperProps
                     const isLast = i === STEPS.length - 1;
 
                     return (
-                        <div key={step.id} className="flex items-center flex-1">
+                        <div key={step.id} className="flex items-center">
                             <div className="flex items-center gap-2">
                                 <StepIcon state={state} />
                                 <div className="flex flex-col">
@@ -89,7 +89,7 @@ export function VersionMiniStepper({ status, progress }: VersionMiniStepperProps
                             </div>
                             {!isLast && (
                                 <div className={cn(
-                                    "flex-1 h-0.5 mx-3",
+                                    "w-24 h-0.5 mx-4",
                                     state === "completed" ? "bg-green-500" : "bg-slate-200 dark:bg-slate-700"
                                 )} />
                             )}

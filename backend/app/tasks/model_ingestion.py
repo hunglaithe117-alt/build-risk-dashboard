@@ -978,18 +978,26 @@ def aggregate_model_ingestion_results(
         )
 
     # === Determine per-build final status ===
-    # A build is INGESTED if all required resources are COMPLETED
-    # A build is FAILED if any required resource is FAILED
+    # FAILED: Actual error (timeout, network, exception) - RETRYABLE
+    # MISSING_RESOURCE: Expected (logs expired, commit not in repo) - NOT RETRYABLE
 
-    # Mark builds as FAILED if clone failed (all builds)
+    now = datetime.utcnow()
+
+    # Mark builds as FAILED if clone failed (all builds) - this is an actual error
     if clone_failed:
         import_build_repo.update_many_by_status(
             repo_config_id,
             from_status=ModelImportBuildStatus.INGESTING.value,
-            updates={"status": ModelImportBuildStatus.MISSING_RESOURCE.value},
+            updates={
+                "status": ModelImportBuildStatus.FAILED.value,
+                "ingestion_error": clone_error or "Clone failed",
+                "failed_at": now,
+            },
         )
     else:
-        # Mark builds with failed worktrees as FAILED
+        # Separate failed_commits into FAILED (actual errors) vs skip
+        # Note: In current implementation, failed_commits from worktree are actual errors
+        # The skipped ones (commit not found) don't go to failed_commits, they go to skipped count
         if failed_commits:
             import_build_repo.collection.update_many(
                 {
@@ -997,18 +1005,47 @@ def aggregate_model_ingestion_results(
                     "status": ModelImportBuildStatus.INGESTING.value,
                     "commit_sha": {"$in": failed_commits},
                 },
-                {"$set": {"status": ModelImportBuildStatus.MISSING_RESOURCE.value}},
+                {
+                    "$set": {
+                        "status": ModelImportBuildStatus.FAILED.value,
+                        "ingestion_error": "Worktree creation failed",
+                        "failed_at": now,
+                    }
+                },
             )
 
-        # Mark builds with failed logs as FAILED
-        if all_failed_logs:
+        # Mark builds with failed logs as FAILED (actual error - retryable)
+        if failed_log_ids:
             import_build_repo.collection.update_many(
                 {
                     "model_repo_config_id": ObjectId(repo_config_id),
                     "status": ModelImportBuildStatus.INGESTING.value,
-                    "ci_run_id": {"$in": all_failed_logs},
+                    "ci_run_id": {"$in": failed_log_ids},
                 },
-                {"$set": {"status": ModelImportBuildStatus.MISSING_RESOURCE.value}},
+                {
+                    "$set": {
+                        "status": ModelImportBuildStatus.FAILED.value,
+                        "ingestion_error": "Log download failed",
+                        "failed_at": now,
+                    }
+                },
+            )
+
+        # Mark builds with expired logs as MISSING_RESOURCE (expected - not retryable)
+        if expired_log_ids:
+            import_build_repo.collection.update_many(
+                {
+                    "model_repo_config_id": ObjectId(repo_config_id),
+                    "status": ModelImportBuildStatus.INGESTING.value,
+                    "ci_run_id": {"$in": expired_log_ids},
+                },
+                {
+                    "$set": {
+                        "status": ModelImportBuildStatus.MISSING_RESOURCE.value,
+                        "ingestion_error": "Logs expired",
+                        "failed_at": now,
+                    }
+                },
             )
 
         # Mark remaining INGESTING builds as INGESTED
@@ -1017,7 +1054,7 @@ def aggregate_model_ingestion_results(
             from_status=ModelImportBuildStatus.INGESTING.value,
             updates={
                 "status": ModelImportBuildStatus.INGESTED.value,
-                "ingested_at": datetime.utcnow(),
+                "ingested_at": now,
             },
         )
 
@@ -1025,21 +1062,23 @@ def aggregate_model_ingestion_results(
     status_counts = import_build_repo.count_by_status(repo_config_id)
     ingested = status_counts.get(ModelImportBuildStatus.INGESTED.value, 0)
     missing_resource = status_counts.get(ModelImportBuildStatus.MISSING_RESOURCE.value, 0)
+    failed = status_counts.get(ModelImportBuildStatus.FAILED.value, 0)
 
     # Determine final ingestion status - always INGESTED
     # User accepts current state (with or without failures) when starting processing
     final_status = ModelImportStatus.INGESTED
-    if missing_resource > 0:
-        msg = (
-            f"Ingestion done: {ingested} ready, {missing_resource} missing resources. "
-            "Review or start processing."
-        )
+    if failed > 0 or missing_resource > 0:
+        parts = [f"{ingested} ready"]
+        if failed > 0:
+            parts.append(f"{failed} failed (retryable)")
+        if missing_resource > 0:
+            parts.append(f"{missing_resource} missing resources")
+        msg = f"Ingestion done: {', '.join(parts)}. Review or start processing."
     else:
         msg = f"Ingestion complete: {ingested} builds ready. Start processing when ready."
 
     # Update repo config with final status and timestamps
-    now = datetime.utcnow()
-    total_builds = ingested + missing_resource
+    total_builds = ingested + missing_resource + failed
     repo_config_repo.update_repository(
         repo_config_id,
         {
@@ -1048,6 +1087,7 @@ def aggregate_model_ingestion_results(
             "builds_fetched": total_builds,
             "builds_ingested": ingested,
             "builds_missing_resource": missing_resource,
+            "builds_ingestion_failed": failed,
         },
     )
 
@@ -1064,6 +1104,7 @@ def aggregate_model_ingestion_results(
             "builds_fetched": total_builds,
             "builds_ingested": ingested,
             "builds_missing_resource": missing_resource,
+            "builds_ingestion_failed": failed,
             "last_synced_at": now.isoformat(),
             "resource_status": resource_summary,
         },
@@ -1074,6 +1115,7 @@ def aggregate_model_ingestion_results(
         "final_status": final_status.value,
         "builds_ingested": ingested,
         "builds_missing_resource": missing_resource,
+        "builds_ingestion_failed": failed,
         "resource_status": resource_summary,
     }
 
@@ -1117,17 +1159,20 @@ def handle_ingestion_chord_error(
     import_build_repo = ModelImportBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
 
-    # Mark all INGESTING builds as FAILED
+    now = datetime.utcnow()
+
+    # Mark all INGESTING builds as FAILED (chord failure = actual error, retryable)
     failed_count = import_build_repo.update_many_by_status(
         repo_config_id,
         from_status=ModelImportBuildStatus.INGESTING.value,
         updates={
-            "status": ModelImportBuildStatus.MISSING_RESOURCE.value,
+            "status": ModelImportBuildStatus.FAILED.value,
             "ingestion_error": f"Ingestion chord failed: {error_msg}",
+            "failed_at": now,
         },
     )
 
-    logger.warning(f"{corr_prefix} Marked {failed_count} builds as FAILED")
+    logger.warning(f"{corr_prefix} Marked {failed_count} builds as FAILED (retryable)")
 
     # Check if any builds made it to INGESTED before failure
     ingested_builds = import_build_repo.find_by_repo_config(
@@ -1146,16 +1191,17 @@ def handle_ingestion_chord_error(
             {
                 "status": ModelImportStatus.INGESTED.value,
                 "error_message": f"Ingestion partially failed: {error_msg}",
+                "builds_ingestion_failed": failed_count,
             },
         )
         publish_status(
             repo_config_id,
             ModelImportStatus.INGESTED.value,
-            f"Ingestion done: {len(ingested_builds)} ok, {failed_count} failed. "
+            f"Ingestion done: {len(ingested_builds)} ok, {failed_count} failed (retryable). "
             f"Review and retry or start processing.",
             stats={
                 "builds_ingested": len(ingested_builds),
-                "builds_missing_resource": failed_count,
+                "builds_ingestion_failed": failed_count,
             },
         )
     else:
@@ -1195,10 +1241,12 @@ def reingest_failed_builds(
     repo_config_id: str,
 ) -> Dict[str, Any]:
     """
-    Retry FAILED import builds that haven't been processed yet.
+    Retry FAILED import builds (actual errors only).
 
-    Only retries builds with _id > last_processed_import_build_id (checkpoint).
-    This ensures we only retry builds pending for the next processing phase.
+    Only retries builds with status=FAILED (actual errors like timeout, network failure).
+    Does NOT retry MISSING_RESOURCE builds (expected - logs expired, commit not found).
+
+    Also respects checkpoint: only retries builds with _id > last_processed_import_build_id.
     """
     import_build_repo = ModelImportBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
@@ -1209,42 +1257,46 @@ def reingest_failed_builds(
         logger.error(f"Repo config not found: {repo_config_id}")
         return {"status": "error", "message": "Repo config not found"}
 
-    # Find failed imports after checkpoint
+    # Find FAILED builds after checkpoint (not MISSING_RESOURCE - those are not retryable)
     checkpoint_id = repo_config.last_processed_import_build_id
-    missing_resource_builds = import_build_repo.find_missing_resource_builds(
-        repo_config_id, after_id=checkpoint_id
-    )
+    failed_builds = import_build_repo.find_failed_builds(repo_config_id, after_id=checkpoint_id)
 
-    if not missing_resource_builds:
-        msg = "No missing resource builds found" + (
-            f" after checkpoint {checkpoint_id}" if checkpoint_id else ""
+    if not failed_builds:
+        # Also count missing_resource for user feedback
+        missing_count = import_build_repo.count_missing_resource_after_checkpoint(
+            repo_config_id, checkpoint_id
         )
+        msg = "No failed builds to retry"
+        if missing_count > 0:
+            msg += f" ({missing_count} builds have missing resources - not retryable)"
         logger.info(f"{msg} for {repo_config_id}")
         return {
-            "status": "no_missing_resource_builds",
-            "count": 0,
+            "status": "no_failed_builds",
+            "failed_count": 0,
+            "missing_resource_count": missing_count,
             "checkpoint": str(checkpoint_id) if checkpoint_id else None,
         }
 
     correlation_id = str(uuid.uuid4())[:8]
     logger.info(
-        f"[corr={correlation_id}] Found {len(missing_resource_builds)} missing resource builds "
+        f"[corr={correlation_id}] Found {len(failed_builds)} failed builds "
         f"after checkpoint {checkpoint_id} for {repo_config_id}"
     )
 
-    # Collect commit SHAs and CI run IDs from missing resource builds
+    # Collect commit SHAs and CI run IDs from failed builds
     commit_shas = []
     ci_run_ids = []
 
-    # Reset status to FETCHED for retry
+    # Reset status to FETCHED for retry, clear error fields
     reset_count = 0
-    for import_build in missing_resource_builds:
+    for import_build in failed_builds:
         try:
             import_build_repo.update_one(
                 str(import_build.id),
                 {
                     "status": ModelImportBuildStatus.FETCHED.value,
                     "ingestion_error": None,
+                    "failed_at": None,
                 },
             )
             reset_count += 1
@@ -1294,7 +1346,7 @@ def reingest_failed_builds(
     return {
         "status": "queued",
         "imports_reset": reset_count,
-        "total_missing_resource": len(missing_resource_builds),
+        "total_failed": len(failed_builds),
         "correlation_id": correlation_id,
     }
 

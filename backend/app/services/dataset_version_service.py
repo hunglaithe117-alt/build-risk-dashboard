@@ -216,6 +216,126 @@ class DatasetVersionService:
             "resource_status": resource_status,
         }
 
+    def get_import_builds(
+        self,
+        dataset_id: str,
+        version_id: str,
+        user_id: str,
+        skip: int = 0,
+        limit: int = 20,
+        status_filter: Optional[str] = None,
+    ) -> dict:
+        """
+        List import builds for a dataset version (Ingestion Phase).
+
+        Returns DatasetImportBuild records with resource status breakdown.
+        """
+        self._verify_dataset_access(dataset_id, user_id)
+        self._get_version(dataset_id, version_id)
+
+        import_repo = DatasetImportBuildRepository(self._db)
+        builds, total = import_repo.list_by_version_with_details(
+            version_id=ObjectId(version_id),
+            skip=skip,
+            limit=limit,
+            status_filter=status_filter,
+        )
+
+        items = []
+        for build in builds:
+            items.append(
+                {
+                    "id": str(build.get("_id")),
+                    "build_id": build.get("ci_run_id", ""),
+                    "build_number": build.get("build_number"),
+                    "commit_sha": build.get("commit_sha", ""),
+                    "branch": build.get("branch", ""),
+                    "conclusion": build.get("conclusion", "unknown"),
+                    "created_at": (
+                        build["created_at"].isoformat() if build.get("created_at") else None
+                    ),
+                    "web_url": build.get("web_url"),
+                    "status": build.get("status", "pending"),
+                    "ingested_at": (
+                        build["ingested_at"].isoformat() if build.get("ingested_at") else None
+                    ),
+                    "resource_status": build.get("resource_status", {}),
+                    "required_resources": build.get("required_resources", []),
+                    # RawBuildRun fields for detailed view
+                    "commit_message": build.get("commit_message"),
+                    "commit_author": build.get("commit_author"),
+                    "duration_seconds": build.get("duration_seconds"),
+                    "started_at": (
+                        build["started_at"].isoformat() if build.get("started_at") else None
+                    ),
+                    "completed_at": (
+                        build["completed_at"].isoformat() if build.get("completed_at") else None
+                    ),
+                    "provider": build.get("provider"),
+                    "logs_available": build.get("logs_available"),
+                    "logs_expired": build.get("logs_expired"),
+                    "ingestion_error": build.get("ingestion_error"),
+                }
+            )
+
+        return {
+            "items": items,
+            "total": total,
+            "page": (skip // limit) + 1,
+            "size": limit,
+        }
+
+    def get_enrichment_builds(
+        self,
+        dataset_id: str,
+        version_id: str,
+        user_id: str,
+        skip: int = 0,
+        limit: int = 20,
+        extraction_status: Optional[str] = None,
+    ) -> dict:
+        """
+        List enrichment builds for a dataset version (Processing Phase).
+
+        Returns DatasetEnrichmentBuild records with extraction status.
+        """
+        self._verify_dataset_access(dataset_id, user_id)
+        version = self._get_version(dataset_id, version_id)
+
+        builds, total = self._enrichment_build_repo.list_by_version_with_details(
+            ObjectId(version_id),
+            skip=skip,
+            limit=limit,
+        )
+
+        expected_features = len(version.selected_features)
+        items = []
+        for build in builds:
+            items.append(
+                {
+                    "id": str(build.get("_id")),
+                    "raw_build_run_id": str(build.get("raw_build_run_id")),
+                    "repo_full_name": build.get("repo_full_name", "Unknown"),
+                    "web_url": build.get("web_url"),
+                    "provider": build.get("provider"),
+                    "extraction_status": build.get("extraction_status", "pending"),
+                    "extraction_error": build.get("extraction_error"),
+                    "feature_count": build.get("feature_count", 0),
+                    "expected_feature_count": expected_features,
+                    "missing_resources": build.get("missing_resources", []),
+                    "created_at": (
+                        build["created_at"].isoformat() if build.get("created_at") else None
+                    ),
+                }
+            )
+
+        return {
+            "items": items,
+            "total": total,
+            "page": (skip // limit) + 1,
+            "size": limit,
+        }
+
     def _stream_enrichment_export(
         self,
         dataset_id: str,
@@ -470,14 +590,11 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id)
         version = self._get_version(dataset_id, version_id)
 
-        if version.status != VersionStatus.PROCESSED:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Version is not completed. Status: {version.status}",
-            )
+        # Allow viewing at any status - data is conditionally included based on phase
+        is_processed = version.status == VersionStatus.PROCESSED
 
         column_stats = {}
-        if include_stats:
+        if include_stats and is_processed:
             column_stats = self._calculate_column_stats(
                 dataset_id, version_id, version.selected_features
             )
@@ -504,10 +621,9 @@ class DatasetVersionService:
                     "extraction_status": build.get("extraction_status"),
                     "feature_count": build.get("feature_count", 0),
                     "expected_feature_count": expected_feature_count,
-                    "skipped_features": build.get("skipped_features", []),
                     "missing_resources": build.get("missing_resources", []),
-                    "enriched_at": (
-                        build["enriched_at"].isoformat() if build.get("enriched_at") else None
+                    "created_at": (
+                        build["created_at"].isoformat() if build.get("created_at") else None
                     ),
                     "features": build.get("features", {}),
                 }
@@ -772,11 +888,17 @@ class DatasetVersionService:
         dataset_id: str,
         version_id: str,
         user_id: str,
+        tool_type: str = None,
+        skip: int = 0,
+        limit: int = 10,
     ) -> dict:
         """
-        Get detailed commit scan status for a version.
+        Get detailed commit scan status for a version with pagination.
 
-        Returns separate lists for Trivy and SonarQube scans.
+        Args:
+            tool_type: Optional filter by tool (trivy or sonarqube)
+            skip: Number of items to skip
+            limit: Maximum items to return
         """
         self._verify_dataset_access(dataset_id, user_id)
         self._get_version(dataset_id, version_id)
@@ -789,40 +911,43 @@ class DatasetVersionService:
 
         version_oid = ObjectId(version_id)
 
-        trivy_scans = trivy_repo.find_by_version(version_oid)
-        sonar_scans = sonar_repo.find_by_version(version_oid)
+        def format_scan(s, include_component_key=False):
+            result = {
+                "id": str(s.id),
+                "commit_sha": s.commit_sha,
+                "repo_full_name": s.repo_full_name,
+                "status": s.status.value,
+                "error_message": s.error_message,
+                "builds_affected": s.builds_affected,
+                "retry_count": s.retry_count,
+                "started_at": s.started_at.isoformat() if s.started_at else None,
+                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+            }
+            if include_component_key and hasattr(s, "component_key"):
+                result["component_key"] = s.component_key
+            return result
 
-        return {
-            "trivy": [
-                {
-                    "id": str(s.id),
-                    "commit_sha": s.commit_sha,
-                    "repo_full_name": s.repo_full_name,
-                    "status": s.status.value,
-                    "error_message": s.error_message,
-                    "builds_affected": s.builds_affected,
-                    "retry_count": s.retry_count,
-                    "started_at": s.started_at.isoformat() if s.started_at else None,
-                    "completed_at": s.completed_at.isoformat() if s.completed_at else None,
-                }
-                for s in trivy_scans
-            ],
-            "sonarqube": [
-                {
-                    "id": str(s.id),
-                    "commit_sha": s.commit_sha,
-                    "repo_full_name": s.repo_full_name,
-                    "component_key": s.component_key,
-                    "status": s.status.value,
-                    "error_message": s.error_message,
-                    "builds_affected": s.builds_affected,
-                    "retry_count": s.retry_count,
-                    "started_at": s.started_at.isoformat() if s.started_at else None,
-                    "completed_at": s.completed_at.isoformat() if s.completed_at else None,
-                }
-                for s in sonar_scans
-            ],
-        }
+        result = {}
+
+        if tool_type is None or tool_type == "trivy":
+            trivy_scans, trivy_total = trivy_repo.list_by_version(version_oid, skip, limit)
+            result["trivy"] = {
+                "items": [format_scan(s) for s in trivy_scans],
+                "total": trivy_total,
+                "skip": skip,
+                "limit": limit,
+            }
+
+        if tool_type is None or tool_type == "sonarqube":
+            sonar_scans, sonar_total = sonar_repo.list_by_version(version_oid, skip, limit)
+            result["sonarqube"] = {
+                "items": [format_scan(s, include_component_key=True) for s in sonar_scans],
+                "total": sonar_total,
+                "skip": skip,
+                "limit": limit,
+            }
+
+        return result
 
     def retry_commit_scan(
         self,
@@ -976,14 +1101,14 @@ class DatasetVersionService:
                 detail=f"Cannot retry ingestion: status is {version.status}",
             )
 
-        from app.tasks.enrichment_ingestion import reingest_missing_resource_builds
+        from app.tasks.enrichment_ingestion import reingest_failed_builds
 
-        task = reingest_missing_resource_builds.delay(version_id)
+        task = reingest_failed_builds.delay(version_id)
 
         return {
             "status": "dispatched",
             "task_id": task.id,
-            "message": "Ingestion retry started for missing resource builds",
+            "message": "Ingestion retry started for failed builds",
         }
 
     def retry_failed_processing(

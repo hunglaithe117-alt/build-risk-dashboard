@@ -2,12 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for git, build tools, and sonar-scanner
+# Install system dependencies for git, build tools, and ML runtime libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     git \
     curl \
     unzip \
+    libgomp1 \
+    libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for Python package management

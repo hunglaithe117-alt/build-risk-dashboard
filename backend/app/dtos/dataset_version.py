@@ -38,6 +38,7 @@ class VersionResponse(BaseModel):
     builds_total: int
     builds_ingested: int
     builds_missing_resource: int
+    builds_ingestion_failed: int
     builds_processed: int
     builds_processing_failed: int
     progress_percent: float

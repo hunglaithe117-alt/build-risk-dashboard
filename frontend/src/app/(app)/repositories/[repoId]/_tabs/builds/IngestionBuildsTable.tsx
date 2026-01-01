@@ -4,10 +4,10 @@ import {
     CheckCircle2,
     ChevronDown,
     ChevronRight,
-    Clock,
     ExternalLink,
     GitCommit,
     Loader2,
+    RotateCcw,
     XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -26,59 +26,21 @@ import {
     CollapsibleContent,
     CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+    SearchFilterBar,
+    INGESTION_STATUS_OPTIONS,
+    IngestionStatusBadge,
+    ResourceStatusIndicator,
+    TablePagination,
+} from "@/components/builds";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { buildApi } from "@/lib/api";
-import { formatTimestamp } from "@/lib/utils";
+import { formatTimestamp, cn } from "@/lib/utils";
 import type { ImportBuild } from "@/types";
 
 const PAGE_SIZE = 20;
 
-function IngestionStatusBadge({ status }: { status: string }) {
-    const s = status.toLowerCase();
-    if (s === "ingested") {
-        return (
-            <Badge variant="outline" className="border-green-500 text-green-600 gap-1">
-                <CheckCircle2 className="h-3 w-3" /> Ingested
-            </Badge>
-        );
-    }
-    if (s === "ingesting") {
-        return (
-            <Badge variant="secondary" className="gap-1">
-                <Loader2 className="h-3 w-3 animate-spin" /> Ingesting
-            </Badge>
-        );
-    }
-    if (s === "fetched") {
-        return (
-            <Badge variant="outline" className="border-blue-500 text-blue-600 gap-1">
-                <Clock className="h-3 w-3" /> Fetched
-            </Badge>
-        );
-    }
-    if (s === "failed") {
-        return (
-            <Badge variant="destructive" className="gap-1">
-                <XCircle className="h-3 w-3" /> Failed
-            </Badge>
-        );
-    }
-    return <Badge variant="secondary">{status}</Badge>;
-}
-
-function ResourceStatusIcon({ status }: { status: string }) {
-    const s = status?.toLowerCase() || "pending";
-    if (s === "completed" || s === "skipped") {
-        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    }
-    if (s === "failed") {
-        return <XCircle className="h-4 w-4 text-red-500" />;
-    }
-    if (s === "in_progress") {
-        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
-    }
-    return <Clock className="h-4 w-4 text-muted-foreground" />;
-}
+// Status badges and resource indicators moved to @/components/builds
 
 interface IngestionBuildsTableProps {
     repoId: string;
@@ -98,6 +60,10 @@ export function IngestionBuildsTable({
     const [total, setTotal] = useState(0);
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
+    // Search and filter state
+    const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
+
     const { subscribe } = useWebSocket();
 
     const loadBuilds = useCallback(
@@ -107,6 +73,8 @@ export function IngestionBuildsTable({
                 const data = await buildApi.getImportBuilds(repoId, {
                     skip: (pageNumber - 1) * PAGE_SIZE,
                     limit: PAGE_SIZE,
+                    q: searchQuery || undefined,
+                    status: statusFilter !== "all" ? statusFilter : undefined,
                 });
                 setBuilds(data.items);
                 setTotal(data.total);
@@ -118,12 +86,24 @@ export function IngestionBuildsTable({
                 setTableLoading(false);
             }
         },
-        [repoId]
+        [repoId, searchQuery, statusFilter]
     );
 
     useEffect(() => {
         loadBuilds(1, true);
     }, [loadBuilds]);
+
+    // Search handler - reset to page 1
+    const handleSearch = useCallback((query: string) => {
+        setSearchQuery(query);
+        setPage(1);
+    }, []);
+
+    // Status filter handler - reset to page 1
+    const handleStatusFilter = useCallback((status: string) => {
+        setStatusFilter(status);
+        setPage(1);
+    }, []);
 
     useEffect(() => {
         const unsubscribe = subscribe("BUILD_UPDATE", (data: any) => {
@@ -169,26 +149,43 @@ export function IngestionBuildsTable({
 
     return (
         <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                    <CardTitle>Ingestion Builds</CardTitle>
-                    <CardDescription>
-                        Builds fetched from CI with resource ingestion status
-                    </CardDescription>
+            <CardHeader className="space-y-4">
+                <div className="flex flex-row items-center justify-between">
+                    <div>
+                        <CardTitle>Ingestion Builds</CardTitle>
+                        <CardDescription>
+                            Builds fetched from CI with resource ingestion status
+                        </CardDescription>
+                    </div>
+                    {/* Retry Failed button - always visible, disabled when no failed builds */}
+                    {onRetryAllFailed && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onRetryAllFailed}
+                            disabled={retryAllLoading || failedCount === 0}
+                            className={cn(
+                                "text-amber-600 border-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30",
+                                failedCount === 0 && "opacity-50 cursor-not-allowed"
+                            )}
+                        >
+                            {retryAllLoading ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                                <RotateCcw className="mr-2 h-4 w-4" />
+                            )}
+                            Retry Failed ({failedCount})
+                        </Button>
+                    )}
                 </div>
-                {onRetryAllFailed && failedCount > 0 && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={onRetryAllFailed}
-                        disabled={retryAllLoading}
-                    >
-                        {retryAllLoading ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : null}
-                        Retry Missing Resources ({failedCount})
-                    </Button>
-                )}
+                {/* Search and Filter Bar */}
+                <SearchFilterBar
+                    placeholder="Search by commit SHA or build ID..."
+                    statusOptions={INGESTION_STATUS_OPTIONS}
+                    onSearch={handleSearch}
+                    onStatusFilter={handleStatusFilter}
+                    isLoading={tableLoading}
+                />
             </CardHeader>
             <CardContent className="p-0">
                 <div className="overflow-x-auto">
@@ -289,7 +286,6 @@ export function IngestionBuildsTable({
                                                     <td className="px-4 py-3">
                                                         <IngestionStatusBadge status={build.status} />
                                                     </td>
-
                                                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                                                         {formatTimestamp(build.created_at)}
                                                     </td>
@@ -351,25 +347,12 @@ export function IngestionBuildsTable({
                                                                         {Object.entries(
                                                                             build.resource_status || {}
                                                                         ).map(([key, val]) => (
-                                                                            <div
+                                                                            <ResourceStatusIndicator
                                                                                 key={key}
-                                                                                className="flex items-start gap-2.5 p-2.5 rounded-lg border bg-white dark:bg-slate-950"
-                                                                            >
-                                                                                <ResourceStatusIcon status={val.status} />
-                                                                                <div className="space-y-0.5 min-w-0">
-                                                                                    <p className="text-xs font-semibold font-mono truncate">
-                                                                                        {key}
-                                                                                    </p>
-                                                                                    <p className="text-[10px] text-muted-foreground capitalize">
-                                                                                        {val.status}
-                                                                                    </p>
-                                                                                    {val.error && (
-                                                                                        <p className="text-[10px] text-red-500 mt-1 break-words leading-tight">
-                                                                                            {val.error}
-                                                                                        </p>
-                                                                                    )}
-                                                                                </div>
-                                                                            </div>
+                                                                                resourceName={key}
+                                                                                status={val.status}
+                                                                                error={val.error}
+                                                                            />
                                                                         ))}
                                                                     </div>
                                                                 </div>
@@ -386,35 +369,14 @@ export function IngestionBuildsTable({
                     </table>
                 </div>
                 {/* Pagination */}
-                <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
-                    <div>
-                        {total > 0
-                            ? `Showing ${pageStart}-${pageEnd} of ${total}`
-                            : "No builds"}
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {tableLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handlePageChange("prev")}
-                            disabled={page === 1 || tableLoading}
-                        >
-                            Previous
-                        </Button>
-                        <span className="text-xs">
-                            Page {page} of {totalPages}
-                        </span>
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handlePageChange("next")}
-                            disabled={page >= totalPages || tableLoading}
-                        >
-                            Next
-                        </Button>
-                    </div>
-                </div>
+                <TablePagination
+                    currentPage={page}
+                    totalPages={totalPages}
+                    totalItems={total}
+                    pageSize={PAGE_SIZE}
+                    onPageChange={(newPage) => loadBuilds(newPage, true)}
+                    isLoading={tableLoading}
+                />
             </CardContent>
         </Card>
     );

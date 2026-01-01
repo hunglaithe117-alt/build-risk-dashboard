@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -103,8 +103,10 @@ const getStatusConfig = (status: string) => {
 };
 
 export default function BuildDetailPage() {
-    const params = useParams<{ datasetId: string; versionId: string; buildId: string }>();
-    const { datasetId, versionId, buildId } = params;
+    const params = useParams<{ datasetId: string; buildId: string }>();
+    const searchParams = useSearchParams();
+    const { datasetId, buildId } = params;
+    const versionId = searchParams.get("versionId") || "";
     const router = useRouter();
 
     const [data, setData] = useState<EnrichmentBuildDetailResponse | null>(null);
@@ -177,10 +179,10 @@ export default function BuildDetailPage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href={`/projects/${datasetId}/versions/${versionId}?tab=builds`}>
+                    <Link href={`/projects/${datasetId}/versions/${versionId}/builds/processing`}>
                         <Button variant="ghost" size="sm">
                             <ArrowLeft className="mr-2 h-4 w-4" />
-                            Back to Builds
+                            Back to Feature Extraction
                         </Button>
                     </Link>
                     <div>
@@ -206,122 +208,55 @@ export default function BuildDetailPage() {
                 </div>
             </div>
 
-            {/* Build Overview + Enrichment Status */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Build Overview Card */}
-                <Card>
-                    <CardHeader className="pb-3">
-                        <CardTitle className="text-lg">Build Overview</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Conclusion:</span>
-                                <Badge className={`${buildStatus.bgColor} ${buildStatus.color}`}>
-                                    <BuildStatusIcon className="mr-1 h-3 w-3" />
-                                    {rawBuild.conclusion}
-                                </Badge>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-muted-foreground">Duration:</span>
-                                <span className="font-medium">{formatDuration(rawBuild.duration_seconds)}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <GitBranch className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-muted-foreground">Branch:</span>
-                                <span className="font-medium">{rawBuild.branch || "—"}</span>
-                            </div>
+            {/* Enrichment Status */}
+            <Card>
+                <CardHeader className="pb-3">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                        Enrichment Status
+                        <Badge className={`${extractionStatus.bgColor} ${extractionStatus.color}`}>
+                            <ExtractionStatusIcon className="mr-1 h-3 w-3" />
+                            {enrichment.extraction_status}
+                        </Badge>
+                    </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <span className="text-muted-foreground">Features Extracted:</span>
+                            <p className="font-medium text-lg">
+                                {enrichment.feature_count} / {enrichment.expected_feature_count}
+                            </p>
                         </div>
-
-                        <div className="flex items-start gap-2 text-sm">
-                            <GitCommit className="h-4 w-4 text-muted-foreground mt-0.5" />
-                            <div>
-                                <span className="text-muted-foreground">Commit: </span>
-                                <code className="px-1 py-0.5 bg-muted rounded text-xs">
-                                    {rawBuild.commit_sha.slice(0, 8)}
-                                </code>
-                                {rawBuild.commit_message && (
-                                    <p className="text-muted-foreground mt-1 line-clamp-2">
-                                        {rawBuild.commit_message}
-                                    </p>
-                                )}
-                            </div>
+                        <div>
+                            <span className="text-muted-foreground">Created At:</span>
+                            <p className="font-medium">{formatRelativeTime(enrichment.created_at)}</p>
                         </div>
+                    </div>
 
-                        <div className="flex items-center gap-2 text-sm">
-                            {rawBuild.is_bot_commit ? (
-                                <Bot className="h-4 w-4 text-muted-foreground" />
-                            ) : (
-                                <User className="h-4 w-4 text-muted-foreground" />
-                            )}
-                            <span className="text-muted-foreground">Author:</span>
-                            <span className="font-medium">{rawBuild.commit_author || "—"}</span>
-                            {rawBuild.is_bot_commit && (
-                                <Badge variant="outline" className="text-xs">Bot</Badge>
-                            )}
+                    {enrichment.missing_resources.length > 0 && (
+                        <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 p-3 text-sm">
+                            <p className="font-medium text-amber-800 dark:text-amber-200">Missing Resources:</p>
+                            <p className="text-amber-700 dark:text-amber-300">
+                                {enrichment.missing_resources.join(", ")}
+                            </p>
                         </div>
+                    )}
 
-                        <div className="flex items-center gap-2 text-sm pt-2 border-t">
-                            <span className="text-muted-foreground">Started:</span>
-                            <span>{formatRelativeTime(rawBuild.started_at)}</span>
-                            <span className="text-muted-foreground">•</span>
-                            <span className="text-muted-foreground">Completed:</span>
-                            <span>{formatRelativeTime(rawBuild.completed_at)}</span>
+                    {enrichment.skipped_features.length > 0 && (
+                        <div>
+                            <span className="text-sm text-muted-foreground">Skipped Features:</span>
+                            <p className="text-sm font-medium">{enrichment.skipped_features.length} features</p>
                         </div>
-                    </CardContent>
-                </Card>
+                    )}
 
-                {/* Enrichment Status Card */}
-                <Card>
-                    <CardHeader className="pb-3">
-                        <CardTitle className="text-lg flex items-center gap-2">
-                            Enrichment Status
-                            <Badge className={`${extractionStatus.bgColor} ${extractionStatus.color}`}>
-                                <ExtractionStatusIcon className="mr-1 h-3 w-3" />
-                                {enrichment.extraction_status}
-                            </Badge>
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                                <span className="text-muted-foreground">Features Extracted:</span>
-                                <p className="font-medium text-lg">
-                                    {enrichment.feature_count} / {enrichment.expected_feature_count}
-                                </p>
-                            </div>
-                            <div>
-                                <span className="text-muted-foreground">Enriched At:</span>
-                                <p className="font-medium">{formatRelativeTime(enrichment.enriched_at)}</p>
-                            </div>
+                    {enrichment.extraction_error && (
+                        <div className="rounded-md bg-red-50 dark:bg-red-900/20 p-3 text-sm">
+                            <p className="font-medium text-red-800 dark:text-red-200">Error:</p>
+                            <p className="text-red-700 dark:text-red-300">{enrichment.extraction_error}</p>
                         </div>
-
-                        {enrichment.missing_resources.length > 0 && (
-                            <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 p-3 text-sm">
-                                <p className="font-medium text-amber-800 dark:text-amber-200">Missing Resources:</p>
-                                <p className="text-amber-700 dark:text-amber-300">
-                                    {enrichment.missing_resources.join(", ")}
-                                </p>
-                            </div>
-                        )}
-
-                        {enrichment.skipped_features.length > 0 && (
-                            <div>
-                                <span className="text-sm text-muted-foreground">Skipped Features:</span>
-                                <p className="text-sm font-medium">{enrichment.skipped_features.length} features</p>
-                            </div>
-                        )}
-
-                        {enrichment.extraction_error && (
-                            <div className="rounded-md bg-red-50 dark:bg-red-900/20 p-3 text-sm">
-                                <p className="font-medium text-red-800 dark:text-red-200">Error:</p>
-                                <p className="text-red-700 dark:text-red-300">{enrichment.extraction_error}</p>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
+                    )}
+                </CardContent>
+            </Card>
 
             {/* Two Column Layout: Extracted Features + Extraction Logs */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

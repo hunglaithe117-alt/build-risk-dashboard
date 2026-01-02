@@ -269,7 +269,7 @@ class SonarQubeTool(IntegrationTool):
             f"-Dsonar.host.url={self.host}",
             f"-Dsonar.token={self.token}",
             "-Dsonar.sourceEncoding=UTF-8",
-            "-Dsonar.scm.exclusions.disabled=true",
+            "-Dsonar.scm.disabled=true",  # Worktrees in Docker don't have valid git refs
             "-Dsonar.java.binaries=.",
         ]
 

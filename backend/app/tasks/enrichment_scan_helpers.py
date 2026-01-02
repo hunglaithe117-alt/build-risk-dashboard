@@ -37,34 +37,17 @@ def _get_repo_config(tool_config: dict, github_repo_id: int) -> dict:
     """
     Get scan config for a specific repo.
 
-    If repo has specific config in 'repos' dict, use it entirely.
-    Otherwise, use the default config (excluding 'repos' key).
-
-    No merging - repo config completely overrides default.
+    Returns repo-specific config from 'repos' dict.
+    No global fallback - each repo must have explicit config or empty dict returned.
     """
-    # Check for repo-specific config
-    repo_config = tool_config.get("repos", {}).get(str(github_repo_id))
-
-    if repo_config:
-        # Repo has specific config - use it entirely
-        return repo_config
-
-    # No repo-specific config - use default (exclude 'repos' key)
-    return {k: v for k, v in tool_config.items() if k != "repos"}
+    return tool_config.get("repos", {}).get(str(github_repo_id), {})
 
 
 def _build_sonar_config_content(sonar_config: dict) -> Optional[str]:
-    """Build sonar-project.properties content from config dict."""
-    config_lines = []
-
-    if sonar_config.get("projectKey"):
-        config_lines.append(f"sonar.projectKey={sonar_config['projectKey']}")
-
+    """Build sonar-project.properties content from config dict (extraProperties only)."""
     if sonar_config.get("extraProperties"):
-        extra_lines = sonar_config["extraProperties"].strip().split("\n")
-        config_lines.extend(extra_lines)
-
-    return "\n".join(config_lines) if config_lines else None
+        return sonar_config["extraProperties"].strip()
+    return None
 
 
 @celery_app.task(

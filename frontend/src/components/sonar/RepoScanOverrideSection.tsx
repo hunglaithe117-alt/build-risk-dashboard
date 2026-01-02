@@ -94,8 +94,8 @@ export function RepoScanOverrideSection({
 
         const newConfig = { ...scanConfig };
 
-        // Check if has any values
-        const hasSonarValues = editSonarConfig.projectKey || editSonarConfig.extraProperties;
+        // Check if has any values (extraProperties only for sonar)
+        const hasSonarValues = editSonarConfig.extraProperties;
         const hasTrivyValues = editTrivyConfig.trivyYaml;
 
         // Update sonarqube repos
@@ -285,23 +285,8 @@ export function RepoScanOverrideSection({
 
                         <TabsContent value="sonarqube" className="space-y-3 mt-3">
                             <div className="space-y-2">
-                                <Label htmlFor="edit-project-key" className="text-xs">
-                                    Project Key
-                                </Label>
-                                <Input
-                                    id="edit-project-key"
-                                    placeholder="my-project"
-                                    value={editSonarConfig.projectKey || ""}
-                                    onChange={(e) => setEditSonarConfig({
-                                        ...editSonarConfig,
-                                        projectKey: e.target.value,
-                                    })}
-                                    className="h-8 text-sm"
-                                />
-                            </div>
-                            <div className="space-y-2">
                                 <Label htmlFor="edit-extra-props" className="text-xs">
-                                    Extra Properties
+                                    Scanner Properties (sonar-project.properties)
                                 </Label>
                                 <Textarea
                                     id="edit-extra-props"
@@ -311,9 +296,12 @@ export function RepoScanOverrideSection({
                                         ...editSonarConfig,
                                         extraProperties: e.target.value,
                                     })}
-                                    rows={6}
+                                    rows={8}
                                     className="font-mono text-xs"
                                 />
+                                <p className="text-xs text-muted-foreground">
+                                    One property per line in key=value format
+                                </p>
                             </div>
                         </TabsContent>
 

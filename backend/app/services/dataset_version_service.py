@@ -103,17 +103,34 @@ class DatasetVersionService:
 
             merged_features = list(set(selected_features) | DEFAULT_FEATURES)
 
-            # Normalize scan_metrics
+            # Normalize scan_config and scan_metrics
+            # Frontend sends: {config: {sonarqube: {...}, trivy: {...}}, metrics: {...}}
+            # Store as repo-level only: {sonarqube: {repos: {...}}, trivy: {repos: {...}}}
             normalized_scan_metrics = {"sonarqube": [], "trivy": []}
-            if scan_metrics:
-                normalized_scan_metrics["sonarqube"] = scan_metrics.get("sonarqube", [])
-                normalized_scan_metrics["trivy"] = scan_metrics.get("trivy", [])
+            normalized_scan_config = {"sonarqube": {"repos": {}}, "trivy": {"repos": {}}}
 
-            # Normalize scan_config
-            normalized_scan_config = {"sonarqube": {}, "trivy": {}}
             if scan_config:
-                normalized_scan_config["sonarqube"] = scan_config.get("sonarqube", {})
-                normalized_scan_config["trivy"] = scan_config.get("trivy", {})
+                # Extract from nested structure
+                config_data = scan_config.get("config", {})
+                metrics_data = scan_config.get("metrics", {})
+
+                # Metrics
+                normalized_scan_metrics["sonarqube"] = metrics_data.get("sonarqube", [])
+                normalized_scan_metrics["trivy"] = metrics_data.get("trivy", [])
+
+                # Config: extract only repos (repo-level only, no global)
+                sonar_config = config_data.get("sonarqube", {})
+                trivy_config = config_data.get("trivy", {})
+
+                normalized_scan_config["sonarqube"]["repos"] = sonar_config.get("repos", {})
+                normalized_scan_config["trivy"]["repos"] = trivy_config.get("repos", {})
+
+            # Also handle legacy scan_metrics param (backward compatibility)
+            if scan_metrics:
+                if scan_metrics.get("sonarqube"):
+                    normalized_scan_metrics["sonarqube"] = scan_metrics["sonarqube"]
+                if scan_metrics.get("trivy"):
+                    normalized_scan_metrics["trivy"] = scan_metrics["trivy"]
 
             version = DatasetVersion(
                 _id=None,

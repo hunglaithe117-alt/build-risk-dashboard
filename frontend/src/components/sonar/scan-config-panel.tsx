@@ -28,9 +28,7 @@ import { RepoScanOverrideSection } from "./RepoScanOverrideSection";
 // =============================================================================
 
 export interface SonarConfig {
-    projectKey?: string;
     extraProperties?: string;
-    token?: string;
 }
 
 export interface TrivyConfig {
@@ -38,8 +36,8 @@ export interface TrivyConfig {
 }
 
 export interface ScanConfig {
-    sonarqube: SonarConfig & { repos?: Record<string, SonarConfig> };
-    trivy: TrivyConfig & { repos?: Record<string, TrivyConfig> };
+    sonarqube: { repos: Record<string, SonarConfig> };
+    trivy: { repos: Record<string, TrivyConfig> };
 }
 
 export interface EnabledTools {
@@ -67,14 +65,8 @@ interface ScanConfigPanelProps {
 
 
 const DEFAULT_SCAN_CONFIG: ScanConfig = {
-    sonarqube: {
-        projectKey: "",
-        extraProperties: "",
-        token: "",
-    },
-    trivy: {
-        trivyYaml: "",
-    },
+    sonarqube: { repos: {} },
+    trivy: { repos: {} },
 };
 
 const DEFAULT_ENABLED_TOOLS: EnabledTools = {
@@ -118,33 +110,10 @@ export function ScanConfigPanel({
         }
     };
 
-    // Update SonarQube config
-    const updateSonarConfig = (key: keyof SonarConfig, value: string | boolean) => {
-        onScanConfigChange({
-            ...scanConfig,
-            sonarqube: {
-                ...scanConfig.sonarqube,
-                [key]: value,
-            },
-        });
-    };
-
-    // Update Trivy config
-    const updateTrivyConfig = (key: keyof TrivyConfig, value: string) => {
-        onScanConfigChange({
-            ...scanConfig,
-            trivy: {
-                ...scanConfig.trivy,
-                [key]: value,
-            },
-        });
-    };
-
-    // Check if any config is set
+    // Check if any repo config is set
     const hasConfig = Boolean(
-        scanConfig.sonarqube.projectKey ||
-        scanConfig.sonarqube.extraProperties ||
-        scanConfig.trivy.trivyYaml
+        Object.keys(scanConfig.sonarqube.repos).length > 0 ||
+        Object.keys(scanConfig.trivy.repos).length > 0
     );
 
     return (
@@ -270,137 +239,36 @@ export function ScanConfigPanel({
                     </CardContent>
                 </Card>
 
-                {/* Tool Configuration - Separate Collapsible (like FeatureConfigForm) */}
-                {(tools.sonarqube || tools.trivy) && (
-                    <Collapsible open={isConfigOpen} onOpenChange={setIsConfigOpen}>
-                        <Card className="border-dashed">
-                            <CollapsibleTrigger asChild>
-                                <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors py-3">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <Wrench className="h-4 w-4 text-muted-foreground" />
-                                            <CardTitle className="text-sm font-medium">
-                                                Scan Configuration
-                                            </CardTitle>
-                                            {hasConfig && (
-                                                <Badge variant="secondary" className="text-xs">
-                                                    configured
-                                                </Badge>
-                                            )}
-                                        </div>
-                                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                            {isConfigOpen ? (
-                                                <ChevronUp className="h-4 w-4" />
-                                            ) : (
-                                                <ChevronDown className="h-4 w-4" />
-                                            )}
-                                        </Button>
-                                    </div>
-                                    <CardDescription className="text-xs">
-                                        Configure scanner properties (optional)
-                                    </CardDescription>
-                                </CardHeader>
-                            </CollapsibleTrigger>
-
-                            <CollapsibleContent>
-                                <CardContent className="pt-0 space-y-6">
-                                    <Accordion type="multiple">
-                                        {/* SonarQube Config */}
-                                        {tools.sonarqube && (
-                                            <AccordionItem value="sonarqube">
-                                                <AccordionTrigger className="hover:no-underline py-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <BarChart3 className="h-4 w-4 text-blue-600" />
-                                                        <span className="text-sm">SonarQube Properties</span>
-                                                    </div>
-                                                </AccordionTrigger>
-                                                <AccordionContent className="pt-2 space-y-4">
-                                                    <div className="grid gap-3 pl-4">
-                                                        <div className="grid gap-2">
-                                                            <Label htmlFor="sonar-project-key" className="text-xs">
-                                                                Project Key (Optional)
-                                                            </Label>
-                                                            <Input
-                                                                id="sonar-project-key"
-                                                                placeholder="my-project-key"
-                                                                value={scanConfig.sonarqube.projectKey || ""}
-                                                                onChange={(e) =>
-                                                                    updateSonarConfig("projectKey", e.target.value)
-                                                                }
-                                                                className="h-8 text-sm"
-                                                            />
-                                                            <p className="text-xs text-muted-foreground">
-                                                                Override auto-generated project key
-                                                            </p>
-                                                        </div>
-                                                        <div className="grid gap-2">
-                                                            <Label htmlFor="sonar-extra" className="text-xs">
-                                                                Extra Scanner Properties
-                                                            </Label>
-                                                            <Textarea
-                                                                id="sonar-extra"
-                                                                placeholder={`sonar.sources=.\nsonar.sourceEncoding=UTF-8`}
-                                                                value={scanConfig.sonarqube.extraProperties || ""}
-                                                                onChange={(e) =>
-                                                                    updateSonarConfig("extraProperties", e.target.value)
-                                                                }
-                                                                rows={4}
-                                                                className="font-mono text-xs"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                </AccordionContent>
-                                            </AccordionItem>
-                                        )}
-
-                                        {/* Trivy Config */}
-                                        {tools.trivy && (
-                                            <AccordionItem value="trivy">
-                                                <AccordionTrigger className="hover:no-underline py-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <Shield className="h-4 w-4 text-green-600" />
-                                                        <span className="text-sm">Trivy Configuration</span>
-                                                    </div>
-                                                </AccordionTrigger>
-                                                <AccordionContent className="pt-2 space-y-4">
-                                                    <div className="grid gap-3 pl-4">
-                                                        <div className="grid gap-2">
-                                                            <Label htmlFor="trivy-yaml" className="text-xs">
-                                                                Config File (trivy.yaml)
-                                                            </Label>
-                                                            <Textarea
-                                                                id="trivy-yaml"
-                                                                placeholder={`timeout: 10m\nformat: json\nseverity:\n  - CRITICAL\n  - HIGH`}
-                                                                value={scanConfig.trivy.trivyYaml || ""}
-                                                                onChange={(e) =>
-                                                                    updateTrivyConfig("trivyYaml", e.target.value)
-                                                                }
-                                                                rows={8}
-                                                                className="font-mono text-xs"
-                                                            />
-                                                            <p className="text-xs text-muted-foreground">
-                                                                Paste trivy.yaml content here
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </AccordionContent>
-                                            </AccordionItem>
-                                        )}
-                                    </Accordion>
-
-                                    {/* Per-Repo Overrides */}
-                                    {repos.length > 0 && (
-                                        <RepoScanOverrideSection
-                                            repos={repos}
-                                            scanConfig={scanConfig}
-                                            onScanConfigChange={onScanConfigChange}
-                                            disabled={disabled}
-                                        />
+                {/* Per-Repo Configuration - Only repo-level config supported */}
+                {(tools.sonarqube || tools.trivy) && repos.length > 0 && (
+                    <Card className="border-dashed">
+                        <CardHeader className="py-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Wrench className="h-4 w-4 text-muted-foreground" />
+                                    <CardTitle className="text-sm font-medium">
+                                        Per-Repository Scan Configuration
+                                    </CardTitle>
+                                    {hasConfig && (
+                                        <Badge variant="secondary" className="text-xs">
+                                            configured
+                                        </Badge>
                                     )}
-                                </CardContent>
-                            </CollapsibleContent>
-                        </Card>
-                    </Collapsible>
+                                </div>
+                            </div>
+                            <CardDescription className="text-xs">
+                                Configure scanner properties for specific repositories
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                            <RepoScanOverrideSection
+                                repos={repos}
+                                scanConfig={scanConfig}
+                                onScanConfigChange={onScanConfigChange}
+                                disabled={disabled}
+                            />
+                        </CardContent>
+                    </Card>
                 )}
             </CollapsibleContent>
         </Collapsible>

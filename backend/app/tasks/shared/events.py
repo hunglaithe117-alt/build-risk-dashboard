@@ -102,6 +102,7 @@ def publish_enrichment_update(
     builds_total: int = 0,
     builds_ingested: int = 0,
     builds_missing_resource: int = 0,
+    builds_ingestion_failed: int = 0,
     error: Optional[str] = None,
 ) -> bool:
     """
@@ -114,6 +115,7 @@ def publish_enrichment_update(
         builds_total: Total number of builds in version
         builds_ingested: Number of builds ingested
         builds_missing_resource: Number of builds with missing resources
+        builds_ingestion_failed: Number of builds that failed ingestion (retryable)
         error: Optional error message
 
     Returns:
@@ -127,6 +129,7 @@ def publish_enrichment_update(
         "builds_total": builds_total,
         "builds_ingested": builds_ingested,
         "builds_missing_resource": builds_missing_resource,
+        "builds_ingestion_failed": builds_ingestion_failed,
         "progress": progress,
     }
     if error:

@@ -25,10 +25,10 @@ from app.entities.data_quality import (
     QualityIssue,
     QualityIssueSeverity,
 )
-from app.entities.dataset_enrichment_build import DatasetEnrichmentBuild
 from app.repositories.data_quality_repository import DataQualityRepository
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.dataset_version import DatasetVersionRepository
+from app.repositories.feature_vector import FeatureVectorRepository
 from app.services.feature_service import FeatureService
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ class DataQualityService:
         self.quality_repo = DataQualityRepository(db)
         self.version_repo = DatasetVersionRepository(db)
         self.build_repo = DatasetEnrichmentBuildRepository(db)
+        self.feature_vector_repo = FeatureVectorRepository(db)
         self.feature_service = FeatureService()
 
     def evaluate_version(self, dataset_id: str, version_id: str) -> DataQualityReport:
@@ -113,12 +114,34 @@ class DataQualityService:
             report.total_builds = len(builds)
             report.total_features = len(selected_features)
 
+            # Load feature vectors for all builds in batch
+            raw_build_run_ids = [b.raw_build_run_id for b in builds if b.raw_build_run_id]
+            feature_vectors_map = self.feature_vector_repo.find_many_by_raw_build_run_ids(
+                raw_build_run_ids
+            )
+
+            # Create a helper class to hold build + features for analysis
+            class BuildWithFeatures:
+                def __init__(self, build, features):
+                    self.build = build
+                    self.features = features or {}
+
+            builds_with_features = []
+            for build in builds:
+                fv = feature_vectors_map.get(str(build.raw_build_run_id))
+                features = fv.features if fv else {}
+                builds_with_features.append(BuildWithFeatures(build, features))
+
             # Calculate coverage score
-            enriched_builds = [b for b in builds if b.features and len(b.features) > 0]
+            enriched_builds = [
+                b for b in builds_with_features if b.features and len(b.features) > 0
+            ]
             partial_builds = [
                 b for b in enriched_builds if len(b.features) < len(selected_features)
             ]
-            failed_builds = [b for b in builds if not b.features or len(b.features) == 0]
+            failed_builds = [
+                b for b in builds_with_features if not b.features or len(b.features) == 0
+            ]
 
             report.enriched_builds = len(enriched_builds)
             report.partial_builds = len(partial_builds)
@@ -206,7 +229,7 @@ class DataQualityService:
 
     def _calculate_feature_metrics(
         self,
-        builds: List[DatasetEnrichmentBuild],
+        builds: List[Any],  # BuildWithFeatures objects with .features attribute
         selected_features: List[str],
         feature_metadata: Dict[str, Dict[str, Any]],
     ) -> List[DataQualityMetric]:
@@ -342,7 +365,7 @@ class DataQualityService:
 
     def _calculate_consistency_score(
         self,
-        builds: List[DatasetEnrichmentBuild],
+        builds: List[Any],  # BuildWithFeatures objects with .features attribute
         selected_features: List[str],
     ) -> float:
         """

@@ -143,11 +143,6 @@ export default function DatasetDetailPage() {
                     <TabsTrigger value="enrichment" className="gap-2">
                         <Zap className="h-4 w-4" />
                         Enrichment
-                        {hasActiveEnrichment && (
-                            <Badge variant="secondary" className="ml-1 text-xs animate-pulse">
-                                Active
-                            </Badge>
-                        )}
                     </TabsTrigger>
                 </TabsList>
 

@@ -49,7 +49,6 @@ interface VersionHistoryTableProps {
     versions: DatasetVersion[];
     loading: boolean;
     onRefresh: () => void;
-    onDownload: (versionId: string, format?: ExportFormat) => void;
     onDelete: (versionId: string) => void;
 }
 
@@ -60,12 +59,10 @@ export function VersionHistoryTable({
     versions,
     loading,
     onRefresh,
-    onDownload,
     onDelete,
 }: VersionHistoryTableProps) {
     const router = useRouter();
     const [currentPage, setCurrentPage] = useState(1);
-    const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
     // Show all versions
     const displayVersions = versions;
@@ -79,17 +76,6 @@ export function VersionHistoryTable({
     const handleViewVersion = (versionId: string) => {
         router.push(`/projects/${datasetId}/versions/${versionId}`);
     };
-
-    // Handle download
-    const handleDownload = async (versionId: string, format: ExportFormat) => {
-        setDownloadingId(versionId);
-        try {
-            await onDownload(versionId, format);
-        } finally {
-            setDownloadingId(null);
-        }
-    };
-
     // Format relative time
     const formatRelativeTime = (dateStr: string | null): string => {
         if (!dateStr) return "—";
@@ -119,11 +105,6 @@ export function VersionHistoryTable({
         };
         return config[status] || { icon: Clock, color: "text-gray-400", label: status };
     };
-
-    const formatOptions: { format: ExportFormat; label: string; icon: typeof FileText }[] = [
-        { format: "csv", label: "CSV", icon: FileSpreadsheet },
-        { format: "json", label: "JSON", icon: FileJson },
-    ];
 
     return (
         <Card>
@@ -170,7 +151,6 @@ export function VersionHistoryTable({
                                 {paginatedVersions.map((version) => {
                                     const statusConfig = getStatusConfig(version.status);
                                     const StatusIcon = statusConfig.icon;
-                                    const isDownloading = downloadingId === version.id;
 
                                     return (
                                         <TableRow
@@ -211,35 +191,6 @@ export function VersionHistoryTable({
                                                     className="flex items-center justify-end gap-1"
                                                     onClick={(e) => e.stopPropagation()}
                                                 >
-                                                    {version.status === "processed" && (
-                                                        <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <Button
-                                                                    variant="ghost"
-                                                                    size="sm"
-                                                                    disabled={isDownloading}
-                                                                >
-                                                                    {isDownloading ? (
-                                                                        <Loader2 className="h-4 w-4 animate-spin" />
-                                                                    ) : (
-                                                                        <Download className="h-4 w-4" />
-                                                                    )}
-                                                                    <ChevronDown className="ml-1 h-3 w-3" />
-                                                                </Button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end">
-                                                                {formatOptions.map(({ format, label, icon: Icon }) => (
-                                                                    <DropdownMenuItem
-                                                                        key={format}
-                                                                        onClick={() => handleDownload(version.id, format)}
-                                                                    >
-                                                                        <Icon className="mr-2 h-4 w-4" />
-                                                                        {label}
-                                                                    </DropdownMenuItem>
-                                                                ))}
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
-                                                    )}
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"

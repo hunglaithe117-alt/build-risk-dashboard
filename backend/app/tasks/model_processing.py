@@ -1086,8 +1086,12 @@ def predict_builds_batch(
                 ObjectId(repo_config_id), new_failure_count
             )
 
+        # Increment builds_completed for successful predictions
+        if succeeded > 0:
+            repo_config_repo.increment_builds_completed(ObjectId(repo_config_id), succeeded)
+
         # Notify UI about repo stats changes
-        if retried_success_count > 0 or new_failure_count > 0:
+        if retried_success_count > 0 or new_failure_count > 0 or succeeded > 0:
             config = repo_config_repo.find_by_id(repo_config_id)
             if config:
                 publish_status(

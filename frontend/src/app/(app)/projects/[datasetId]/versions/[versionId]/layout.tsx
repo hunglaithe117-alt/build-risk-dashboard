@@ -11,6 +11,7 @@ import { Database, BarChart3, Home, Lock } from "lucide-react";
 import { datasetVersionApi } from "@/lib/api";
 import { ExportVersionModal } from "@/components/datasets/ExportVersionModal";
 import { useToast } from "@/components/ui/use-toast";
+import { useWebSocket } from "@/contexts/websocket-context";
 
 interface VersionData {
     id: string;
@@ -48,6 +49,7 @@ export default function VersionLayout({ children }: { children: ReactNode }) {
     const pathname = usePathname();
     const datasetId = params.datasetId;
     const versionId = params.versionId;
+    const { subscribe } = useWebSocket();
 
     const [version, setVersion] = useState<VersionData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -128,6 +130,21 @@ export default function VersionLayout({ children }: { children: ReactNode }) {
         };
     }, [versionId, toast]);
 
+    // Subscribe to ENRICHMENT_UPDATE for real-time status changes
+    useEffect(() => {
+        const unsubscribe = subscribe("ENRICHMENT_UPDATE", (data: any) => {
+            if (data.version_id === versionId && data.status) {
+                // Update version status and progress
+                setVersion(prev => prev ? {
+                    ...prev,
+                    status: data.status,
+                    builds_processed: data.builds_processed ?? prev.builds_processed,
+                } : prev);
+            }
+        });
+        return () => unsubscribe();
+    }, [subscribe, versionId]);
+
     if (loading || !version) {
         return (
             <div className="flex min-h-[400px] items-center justify-center">
@@ -149,7 +166,7 @@ export default function VersionLayout({ children }: { children: ReactNode }) {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <Link href={`/projects/${datasetId}`}>
+                    <Link href={`/projects/${datasetId}?tab=enrichment`}>
                         <Button variant="ghost" size="sm">
                             <ArrowLeft className="mr-2 h-4 w-4" />
                             Back
@@ -163,20 +180,10 @@ export default function VersionLayout({ children }: { children: ReactNode }) {
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <Badge className={`${statusConfig.bgColor} ${statusConfig.color}`}>
+                    <Badge className={`${statusConfig.bgColor} ${statusConfig.color} hover:${statusConfig.bgColor} cursor-default`}>
                         <StatusIcon className={`mr-1 h-3 w-3 ${["queued", "ingesting", "processing"].includes(version.status) ? "animate-spin" : ""}`} />
                         {version.status.charAt(0).toUpperCase() + version.status.slice(1)}
                     </Badge>
-                    {version.status === "processed" && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setIsExportModalOpen(true)}
-                        >
-                            <Download className="mr-2 h-4 w-4" />
-                            Export
-                        </Button>
-                    )}
                 </div>
             </div>
 

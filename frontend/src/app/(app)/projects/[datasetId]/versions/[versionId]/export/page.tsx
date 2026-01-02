@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { PreprocessingSection } from "../_components";
+import { ExportSection } from "../_components";
 
 export default function VersionExportPage() {
     const params = useParams<{ datasetId: string; versionId: string }>();
@@ -9,10 +9,11 @@ export default function VersionExportPage() {
     const versionId = params.versionId;
 
     return (
-        <PreprocessingSection
+        <ExportSection
             datasetId={datasetId}
             versionId={versionId}
             versionStatus="processed"
         />
     );
 }
+

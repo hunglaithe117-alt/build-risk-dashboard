@@ -33,7 +33,6 @@ export function EnrichmentTab({
         error,
         refresh,
         deleteVersion,
-        downloadVersion,
     } = useDatasetVersions(datasetId);
 
     // WebSocket subscription for real-time updates
@@ -133,7 +132,6 @@ export function EnrichmentTab({
                 versions={versions}
                 loading={loading}
                 onRefresh={refresh}
-                onDownload={downloadVersion}
                 onDelete={deleteVersion}
             />
         </div>

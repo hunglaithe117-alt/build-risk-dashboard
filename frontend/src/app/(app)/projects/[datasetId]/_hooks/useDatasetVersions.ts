@@ -96,7 +96,7 @@ export function useDatasetVersions(datasetId: string): UseDatasetVersionsReturn 
 
     // Find active (processing or ingesting) version
     const activeVersion = versions.find(
-        (v) => ["queued", "ingesting", "ingested", "processing"].includes(v.status)
+        (v) => ["queued", "ingesting", "processing"].includes(v.status)
     ) || null;
 
     const hasMore = skip + versions.length < total;

@@ -589,9 +589,7 @@ def aggregate_ingestion_results(
 )
 def handle_enrichment_chord_error(
     self: PipelineTask,
-    request,
-    exc,
-    traceback,
+    task_id: str,
     version_id: str,
     correlation_id: str = "",
 ) -> Dict[str, Any]:
@@ -603,8 +601,21 @@ def handle_enrichment_chord_error(
     2. Update version status to INGESTED or FAILED
     3. User can review and retry
     """
+    from celery.result import AsyncResult
+
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
-    error_msg = str(exc) if exc else "Unknown ingestion error"
+
+    # Try to get error info from the failed task
+    error_msg = "Unknown ingestion error"
+    try:
+        result = AsyncResult(task_id)
+        # Accessing result.result might re-raise the exception or return it
+        if isinstance(result.result, Exception):
+            error_msg = str(result.result)
+        elif result.result:
+            error_msg = str(result.result)
+    except Exception as e:
+        logger.warning(f"Could not retrieve exception for task {task_id}: {e}")
 
     logger.error(f"{corr_prefix} Ingestion chord failed for version {version_id}: {error_msg}")
 

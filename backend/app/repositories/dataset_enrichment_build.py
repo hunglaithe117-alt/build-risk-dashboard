@@ -717,12 +717,17 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         dataset_version_id: ObjectId,
         skip: int = 0,
         limit: int = 100,
+        status: Optional[str] = None,
     ) -> tuple[List[Dict[str, Any]], int]:
         """
         List builds for a version with repo name, web url, and features from FeatureVector.
         """
+        match_query: Dict[str, Any] = {"dataset_version_id": dataset_version_id}
+        if status:
+            match_query["extraction_status"] = status
+
         pipeline = [
-            {"$match": {"dataset_version_id": dataset_version_id}},
+            {"$match": match_query},
             {"$sort": {"_id": 1}},
             {
                 "$facet": {

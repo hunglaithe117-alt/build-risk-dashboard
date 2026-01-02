@@ -7,7 +7,7 @@ from app.tasks.pipeline.feature_dag.extractors import (
     temporal,
 )
 
-DEFAULT_FEATURES = {"tr_build_id", "gh_project_name"}
+DEFAULT_FEATURES = {"tr_build_id", "gh_project_name", "ci_provider"}
 
 HAMILTON_MODULES = [
     build,

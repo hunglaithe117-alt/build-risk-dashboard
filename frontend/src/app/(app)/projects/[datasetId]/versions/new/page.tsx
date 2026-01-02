@@ -88,7 +88,7 @@ export default function CreateVersionPage({ params }: PageProps) {
                 const dataset = await datasetsApi.get(datasetId);
                 const response = await datasetsApi.listVersions(datasetId, { limit: 100 });
                 const active = response.versions.some((v: any) =>
-                    ["queued", "ingesting", "ingested", "processing"].includes(v.status)
+                    ["queued", "ingesting", "processing"].includes(v.status)
                 );
                 setHasActiveVersion(active);
             } catch (err) {
@@ -178,7 +178,7 @@ export default function CreateVersionPage({ params }: PageProps) {
                 description: "Data collection has started for your new dataset version.",
             });
 
-            router.push(`/projects/${datasetId}`);
+            router.push(`/projects/${datasetId}?tab=enrichment`);
         } catch (err) {
             console.error("Failed to create version:", err);
             toast({
@@ -356,6 +356,10 @@ export default function CreateVersionPage({ params }: PageProps) {
                                                     Clear All
                                                 </Button>
                                             </div>
+                                        </div>
+                                        {/* Default features info note */}
+                                        <div className="px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border-b text-xs text-blue-700 dark:text-blue-300">
+                                            <span className="font-medium">Note:</span> 3 default features are always included: <code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">tr_build_id</code>, <code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">gh_project_name</code>, <code className="bg-blue-100 dark:bg-blue-800 px-1 rounded">ci_provider</code>
                                         </div>
                                         <div className="flex-1 overflow-y-auto">
                                             <SelectedFeaturesPanel

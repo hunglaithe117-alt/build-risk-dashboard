@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ReactNode, useState, useEffect, useCallback } from "react";
 import { Lock, Loader2 } from "lucide-react";
 import { datasetVersionApi } from "@/lib/api";
+import { useWebSocket } from "@/contexts/websocket-context";
 import { cn } from "@/lib/utils";
 
 // Statuses that allow viewing processing/scans tabs
@@ -13,6 +14,7 @@ const PROCESSING_STATUSES = ["processing", "processed", "failed"];
 export default function BuildsLayout({ children }: { children: ReactNode }) {
     const params = useParams<{ datasetId: string; versionId: string }>();
     const pathname = usePathname();
+    const { subscribe } = useWebSocket();
     const datasetId = params.datasetId;
     const versionId = params.versionId;
 
@@ -39,6 +41,16 @@ export default function BuildsLayout({ children }: { children: ReactNode }) {
         }
         fetchVersion();
     }, [datasetId, versionId]);
+
+    // Subscribe to WebSocket ENRICHMENT_UPDATE for real-time status updates
+    useEffect(() => {
+        const unsubscribe = subscribe("ENRICHMENT_UPDATE", (data: any) => {
+            if (data.version_id === versionId && data.status) {
+                setVersionStatus(data.status);
+            }
+        });
+        return () => unsubscribe();
+    }, [subscribe, versionId]);
 
     // Determine active sub-tab
     const getActiveTab = () => {

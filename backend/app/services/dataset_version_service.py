@@ -98,6 +98,11 @@ class DatasetVersionService:
 
             version_number = self._repo.get_next_version_number(dataset_id)
 
+            # Merge DEFAULT_FEATURES into selected_features
+            from app.tasks.pipeline.constants import DEFAULT_FEATURES
+
+            merged_features = list(set(selected_features) | DEFAULT_FEATURES)
+
             # Normalize scan_metrics
             normalized_scan_metrics = {"sonarqube": [], "trivy": []}
             if scan_metrics:
@@ -117,7 +122,7 @@ class DatasetVersionService:
                 version_number=version_number,
                 name=name or "",
                 description=description,
-                selected_features=selected_features,
+                selected_features=merged_features,
                 feature_configs=feature_configs or {},
                 scan_metrics=normalized_scan_metrics,
                 scan_config=normalized_scan_config,
@@ -306,6 +311,7 @@ class DatasetVersionService:
             ObjectId(version_id),
             skip=skip,
             limit=limit,
+            status=extraction_status,
         )
 
         expected_features = len(version.selected_features)
@@ -799,6 +805,8 @@ class DatasetVersionService:
         missing_resources = feature_vector.missing_resources if feature_vector else []
         skipped_features = feature_vector.skipped_features if feature_vector else []
 
+        expected_feature_count = len(version.selected_features)
+
         enrichment_detail = EnrichmentBuildDetail(
             id=str(enrichment_build.id),
             extraction_status=enrichment_build.extraction_status.value
@@ -809,7 +817,7 @@ class DatasetVersionService:
             missing_resources=missing_resources,
             skipped_features=skipped_features,
             feature_count=feature_count,
-            expected_feature_count=len(version.selected_features),
+            expected_feature_count=expected_feature_count,
             features=features,
             scan_metrics=scan_metrics,
             enriched_at=enrichment_build.enriched_at,

@@ -86,6 +86,13 @@ export default function IngestionPage() {
     const [retryIngestionLoading, setRetryIngestionLoading] = useState(false);
     const [failedCount, setFailedCount] = useState(0);
 
+    // Processing progress state
+    const [processingProgress, setProcessingProgress] = useState<{
+        builds_processed: number;
+        builds_total: number;
+        progress: number;
+    } | null>(null);
+
     // Subscribe to WebSocket updates for real-time ingestion status
     useEffect(() => {
         const unsubscribe = subscribe("INGESTION_BUILD_UPDATE", (data: any) => {
@@ -124,6 +131,31 @@ export default function IngestionPage() {
                         return build;
                     })
                 );
+            }
+        });
+        return () => unsubscribe();
+    }, [subscribe, versionId]);
+
+    // Subscribe to ENRICHMENT_UPDATE for processing progress
+    useEffect(() => {
+        const unsubscribe = subscribe("ENRICHMENT_UPDATE", (data: any) => {
+            if (data.version_id === versionId) {
+                // Update version status
+                if (data.status) {
+                    setVersionStatus(data.status);
+                }
+                // Update processing progress
+                if (data.status === "processing" || data.status === "processed") {
+                    setProcessingProgress({
+                        builds_processed: data.builds_processed || 0,
+                        builds_total: data.builds_total || 0,
+                        progress: data.progress || 0,
+                    });
+                }
+                // Clear progress when completed
+                if (data.status === "processed") {
+                    setProcessingProgress(null);
+                }
             }
         });
         return () => unsubscribe();
@@ -250,6 +282,33 @@ export default function IngestionPage() {
                 onStatusFilter={handleStatusFilter}
                 isLoading={loading}
             />
+
+            {/* Processing Progress Card */}
+            {versionStatus === "processing" && (
+                <Card className="border-purple-200 bg-purple-50 dark:border-purple-800 dark:bg-purple-950/30">
+                    <CardContent className="py-4">
+                        <div className="flex items-center gap-4">
+                            <Loader2 className="h-5 w-5 animate-spin text-purple-600" />
+                            <div className="flex-1">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm font-medium text-purple-700 dark:text-purple-300">
+                                        Feature Extraction in Progress
+                                    </span>
+                                    <span className="text-sm text-purple-600 dark:text-purple-400">
+                                        {processingProgress?.builds_processed || 0} / {processingProgress?.builds_total || total} builds
+                                    </span>
+                                </div>
+                                <div className="h-2 w-full rounded-full bg-purple-200 dark:bg-purple-900 overflow-hidden">
+                                    <div
+                                        className="h-full bg-purple-600 transition-all duration-500"
+                                        style={{ width: `${processingProgress?.progress || 0}%` }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Builds Table */}
             {loading ? (

@@ -19,6 +19,7 @@ celery_app = Celery(
         "app.tasks.dataset_validation",
         "app.tasks.enrichment_ingestion",
         "app.tasks.enrichment_processing",
+        "app.tasks.enrichment_scan_helpers",
         "app.tasks.export",
         "app.tasks.sonar",
         "app.tasks.trivy",

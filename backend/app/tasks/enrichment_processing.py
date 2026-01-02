@@ -143,8 +143,6 @@ def dispatch_scans_and_processing(
             f"{corr_prefix}[dispatch_scans_and_processing] Dispatching scans: "
             f"sonar={has_sonar}, trivy={has_trivy}"
         )
-        # Import here to avoid circular import
-        from app.tasks.enrichment_ingestion import dispatch_version_scans
 
         dispatch_version_scans.delay(version_id, correlation_id=correlation_id)
 

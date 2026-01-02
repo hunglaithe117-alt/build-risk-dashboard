@@ -420,7 +420,13 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
         Returns:
             Number of builds updated
         """
-        from app.tasks.pipeline.shared.resources import FeatureResource
+        from app.tasks.pipeline.shared.resources import (
+            FeatureResource,
+            get_ingestion_only_resources,
+        )
+
+        # Filter to only ingestion resources (exclude core resources like repo, build_run)
+        filtered_resources = list(get_ingestion_only_resources(set(required_resources)))
 
         # Get all ingestion-related resources from FeatureResource enum
         ingestion_resources = [
@@ -432,7 +438,7 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
         # Build initial resource_status dict
         resource_status = {}
         for res in ingestion_resources:
-            if res in required_resources:
+            if res in filtered_resources:
                 resource_status[res] = {
                     "status": ResourceStatus.PENDING.value,
                     "error": None,
@@ -455,7 +461,7 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
             {
                 "$set": {
                     "resource_status": resource_status,
-                    "required_resources": required_resources,
+                    "required_resources": filtered_resources,
                     "status": DatasetImportBuildStatus.INGESTING.value,
                     "ingestion_started_at": datetime.utcnow(),
                 }

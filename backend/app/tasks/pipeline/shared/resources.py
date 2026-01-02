@@ -134,6 +134,27 @@ def get_input_resource_names() -> frozenset:
     return frozenset(INPUT_REGISTRY.keys())
 
 
+def get_ingestion_only_resources(resources: set) -> set:
+    """
+    Filter resources to only include those requiring ingestion.
+
+    Removes core resources that are always available from DB
+    (repo, build_run, raw_build_runs, feature_vectors, feature_config).
+
+    Args:
+        resources: Set of resource names
+
+    Returns:
+        Set containing only ingestion resources (git_history, git_worktree, build_logs)
+    """
+    ingestion_resources = {
+        FeatureResource.GIT_HISTORY.value,
+        FeatureResource.GIT_WORKTREE.value,
+        FeatureResource.BUILD_LOGS.value,
+    }
+    return resources & ingestion_resources
+
+
 def check_resource_availability(inputs: Dict[str, Any]) -> set:
     """
     Check which resources are available based on provided inputs.

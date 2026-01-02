@@ -8,7 +8,6 @@ Features:
 """
 
 import asyncio
-import json
 import logging
 import subprocess
 from pathlib import Path
@@ -31,36 +30,13 @@ from app.paths import (
     get_repo_path,
     get_worktrees_path,
 )
-from app.repositories.model_import_build import ModelImportBuildRepository, ResourceStatus
-from app.repositories.model_repo_config import ModelRepoConfigRepository
+from app.repositories.base_import_build import get_progressive_updater
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.tasks.base import PipelineTask
 from app.tasks.shared.events import publish_ingestion_build_update
 
 logger = logging.getLogger(__name__)
-
-
-def save_ingestion_result(
-    redis_client: redis.Redis, correlation_id: str, result: Dict[str, Any]
-) -> None:
-    """
-    Save ingestion task result to Redis for final aggregation.
-
-    This prevents data loss in Celery chains where intermediate results
-    might be dropped.
-    """
-    if not correlation_id:
-        return
-
-    try:
-        key = f"ingestion:results:{correlation_id}"
-        # Push to list
-        redis_client.rpush(key, json.dumps(result))
-        # Set expiry (1 hour)
-        redis_client.expire(key, 3600)
-    except Exception as e:
-        logger.error(f"Failed to save ingestion result to Redis: {e}")
 
 
 @celery_app.task(
@@ -110,20 +86,21 @@ def clone_repo(
             blocking_timeout=60,
             redis_client=self.redis,
         ):
-            # Update status to IN_PROGRESS
-            if raw_repo_id:
+            # Update status to IN_PROGRESS using progressive updater
+            if pipeline_id and pipeline_type:
                 try:
-                    model_config_repo = ModelRepoConfigRepository(self.db)
-                    import_build_repo = ModelImportBuildRepository(self.db)
+                    from app.entities.model_import_build import ResourceStatus
 
-                    # Find all configs using this raw repo
-                    configs = model_config_repo.find_by_raw_repo(raw_repo_id)
-                    for config in configs:
-                        import_build_repo.update_resource_status_batch(
-                            str(config.id),
-                            "git_history",
-                            ResourceStatus.IN_PROGRESS,
-                        )
+                    updater = get_progressive_updater(
+                        db=self.db,
+                        pipeline_type=pipeline_type,
+                        pipeline_id=pipeline_id,
+                        raw_repo_id=raw_repo_id,
+                    )
+                    updater.update_resource_batch(
+                        "git_history",
+                        ResourceStatus.IN_PROGRESS,
+                    )
                 except Exception as e:
                     logger.warning(f"{log_ctx} Failed to update status to IN_PROGRESS: {e}")
 
@@ -183,8 +160,26 @@ def clone_repo(
                 }
             )
 
-            # No need to chain previous results, we use Redis for aggregation
-            save_ingestion_result(self.redis, correlation_id, result)
+            # Progressive save: Update resource status to COMPLETED in DB
+            if pipeline_id and pipeline_type:
+                try:
+                    from app.entities.model_import_build import ResourceStatus
+
+                    updater = get_progressive_updater(
+                        db=self.db,
+                        pipeline_type=pipeline_type,
+                        pipeline_id=pipeline_id,
+                        raw_repo_id=raw_repo_id,
+                    )
+                    updated = updater.update_resource_batch(
+                        "git_history",
+                        ResourceStatus.COMPLETED,
+                    )
+                    logger.info(
+                        f"{log_ctx} Progressive save: marked {updated} builds git_history=COMPLETED"
+                    )
+                except Exception as e:
+                    logger.warning(f"{log_ctx} Progressive save failed: {e}")
 
             # Publish WebSocket update
             if pipeline_id:
@@ -206,8 +201,25 @@ def clone_repo(
                 "error": "Clone task exceeded time limit",
             }
         )
-        # No need to chain previous results
-        save_ingestion_result(self.redis, correlation_id, result)
+
+        # Progressive save: Mark as FAILED on timeout
+        if pipeline_id and pipeline_type:
+            try:
+                from app.entities.model_import_build import ResourceStatus
+
+                updater = get_progressive_updater(
+                    db=self.db,
+                    pipeline_type=pipeline_type,
+                    pipeline_id=pipeline_id,
+                    raw_repo_id=raw_repo_id,
+                )
+                updater.update_resource_batch(
+                    "git_history",
+                    ResourceStatus.FAILED,
+                    "Clone task exceeded time limit",
+                )
+            except Exception as e:
+                logger.warning(f"{log_ctx} Progressive save failed: {e}")
 
         # Publish WebSocket update for timeout
         if pipeline_id:
@@ -245,6 +257,25 @@ def clone_repo(
                     "error": error_msg,
                 }
             )
+
+            # Progressive save: Mark as FAILED
+            if pipeline_id and pipeline_type:
+                try:
+                    from app.entities.model_import_build import ResourceStatus
+
+                    updater = get_progressive_updater(
+                        db=self.db,
+                        pipeline_type=pipeline_type,
+                        pipeline_id=pipeline_id,
+                        raw_repo_id=raw_repo_id,
+                    )
+                    updater.update_resource_batch(
+                        "git_history",
+                        ResourceStatus.FAILED,
+                        error_msg,
+                    )
+                except Exception as ex:
+                    logger.warning(f"{log_ctx} Progressive save failed: {ex}")
 
             # Publish WebSocket update for failure
             if pipeline_id:
@@ -298,21 +329,24 @@ def create_worktree_chunk(
         f"{log_ctx} Starting with {len(sha_list)} commits: " f"{[sha[:8] for sha in sha_list]}"
     )
 
-    # Update status to IN_PROGRESS for these commits
-    if raw_repo_id and commit_shas:
+    # Update status to IN_PROGRESS for these commits using progressive updater
+    if pipeline_id and pipeline_type and commit_shas:
         try:
-            model_config_repo = ModelRepoConfigRepository(self.db)
-            import_build_repo = ModelImportBuildRepository(self.db)
-            configs = model_config_repo.find_by_raw_repo(raw_repo_id)
-            for config in configs:
-                import_build_repo.update_resource_by_commits(
-                    str(config.id),
-                    "git_worktree",
-                    commit_shas,
-                    ResourceStatus.IN_PROGRESS,
-                )
+            from app.entities.model_import_build import ResourceStatus
+
+            updater = get_progressive_updater(
+                db=self.db,
+                pipeline_type=pipeline_type,
+                pipeline_id=pipeline_id,
+                raw_repo_id=raw_repo_id,
+            )
+            updater.update_resource_by_commits(
+                "git_worktree",
+                commit_shas,
+                ResourceStatus.IN_PROGRESS,
+            )
         except Exception as e:
-            logger.warning(f"{log_ctx} Failed to verify IN_PROGRESS status: {e}")
+            logger.warning(f"{log_ctx} Failed to update status to IN_PROGRESS: {e}")
 
     result = {
         "resource": "git_worktree",
@@ -326,7 +360,6 @@ def create_worktree_chunk(
     }
 
     if not commit_shas:
-        save_ingestion_result(self.redis, correlation_id, result)
         return result
 
     try:
@@ -342,7 +375,6 @@ def create_worktree_chunk(
         if not repo_path.exists():
             result["error"] = "Repo not cloned"
             logger.error(f"{log_ctx} Repo not cloned at {repo_path}")
-            save_ingestion_result(self.redis, correlation_id, result)
             return result
 
         # Get GitHub client for fork commit replay
@@ -438,7 +470,6 @@ def create_worktree_chunk(
                 "created_commits": created_commits,
             }
         )
-        save_ingestion_result(self.redis, correlation_id, result)
         return result
 
     except Exception as e:
@@ -475,7 +506,40 @@ def create_worktree_chunk(
                 }
             )
 
-    save_ingestion_result(self.redis, correlation_id, result)
+    # Progressive save: Update resource status for completed/failed commits
+    if pipeline_id and pipeline_type:
+        try:
+            from app.entities.model_import_build import ResourceStatus
+
+            updater = get_progressive_updater(
+                db=self.db,
+                pipeline_type=pipeline_type,
+                pipeline_id=pipeline_id,
+                raw_repo_id=raw_repo_id,
+            )
+            # Mark created commits as COMPLETED
+            if result.get("created_commits"):
+                updated = updater.update_resource_by_commits(
+                    "git_worktree",
+                    result["created_commits"],
+                    ResourceStatus.COMPLETED,
+                )
+                logger.info(
+                    f"{log_ctx} Progressive save: marked {updated} builds git_worktree=COMPLETED"
+                )
+            # Mark failed commits as FAILED
+            if result.get("failed_commits"):
+                updated = updater.update_resource_by_commits(
+                    "git_worktree",
+                    result["failed_commits"],
+                    ResourceStatus.FAILED,
+                    result.get("error") or "Worktree creation failed",
+                )
+                logger.info(
+                    f"{log_ctx} Progressive save: marked {updated} builds git_worktree=FAILED"
+                )
+        except Exception as e:
+            logger.warning(f"{log_ctx} Progressive save failed: {e}")
 
     # Publish WebSocket update only on final chunk
     is_final_chunk = chunk_index == total_chunks - 1
@@ -690,8 +754,6 @@ def aggregate_logs_results(
         "skipped_log_ids": all_skipped_log_ids,
     }
 
-    save_ingestion_result(self.redis, correlation_id, result)
-
     # Publish WebSocket update
     if pipeline_id:
         ws_status = (
@@ -853,6 +915,8 @@ def download_logs_chunk(
     chunk_index: int = 0,
     total_chunks: int = 1,
     correlation_id: str = "",
+    pipeline_id: str = "",
+    pipeline_type: str = "",  # "model" or "dataset"
 ) -> Dict[str, Any]:
     """
     Worker: Download logs for a chunk of builds.
@@ -870,21 +934,24 @@ def download_logs_chunk(
 
     logger.info(f"{log_ctx} Starting with {len(build_ids or [])} builds")
 
-    # Update status to IN_PROGRESS for these builds
-    if raw_repo_id and build_ids:
+    # Update status to IN_PROGRESS for these builds using progressive updater
+    if pipeline_id and pipeline_type and build_ids:
         try:
-            model_config_repo = ModelRepoConfigRepository(self.db)
-            import_build_repo = ModelImportBuildRepository(self.db)
-            configs = model_config_repo.find_by_raw_repo(raw_repo_id)
-            for config in configs:
-                import_build_repo.update_resource_by_ci_run_ids(
-                    str(config.id),
-                    "build_logs",
-                    build_ids,
-                    ResourceStatus.IN_PROGRESS,
-                )
+            from app.entities.model_import_build import ResourceStatus
+
+            updater = get_progressive_updater(
+                db=self.db,
+                pipeline_type=pipeline_type,
+                pipeline_id=pipeline_id,
+                raw_repo_id=raw_repo_id,
+            )
+            updater.update_resource_by_ci_run_ids(
+                "build_logs",
+                build_ids,
+                ResourceStatus.IN_PROGRESS,
+            )
         except Exception as e:
-            logger.warning(f"{log_ctx} Failed to verify IN_PROGRESS status: {e}")
+            logger.warning(f"{log_ctx} Failed to update status to IN_PROGRESS: {e}")
 
     # Initialize result with defaults
     result = {
@@ -978,6 +1045,44 @@ def download_logs_chunk(
         result["expired_log_ids"] = expired_log_ids
         result["downloaded_log_ids"] = downloaded_log_ids
         result["skipped_log_ids"] = skipped_log_ids
+
+        # Progressive save: Update resource status for completed/failed logs
+        if pipeline_id and pipeline_type:
+            try:
+                from app.entities.model_import_build import ResourceStatus
+
+                updater = get_progressive_updater(
+                    db=self.db,
+                    pipeline_type=pipeline_type,
+                    pipeline_id=pipeline_id,
+                    raw_repo_id=raw_repo_id,
+                )
+                # Mark downloaded/skipped as COMPLETED
+                successful_logs = downloaded_log_ids + skipped_log_ids
+                if successful_logs:
+                    updated = updater.update_resource_by_ci_run_ids(
+                        "build_logs",
+                        successful_logs,
+                        ResourceStatus.COMPLETED,
+                    )
+                    logger.info(
+                        f"{log_ctx} Progressive save: marked {updated} builds build_logs=COMPLETED"
+                    )
+                # Mark failed/expired as FAILED
+                failed_logs = failed_log_ids + expired_log_ids
+                if failed_logs:
+                    updated = updater.update_resource_by_ci_run_ids(
+                        "build_logs",
+                        failed_logs,
+                        ResourceStatus.FAILED,
+                        "Log download failed or expired",
+                    )
+                    logger.info(
+                        f"{log_ctx} Progressive save: marked {updated} builds build_logs=FAILED"
+                    )
+            except Exception as e:
+                logger.warning(f"{log_ctx} Progressive save failed: {e}")
+
         return result
 
     except SoftTimeLimitExceeded:

@@ -253,6 +253,8 @@ def _build_logs_chord(
             chunk_index=idx,
             total_chunks=total_chunks,
             correlation_id=correlation_id,
+            pipeline_id=pipeline_id,
+            pipeline_type=pipeline_type,
         )
         for idx, chunk_ids in enumerate(chunks)
     ]

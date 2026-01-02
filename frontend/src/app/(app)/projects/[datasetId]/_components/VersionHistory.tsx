@@ -82,7 +82,7 @@ export const VersionHistory = memo(function VersionHistory({
         <div className="space-y-4">
             {/* Active Version Progress */}
             {activeVersion && (
-                <ActiveVersionCard version={activeVersion} />
+                <ActiveVersionCard version={activeVersion} datasetId={datasetId} />
             )}
 
             {/* Waiting for user action - Start Processing */}
@@ -153,21 +153,30 @@ export const VersionHistory = memo(function VersionHistory({
 
 interface ActiveVersionCardProps {
     version: DatasetVersion;
+    datasetId: string;
 }
 
-function ActiveVersionCard({ version }: ActiveVersionCardProps) {
+function ActiveVersionCard({ version, datasetId }: ActiveVersionCardProps) {
+    const router = useRouter();
     // Determine current phase
     const isIngesting = version.status.startsWith("ingesting");
-    const isProcessing = version.status === "processing";
+
+    const handleClick = () => {
+        router.push(`/projects/${datasetId}/versions/${version.id}/builds`);
+    };
 
     return (
-        <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20">
+        <Card
+            className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/20 cursor-pointer transition-all hover:shadow-md hover:border-blue-300"
+            onClick={handleClick}
+        >
             <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2 text-base">
                         <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                         {isIngesting ? "Ingesting" : "Processing"}: {version.name}
                     </CardTitle>
+                    <Eye className="h-4 w-4 text-muted-foreground" />
                 </div>
             </CardHeader>
             <CardContent className="space-y-2">

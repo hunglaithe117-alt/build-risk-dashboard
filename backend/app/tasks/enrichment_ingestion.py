@@ -26,7 +26,6 @@ from app.entities.dataset_build import DatasetBuild
 from app.entities.dataset_import_build import (
     DatasetImportBuild,
     DatasetImportBuildStatus,
-    ResourceStatus,
 )
 from app.entities.dataset_version import VersionStatus
 from app.repositories.dataset_build_repository import DatasetBuildRepository
@@ -37,7 +36,6 @@ from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.tasks.base import EnrichmentTask, PipelineTask
-from app.tasks.pipeline.shared.resources import FeatureResource
 from app.tasks.shared.events import publish_enrichment_update
 
 logger = logging.getLogger(__name__)
@@ -339,47 +337,13 @@ def aggregate_ingestion_results(
     version_repo = DatasetVersionRepository(self.db)
     import_build_repo = DatasetImportBuildRepository(self.db)
 
-    # Fetch and normalize results from Redis or arguments (same pattern as model_ingestion)
+    # NOTE: Redis results are no longer used for status determination.
+    # Resource status is now progressively saved directly to DB by shared tasks.
+    # We only log stats from Redis for debugging purposes.
     all_results = _fetch_and_parse_results(self.redis, correlation_id, results, corr_prefix)
-
-    # Collect failed items from task results
-    clone_failed = False
-    clone_error = None
-    failed_commits: list[str] = []
-    created_commits: list[str] = []
-    failed_log_ids: list[str] = []
-    expired_log_ids: list[str] = []
-    downloaded_log_ids: list[str] = []
-    skipped_log_ids: list[str] = []
-
-    for r in all_results:
-        if not isinstance(r, dict):
-            continue
-        # Check clone result (git_history) - affects ALL builds
-        if r.get("resource") == FeatureResource.GIT_HISTORY.value and r.get("status") in (
-            "timeout",
-            "failed",
-        ):
-            clone_failed = True
-            clone_error = r.get("error")
-
-        # Collect failed and created commits from worktree chunks
-        if r.get("resource") == FeatureResource.GIT_WORKTREE.value:
-            if "failed_commits" in r:
-                failed_commits.extend(r["failed_commits"])
-            if "created_commits" in r:
-                created_commits.extend(r["created_commits"])
-
-        # Collect log IDs from log chunks
-        if r.get("resource") == FeatureResource.BUILD_LOGS.value:
-            if "failed_log_ids" in r:
-                failed_log_ids.extend(r["failed_log_ids"])
-            if "expired_log_ids" in r:
-                expired_log_ids.extend(r["expired_log_ids"])
-            if "downloaded_log_ids" in r:
-                downloaded_log_ids.extend(r["downloaded_log_ids"])
-            if "skipped_log_ids" in r:
-                skipped_log_ids.extend(r["skipped_log_ids"])
+    logger.info(
+        f"{corr_prefix}[aggregate] Chord returned {len(all_results)} results (for logging only)"
+    )
 
     # Cleanup Redis key
     if correlation_id:
@@ -388,138 +352,74 @@ def aggregate_ingestion_results(
         except Exception as e:
             logger.warning(f"{corr_prefix} Failed to cleanup Redis key: {e}")
 
-    # === Update resource status per-build ===
-
-    # 1. git_history: ALL builds get same status (clone is repo-level)
-    if clone_failed:
-        import_build_repo.update_resource_status_batch(
-            version_id,
-            FeatureResource.GIT_HISTORY.value,
-            ResourceStatus.FAILED,
-            clone_error,
-        )
-    else:
-        import_build_repo.update_resource_status_batch(
-            version_id, FeatureResource.GIT_HISTORY.value, ResourceStatus.COMPLETED
-        )
-
-    # 2. git_worktree: Mark failed commits, then mark rest as completed
-    if failed_commits:
-        # Note: update_resource_by_commits needs raw_repo_id; for dataset we update all
-        # builds with matching commit_sha
-        wt_key = f"resource_status.{FeatureResource.GIT_WORKTREE.value}"
-        import_build_repo.collection.update_many(
-            {
-                "dataset_version_id": ObjectId(version_id),
-                "status": DatasetImportBuildStatus.INGESTING.value,
-                "commit_sha": {"$in": failed_commits},
-            },
-            {
-                "$set": {
-                    f"{wt_key}.status": ResourceStatus.FAILED.value,
-                    f"{wt_key}.error": "Worktree creation failed",
-                }
-            },
-        )
-    # Mark remaining as completed
-    import_build_repo.update_resource_status_batch(
-        version_id, FeatureResource.GIT_WORKTREE.value, ResourceStatus.COMPLETED
-    )
-
-    # 3. build_logs: Mark failed/expired logs, then mark rest as completed
-    all_failed_logs = failed_log_ids + expired_log_ids
-    if all_failed_logs:
-        log_key = f"resource_status.{FeatureResource.BUILD_LOGS.value}"
-        import_build_repo.collection.update_many(
-            {
-                "dataset_version_id": ObjectId(version_id),
-                "status": DatasetImportBuildStatus.INGESTING.value,
-                "ci_run_id": {"$in": all_failed_logs},
-            },
-            {
-                "$set": {
-                    f"{log_key}.status": ResourceStatus.FAILED.value,
-                    f"{log_key}.error": "Log download failed or expired",
-                }
-            },
-        )
-    # Mark remaining as completed
-    import_build_repo.update_resource_status_batch(
-        version_id, FeatureResource.BUILD_LOGS.value, ResourceStatus.COMPLETED
-    )
-
-    # === Determine per-build final status ===
-    # FAILED: Actual error (timeout, network, exception) - RETRYABLE
-    # MISSING_RESOURCE: Expected (logs expired, commit not in repo) - NOT RETRYABLE
+    # === NOTE: Resource status updates are now done progressively ===
+    # The shared ingestion tasks (clone_repo, create_worktree_chunk, download_logs_chunk)
+    # now save resource status directly to DB as they complete.
+    # We now determine final BUILD status by querying resource_status from DB.
 
     from datetime import datetime
 
     now = datetime.utcnow()
 
-    # Mark builds as FAILED if clone failed (all builds) - this is an actual error
-    if clone_failed:
+    # === Determine per-build final status from resource_status in DB ===
+    # FAILED: Any required resource has status = "failed" (actual error - RETRYABLE)
+    # MISSING_RESOURCE: Logs expired (expected - NOT RETRYABLE)
+    # INGESTED: All required resources completed
+
+    # 1. Check if git_history failed (affects ALL builds)
+    git_history_failed = import_build_repo.collection.count_documents(
+        {
+            "dataset_version_id": ObjectId(version_id),
+            "status": DatasetImportBuildStatus.INGESTING.value,
+            "resource_status.git_history.status": "failed",
+        }
+    )
+
+    if git_history_failed > 0:
+        # Clone failed - mark all as FAILED
         import_build_repo.update_many_by_status(
             version_id,
             from_status=DatasetImportBuildStatus.INGESTING.value,
             updates={
                 "status": DatasetImportBuildStatus.FAILED.value,
-                "ingestion_error": clone_error or "Clone failed",
+                "ingestion_error": "Clone failed",
                 "failed_at": now,
             },
         )
     else:
-        # Mark builds with failed worktrees as FAILED (actual error - retryable)
-        if failed_commits:
-            import_build_repo.collection.update_many(
-                {
-                    "dataset_version_id": ObjectId(version_id),
-                    "status": DatasetImportBuildStatus.INGESTING.value,
-                    "commit_sha": {"$in": failed_commits},
-                },
-                {
-                    "$set": {
-                        "status": DatasetImportBuildStatus.FAILED.value,
-                        "ingestion_error": "Worktree creation failed",
-                        "failed_at": now,
-                    }
-                },
-            )
+        # 2. Mark builds with failed git_worktree as FAILED
+        import_build_repo.collection.update_many(
+            {
+                "dataset_version_id": ObjectId(version_id),
+                "status": DatasetImportBuildStatus.INGESTING.value,
+                "resource_status.git_worktree.status": "failed",
+            },
+            {
+                "$set": {
+                    "status": DatasetImportBuildStatus.FAILED.value,
+                    "ingestion_error": "Worktree creation failed",
+                    "failed_at": now,
+                }
+            },
+        )
 
-        # Mark builds with failed logs as FAILED (actual error - retryable)
-        if failed_log_ids:
-            import_build_repo.collection.update_many(
-                {
-                    "dataset_version_id": ObjectId(version_id),
-                    "status": DatasetImportBuildStatus.INGESTING.value,
-                    "ci_run_id": {"$in": failed_log_ids},
-                },
-                {
-                    "$set": {
-                        "status": DatasetImportBuildStatus.FAILED.value,
-                        "ingestion_error": "Log download failed",
-                        "failed_at": now,
-                    }
-                },
-            )
+        # 3. Mark builds with failed build_logs as MISSING_RESOURCE (not retryable)
+        import_build_repo.collection.update_many(
+            {
+                "dataset_version_id": ObjectId(version_id),
+                "status": DatasetImportBuildStatus.INGESTING.value,
+                "resource_status.build_logs.status": "failed",
+            },
+            {
+                "$set": {
+                    "status": DatasetImportBuildStatus.MISSING_RESOURCE.value,
+                    "ingestion_error": "Log download failed or expired",
+                    "failed_at": now,
+                }
+            },
+        )
 
-        # Mark builds with expired logs as MISSING_RESOURCE (expected - not retryable)
-        if expired_log_ids:
-            import_build_repo.collection.update_many(
-                {
-                    "dataset_version_id": ObjectId(version_id),
-                    "status": DatasetImportBuildStatus.INGESTING.value,
-                    "ci_run_id": {"$in": expired_log_ids},
-                },
-                {
-                    "$set": {
-                        "status": DatasetImportBuildStatus.MISSING_RESOURCE.value,
-                        "ingestion_error": "Logs expired",
-                        "failed_at": now,
-                    }
-                },
-            )
-
-        # Mark remaining INGESTING builds as INGESTED
+        # 4. Mark remaining INGESTING builds as INGESTED
         import_build_repo.mark_ingested_batch(version_id)
 
     # Count by status to determine final state

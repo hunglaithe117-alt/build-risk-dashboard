@@ -19,12 +19,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import {
-    Accordion,
-    AccordionContent,
-    AccordionItem,
-    AccordionTrigger,
-} from "@/components/ui/accordion";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     CheckCircle2,
     ChevronLeft,
@@ -36,6 +31,7 @@ import {
     RefreshCw,
     RotateCcw,
     Shield,
+    BarChart3,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
@@ -405,34 +401,33 @@ export default function ScansPage() {
                 </div>
             </CardHeader>
             <CardContent>
-                <Accordion type="multiple" defaultValue={["sonarqube", "trivy"]}>
+                <Tabs defaultValue={hasSonarScans ? "sonarqube" : "trivy"} className="w-full">
+                    <TabsList className="mb-4">
+                        {hasSonarScans && (
+                            <TabsTrigger value="sonarqube" className="flex items-center gap-2">
+                                <BarChart3 className="h-4 w-4 text-blue-600" />
+                                SonarQube ({sonarData?.total || 0})
+                            </TabsTrigger>
+                        )}
+                        {hasTrivyScans && (
+                            <TabsTrigger value="trivy" className="flex items-center gap-2">
+                                <Shield className="h-4 w-4 text-green-600" />
+                                Trivy ({trivyData?.total || 0})
+                            </TabsTrigger>
+                        )}
+                    </TabsList>
+
                     {hasSonarScans && (
-                        <AccordionItem value="sonarqube">
-                            <AccordionTrigger className="text-sm font-medium">
-                                <div className="flex items-center gap-2">
-                                    <Shield className="h-4 w-4 text-blue-600" />
-                                    SonarQube ({sonarData?.total || 0})
-                                </div>
-                            </AccordionTrigger>
-                            <AccordionContent>
-                                {renderScanTable(sonarData, "sonarqube", sonarPage, setSonarPage)}
-                            </AccordionContent>
-                        </AccordionItem>
+                        <TabsContent value="sonarqube">
+                            {renderScanTable(sonarData, "sonarqube", sonarPage, setSonarPage)}
+                        </TabsContent>
                     )}
                     {hasTrivyScans && (
-                        <AccordionItem value="trivy">
-                            <AccordionTrigger className="text-sm font-medium">
-                                <div className="flex items-center gap-2">
-                                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                                    Trivy ({trivyData?.total || 0})
-                                </div>
-                            </AccordionTrigger>
-                            <AccordionContent>
-                                {renderScanTable(trivyData, "trivy", trivyPage, setTrivyPage)}
-                            </AccordionContent>
-                        </AccordionItem>
+                        <TabsContent value="trivy">
+                            {renderScanTable(trivyData, "trivy", trivyPage, setTrivyPage)}
+                        </TabsContent>
                     )}
-                </Accordion>
+                </Tabs>
             </CardContent>
         </Card>
     );

@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from bson import ObjectId
 
-from app.entities.enums import ExtractionStatus
+from app.entities.enums import ExtractionStatus, FeatureVectorScope
 from app.entities.feature_audit_log import (
     AuditLogCategory,
     FeatureAuditLog,
@@ -155,6 +155,7 @@ def extract_features_for_build(
     output_build_id: Optional[str] = None,
     version_id: Optional[str] = None,
     dataset_id: Optional[str] = None,
+    model_repo_config_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Extract features for a single build using HamiltonPipeline.
@@ -182,6 +183,7 @@ def extract_features_for_build(
         output_build_id: ID of the output entity
         version_id: DatasetVersion ID (for DATASET_ENRICHMENT category)
         dataset_id: Dataset ID (for DATASET_ENRICHMENT category)
+        model_repo_config_id: ModelRepoConfig ID (for MODEL_TRAINING category)
 
     Returns:
         Dictionary with status, features, feature_vector_id, errors, warnings, etc.
@@ -245,11 +247,26 @@ def extract_features_for_build(
         tr_prev_build_raw = formatted_features.get("tr_prev_build")
         tr_prev_build = str(tr_prev_build_raw) if tr_prev_build_raw is not None else None
 
+        # Determine scope and config_id based on category
+        scope = FeatureVectorScope.MODEL.value
+        config_id = None
+
+        if category == AuditLogCategory.DATASET_ENRICHMENT:
+            scope = FeatureVectorScope.DATASET.value
+            if version_id:
+                config_id = ObjectId(version_id)
+        elif category == AuditLogCategory.MODEL_TRAINING:
+            scope = FeatureVectorScope.MODEL.value
+            if model_repo_config_id:
+                config_id = ObjectId(model_repo_config_id)
+
         # Save to FeatureVector (single source of truth)
         feature_vector = feature_vector_repo.upsert_features(
             raw_repo_id=raw_repo.id,
             raw_build_run_id=raw_build_run.id,
             features=formatted_features,
+            scope=scope,
+            config_id=config_id,
             extraction_status=extraction_status,
             dag_version="1.0",
             tr_prev_build=tr_prev_build,
@@ -315,6 +332,8 @@ def extract_features_for_build(
                 raw_repo_id=raw_repo.id,
                 raw_build_run_id=raw_build_run.id,
                 features={},
+                scope=scope,
+                config_id=config_id,
                 extraction_status=ExtractionStatus.FAILED,
                 extraction_error=str(e),
                 dag_version="1.0",

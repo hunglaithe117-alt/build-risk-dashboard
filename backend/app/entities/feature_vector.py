@@ -17,14 +17,14 @@ from typing import Any, Dict, List, Optional
 from pydantic import Field
 
 from app.entities.base import BaseEntity, PyObjectId
-from app.entities.enums import ExtractionStatus
+from app.entities.enums import ExtractionStatus, FeatureVectorScope
 
 
 class FeatureVector(BaseEntity):
     """
     Pure feature storage - single source of truth for Hamilton DAG outputs.
 
-    Indexed by (raw_repo_id, raw_build_run_id) for uniqueness.
+    Indexed by (raw_repo_id, raw_build_run_id, scope, config_id) for uniqueness.
     Referenced by ModelTrainingBuild and DatasetEnrichmentBuild.
     """
 
@@ -40,6 +40,16 @@ class FeatureVector(BaseEntity):
     raw_build_run_id: PyObjectId = Field(
         ...,
         description="Reference to raw_build_runs table (1:1 relationship)",
+    )
+
+    # Scoping (Context)
+    scope: FeatureVectorScope = Field(
+        default=FeatureVectorScope.MODEL,
+        description="Context scope: 'model_training' or 'dataset_enrichment'",
+    )
+    config_id: Optional[PyObjectId] = Field(
+        None,
+        description="Reference to configuration (ModelRepoConfig or DatasetVersion)",
     )
 
     # Version tracking

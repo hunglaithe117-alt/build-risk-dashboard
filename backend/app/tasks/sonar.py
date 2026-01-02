@@ -114,6 +114,7 @@ def start_sonar_scan_for_version_commit(
             full_name=repo_full_name,
             config_file_path=Path(config_file_path) if config_file_path else None,
             shared_worktree_path=worktree_path_str,
+            component_key=component_key,
         )
 
         logger.info(

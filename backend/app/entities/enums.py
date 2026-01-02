@@ -42,3 +42,10 @@ class ExtractionStatus(str, Enum):
     COMPLETED = "completed"
     PARTIAL = "partial"
     FAILED = "failed"
+
+
+class FeatureVectorScope(str, Enum):
+    """Scope for FeatureVector entity (Model Training vs Dataset Enrichment)."""
+
+    MODEL = "model_training"
+    DATASET = "dataset_enrichment"

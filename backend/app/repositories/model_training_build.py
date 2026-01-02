@@ -9,7 +9,7 @@ from bson import ObjectId
 from pymongo import ReturnDocument
 from pymongo.client_session import ClientSession
 
-from app.entities.enums import ExtractionStatus
+from app.entities.enums import ExtractionStatus, FeatureVectorScope
 from app.entities.model_training_build import ModelTrainingBuild
 from app.repositories.base import BaseRepository
 
@@ -62,9 +62,43 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         """
         Atomic upsert by business key (raw_repo_id + raw_build_run_id).
 
+        Also ensures a FeatureVector exists for this build (linked by raw_repo + raw_run).
         Uses atomic find_one_and_update for thread safety.
         Returns the document and a boolean indicating if it was newly created.
         """
+        # 1. Ensure FeatureVector exists (Atomic Upsert)
+        feature_vectors = self.db["feature_vectors"]
+        now = datetime.utcnow()
+
+        fv_doc = feature_vectors.find_one_and_update(
+            {
+                "raw_repo_id": raw_repo_id,
+                "raw_build_run_id": raw_build_run_id,
+                "scope": FeatureVectorScope.MODEL.value,
+                "config_id": model_repo_config_id,
+            },
+            {
+                "$setOnInsert": {
+                    "raw_repo_id": raw_repo_id,
+                    "raw_build_run_id": raw_build_run_id,
+                    "scope": FeatureVectorScope.MODEL.value,
+                    "config_id": model_repo_config_id,
+                    "dag_version": "1.0",
+                    "computed_at": now,
+                    "created_at": now,
+                    "updated_at": now,
+                    "extraction_status": "PENDING",
+                    "features": {},
+                    "feature_count": 0,
+                    "scan_metrics": {},
+                }
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        fv_id = fv_doc["_id"]
+
+        # 2. Upsert ModelTrainingBuild with FV link
         doc = self.collection.find_one_and_update(
             {
                 "raw_repo_id": raw_repo_id,
@@ -79,10 +113,11 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
                     "head_sha": head_sha,
                     "build_number": build_number,
                     "build_created_at": build_created_at,
+                    "feature_vector_id": fv_id,  # Link to FeatureVector
                     "extraction_status": extraction_status.value
                     if hasattr(extraction_status, "value")
                     else extraction_status,
-                    "created_at": datetime.utcnow(),
+                    "created_at": now,
                 },
             },
             upsert=True,

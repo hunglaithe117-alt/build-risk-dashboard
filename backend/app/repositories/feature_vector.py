@@ -24,11 +24,16 @@ class FeatureVectorRepository(BaseRepository[FeatureVector]):
     def _ensure_indexes(self) -> None:
         """Create indexes for efficient lookups."""
         indexes = [
-            # Unique constraint on (raw_repo_id, raw_build_run_id)
+            # Unique constraint on (raw_repo_id, raw_build_run_id, scope, config_id)
             IndexModel(
-                [("raw_repo_id", ASCENDING), ("raw_build_run_id", ASCENDING)],
+                [
+                    ("raw_repo_id", ASCENDING),
+                    ("raw_build_run_id", ASCENDING),
+                    ("scope", ASCENDING),
+                    ("config_id", ASCENDING),
+                ],
                 unique=True,
-                name="unique_repo_build",
+                name="unique_scoped_feature_vector",
             ),
             # Temporal chain lookup (for prev_build_history_features)
             IndexModel(
@@ -74,6 +79,8 @@ class FeatureVectorRepository(BaseRepository[FeatureVector]):
         raw_repo_id: ObjectId,
         raw_build_run_id: ObjectId,
         features: Dict[str, Any],
+        scope: Optional[str] = None,
+        config_id: Optional[ObjectId] = None,
         extraction_status: ExtractionStatus = ExtractionStatus.COMPLETED,
         extraction_error: Optional[str] = None,
         dag_version: str = "1.0",
@@ -83,13 +90,22 @@ class FeatureVectorRepository(BaseRepository[FeatureVector]):
         skipped_features: Optional[List[str]] = None,
     ) -> FeatureVector:
         """
-        Atomic upsert feature vector by business key (raw_repo_id + raw_build_run_id).
+        Atomic upsert feature vector by business key (raw_repo_id + raw_build_run_id + scope + config_id).
 
         Creates new document or updates existing one atomically.
         """
         status_value = (
             extraction_status.value if hasattr(extraction_status, "value") else extraction_status
         )
+
+        query = {
+            "raw_repo_id": raw_repo_id,
+            "raw_build_run_id": raw_build_run_id,
+        }
+        if scope:
+            query["scope"] = scope
+        if config_id:
+            query["config_id"] = config_id
 
         update_doc = {
             "features": features,
@@ -105,18 +121,22 @@ class FeatureVectorRepository(BaseRepository[FeatureVector]):
             "updated_at": datetime.utcnow(),
         }
 
+        # On Insert fields
+        insert_doc = {
+            "raw_repo_id": raw_repo_id,
+            "raw_build_run_id": raw_build_run_id,
+            "created_at": datetime.utcnow(),
+        }
+        if scope:
+            insert_doc["scope"] = scope
+        if config_id:
+            insert_doc["config_id"] = config_id
+
         doc = self.collection.find_one_and_update(
-            {
-                "raw_repo_id": raw_repo_id,
-                "raw_build_run_id": raw_build_run_id,
-            },
+            query,
             {
                 "$set": update_doc,
-                "$setOnInsert": {
-                    "raw_repo_id": raw_repo_id,
-                    "raw_build_run_id": raw_build_run_id,
-                    "created_at": datetime.utcnow(),
-                },
+                "$setOnInsert": insert_doc,
             },
             upsert=True,
             return_document=ReturnDocument.AFTER,

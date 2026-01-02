@@ -195,6 +195,7 @@ class SonarQubeTool(IntegrationTool):
         full_name: str,
         config_file_path: Optional[Path] = None,
         shared_worktree_path: Optional[Path] = None,
+        component_key: Optional[str] = None,
     ) -> str:
         """
         Run SonarQube scan on a commit.
@@ -204,14 +205,16 @@ class SonarQubeTool(IntegrationTool):
             full_name: Repo full name (owner/repo)
             config_file_path: External config file path (sonar-project.properties)
             shared_worktree_path: Optional path to shared worktree from pipeline
+            component_key: Optional override for component/project key
 
         Returns:
             component_key: SonarQube component key for this scan
         """
-        if not self.project_key:
-            raise ValueError("project_key is required for scanning")
+        if not self.project_key and not component_key:
+            raise ValueError("project_key is required for scanning if component_key not provided")
 
-        component_key = f"{self.project_key}_{commit_sha}"
+        if not component_key:
+            component_key = f"{self.project_key}_{commit_sha}"
 
         # Check if already exists
         if self._project_exists(component_key):

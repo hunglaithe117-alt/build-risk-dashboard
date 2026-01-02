@@ -9,7 +9,7 @@ from bson import ObjectId
 from pymongo.client_session import ClientSession
 
 from app.entities.dataset_enrichment_build import DatasetEnrichmentBuild
-from app.entities.enums import ExtractionStatus
+from app.entities.enums import ExtractionStatus, FeatureVectorScope
 from app.repositories.base import BaseRepository
 
 
@@ -151,24 +151,63 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         """
         Create or get DatasetEnrichmentBuild for an import build.
 
+        Also ensures a FeatureVector exists for this build (linked by raw_repo + raw_run).
         Returns existing if already created, creates new if not.
         """
         import_oid = ObjectId(dataset_import_build_id)
+        raw_repo_oid = ObjectId(raw_repo_id)
+        raw_build_run_oid = ObjectId(raw_build_run_id)
 
         # Try to find existing
         existing = self.collection.find_one({"dataset_import_build_id": import_oid})
         if existing:
             return DatasetEnrichmentBuild(**existing)
 
-        # Create new
+        # Ensure FeatureVector exists (Single Source of Truth)
+        # Check uniqueness first (raw_repo_id + raw_build_run_id)
+        feature_vectors = self.db["feature_vectors"]
         now = datetime.utcnow()
+        version_oid = ObjectId(dataset_version_id)
+
+        fv_doc = feature_vectors.find_one(
+            {
+                "raw_repo_id": raw_repo_oid,
+                "raw_build_run_id": raw_build_run_oid,
+                "scope": FeatureVectorScope.DATASET.value,
+                "config_id": version_oid,
+            }
+        )
+
+        if fv_doc:
+            fv_id = fv_doc["_id"]
+        else:
+            # Create NEW FeatureVector
+            new_fv = {
+                "raw_repo_id": raw_repo_oid,
+                "raw_build_run_id": raw_build_run_oid,
+                "scope": FeatureVectorScope.DATASET.value,
+                "config_id": version_oid,
+                "dag_version": "1.0",
+                "computed_at": now,
+                "created_at": now,
+                "updated_at": now,
+                "extraction_status": "PENDING",
+                "features": {},
+                "feature_count": 0,
+                "scan_metrics": {},
+            }
+            result = feature_vectors.insert_one(new_fv)
+            fv_id = result.inserted_id
+
+        # Create new DatasetEnrichmentBuild
         doc = {
             "dataset_version_id": ObjectId(dataset_version_id),
             "dataset_id": ObjectId(dataset_id),
             "dataset_build_id": ObjectId(dataset_build_id),
             "dataset_import_build_id": import_oid,
-            "raw_repo_id": ObjectId(raw_repo_id),
-            "raw_build_run_id": ObjectId(raw_build_run_id),
+            "raw_repo_id": raw_repo_oid,
+            "raw_build_run_id": raw_build_run_oid,
+            "feature_vector_id": fv_id,  # Link to FeatureVector
             "extraction_status": ExtractionStatus.PENDING.value,
             "created_at": now,
             "updated_at": now,
@@ -578,6 +617,22 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
             {"$unwind": "$build_run"},
             {"$match": {"build_run.commit_sha": commit_sha}},
             {"$match": {"feature_vector_id": {"$ne": None}}},
+            # Verify feature vector is in DATASET scope
+            {
+                "$lookup": {
+                    "from": "feature_vectors",
+                    "localField": "feature_vector_id",
+                    "foreignField": "_id",
+                    "as": "fv",
+                }
+            },
+            {"$unwind": "$fv"},
+            {
+                "$match": {
+                    "fv.scope": FeatureVectorScope.DATASET.value,
+                    "fv.config_id": version_id,
+                }
+            },
             {"$project": {"feature_vector_id": 1}},
         ]
 

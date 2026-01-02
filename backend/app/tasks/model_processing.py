@@ -9,6 +9,7 @@ from app.celery_app import celery_app
 from app.config import settings
 from app.core.tracing import TracingContext
 from app.entities.enums import ExtractionStatus
+from app.entities.feature_audit_log import AuditLogCategory
 from app.entities.model_repo_config import ModelImportStatus
 from app.repositories.dataset_template_repository import DatasetTemplateRepository
 from app.repositories.model_import_build import ModelImportBuildRepository
@@ -534,6 +535,9 @@ def process_workflow_run(
             feature_config=repo_config.feature_configs,
             raw_build_run=raw_build_run,
             selected_features=feature_names,
+            category=AuditLogCategory.MODEL_TRAINING,
+            model_repo_config_id=repo_config_id,
+            output_build_id=build_id,
         )
 
         # Only save reference to FeatureVector (single source of truth for feature data)

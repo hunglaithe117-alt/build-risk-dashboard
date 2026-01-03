@@ -4,6 +4,7 @@ import type {
     BuildListResponse,
     ImportBuildListResponse,
     TrainingBuildListResponse,
+    UnifiedBuildListResponse,
 } from "@/types";
 import { api } from "./client";
 
@@ -49,6 +50,22 @@ export const buildApi = {
     ) => {
         const response = await api.get<TrainingBuildListResponse>(
             `/repos/${repoId}/training-builds`,
+            { params }
+        );
+        return response.data;
+    },
+
+    getUnifiedBuilds: async (
+        repoId: string,
+        params?: {
+            skip?: number;
+            limit?: number;
+            q?: string;
+            phase?: string;
+        }
+    ) => {
+        const response = await api.get<UnifiedBuildListResponse>(
+            `/repos/${repoId}/builds/unified`,
             { params }
         );
         return response.data;

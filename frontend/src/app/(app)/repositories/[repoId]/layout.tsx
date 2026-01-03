@@ -209,6 +209,8 @@ export default function RepoLayout({ children }: { children: React.ReactNode }) 
     // Determine active tab from pathname
     const isOverviewActive = pathname === `/repositories/${repoId}` || pathname.endsWith("/overview");
     const isBuildsActive = pathname.includes("/builds");
+    // Check if we're on a build detail page (hide tabs for cleaner UI)
+    const isBuildDetailPage = pathname.includes("/build/") && pathname.split("/").length > 4;
 
     const contextValue: RepoContextType = {
         repo,
@@ -232,82 +234,86 @@ export default function RepoLayout({ children }: { children: React.ReactNode }) 
     return (
         <RepoContext.Provider value={contextValue}>
             <div className="space-y-6">
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.push("/repositories")}
-                            className="gap-2"
-                        >
-                            <ArrowLeft className="h-4 w-4" />
-                            Back
-                        </Button>
-                        <div>
-                            <div className="flex items-center gap-3">
-                                <h1 className="text-2xl font-bold tracking-tight">
-                                    {repo.full_name}
-                                </h1>
-                                <Badge
-                                    variant={repo.is_private ? "secondary" : "outline"}
-                                    className="gap-1"
-                                >
-                                    {repo.is_private ? (
-                                        <Lock className="h-3 w-3" />
-                                    ) : (
-                                        <Globe className="h-3 w-3" />
-                                    )}
-                                    {repo.is_private ? "Private" : "Public"}
-                                </Badge>
+                {/* Header - simplified on build detail page */}
+                {!isBuildDetailPage && (
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => router.push("/repositories")}
+                                className="gap-2"
+                            >
+                                <ArrowLeft className="h-4 w-4" />
+                                Back
+                            </Button>
+                            <div>
+                                <div className="flex items-center gap-3">
+                                    <h1 className="text-2xl font-bold tracking-tight">
+                                        {repo.full_name}
+                                    </h1>
+                                    <Badge
+                                        variant={repo.is_private ? "secondary" : "outline"}
+                                        className="gap-1"
+                                    >
+                                        {repo.is_private ? (
+                                            <Lock className="h-3 w-3" />
+                                        ) : (
+                                            <Globe className="h-3 w-3" />
+                                        )}
+                                        {repo.is_private ? "Private" : "Public"}
+                                    </Badge>
+                                </div>
+                                {repo.metadata?.description && (
+                                    <p className="text-muted-foreground mt-1">
+                                        {repo.metadata.description}
+                                    </p>
+                                )}
                             </div>
-                            {repo.metadata?.description && (
-                                <p className="text-muted-foreground mt-1">
-                                    {repo.metadata.description}
-                                </p>
-                            )}
                         </div>
+                        {repo.metadata?.html_url && (
+                            <a
+                                href={repo.metadata.html_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                                <ExternalLink className="h-4 w-4" />
+                                View on GitHub
+                            </a>
+                        )}
                     </div>
-                    {repo.metadata?.html_url && (
-                        <a
-                            href={repo.metadata.html_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-                        >
-                            <ExternalLink className="h-4 w-4" />
-                            View on GitHub
-                        </a>
-                    )}
-                </div>
+                )}
 
-                {/* Tab Navigation */}
-                <div className="border-b">
-                    <nav className="flex gap-4">
-                        <Link
-                            href={`/repositories/${repoId}/overview`}
-                            className={cn(
-                                "pb-3 text-sm font-medium transition-colors border-b-2",
-                                isOverviewActive
-                                    ? "border-primary text-primary"
-                                    : "border-transparent text-muted-foreground hover:text-foreground"
-                            )}
-                        >
-                            Overview
-                        </Link>
-                        <Link
-                            href={`/repositories/${repoId}/builds`}
-                            className={cn(
-                                "pb-3 text-sm font-medium transition-colors border-b-2",
-                                isBuildsActive
-                                    ? "border-primary text-primary"
-                                    : "border-transparent text-muted-foreground hover:text-foreground"
-                            )}
-                        >
-                            Builds
-                        </Link>
-                    </nav>
-                </div>
+                {/* Tab Navigation - hide on build detail page */}
+                {!isBuildDetailPage && (
+                    <div className="border-b">
+                        <nav className="flex gap-4">
+                            <Link
+                                href={`/repositories/${repoId}/overview`}
+                                className={cn(
+                                    "pb-3 text-sm font-medium transition-colors border-b-2",
+                                    isOverviewActive
+                                        ? "border-primary text-primary"
+                                        : "border-transparent text-muted-foreground hover:text-foreground"
+                                )}
+                            >
+                                Overview
+                            </Link>
+                            <Link
+                                href={`/repositories/${repoId}/builds`}
+                                className={cn(
+                                    "pb-3 text-sm font-medium transition-colors border-b-2",
+                                    isBuildsActive
+                                        ? "border-primary text-primary"
+                                        : "border-transparent text-muted-foreground hover:text-foreground"
+                                )}
+                            >
+                                Builds
+                            </Link>
+                        </nav>
+                    </div>
+                )}
 
                 {/* Page Content */}
                 {children}

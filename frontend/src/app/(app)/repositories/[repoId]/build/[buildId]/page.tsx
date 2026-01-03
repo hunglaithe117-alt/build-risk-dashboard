@@ -175,7 +175,6 @@ function FeatureValue({ value }: { value: unknown }) {
         return <span className="font-mono">{value}</span>;
     }
 
-    // Handle arrays and objects
     if (typeof value === "object") {
         const jsonStr = JSON.stringify(value, null, 2);
         return (
@@ -189,7 +188,6 @@ function FeatureValue({ value }: { value: unknown }) {
 
     const strValue = String(value);
 
-    // Long strings (commit lists, etc.) get horizontal scroll
     if (strValue.length > 60 || strValue.includes("#")) {
         return (
             <div className="max-w-[400px] overflow-x-auto">
@@ -253,7 +251,7 @@ export default function BuildDetailPage() {
                 <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => router.push(`/repositories/${repoId}/builds/processing`)}
+                    onClick={() => router.push(`/repositories/${repoId}/builds`)}
                     className="gap-2"
                 >
                     <ArrowLeft className="h-4 w-4" />
@@ -312,9 +310,7 @@ export default function BuildDetailPage() {
             <Card>
                 <CardHeader>
                     <CardTitle>Build Run Information</CardTitle>
-                    <CardDescription>
-                        Details from the CI provider
-                    </CardDescription>
+                    <CardDescription>Details from the CI provider</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                     {/* Commit Info */}
@@ -330,9 +326,7 @@ export default function BuildDetailPage() {
                             </p>
                         )}
                         {build.commit_message && (
-                            <p className="text-sm text-muted-foreground">
-                                {build.commit_message}
-                            </p>
+                            <p className="text-sm text-muted-foreground">{build.commit_message}</p>
                         )}
                     </div>
 
@@ -352,9 +346,7 @@ export default function BuildDetailPage() {
                         </div>
                         <div className="rounded-lg border p-4">
                             <p className="text-xs text-muted-foreground">Duration</p>
-                            <p className="font-medium mt-1">
-                                {formatDuration(build.duration_seconds)}
-                            </p>
+                            <p className="font-medium mt-1">{formatDuration(build.duration_seconds)}</p>
                         </div>
                     </div>
 
@@ -371,8 +363,6 @@ export default function BuildDetailPage() {
                     </div>
                 </CardContent>
             </Card>
-
-
 
             {/* Risk Prediction */}
             {build.has_training_data && (build.predicted_label || build.prediction_status || build.prediction_error) && (
@@ -397,9 +387,7 @@ export default function BuildDetailPage() {
                                 )}
                             </div>
                         </CardTitle>
-                        <CardDescription>
-                            ML model prediction for this build
-                        </CardDescription>
+                        <CardDescription>ML model prediction for this build</CardDescription>
                     </CardHeader>
                     <CardContent>
                         {build.prediction_error ? (
@@ -418,9 +406,7 @@ export default function BuildDetailPage() {
                             </div>
                         ) : !build.predicted_label ? (
                             <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center dark:border-slate-800 dark:bg-slate-900/50">
-                                <p className="text-muted-foreground">
-                                    Prediction pending or in progress...
-                                </p>
+                                <p className="text-muted-foreground">Prediction pending or in progress...</p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -446,16 +432,13 @@ export default function BuildDetailPage() {
                                 </div>
                                 <div className="rounded-lg border p-4">
                                     <p className="text-xs text-muted-foreground">Predicted At</p>
-                                    <p className="font-medium mt-1 text-sm">
-                                        {formatDateTime(build.predicted_at)}
-                                    </p>
+                                    <p className="font-medium mt-1 text-sm">{formatDateTime(build.predicted_at)}</p>
                                 </div>
                             </div>
                         )}
                     </CardContent>
                 </Card>
             )}
-
 
             {/* Extracted Features */}
             <Card>
@@ -468,18 +451,14 @@ export default function BuildDetailPage() {
                                     <ExtractionStatusBadge status={build.extraction_status || "unknown"} />
                                 )}
                             </CardTitle>
-                            <CardDescription>
-                                {build.feature_count} features extracted
-                            </CardDescription>
+                            <CardDescription>{build.feature_count} features extracted</CardDescription>
                         </div>
                     </div>
                 </CardHeader>
                 <CardContent>
                     {!build.has_training_data ? (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center dark:border-slate-800 dark:bg-slate-900/50">
-                            <p className="text-muted-foreground">
-                                Feature extraction not started yet.
-                            </p>
+                            <p className="text-muted-foreground">Feature extraction not started yet.</p>
                         </div>
                     ) : build.extraction_status === "failed" ? (
                         <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-900/20">
@@ -490,13 +469,10 @@ export default function BuildDetailPage() {
                     ) : build.extraction_status === "pending" ? (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center dark:border-slate-800 dark:bg-slate-900/50">
                             <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
-                            <p className="text-muted-foreground mt-2">
-                                Extraction in progress...
-                            </p>
+                            <p className="text-muted-foreground mt-2">Extraction in progress...</p>
                         </div>
                     ) : featureEntries.length > 0 ? (
                         <div className="space-y-4">
-                            {/* Search */}
                             <div className="relative max-w-sm">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
@@ -506,8 +482,6 @@ export default function BuildDetailPage() {
                                     className="pl-9"
                                 />
                             </div>
-
-                            {/* Features Table */}
                             <div className="rounded-lg border overflow-hidden max-h-[500px] overflow-y-auto relative">
                                 <table className="w-full text-sm relative">
                                     <thead className="sticky top-0 z-10">
@@ -537,9 +511,7 @@ export default function BuildDetailPage() {
                         </div>
                     ) : (
                         <div className="rounded-lg border border-slate-200 bg-slate-50 p-6 text-center dark:border-slate-800 dark:bg-slate-900/50">
-                            <p className="text-muted-foreground">
-                                No features extracted.
-                            </p>
+                            <p className="text-muted-foreground">No features extracted.</p>
                         </div>
                     )}
                 </CardContent>

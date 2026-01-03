@@ -303,6 +303,45 @@ export interface TrainingBuildListResponse {
   size: number;
 }
 
+// ============================================================================
+// Unified Build Types (Combined Ingestion + Processing View)
+// ============================================================================
+
+export interface UnifiedBuild {
+  // Identity - using ModelImportBuild._id
+  model_import_build_id: string;
+  // Build basics from RawBuildRun
+  build_number?: number;
+  commit_sha: string;
+  branch: string;
+  ci_conclusion: string;
+  created_at?: string;
+  web_url?: string;
+  commit_message?: string;
+  commit_author?: string;
+  // Phase 2: Ingestion
+  ingestion_status: string;
+  resource_status: Record<string, ResourceStatus>;
+  required_resources: string[];
+  // Phase 3: Extraction (optional)
+  training_build_id?: string;
+  extraction_status?: string;
+  feature_count: number;
+  extraction_error?: string;
+  // Phase 4: Prediction (optional)
+  prediction_status?: string;
+  predicted_label?: string;
+  prediction_confidence?: number;
+  prediction_uncertainty?: number;
+}
+
+export interface UnifiedBuildListResponse {
+  items: UnifiedBuild[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 export interface DashboardMetrics {
   total_builds: number;
   success_rate: number;

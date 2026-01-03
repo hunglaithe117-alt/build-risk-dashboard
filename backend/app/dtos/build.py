@@ -215,6 +215,59 @@ class TrainingBuildListResponse(BaseModel):
     size: int
 
 
+class UnifiedBuildSummary(BaseModel):
+    """
+    Unified build summary combining ingestion and processing phases.
+
+    Primary data from ModelImportBuild, with optional ModelTrainingBuild enrichment.
+    This provides a single-table view of all builds across all pipeline phases.
+    """
+
+    # Identity - using ModelImportBuild._id as primary
+    model_import_build_id: str = Field(..., alias="_id")
+
+    # Build basics (from RawBuildRun via joins)
+    build_number: Optional[int] = None
+    commit_sha: str = ""
+    branch: str = ""
+    ci_conclusion: str = "unknown"  # Build result (success/failure)
+    created_at: Optional[datetime] = None
+    web_url: Optional[str] = None
+    commit_message: Optional[str] = None
+    commit_author: Optional[str] = None
+
+    # Phase 2: Ingestion status
+    ingestion_status: str = (
+        "pending"  # pending, fetched, ingesting, ingested, failed, missing_resource
+    )
+    resource_status: Dict[str, ResourceStatusDTO] = {}
+    required_resources: List[str] = []
+
+    # Phase 3: Extraction (optional - only if ModelTrainingBuild exists)
+    training_build_id: Optional[str] = None
+    extraction_status: Optional[str] = None  # pending, in_progress, completed, partial, failed
+    feature_count: int = 0
+    extraction_error: Optional[str] = None
+
+    # Phase 4: Prediction (optional)
+    prediction_status: Optional[str] = None  # pending, in_progress, completed, failed
+    predicted_label: Optional[str] = None  # LOW, MEDIUM, HIGH
+    prediction_confidence: Optional[float] = None
+    prediction_uncertainty: Optional[float] = None
+
+    class Config:
+        populate_by_name = True
+
+
+class UnifiedBuildListResponse(BaseModel):
+    """Paginated list of unified builds."""
+
+    items: List[UnifiedBuildSummary]
+    total: int
+    page: int
+    size: int
+
+
 # =============================================================================
 # Enrichment Build Detail DTOs (for dataset version build detail page)
 # =============================================================================

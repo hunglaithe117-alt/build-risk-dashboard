@@ -17,6 +17,7 @@ from app.dtos.build import (
     BuildListResponse,
     ImportBuildListResponse,
     TrainingBuildListResponse,
+    UnifiedBuildListResponse,
 )
 from app.middleware.auth import get_current_user
 from app.middleware.rbac import Permission, RequirePermission
@@ -298,6 +299,37 @@ def get_training_builds(
     """
     service = ModelBuildService(db)
     return service.get_training_builds(repo_id, skip, limit, q, extraction_status)
+
+
+@router.get(
+    "/{repo_id}/builds/unified",
+    response_model=UnifiedBuildListResponse,
+    response_model_by_alias=False,
+)
+def get_unified_builds(
+    repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    q: str | None = Query(default=None, description="Search query (build number, commit SHA)"),
+    phase: str | None = Query(
+        default=None,
+        description="Filter by phase: ingestion, processing, prediction",
+    ),
+    db: Database = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get unified builds combining ingestion and processing data.
+
+    Returns all builds with status from all pipeline phases:
+    - Ingestion status (resource collection)
+    - Extraction status (feature extraction)
+    - Prediction status (ML prediction results)
+
+    Use phase filter to focus on specific phase.
+    """
+    model_build_service = ModelBuildService(db)
+    return model_build_service.get_unified_builds(repo_id, skip, limit, q, phase)
 
 
 @router.get(

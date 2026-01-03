@@ -278,7 +278,7 @@ export default function BuildDetailPage() {
                 <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => router.push(`/repositories/${repoId}/builds`)}
+                    onClick={() => router.push(`/repositories/${repoId}/builds/processing`)}
                     className="gap-2"
                 >
                     <ArrowLeft className="h-4 w-4" />

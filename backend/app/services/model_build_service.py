@@ -530,3 +530,193 @@ class ModelBuildService:
             page=skip // limit + 1,
             size=limit,
         )
+
+    def get_unified_builds(
+        self,
+        repo_id: str,
+        skip: int = 0,
+        limit: int = 20,
+        q: Optional[str] = None,
+        phase_filter: Optional[str] = None,
+    ):
+        """
+        Get unified builds combining ingestion + processing data.
+
+        Uses LEFT JOIN to include builds with/without processing data.
+        Primary source is ModelImportBuild, enriched with:
+        - RawBuildRun for CI metadata
+        - ModelTrainingBuild for extraction/prediction data (optional)
+
+        Args:
+            repo_id: ModelRepoConfig._id
+            skip: Pagination offset
+            limit: Page size
+            q: Search query (build number, commit sha)
+            phase_filter: Filter by phase ("ingestion", "processing", "prediction")
+
+        Returns:
+            UnifiedBuildListResponse with combined data
+        """
+        from app.dtos.build import (
+            ResourceStatusDTO,
+            UnifiedBuildListResponse,
+            UnifiedBuildSummary,
+        )
+
+        try:
+            config_oid = ObjectId(repo_id)
+        except Exception:
+            return UnifiedBuildListResponse(items=[], total=0, page=1, size=limit)
+
+        repo_config = self.model_repo_config_repo.find_by_id(repo_id)
+        if not repo_config:
+            return UnifiedBuildListResponse(items=[], total=0, page=1, size=limit)
+
+        # Build match query for model_import_builds
+        match_query: Dict[str, Any] = {"model_repo_config_id": config_oid}
+
+        # Apply search filter
+        if q:
+            search_conditions = []
+            if q.isdigit():
+                search_conditions.append({"raw_build_run.build_number": int(q)})
+            search_conditions.append({"commit_sha": {"$regex": q, "$options": "i"}})
+            search_conditions.append({"ci_run_id": {"$regex": q, "$options": "i"}})
+            match_query["$or"] = search_conditions
+
+        # Apply phase filter
+        if phase_filter == "ingestion":
+            # Only builds still in ingestion phase (not yet processed)
+            match_query["status"] = {"$in": ["pending", "fetched", "ingesting", "ingested"]}
+        elif phase_filter == "processing":
+            # Only builds with processing data (has training_build)
+            # This will be filtered after the join
+            pass
+        elif phase_filter == "prediction":
+            # Only builds with prediction data
+            pass
+
+        # Aggregation pipeline with LEFT JOINs
+        pipeline = [
+            {"$match": match_query},
+            # Join with raw_build_runs for CI metadata
+            {
+                "$lookup": {
+                    "from": "raw_build_runs",
+                    "localField": "raw_build_run_id",
+                    "foreignField": "_id",
+                    "as": "raw_build_run",
+                }
+            },
+            {"$unwind": {"path": "$raw_build_run", "preserveNullAndEmptyArrays": True}},
+            # LEFT JOIN with model_training_builds (optional - only after processing)
+            {
+                "$lookup": {
+                    "from": "model_training_builds",
+                    "localField": "_id",
+                    "foreignField": "model_import_build_id",
+                    "as": "training_build",
+                }
+            },
+            {"$unwind": {"path": "$training_build", "preserveNullAndEmptyArrays": True}},
+            # LEFT JOIN with feature_vectors for feature counts
+            {
+                "$lookup": {
+                    "from": "feature_vectors",
+                    "localField": "training_build.feature_vector_id",
+                    "foreignField": "_id",
+                    "as": "feature_vector",
+                }
+            },
+            {"$unwind": {"path": "$feature_vector", "preserveNullAndEmptyArrays": True}},
+            # Sort by build creation time (newest first)
+            {"$sort": {"raw_build_run.created_at": -1}},
+        ]
+
+        # Apply phase filter in pipeline if needed
+        if phase_filter == "processing":
+            pipeline.append({"$match": {"training_build": {"$exists": True, "$ne": None}}})
+        elif phase_filter == "prediction":
+            pipeline.append(
+                {"$match": {"training_build.prediction_status": {"$in": ["completed", "failed"]}}}
+            )
+
+        # Count total before pagination (for accurate count with phase filter)
+        count_pipeline = pipeline.copy()
+        count_pipeline.append({"$count": "total"})
+        count_result = list(self.db.model_import_builds.aggregate(count_pipeline))
+        total_count = count_result[0]["total"] if count_result else 0
+
+        # Add pagination
+        pipeline.append({"$skip": skip})
+        pipeline.append({"$limit": limit})
+
+        unified_builds = list(self.db.model_import_builds.aggregate(pipeline))
+
+        if not unified_builds:
+            return UnifiedBuildListResponse(
+                items=[], total=total_count, page=skip // limit + 1, size=limit
+            )
+
+        unified_items = []
+        for build_doc in unified_builds:
+            raw_build = build_doc.get("raw_build_run", {})
+            training_build = build_doc.get("training_build")
+            feature_vector = build_doc.get("feature_vector", {})
+
+            # Convert resource_status dict to DTOs
+            resource_status_map = {}
+            for resource_name, resource_data in build_doc.get("resource_status", {}).items():
+                if isinstance(resource_data, dict):
+                    resource_status_map[resource_name] = ResourceStatusDTO(
+                        status=resource_data.get("status", "pending"),
+                        error=resource_data.get("error"),
+                    )
+
+            unified_items.append(
+                UnifiedBuildSummary(
+                    _id=str(build_doc["_id"]),
+                    build_number=raw_build.get("build_number"),
+                    commit_sha=build_doc.get("commit_sha") or raw_build.get("commit_sha", ""),
+                    branch=raw_build.get("branch", ""),
+                    ci_conclusion=raw_build.get("conclusion", "unknown"),
+                    created_at=raw_build.get("created_at"),
+                    web_url=raw_build.get("web_url"),
+                    commit_message=raw_build.get("commit_message"),
+                    commit_author=raw_build.get("commit_author"),
+                    # Phase 2: Ingestion
+                    ingestion_status=build_doc.get("status", "pending"),
+                    resource_status=resource_status_map,
+                    required_resources=build_doc.get("required_resources", []),
+                    # Phase 3: Extraction (optional)
+                    training_build_id=str(training_build["_id"]) if training_build else None,
+                    extraction_status=training_build.get("extraction_status")
+                    if training_build
+                    else None,
+                    feature_count=feature_vector.get("feature_count", 0)
+                    or len(feature_vector.get("features", {})),
+                    extraction_error=training_build.get("extraction_error")
+                    if training_build
+                    else None,
+                    # Phase 4: Prediction (optional)
+                    prediction_status=training_build.get("prediction_status")
+                    if training_build
+                    else None,
+                    predicted_label=training_build.get("predicted_label")
+                    if training_build
+                    else None,
+                    prediction_confidence=training_build.get("prediction_confidence")
+                    if training_build
+                    else None,
+                    prediction_uncertainty=training_build.get("prediction_uncertainty")
+                    if training_build
+                    else None,
+                )
+            )
+
+        return UnifiedBuildListResponse(
+            items=unified_items,
+            total=total_count,
+            page=skip // limit + 1,
+            size=limit,
+        )

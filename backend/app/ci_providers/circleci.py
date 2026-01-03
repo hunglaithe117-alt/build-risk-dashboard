@@ -241,6 +241,10 @@ class CircleCIProvider(CIProviderInterface):
 
     async def fetch_build_jobs(self, build_id: str) -> List[JobData]:
         """Fetch jobs for a pipeline."""
+        # Handle repo_name:build_id format (extract just the build_id)
+        if ":" in build_id:
+            _, build_id = build_id.rsplit(":", 1)
+
         base_url = self._get_base_url()
 
         # First, get workflows for pipeline

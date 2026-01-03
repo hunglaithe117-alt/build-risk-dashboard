@@ -339,6 +339,18 @@ export function CurrentPhaseCard({ status, progress, isLoading, onRetryFailed }:
                     </p>
                 )}
 
+                {/* Last Processed Build Checkpoint - shown when checkpoint exists */}
+                {progress?.checkpoint?.current_processing_ci_run_id && (
+                    <div className="mt-4 pt-4 border-t">
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Last Processed Build:</span>
+                            <Badge variant="outline" className="font-mono">
+                                #{progress.checkpoint.current_processing_ci_run_id}
+                            </Badge>
+                        </div>
+                    </div>
+                )}
+
                 {/* Resource Status Display - shown during/after ingestion */}
                 {progress?.resource_status && (
                     <ResourceStatusDisplay resourceStatus={progress.resource_status} />

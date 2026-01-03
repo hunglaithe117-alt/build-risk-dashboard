@@ -9,6 +9,7 @@ export interface ImportProgress {
         last_checkpoint_at: string | null;
         accepted_failed: number;
         stats: Record<string, number>;
+        current_processing_ci_run_id?: string | null;
     };
     import_builds: {
         pending: number;

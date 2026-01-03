@@ -11,6 +11,7 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface ProcessingCardProps {
@@ -26,6 +27,7 @@ interface ProcessingCardProps {
     onRetryFailed: () => void; // Unified: handles both extraction + prediction
     startLoading: boolean;
     retryFailedLoading: boolean;
+    lastProcessedBuildId?: string | null;
 }
 
 export function ProcessingCard({
@@ -41,6 +43,7 @@ export function ProcessingCard({
     onRetryFailed,
     startLoading,
     retryFailedLoading,
+    lastProcessedBuildId,
 }: ProcessingCardProps) {
     const s = status.toLowerCase();
     const isProcessing = s === "processing";
@@ -126,6 +129,18 @@ export function ProcessingCard({
                         </p>
                     </div>
                 </div>
+
+                {/* Last Processed Build Checkpoint - hide during active processing */}
+                {lastProcessedBuildId && !isProcessing && (
+                    <div className="pt-4 border-t">
+                        <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Last Processed Build:</span>
+                            <Badge variant="outline" className="font-mono">
+                                #{lastProcessedBuildId}
+                            </Badge>
+                        </div>
+                    </div>
+                )}
 
                 {/* Unified Retry Action */}
                 {totalFailed > 0 && (

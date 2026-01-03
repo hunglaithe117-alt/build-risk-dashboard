@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { reposApi } from "@/lib/api";
 
 import { ExportPanel } from "../builds/_components/ExportPanel";
@@ -25,6 +26,8 @@ interface BuildsTabProps {
     // Failed counts for showing retry buttons
     failedIngestionCount?: number;
     failedProcessingCount?: number;
+    // Checkpoint info
+    lastProcessedBuildId?: string | null;
 }
 
 export function BuildsTab({
@@ -36,6 +39,7 @@ export function BuildsTab({
     canStartProcessing = false,
     failedIngestionCount = 0,
     failedProcessingCount = 0,
+    lastProcessedBuildId,
 }: BuildsTabProps) {
     const [activeSubTab, setActiveSubTab] = useState<"ingestion" | "processing">("ingestion");
     const [retryIngestionLoading, setRetryIngestionLoading] = useState(false);
@@ -156,6 +160,15 @@ export function BuildsTab({
                                 )}
                                 Retry Failed ({failedProcessingCount})
                             </Button>
+                        )}
+                        {/* Last Processed Build Checkpoint */}
+                        {lastProcessedBuildId && (
+                            <div className="flex items-center gap-2 text-sm">
+                                <span className="text-muted-foreground">Checkpoint:</span>
+                                <Badge variant="outline" className="font-mono">
+                                    #{lastProcessedBuildId}
+                                </Badge>
+                            </div>
                         )}
                         <ExportPanel repoId={repoId} repoName={repoName} />
                     </div>

@@ -136,11 +136,11 @@ export default function BuildsLayout({ children }: { children: React.ReactNode }
                 ) : isProcessingActive ? (
                     <div className="flex items-center gap-2">
                         {/* Last Processed Build Checkpoint - hide during sync/processing */}
-                        {progress?.checkpoint?.current_processing_ci_run_id && !isSyncing && repoStatus.toLowerCase() !== "processing" && (
+                        {progress?.checkpoint?.current_processing_build_number && !isSyncing && repoStatus.toLowerCase() !== "processing" && (
                             <div className="flex items-center gap-2 text-sm">
                                 <span className="text-muted-foreground">Checkpoint:</span>
                                 <span className="font-mono text-xs bg-muted px-2 py-1 rounded">
-                                    #{progress.checkpoint.current_processing_ci_run_id}
+                                    #{progress.checkpoint.current_processing_build_number}
                                 </span>
                             </div>
                         )}

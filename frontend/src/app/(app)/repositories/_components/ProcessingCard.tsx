@@ -27,7 +27,7 @@ interface ProcessingCardProps {
     onRetryFailed: () => void; // Unified: handles both extraction + prediction
     startLoading: boolean;
     retryFailedLoading: boolean;
-    lastProcessedBuildId?: string | null;
+    lastProcessedBuildId?: number | null;
 }
 
 export function ProcessingCard({

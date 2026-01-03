@@ -587,8 +587,8 @@ class RepositoryService:
         # Checkpoint: use ObjectId for reliable ordering
         last_checkpoint_id = repo_doc.last_processed_import_build_id
 
-        # Look up the ci_run_id of the last processed build
-        current_processing_ci_run_id = None
+        # Look up the build_number of the last processed build
+        current_processing_build_number = None
         if last_checkpoint_id:
             last_import_build = import_build_repo.find_by_id(last_checkpoint_id)
             if last_import_build and last_import_build.raw_build_run_id:
@@ -597,7 +597,7 @@ class RepositoryService:
                 raw_build_repo = RawBuildRunRepository(self.db)
                 raw_build = raw_build_repo.find_by_id(last_import_build.raw_build_run_id)
                 if raw_build:
-                    current_processing_ci_run_id = raw_build.ci_run_id
+                    current_processing_build_number = raw_build.build_number
 
         # Count missing resource builds that can be retried (after checkpoint)
         missing_resource_retryable = import_build_repo.count_missing_resource_after_checkpoint(
@@ -615,7 +615,7 @@ class RepositoryService:
                 "last_processed_import_build_id": (
                     str(last_checkpoint_id) if last_checkpoint_id else None
                 ),
-                "current_processing_ci_run_id": current_processing_ci_run_id,
+                "current_processing_build_number": current_processing_build_number,
             },
             # Import phase (ModelImportBuild) - TOTAL
             "import_builds": {

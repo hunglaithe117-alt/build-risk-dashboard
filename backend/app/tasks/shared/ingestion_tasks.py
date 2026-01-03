@@ -5,6 +5,11 @@ Features:
 - Clone/update git repositories (with installation token support)
 - Create git worktrees (with fork commit replay support)
 - Download build logs from CI providers
+
+Error Handling (SafeTask pattern):
+- TransientError: Network timeout, git timeout → retry with backoff
+- PermanentError: Invalid repo URL → mark FAILED
+- MissingResourceError: Commit not found, logs expired → mark MISSING_RESOURCE
 """
 
 import asyncio
@@ -19,7 +24,6 @@ if TYPE_CHECKING:
     from app.services.github.github_client import GitHubClient
 
 import redis
-from celery.exceptions import SoftTimeLimitExceeded
 
 from app.celery_app import celery_app
 from app.ci_providers import CIProvider, get_ci_provider, get_provider_config
@@ -33,7 +37,12 @@ from app.paths import (
 from app.repositories.base_import_build import get_progressive_updater
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
-from app.tasks.base import PipelineTask
+from app.tasks.base import (
+    PipelineTask,
+    SafeTask,
+    TaskState,
+    TransientError,
+)
 from app.tasks.shared.events import publish_ingestion_build_update
 
 logger = logging.getLogger(__name__)
@@ -41,15 +50,15 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=SafeTask,
     name="app.tasks.shared.clone_repo",
     queue="ingestion",
     soft_time_limit=600,
     time_limit=660,
-    max_retries=3,
+    max_retries=5,
 )
 def clone_repo(
-    self: PipelineTask,
+    self: SafeTask,
     prev_result: Any = None,
     raw_repo_id: str = "",
     github_repo_id: int = 0,
@@ -59,14 +68,19 @@ def clone_repo(
     pipeline_type: str = "",  # "model" or "dataset"
 ) -> Dict[str, Any]:
     """
-    Clone or update git repository.
+    Clone or update git repository using SafeTask pattern.
+
+    Error Handling:
+    - TransientError: Network timeout, git command failure → retry with backoff
+    - Success: Preserves cloned repo for reuse (no cleanup on success)
     """
+    from app.entities.model_import_build import ResourceStatus
+
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
     log_ctx = f"{corr_prefix}[clone][repo={full_name}]"
+    repo_path = get_repo_path(github_repo_id)
 
-    logger.info(f"{log_ctx} Starting clone/update")
-
-    # Initialize result with defaults
+    # Result template
     result = {
         "resource": "git_history",
         "raw_repo_id": raw_repo_id,
@@ -77,111 +91,71 @@ def clone_repo(
         "error": None,
     }
 
-    repo_path = get_repo_path(github_repo_id)
+    def _work(state: TaskState) -> Dict[str, Any]:
+        """
+        Clone/update work function.
 
-    try:
-        with RedisLock(
-            f"clone:{github_repo_id}",
-            timeout=700,
-            blocking_timeout=60,
-            redis_client=self.redis,
-        ):
-            # Update status to IN_PROGRESS using progressive updater
+        Phases:
+        - START: Mark IN_PROGRESS, acquire lock
+        - CLONING: Execute git clone/fetch
+        - DONE: Mark COMPLETED, publish WebSocket
+        """
+        nonlocal result
+
+        # Phase: START → Mark IN_PROGRESS
+        if state.phase == "START":
             if pipeline_id and pipeline_type:
                 try:
-                    from app.entities.model_import_build import ResourceStatus
-
                     updater = get_progressive_updater(
                         db=self.db,
                         pipeline_type=pipeline_type,
                         pipeline_id=pipeline_id,
                         raw_repo_id=raw_repo_id,
                     )
-                    updater.update_resource_batch(
-                        "git_history",
-                        ResourceStatus.IN_PROGRESS,
-                    )
+                    updater.update_resource_batch("git_history", ResourceStatus.IN_PROGRESS)
                 except Exception as e:
-                    logger.warning(f"{log_ctx} Failed to update status to IN_PROGRESS: {e}")
+                    logger.warning(f"{log_ctx} Failed to update IN_PROGRESS: {e}")
 
-            # Check if this repo belongs to the configured organization
-            from app.services.model_repository_service import is_org_repo
+            state.phase = "CLONING"
 
-            use_installation_token = is_org_repo(full_name) and settings.GITHUB_INSTALLATION_ID
+        # Phase: CLONING → Execute git commands
+        if state.phase == "CLONING":
+            try:
+                with RedisLock(
+                    f"clone:{github_repo_id}",
+                    timeout=700,
+                    blocking_timeout=60,
+                    redis_client=self.redis,
+                ):
+                    _execute_git_clone_or_fetch(repo_path, full_name, log_ctx)
+            except subprocess.CalledProcessError as e:
+                error_msg = f"Git command failed: {e.stderr.decode() if e.stderr else str(e)}"
+                raise TransientError(error_msg) from e
+            except subprocess.TimeoutExpired as e:
+                raise TransientError(f"Git command timed out: {e}") from e
+            except Exception as e:
+                # Treat unknown git errors as transient (network issues, etc.)
+                raise TransientError(f"Clone failed: {e}") from e
 
-            if repo_path.exists():
-                logger.info(f"{log_ctx} Updating existing clone")
+            state.phase = "DONE"
 
-                # For org repos, update remote URL with fresh token before fetching
-                if use_installation_token:
-                    from app.services.github.github_app import get_installation_token
+        # Phase: DONE → Mark COMPLETED
+        if state.phase == "DONE":
+            result.update({"status": "cloned", "path": str(repo_path)})
 
-                    token = get_installation_token()
-                    auth_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
-                    subprocess.run(
-                        ["git", "remote", "set-url", "origin", auth_url],
-                        cwd=str(repo_path),
-                        check=True,
-                        capture_output=True,
-                        timeout=30,
-                    )
-
-                subprocess.run(
-                    ["git", "fetch", "--all", "--prune"],
-                    cwd=str(repo_path),
-                    check=True,
-                    capture_output=True,
-                    timeout=300,
-                )
-            else:
-                logger.info(f"{log_ctx} Cloning to {repo_path}")
-                clone_url = f"https://github.com/{full_name}.git"
-
-                # For org repos, use installation token
-                if use_installation_token:
-                    from app.services.github.github_app import get_installation_token
-
-                    token = get_installation_token()
-                    clone_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
-
-                subprocess.run(
-                    ["git", "clone", "--bare", clone_url, str(repo_path)],
-                    check=True,
-                    capture_output=True,
-                    timeout=600,
-                )
-
-            logger.info(f"{log_ctx} Clone/update completed successfully")
-
-            result.update(
-                {
-                    "status": "cloned",
-                    "path": str(repo_path),
-                }
-            )
-
-            # Progressive save: Update resource status to COMPLETED in DB
             if pipeline_id and pipeline_type:
                 try:
-                    from app.entities.model_import_build import ResourceStatus
-
                     updater = get_progressive_updater(
                         db=self.db,
                         pipeline_type=pipeline_type,
                         pipeline_id=pipeline_id,
                         raw_repo_id=raw_repo_id,
                     )
-                    updated = updater.update_resource_batch(
-                        "git_history",
-                        ResourceStatus.COMPLETED,
-                    )
-                    logger.info(
-                        f"{log_ctx} Progressive save: marked {updated} builds git_history=COMPLETED"
-                    )
+                    updated = updater.update_resource_batch("git_history", ResourceStatus.COMPLETED)
+                    logger.info(f"{log_ctx} Marked {updated} builds git_history=COMPLETED")
                 except Exception as e:
                     logger.warning(f"{log_ctx} Progressive save failed: {e}")
 
-            # Publish WebSocket update
             if pipeline_id:
                 publish_ingestion_build_update(
                     repo_id=pipeline_id,
@@ -190,38 +164,25 @@ def clone_repo(
                     pipeline_type=pipeline_type,
                 )
 
-            return result
+        return result
 
-    except SoftTimeLimitExceeded:
-        # Task exceeded time limit - return result to continue pipeline
-        logger.error(f"{log_ctx} TIMEOUT! Task exceeded soft time limit")
-        result.update(
-            {
-                "status": "timeout",
-                "error": "Clone task exceeded time limit",
-            }
-        )
+    def _mark_failed(exc: Exception) -> None:
+        """Mark git_history as FAILED in database."""
+        error_msg = str(exc)[:500]
+        result.update({"status": "failed", "error": error_msg})
 
-        # Progressive save: Mark as FAILED on timeout
         if pipeline_id and pipeline_type:
             try:
-                from app.entities.model_import_build import ResourceStatus
-
                 updater = get_progressive_updater(
                     db=self.db,
                     pipeline_type=pipeline_type,
                     pipeline_id=pipeline_id,
                     raw_repo_id=raw_repo_id,
                 )
-                updater.update_resource_batch(
-                    "git_history",
-                    ResourceStatus.FAILED,
-                    "Clone task exceeded time limit",
-                )
+                updater.update_resource_batch("git_history", ResourceStatus.FAILED, error_msg)
             except Exception as e:
-                logger.warning(f"{log_ctx} Progressive save failed: {e}")
+                logger.warning(f"{log_ctx} Failed to mark FAILED: {e}")
 
-        # Publish WebSocket update for timeout
         if pipeline_id:
             publish_ingestion_build_update(
                 repo_id=pipeline_id,
@@ -230,76 +191,84 @@ def clone_repo(
                 pipeline_type=pipeline_type,
             )
 
-        return result
+    logger.info(f"{log_ctx} Starting clone/update")
 
-    except (subprocess.CalledProcessError, TimeoutError, Exception) as e:
-        # Check if we have retries left
-        retries_left = self.max_retries - self.request.retries
+    return self.run_safe(
+        job_id=f"{pipeline_id}:{raw_repo_id}",
+        work=_work,
+        mark_failed_fn=_mark_failed,
+        cleanup_fn=None,  # No cleanup - preserve successful clones for reuse
+        fail_on_unknown=False,  # Treat unknown errors as transient (retry)
+    )
 
-        if retries_left > 0:
-            # Still have retries - raise to trigger retry
-            logger.warning(
-                f"{log_ctx} Clone failed, will retry in 60s " f"({retries_left} retries left): {e}"
+
+def _execute_git_clone_or_fetch(repo_path: Path, full_name: str, log_ctx: str) -> None:
+    """
+    Execute git clone or fetch operation.
+
+    Args:
+        repo_path: Path to the bare repository
+        full_name: GitHub full name (owner/repo)
+        log_ctx: Logging context prefix
+    """
+    from app.services.model_repository_service import is_org_repo
+
+    use_installation_token = is_org_repo(full_name) and settings.GITHUB_INSTALLATION_ID
+
+    if repo_path.exists():
+        logger.info(f"{log_ctx} Updating existing clone")
+
+        if use_installation_token:
+            from app.services.github.github_app import get_installation_token
+
+            token = get_installation_token()
+            auth_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
+            subprocess.run(
+                ["git", "remote", "set-url", "origin", auth_url],
+                cwd=str(repo_path),
+                check=True,
+                capture_output=True,
+                timeout=30,
             )
-            raise self.retry(exc=e, countdown=60) from e
-        else:
-            # No retries left - log error and return result to continue chain
-            error_msg = str(e)
-            if isinstance(e, subprocess.CalledProcessError):
-                error_msg = f"Git command failed: {e.stderr}"
-            logger.error(
-                f"{log_ctx} Clone failed after {self.max_retries} retries, "
-                f"continuing chain: {error_msg}"
-            )
-            result.update(
-                {
-                    "status": "failed",
-                    "error": error_msg,
-                }
-            )
 
-            # Progressive save: Mark as FAILED
-            if pipeline_id and pipeline_type:
-                try:
-                    from app.entities.model_import_build import ResourceStatus
+        subprocess.run(
+            ["git", "fetch", "--all", "--prune"],
+            cwd=str(repo_path),
+            check=True,
+            capture_output=True,
+            timeout=300,
+        )
+    else:
+        logger.info(f"{log_ctx} Cloning to {repo_path}")
+        clone_url = f"https://github.com/{full_name}.git"
 
-                    updater = get_progressive_updater(
-                        db=self.db,
-                        pipeline_type=pipeline_type,
-                        pipeline_id=pipeline_id,
-                        raw_repo_id=raw_repo_id,
-                    )
-                    updater.update_resource_batch(
-                        "git_history",
-                        ResourceStatus.FAILED,
-                        error_msg,
-                    )
-                except Exception as ex:
-                    logger.warning(f"{log_ctx} Progressive save failed: {ex}")
+        if use_installation_token:
+            from app.services.github.github_app import get_installation_token
 
-            # Publish WebSocket update for failure
-            if pipeline_id:
-                publish_ingestion_build_update(
-                    repo_id=pipeline_id,
-                    resource="git_history",
-                    status="failed",
-                    pipeline_type=pipeline_type,
-                )
+            token = get_installation_token()
+            clone_url = f"https://x-access-token:{token}@github.com/{full_name}.git"
 
-            return result
+        subprocess.run(
+            ["git", "clone", "--bare", clone_url, str(repo_path)],
+            check=True,
+            capture_output=True,
+            timeout=600,
+        )
+
+    logger.info(f"{log_ctx} Clone/update completed successfully")
 
 
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=SafeTask,
     name="app.tasks.shared.create_worktree_chunk",
     queue="ingestion",
     soft_time_limit=600,  # 10 min per chunk (fork replay needs more time)
     time_limit=660,
-    max_retries=2,  # Will retry up to 2 times before giving up gracefully
+    max_retries=3,
 )
 def create_worktree_chunk(
-    self: PipelineTask,
+    self: SafeTask,
     raw_repo_id: str = "",
     github_repo_id: int = 0,
     commit_shas: Optional[List[str]] = None,
@@ -310,12 +279,17 @@ def create_worktree_chunk(
     pipeline_type: str = "",  # "model" or "dataset"
 ) -> Dict[str, Any]:
     """
-    Worker: Create worktrees for a chunk of commits.
+    Create worktrees for a chunk of commits using SafeTask pattern.
 
-    Runs as part of a chain, each chunk executes sequentially.
-    This task NEVER raises exceptions to ensure the chain continues.
-    All errors are logged and counted in the result.
+    Error Handling:
+    - TransientError: Network/git issues → retry with backoff
+    - MissingResourceError: Commit not found → mark MISSING_RESOURCE (no retry)
+    - Success: Preserves worktrees for reuse (no cleanup)
+
+    Returns result with created_commits and failed_commits for progressive save.
     """
+    from app.entities.model_import_build import ResourceStatus
+
     task_id = self.request.id or "unknown"
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
     log_ctx = (
@@ -323,31 +297,10 @@ def create_worktree_chunk(
         f"[repo={raw_repo_id}][chunk={chunk_index + 1}/{total_chunks}]"
     )
 
-    # Log all commit SHAs for debugging
     sha_list = commit_shas or []
-    logger.info(
-        f"{log_ctx} Starting with {len(sha_list)} commits: " f"{[sha[:8] for sha in sha_list]}"
-    )
+    logger.info(f"{log_ctx} Starting with {len(sha_list)} commits")
 
-    # Update status to IN_PROGRESS for these commits using progressive updater
-    if pipeline_id and pipeline_type and commit_shas:
-        try:
-            from app.entities.model_import_build import ResourceStatus
-
-            updater = get_progressive_updater(
-                db=self.db,
-                pipeline_type=pipeline_type,
-                pipeline_id=pipeline_id,
-                raw_repo_id=raw_repo_id,
-            )
-            updater.update_resource_by_commits(
-                "git_worktree",
-                commit_shas,
-                ResourceStatus.IN_PROGRESS,
-            )
-        except Exception as e:
-            logger.warning(f"{log_ctx} Failed to update status to IN_PROGRESS: {e}")
-
+    # Result template
     result = {
         "resource": "git_worktree",
         "chunk_index": chunk_index,
@@ -357,212 +310,235 @@ def create_worktree_chunk(
         "fork_commits_replayed": 0,
         "correlation_id": correlation_id,
         "error": None,
+        "created_commits": [],
+        "failed_commits": [],
     }
 
     if not commit_shas:
         return result
 
-    try:
-        build_run_repo = RawBuildRunRepository(self.db)
-        raw_repo_repo = RawRepositoryRepository(self.db)
-        raw_repo = raw_repo_repo.find_by_id(raw_repo_id)
+    def _work(state: TaskState) -> Dict[str, Any]:
+        """
+        Process worktree creation for all commits.
 
-        # Use github_repo_id for paths
-        repo_path = get_repo_path(github_repo_id)
-        worktrees_dir = get_worktrees_path(github_repo_id)
-        worktrees_dir.mkdir(parents=True, exist_ok=True)
+        Phases:
+        - START: Mark IN_PROGRESS
+        - PROCESSING: Create worktrees for each commit
+        - DONE: Progressive save and publish WebSocket
+        """
+        nonlocal result
 
-        if not repo_path.exists():
-            result["error"] = "Repo not cloned"
-            logger.error(f"{log_ctx} Repo not cloned at {repo_path}")
-            return result
+        # Phase: START → Mark IN_PROGRESS
+        if state.phase == "START":
+            if pipeline_id and pipeline_type and commit_shas:
+                try:
+                    updater = get_progressive_updater(
+                        db=self.db,
+                        pipeline_type=pipeline_type,
+                        pipeline_id=pipeline_id,
+                        raw_repo_id=raw_repo_id,
+                    )
+                    updater.update_resource_by_commits(
+                        "git_worktree", commit_shas, ResourceStatus.IN_PROGRESS
+                    )
+                except Exception as e:
+                    logger.warning(f"{log_ctx} Failed to update IN_PROGRESS: {e}")
 
-        # Get GitHub client for fork commit replay
-        github_client = None
-        try:
-            from app.services.github.github_client import get_public_github_client
+            state.phase = "PROCESSING"
+            state.meta["processed_commits"] = []
 
-            github_client = get_public_github_client()
-        except Exception as e:
-            logger.warning(f"Failed to get GitHub client for fork replay: {e}")
+        # Phase: PROCESSING → Create worktrees
+        if state.phase == "PROCESSING":
+            processed = set(state.meta.get("processed_commits", []))
+            remaining_shas = [sha for sha in commit_shas if sha not in processed]
 
-        worktrees_created = 0
-        worktrees_skipped = 0
-        worktrees_failed = 0
-        fork_commits_replayed = 0
-        failed_commits: list[str] = []
-        created_commits: list[str] = []
+            worktrees_created = result["worktrees_created"]
+            worktrees_skipped = result["worktrees_skipped"]
+            worktrees_failed = result["worktrees_failed"]
+            fork_commits_replayed = result["fork_commits_replayed"]
+            created_commits = list(result["created_commits"])
+            failed_commits = list(result["failed_commits"])
 
-        for sha in commit_shas:
-            # Quick check without lock
-            worktree_path = worktrees_dir / sha[:12]
-            if worktree_path.exists():
-                worktrees_skipped += 1
-                created_commits.append(sha)  # Skipped = already exists = success
-                continue
+            # Setup repos
+            build_run_repo = RawBuildRunRepository(self.db)
+            raw_repo_repo = RawRepositoryRepository(self.db)
+            raw_repo = raw_repo_repo.find_by_id(raw_repo_id)
 
-            build_run = build_run_repo.find_by_commit_or_effective_sha(raw_repo_id, sha)
+            repo_path = get_repo_path(github_repo_id)
+            worktrees_dir = get_worktrees_path(github_repo_id)
+            worktrees_dir.mkdir(parents=True, exist_ok=True)
 
+            if not repo_path.exists():
+                raise TransientError(f"Repo not cloned at {repo_path}")
+
+            # Get GitHub client for fork commit replay
+            github_client = None
             try:
-                # Process single commit with lock
-                res = _process_worktree_commit(
-                    sha,
-                    github_repo_id,
-                    repo_path,
-                    worktrees_dir,
-                    self.redis,
-                    raw_repo,
-                    github_client,
-                    build_run,
-                    build_run_repo,
-                )
+                from app.services.github.github_client import get_public_github_client
 
-                worktrees_created += res["created"]
-                worktrees_skipped += res["skipped"]
-                worktrees_failed += res["failed"]
-                fork_commits_replayed += res["replayed"]
-                if res["failed"]:
-                    failed_commits.append(sha)
-                else:
-                    created_commits.append(sha)
+                github_client = get_public_github_client()
             except Exception as e:
-                logger.exception(f"{log_ctx} Error processing commit {sha[:8]}: {e}")
-                worktrees_failed += 1
-                failed_commits.append(sha)
+                logger.warning(f"Failed to get GitHub client for fork replay: {e}")
 
-        logger.info(
-            f"{log_ctx} Completed: created={worktrees_created}, "
-            f"skipped={worktrees_skipped}, failed={worktrees_failed}"
-        )
+            for sha in remaining_shas:
+                worktree_path = worktrees_dir / sha[:12]
+                if worktree_path.exists():
+                    worktrees_skipped += 1
+                    created_commits.append(sha)
+                    state.meta["processed_commits"].append(sha)
+                    continue
 
-        result.update(
-            {
-                "worktrees_created": worktrees_created,
-                "worktrees_skipped": worktrees_skipped,
-                "worktrees_failed": worktrees_failed,
-                "fork_commits_replayed": fork_commits_replayed,
-                "failed_commits": failed_commits,
-                "created_commits": created_commits,
-            }
-        )
+                build_run = build_run_repo.find_by_commit_or_effective_sha(raw_repo_id, sha)
 
-    except SoftTimeLimitExceeded:
-        # Task exceeded time limit - return result with what we accomplished
-        processed_count = worktrees_created + worktrees_skipped + worktrees_failed
-        remaining = len(commit_shas) - processed_count
-        # Add unprocessed commits to failed list
-        processed_shas = set(created_commits + failed_commits)
-        unprocessed_commits = [sha for sha in commit_shas if sha not in processed_shas]
-        failed_commits.extend(unprocessed_commits)
+                try:
+                    res = _process_worktree_commit(
+                        sha,
+                        github_repo_id,
+                        repo_path,
+                        worktrees_dir,
+                        self.redis,
+                        raw_repo,
+                        github_client,
+                        build_run,
+                        build_run_repo,
+                    )
 
-        logger.error(
-            f"{log_ctx} TIMEOUT! Created {worktrees_created}, {remaining} commits not processed"
-        )
-        result.update(
-            {
-                "status": "timeout",
-                "worktrees_created": worktrees_created,
-                "worktrees_skipped": worktrees_skipped,
-                "worktrees_failed": worktrees_failed + remaining,
-                "fork_commits_replayed": fork_commits_replayed,
-                "failed_commits": failed_commits,
-                "error": f"Timeout: {remaining} commits not processed",
-                "created_commits": created_commits,
-            }
-        )
-        return result
+                    worktrees_created += res["created"]
+                    worktrees_skipped += res["skipped"]
+                    worktrees_failed += res["failed"]
+                    fork_commits_replayed += res["replayed"]
 
-    except Exception as e:
-        # Check if we have retries left
-        retries_left = self.max_retries - self.request.retries
+                    if res["failed"]:
+                        failed_commits.append(sha)
+                    else:
+                        created_commits.append(sha)
 
-        if retries_left > 0:
-            # Still have retries - raise to trigger retry
-            logger.warning(f"{log_ctx} Chunk failed, will retry ({retries_left} retries left): {e}")
-            raise self.retry(exc=e, countdown=30) from e
-        else:
-            # No retries left - log error and return result to continue chain
-            logger.error(
-                f"{log_ctx} Chunk failed after {self.max_retries} retries, "
-                f"continuing chain: {e}"
-            )
-            # Preserve what we accomplished before the error
-            processed_count = worktrees_created + worktrees_skipped + worktrees_failed
-            remaining = len(commit_shas) - processed_count
-            # Add unprocessed commits to failed list
-            processed_shas = set(created_commits + failed_commits)
-            unprocessed_commits = [sha for sha in commit_shas if sha not in processed_shas]
-            failed_commits.extend(unprocessed_commits)
+                except Exception as e:
+                    logger.warning(f"{log_ctx} Error processing commit {sha[:8]}: {e}")
+                    worktrees_failed += 1
+                    failed_commits.append(sha)
+
+                state.meta["processed_commits"].append(sha)
 
             result.update(
                 {
-                    "error": str(e),
                     "worktrees_created": worktrees_created,
                     "worktrees_skipped": worktrees_skipped,
-                    "worktrees_failed": worktrees_failed + remaining,
+                    "worktrees_failed": worktrees_failed,
                     "fork_commits_replayed": fork_commits_replayed,
-                    "failed_commits": failed_commits,
                     "created_commits": created_commits,
+                    "failed_commits": failed_commits,
                 }
             )
 
-    # Progressive save: Update resource status for completed/failed commits
-    if pipeline_id and pipeline_type:
-        try:
-            from app.entities.model_import_build import ResourceStatus
-
-            updater = get_progressive_updater(
-                db=self.db,
-                pipeline_type=pipeline_type,
-                pipeline_id=pipeline_id,
-                raw_repo_id=raw_repo_id,
+            logger.info(
+                f"{log_ctx} Completed: created={worktrees_created}, "
+                f"skipped={worktrees_skipped}, failed={worktrees_failed}"
             )
-            # Mark created commits as COMPLETED
-            if result.get("created_commits"):
-                updated = updater.update_resource_by_commits(
-                    "git_worktree",
-                    result["created_commits"],
-                    ResourceStatus.COMPLETED,
-                )
-                logger.info(
-                    f"{log_ctx} Progressive save: marked {updated} builds git_worktree=COMPLETED"
-                )
-            # Mark failed commits as FAILED
-            if result.get("failed_commits"):
-                updated = updater.update_resource_by_commits(
-                    "git_worktree",
-                    result["failed_commits"],
-                    ResourceStatus.FAILED,
-                    result.get("error") or "Worktree creation failed",
-                )
-                logger.info(
-                    f"{log_ctx} Progressive save: marked {updated} builds git_worktree=FAILED"
-                )
-        except Exception as e:
-            logger.warning(f"{log_ctx} Progressive save failed: {e}")
 
-    # Publish WebSocket update only on final chunk
-    is_final_chunk = chunk_index == total_chunks - 1
-    if pipeline_id and is_final_chunk:
-        ws_status = (
-            "failed"
-            if result.get("worktrees_failed", 0) > 0 and result.get("worktrees_created", 0) == 0
-            else "completed"
-        )
-        # Include all commit SHAs for frontend to update specific builds
-        all_commits = result.get("created_commits", []) + result.get("failed_commits", [])
-        publish_ingestion_build_update(
-            repo_id=pipeline_id,
-            resource="git_worktree",
-            status=ws_status,
-            builds_affected=result.get("worktrees_created", 0) + result.get("worktrees_skipped", 0),
-            chunk_index=chunk_index,
-            total_chunks=total_chunks,
+            state.phase = "DONE"
+
+        # Phase: DONE → Progressive save and publish
+        if state.phase == "DONE":
+            _save_worktree_progress(
+                self.db, pipeline_id, pipeline_type, raw_repo_id, result, log_ctx
+            )
+            _publish_worktree_update(pipeline_id, pipeline_type, chunk_index, total_chunks, result)
+
+        return result
+
+    def _mark_failed(exc: Exception) -> None:
+        """Mark failed commits in database."""
+        error_msg = str(exc)[:500]
+        result["error"] = error_msg
+
+        # Mark all unprocessed commits as failed
+        if pipeline_id and pipeline_type:
+            all_failed = result.get("failed_commits", [])
+            # Add unprocessed commits to failed list
+            processed = set(result.get("created_commits", []) + all_failed)
+            unprocessed = [sha for sha in (commit_shas or []) if sha not in processed]
+            all_failed.extend(unprocessed)
+            result["failed_commits"] = all_failed
+
+            _save_worktree_progress(
+                self.db, pipeline_id, pipeline_type, raw_repo_id, result, log_ctx
+            )
+
+    return self.run_safe(
+        job_id=f"{pipeline_id}:{raw_repo_id}:chunk{chunk_index}",
+        work=_work,
+        mark_failed_fn=_mark_failed,
+        cleanup_fn=None,  # Preserve successful worktrees for reuse
+        fail_on_unknown=False,  # Treat unknown errors as transient
+    )
+
+
+def _save_worktree_progress(
+    db, pipeline_id: str, pipeline_type: str, raw_repo_id: str, result: dict, log_ctx: str
+) -> None:
+    """Save worktree progress to database."""
+    if not pipeline_id or not pipeline_type:
+        return
+
+    try:
+        from app.entities.model_import_build import ResourceStatus
+
+        updater = get_progressive_updater(
+            db=db,
             pipeline_type=pipeline_type,
-            commit_shas=all_commits if all_commits else None,
+            pipeline_id=pipeline_id,
+            raw_repo_id=raw_repo_id,
         )
 
-    return result
+        if result.get("created_commits"):
+            updated = updater.update_resource_by_commits(
+                "git_worktree", result["created_commits"], ResourceStatus.COMPLETED
+            )
+            logger.info(f"{log_ctx} Marked {updated} builds git_worktree=COMPLETED")
+
+        if result.get("failed_commits"):
+            updated = updater.update_resource_by_commits(
+                "git_worktree",
+                result["failed_commits"],
+                ResourceStatus.FAILED,
+                result.get("error") or "Worktree creation failed",
+            )
+            logger.info(f"{log_ctx} Marked {updated} builds git_worktree=FAILED")
+    except Exception as e:
+        logger.warning(f"{log_ctx} Progressive save failed: {e}")
+
+
+def _publish_worktree_update(
+    pipeline_id: str, pipeline_type: str, chunk_index: int, total_chunks: int, result: dict
+) -> None:
+    """Publish WebSocket update for worktree progress."""
+    is_final_chunk = chunk_index == total_chunks - 1
+    if not pipeline_id or not is_final_chunk:
+        return
+
+    # Determine overall status
+    has_failures = result.get("worktrees_failed", 0) > 0
+    has_successes = result.get("worktrees_created", 0) + result.get("worktrees_skipped", 0) > 0
+
+    if has_failures and not has_successes:
+        ws_status = "failed"
+    elif has_failures and has_successes:
+        ws_status = "completed_with_errors"
+    else:
+        ws_status = "completed"
+
+    publish_ingestion_build_update(
+        repo_id=pipeline_id,
+        resource="git_worktree",
+        status=ws_status,
+        builds_affected=result.get("worktrees_created", 0) + result.get("worktrees_skipped", 0),
+        chunk_index=chunk_index,
+        total_chunks=total_chunks,
+        pipeline_type=pipeline_type,
+        completed_commit_shas=result.get("created_commits") or None,
+        failed_commit_shas=result.get("failed_commits") or None,
+    )
 
 
 def _process_worktree_commit(
@@ -754,24 +730,6 @@ def aggregate_logs_results(
         "skipped_log_ids": all_skipped_log_ids,
     }
 
-    # Publish WebSocket update
-    if pipeline_id:
-        ws_status = (
-            "failed" if status == "completed_with_errors" and total_downloaded == 0 else "completed"
-        )
-        # Include all build IDs for frontend to update specific builds
-        all_build_ids = (
-            all_downloaded_log_ids + all_skipped_log_ids + all_failed_log_ids + all_expired_log_ids
-        )
-        publish_ingestion_build_update(
-            repo_id=pipeline_id,
-            resource="build_logs",
-            status=ws_status,
-            builds_affected=total_downloaded + total_skipped,
-            pipeline_type=pipeline_type,
-            build_ids=all_build_ids if all_build_ids else None,
-        )
-
     return result
 
 
@@ -898,15 +856,15 @@ async def _download_log_for_build(
 
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=SafeTask,
     name="app.tasks.shared.download_logs_chunk",
     queue="ingestion",
     soft_time_limit=600,  # 10 min per chunk
     time_limit=660,
-    max_retries=2,  # Will retry up to 2 times before giving up gracefully
+    max_retries=3,
 )
 def download_logs_chunk(
-    self: PipelineTask,
+    self: SafeTask,
     raw_repo_id: str = "",
     github_repo_id: int = 0,
     full_name: str = "",
@@ -919,11 +877,14 @@ def download_logs_chunk(
     pipeline_type: str = "",  # "model" or "dataset"
 ) -> Dict[str, Any]:
     """
-    Worker: Download logs for a chunk of builds.
+    Download logs for a chunk of builds using SafeTask pattern.
 
-    Runs as part of a chord, all chunks execute in parallel.
-    This task retries on rate limit errors and returns error result after max retries.
+    Error Handling:
+    - TransientError: Network/API issues → retry with backoff
+    - MissingResourceError: Logs expired (404) → mark MISSING_RESOURCE (no retry)
+    - Success: Preserves downloaded logs for reuse (no cleanup)
     """
+    from app.entities.model_import_build import ResourceStatus
 
     task_id = self.request.id or "unknown"
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
@@ -934,26 +895,7 @@ def download_logs_chunk(
 
     logger.info(f"{log_ctx} Starting with {len(build_ids or [])} builds")
 
-    # Update status to IN_PROGRESS for these builds using progressive updater
-    if pipeline_id and pipeline_type and build_ids:
-        try:
-            from app.entities.model_import_build import ResourceStatus
-
-            updater = get_progressive_updater(
-                db=self.db,
-                pipeline_type=pipeline_type,
-                pipeline_id=pipeline_id,
-                raw_repo_id=raw_repo_id,
-            )
-            updater.update_resource_by_ci_run_ids(
-                "build_logs",
-                build_ids,
-                ResourceStatus.IN_PROGRESS,
-            )
-        except Exception as e:
-            logger.warning(f"{log_ctx} Failed to update status to IN_PROGRESS: {e}")
-
-    # Initialize result with defaults
+    # Result template
     result = {
         "resource": "build_logs",
         "chunk_index": chunk_index,
@@ -962,175 +904,123 @@ def download_logs_chunk(
         "logs_skipped": 0,
         "correlation_id": correlation_id,
         "error": None,
+        "failed_log_ids": [],
+        "expired_log_ids": [],
+        "downloaded_log_ids": [],
+        "skipped_log_ids": [],
     }
 
     if build_ids is None:
         build_ids = []
 
-    try:
-        # Check if we should stop (other chunk hit max expired)
-        redis_client = self.redis
-        session_key = f"logs_session:{raw_repo_id}"
+    if not build_ids:
+        return result
 
-        if redis_client.get(f"{session_key}:stop"):
-            logger.info(f"{log_ctx} Skipped: stop flag set by another chunk")
-            result["skipped"] = True
-            result["reason"] = "early_stop"
-            return result
+    def _work(state: TaskState) -> Dict[str, Any]:
+        """
+        Download logs for all builds.
 
-        build_run_repo = RawBuildRunRepository(self.db)
-        ci_provider_enum = CIProvider(ci_provider)
-        provider_config = get_provider_config(ci_provider_enum)
-        ci_instance = get_ci_provider(ci_provider_enum, provider_config, db=self.db)
+        Phases:
+        - START: Mark IN_PROGRESS
+        - DOWNLOADING: Process each build
+        - DONE: Progressive save
+        """
+        nonlocal result
 
-        logs_downloaded = 0
-        logs_expired = 0
-        logs_skipped = 0
-        max_log_size = settings.GIT_MAX_LOG_SIZE_MB * 1024 * 1024
-        failed_log_ids: list[str] = []
-        expired_log_ids: list[str] = []
-        downloaded_log_ids: list[str] = []
-        skipped_log_ids: list[str] = []
+        # Phase: START → Mark IN_PROGRESS
+        if state.phase == "START":
+            if pipeline_id and pipeline_type:
+                try:
+                    updater = get_progressive_updater(
+                        db=self.db,
+                        pipeline_type=pipeline_type,
+                        pipeline_id=pipeline_id,
+                        raw_repo_id=raw_repo_id,
+                    )
+                    updater.update_resource_by_ci_run_ids(
+                        "build_logs", build_ids, ResourceStatus.IN_PROGRESS
+                    )
+                except Exception as e:
+                    logger.warning(f"{log_ctx} Failed to update IN_PROGRESS: {e}")
 
-        max_consecutive = int(redis_client.get(f"{session_key}:max_expired") or 10)
+            state.phase = "DOWNLOADING"
+            state.meta["processed_builds"] = []
 
-        async def run_batch():
-            for build_id in build_ids:
-                res = await _download_log_for_build(
-                    build_id,
-                    raw_repo_id,
-                    github_repo_id,
-                    full_name,
-                    redis_client,
-                    session_key,
-                    build_run_repo,
-                    ci_instance,
-                    max_log_size,
-                    max_consecutive,
-                )
+        # Phase: DOWNLOADING → Download logs
+        if state.phase == "DOWNLOADING":
+            redis_client = self.redis
+            session_key = f"logs_session:{raw_repo_id}"
 
+            # Check early stop flag
+            if redis_client.get(f"{session_key}:stop"):
+                logger.info(f"{log_ctx} Skipped: stop flag set by another chunk")
+                result["skipped"] = True
+                result["reason"] = "early_stop"
+                state.phase = "DONE"
+                return result
+
+            processed = set(state.meta.get("processed_builds", []))
+            remaining_builds = [bid for bid in build_ids if bid not in processed]
+
+            build_run_repo = RawBuildRunRepository(self.db)
+            ci_provider_enum = CIProvider(ci_provider)
+            provider_config = get_provider_config(ci_provider_enum)
+            ci_instance = get_ci_provider(ci_provider_enum, provider_config, db=self.db)
+
+            logs_downloaded = result["logs_downloaded"]
+            logs_expired = result["logs_expired"]
+            logs_skipped = result["logs_skipped"]
+            max_log_size = settings.GIT_MAX_LOG_SIZE_MB * 1024 * 1024
+            failed_log_ids = list(result["failed_log_ids"])
+            expired_log_ids = list(result["expired_log_ids"])
+            downloaded_log_ids = list(result["downloaded_log_ids"])
+            skipped_log_ids = list(result["skipped_log_ids"])
+            max_consecutive = int(redis_client.get(f"{session_key}:max_expired") or 10)
+
+            async def run_batch():
                 nonlocal logs_downloaded, logs_expired, logs_skipped
-                logs_downloaded += res["downloaded"]
-                logs_expired += res["expired"]
-                logs_skipped += res["skipped"]
 
-                if res["failed_id"]:
-                    failed_log_ids.append(res["failed_id"])
-                if res["expired_id"]:
-                    expired_log_ids.append(res["expired_id"])
-                if res["downloaded_id"]:
-                    downloaded_log_ids.append(res["downloaded_id"])
-                if res["skipped_id"]:
-                    skipped_log_ids.append(res["skipped_id"])
+                for build_id in remaining_builds:
+                    res = await _download_log_for_build(
+                        build_id,
+                        raw_repo_id,
+                        github_repo_id,
+                        full_name,
+                        redis_client,
+                        session_key,
+                        build_run_repo,
+                        ci_instance,
+                        max_log_size,
+                        max_consecutive,
+                    )
 
-                if res["status"] == "stopped":
-                    break
+                    logs_downloaded += res["downloaded"]
+                    logs_expired += res["expired"]
+                    logs_skipped += res["skipped"]
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(run_batch())
-        finally:
-            loop.close()
+                    if res["failed_id"]:
+                        failed_log_ids.append(res["failed_id"])
+                    if res["expired_id"]:
+                        expired_log_ids.append(res["expired_id"])
+                    if res["downloaded_id"]:
+                        downloaded_log_ids.append(res["downloaded_id"])
+                    if res["skipped_id"]:
+                        skipped_log_ids.append(res["skipped_id"])
 
-        logger.info(
-            f"{log_ctx} Completed: downloaded={logs_downloaded}, "
-            f"expired={logs_expired}, skipped={logs_skipped}"
-        )
+                    state.meta["processed_builds"].append(build_id)
 
-        result["logs_downloaded"] = logs_downloaded
-        result["logs_expired"] = logs_expired
-        result["logs_skipped"] = logs_skipped
-        result["failed_log_ids"] = failed_log_ids
-        result["expired_log_ids"] = expired_log_ids
-        result["downloaded_log_ids"] = downloaded_log_ids
-        result["skipped_log_ids"] = skipped_log_ids
+                    if res["status"] == "stopped":
+                        break
 
-        # Progressive save: Update resource status for completed/failed logs
-        if pipeline_id and pipeline_type:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
-                from app.entities.model_import_build import ResourceStatus
+                loop.run_until_complete(run_batch())
+            finally:
+                loop.close()
 
-                updater = get_progressive_updater(
-                    db=self.db,
-                    pipeline_type=pipeline_type,
-                    pipeline_id=pipeline_id,
-                    raw_repo_id=raw_repo_id,
-                )
-                # Mark downloaded/skipped as COMPLETED
-                successful_logs = downloaded_log_ids + skipped_log_ids
-                if successful_logs:
-                    updated = updater.update_resource_by_ci_run_ids(
-                        "build_logs",
-                        successful_logs,
-                        ResourceStatus.COMPLETED,
-                    )
-                    logger.info(
-                        f"{log_ctx} Progressive save: marked {updated} builds build_logs=COMPLETED"
-                    )
-                # Mark failed/expired as FAILED
-                failed_logs = failed_log_ids + expired_log_ids
-                if failed_logs:
-                    updated = updater.update_resource_by_ci_run_ids(
-                        "build_logs",
-                        failed_logs,
-                        ResourceStatus.FAILED,
-                        "Log download failed or expired",
-                    )
-                    logger.info(
-                        f"{log_ctx} Progressive save: marked {updated} builds build_logs=FAILED"
-                    )
-            except Exception as e:
-                logger.warning(f"{log_ctx} Progressive save failed: {e}")
-
-        return result
-
-    except SoftTimeLimitExceeded:
-        # Task exceeded time limit - return result with what we accomplished
-        processed = logs_downloaded + logs_expired + logs_skipped
-        remaining = len(build_ids) - processed if build_ids else 0
-        logger.error(
-            f"{log_ctx} TIMEOUT! Downloaded {logs_downloaded}, {remaining} builds not processed"
-        )
-        result.update(
-            {
-                "status": "timeout",
-                "logs_downloaded": logs_downloaded,
-                "logs_expired": logs_expired,
-                "logs_skipped": logs_skipped,
-                "failed_log_ids": failed_log_ids,
-                "expired_log_ids": expired_log_ids,
-                "downloaded_log_ids": downloaded_log_ids,
-                "skipped_log_ids": skipped_log_ids,
-                "error": f"Timeout: {remaining} builds not processed",
-            }
-        )
-        return result
-
-    except Exception as e:
-        retries_left = self.max_retries - self.request.retries
-        logger.error(f"{log_ctx} Error (retries_left={retries_left}): {e}", exc_info=True)
-
-        if retries_left > 0:
-            # Retry with exponential backoff
-            countdown = 60 * (self.request.retries + 1)
-            raise self.retry(exc=e, countdown=countdown) from e
-        else:
-            # Max retries exhausted - return error result, don't break chain
-            logger.warning(f"{log_ctx} Max retries exhausted, returning error result")
-            # Publish error event to frontend
-            from app.tasks.shared.events import publish_ingestion_error
-
-            publish_ingestion_error(
-                raw_repo_id=raw_repo_id,
-                resource="build_logs",
-                chunk_index=chunk_index,
-                error=str(e),
-                correlation_id=correlation_id,
-            )
             result.update(
                 {
-                    "error": str(e),
                     "logs_downloaded": logs_downloaded,
                     "logs_expired": logs_expired,
                     "logs_skipped": logs_skipped,
@@ -1140,4 +1030,126 @@ def download_logs_chunk(
                     "skipped_log_ids": skipped_log_ids,
                 }
             )
-            return result
+
+            logger.info(
+                f"{log_ctx} Completed: downloaded={logs_downloaded}, "
+                f"expired={logs_expired}, skipped={logs_skipped}"
+            )
+
+            state.phase = "DONE"
+
+        # Phase: DONE → Progressive save and publish WebSocket
+        if state.phase == "DONE":
+            _save_logs_progress(self.db, pipeline_id, pipeline_type, raw_repo_id, result, log_ctx)
+            _publish_logs_update(pipeline_id, pipeline_type, chunk_index, total_chunks, result)
+
+        return result
+
+    def _mark_failed(exc: Exception) -> None:
+        """Mark failed logs in database."""
+        error_msg = str(exc)[:500]
+        result["error"] = error_msg
+
+        if pipeline_id and pipeline_type:
+            # Add unprocessed builds to failed list
+            all_failed = result.get("failed_log_ids", [])
+            processed = set(
+                result.get("downloaded_log_ids", [])
+                + result.get("skipped_log_ids", [])
+                + result.get("expired_log_ids", [])
+                + all_failed
+            )
+            unprocessed = [bid for bid in build_ids if bid not in processed]
+            all_failed.extend(unprocessed)
+            result["failed_log_ids"] = all_failed
+
+            _save_logs_progress(self.db, pipeline_id, pipeline_type, raw_repo_id, result, log_ctx)
+
+            # Publish error event
+            from app.tasks.shared.events import publish_ingestion_error
+
+            publish_ingestion_error(
+                raw_repo_id=raw_repo_id,
+                resource="build_logs",
+                chunk_index=chunk_index,
+                error=error_msg,
+                correlation_id=correlation_id,
+            )
+
+    return self.run_safe(
+        job_id=f"{pipeline_id}:{raw_repo_id}:logs_chunk{chunk_index}",
+        work=_work,
+        mark_failed_fn=_mark_failed,
+        cleanup_fn=None,  # Preserve downloaded logs for reuse
+        fail_on_unknown=False,  # Treat unknown errors as transient
+    )
+
+
+def _save_logs_progress(
+    db, pipeline_id: str, pipeline_type: str, raw_repo_id: str, result: dict, log_ctx: str
+) -> None:
+    """Save log download progress to database."""
+    if not pipeline_id or not pipeline_type:
+        return
+
+    try:
+        from app.entities.model_import_build import ResourceStatus
+
+        updater = get_progressive_updater(
+            db=db,
+            pipeline_type=pipeline_type,
+            pipeline_id=pipeline_id,
+            raw_repo_id=raw_repo_id,
+        )
+
+        # Mark downloaded/skipped as COMPLETED
+        successful = result.get("downloaded_log_ids", []) + result.get("skipped_log_ids", [])
+        if successful:
+            updated = updater.update_resource_by_ci_run_ids(
+                "build_logs", successful, ResourceStatus.COMPLETED
+            )
+            logger.info(f"{log_ctx} Marked {updated} builds build_logs=COMPLETED")
+
+        # Mark failed/expired as FAILED
+        failed = result.get("failed_log_ids", []) + result.get("expired_log_ids", [])
+        if failed:
+            updated = updater.update_resource_by_ci_run_ids(
+                "build_logs", failed, ResourceStatus.FAILED, "Log download failed or expired"
+            )
+            logger.info(f"{log_ctx} Marked {updated} builds build_logs=FAILED")
+    except Exception as e:
+        logger.warning(f"{log_ctx} Progressive save failed: {e}")
+
+
+def _publish_logs_update(
+    pipeline_id: str, pipeline_type: str, chunk_index: int, total_chunks: int, result: dict
+) -> None:
+    """Publish WebSocket update for logs download progress (per chunk)."""
+    if not pipeline_id:
+        return
+
+    # Determine overall status for this chunk
+    completed_ids = result.get("downloaded_log_ids", []) + result.get("skipped_log_ids", [])
+    failed_ids = result.get("failed_log_ids", []) + result.get("expired_log_ids", [])
+
+    has_failures = len(failed_ids) > 0
+    has_successes = len(completed_ids) > 0
+
+    if has_failures and not has_successes:
+        ws_status = "failed"
+    elif has_failures and has_successes:
+        ws_status = "completed_with_errors"
+    else:
+        ws_status = "completed"
+
+    publish_ingestion_build_update(
+        repo_id=pipeline_id,
+        resource="build_logs",
+        status=ws_status,
+        builds_affected=len(completed_ids),
+        chunk_index=chunk_index,
+        total_chunks=total_chunks,
+        pipeline_type=pipeline_type,
+        completed_build_ids=completed_ids if completed_ids else None,
+        failed_build_ids=failed_ids if failed_ids else None,
+    )

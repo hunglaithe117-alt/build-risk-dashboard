@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/auth-context';
 
 /**
  * Layout for /projects route.
- * Accessible by Admin and Guest roles (dataset managers).
+ * Accessible by Admin only (dataset managers).
  */
 export default function ProjectsLayout({ children }: { children: ReactNode }) {
     const router = useRouter();
@@ -16,8 +16,7 @@ export default function ProjectsLayout({ children }: { children: ReactNode }) {
 
     const userRole = user?.role;
     const isAdmin = userRole === 'admin';
-    const isGuest = userRole === 'guest';
-    const hasProjectsAccess = isAdmin || isGuest;
+    const hasProjectsAccess = isAdmin;
 
     useEffect(() => {
         if (loading) return;

@@ -26,12 +26,8 @@ export default function RepositoriesLayout({ children }: { children: ReactNode }
         }
 
         if (!isAdmin) {
-            // Non-admins redirect to appropriate page
-            if (userRole === 'guest') {
-                router.replace('/projects');
-            } else {
-                router.replace('/overview');
-            }
+            // Non-admins redirect to overview
+            router.replace('/overview');
         }
     }, [authenticated, loading, isAdmin, userRole, router]);
 

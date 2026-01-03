@@ -43,20 +43,20 @@ async def require_admin_or_self(
 
 async def require_viewer(user: dict = Depends(get_current_user)) -> dict:
     """
-    Dependency that requires the user to have viewer access (admin or guest).
+    Dependency that requires the user to have viewer access (admin or user).
 
-    Use this for read-only endpoints that guests should be able to access.
+    Use this for read-only endpoints that users should be able to access.
 
     Raises:
-        HTTPException: 403 Forbidden if user is not an admin or guest
+        HTTPException: 403 Forbidden if user is not an admin or user
 
     Returns:
         The user dict if they have viewer access
     """
     role = user.get("role")
-    if role not in ("admin", "guest"):
+    if role not in ("admin", "user"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Viewer access required. Only admins and guests can access this.",
+            detail="Viewer access required. Only admins and users can access this.",
         )
     return user

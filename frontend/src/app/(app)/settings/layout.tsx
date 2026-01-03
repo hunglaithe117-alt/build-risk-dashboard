@@ -12,8 +12,8 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
 
     const userRole = user?.role;
     const isAdmin = userRole === 'admin';
-    const isGuest = userRole === 'guest';
-    const hasSettingsAccess = isAdmin || isGuest;
+    const isUser = userRole === 'user';
+    const hasSettingsAccess = isAdmin || isUser;
 
     useEffect(() => {
         if (loading) return;
@@ -24,7 +24,6 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
         }
 
         if (!hasSettingsAccess) {
-            // Regular users don't have access to settings page
             router.replace('/overview');
         }
     }, [authenticated, loading, hasSettingsAccess, router]);

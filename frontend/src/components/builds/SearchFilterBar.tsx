@@ -138,3 +138,12 @@ export const PROCESSING_STATUS_OPTIONS: StatusOption[] = [
     { value: "partial", label: "Partial" },
     { value: "failed", label: "Failed" },
 ];
+
+// Predefined status options for integration scans (Trivy, SonarQube)
+export const SCAN_STATUS_OPTIONS: StatusOption[] = [
+    { value: "all", label: "All Statuses" },
+    { value: "pending", label: "Pending" },
+    { value: "scanning", label: "Scanning" },
+    { value: "completed", label: "Completed" },
+    { value: "failed", label: "Failed" },
+];

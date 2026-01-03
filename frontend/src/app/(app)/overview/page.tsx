@@ -101,10 +101,6 @@ const PRESET_LAYOUTS = {
     { widget_id: "repo_distribution", x: 0, y: 1, w: 6, h: 2 },
     { widget_id: "recent_builds", x: 6, y: 1, w: 6, h: 2 },
   ],
-  // Guest layout: only dataset_summary
-  guestCompact: [
-    { widget_id: "dataset_summary", x: 0, y: 0, w: 12, h: 1 },
-  ],
 };
 
 export default function OverviewPage() {

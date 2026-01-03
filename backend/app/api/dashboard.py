@@ -160,7 +160,7 @@ def get_available_widgets(
     ]
 
     # Filter widgets by user role
-    role = current_user.get("role", "guest")
+    role = current_user.get("role", "user")
     return [
         widget
         for widget in all_widgets

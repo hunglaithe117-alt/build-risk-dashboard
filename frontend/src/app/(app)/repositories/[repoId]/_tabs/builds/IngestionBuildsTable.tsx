@@ -124,32 +124,47 @@ export function IngestionBuildsTable({
         const unsubscribeIngestion = subscribe("INGESTION_BUILD_UPDATE", (data: any) => {
             // Check if this update is for our repo (model pipeline)
             if (data.repo_id === repoId && data.pipeline_type === "model") {
-                const { resource, status, commit_shas, build_ids } = data;
+                const {
+                    resource,
+                    // New separate lists for completed/failed
+                    completed_commit_shas,
+                    failed_commit_shas,
+                    completed_build_ids,
+                    failed_build_ids,
+                    status,
+                } = data;
 
-                // Granular update based on resource type
                 setBuilds((prevBuilds) =>
                     prevBuilds.map((build) => {
-                        let shouldUpdate = false;
+                        let newStatus: string | null = null;
 
                         if (resource === "git_history") {
-                            // git_history: Update ALL builds (clone is repo-level)
-                            shouldUpdate = true;
-                        } else if (resource === "git_worktree" && commit_shas?.length) {
-                            // git_worktree: Update builds with matching commit_sha
-                            shouldUpdate = commit_shas.includes(build.commit_sha);
-                        } else if (resource === "build_logs" && build_ids?.length) {
-                            // build_logs: Update builds with matching build_id
-                            shouldUpdate = build_ids.includes(build.build_id);
+                            // git_history: Update ALL builds with the overall status
+                            newStatus = status;
+                        } else if (resource === "git_worktree") {
+                            // git_worktree: Check if this build's commit_sha is in completed or failed list
+                            if (completed_commit_shas?.includes(build.commit_sha)) {
+                                newStatus = "completed";
+                            } else if (failed_commit_shas?.includes(build.commit_sha)) {
+                                newStatus = "failed";
+                            }
+                        } else if (resource === "build_logs") {
+                            // build_logs: Check if this build's build_id is in completed or failed list
+                            if (completed_build_ids?.includes(build.build_id)) {
+                                newStatus = "completed";
+                            } else if (failed_build_ids?.includes(build.build_id)) {
+                                newStatus = "failed";
+                            }
                         }
 
-                        if (shouldUpdate) {
+                        if (newStatus) {
                             return {
                                 ...build,
                                 resource_status: {
                                     ...build.resource_status,
                                     [resource]: {
                                         ...build.resource_status?.[resource],
-                                        status: status,
+                                        status: newStatus,
                                     },
                                 },
                             };

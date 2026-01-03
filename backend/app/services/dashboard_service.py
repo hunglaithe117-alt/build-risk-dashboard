@@ -27,7 +27,6 @@ class DashboardService:
         Get dashboard summary with RBAC filtering.
 
         - Admin: sees all repos and builds
-        - Guest: sees all repos and builds (read-only viewer)
         - User: sees only repos in their github_accessible_repos
         """
         user_role = current_user.get("role", "user") if current_user else "admin"
@@ -36,17 +35,16 @@ class DashboardService:
         # Base repo filter
         repo_filter: dict = {"status": "imported"}
 
-        # For non-viewer users (regular users), filter by accessible repos
-        # Admin and guest see all data
-        if user_role not in ("admin", "guest") and accessible_repos:
+        # For non-admin users, filter by accessible repos
+        if user_role != "admin" and accessible_repos:
             repo_filter["full_name"] = {"$in": accessible_repos}
 
         # 1. Get repos based on filter
         repos = list(self.repo_collection.find(repo_filter))
         repo_ids = [repo["_id"] for repo in repos]
 
-        # Build filter for RBAC (admin and guest see all, users see filtered)
-        build_filter = {"repo_id": {"$in": repo_ids}} if user_role not in ("admin", "guest") else {}
+        # Build filter for RBAC (admin sees all, users see filtered)
+        build_filter = {"repo_id": {"$in": repo_ids}} if user_role != "admin" else {}
 
         # 2. Calculate total builds
         total_builds = self.build_collection.count_documents(build_filter)
@@ -79,9 +77,9 @@ class DashboardService:
         # Sort by builds desc
         repo_distribution.sort(key=lambda x: x.builds, reverse=True)
 
-        # 6. Count datasets (admin and guest see all, user sees only their own)
+        # 6. Count datasets (admin sees all, user sees only their own)
         user_id_for_filter = None
-        if user_role not in ("admin", "guest") and current_user:
+        if user_role != "admin" and current_user:
             user_id = current_user.get("_id")
             if user_id:
                 user_id_for_filter = str(user_id)

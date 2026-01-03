@@ -272,9 +272,9 @@ class ModelBuildService:
         accessible_repos = current_user.get("github_accessible_repos", []) if current_user else []
 
         # Build query filter based on RBAC
-        # Admin and guest see all, user sees filtered by accessible repos
+        # Admin sees all, users see filtered by accessible repos
         query = {}
-        if user_role not in ("admin", "guest") and accessible_repos:
+        if user_role != "admin" and accessible_repos:
             # Get raw_repo_ids for accessible repos
             repo_filter = {
                 "full_name": {"$in": accessible_repos},

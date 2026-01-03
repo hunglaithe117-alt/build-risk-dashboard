@@ -19,7 +19,7 @@ export { reposApi } from './repos';
 export { datasetsApi } from './datasets';
 export { tokensApi } from './tokens';
 export { featuresApi, sonarApi } from './features';
-export { adminUsersApi, adminInvitationsApi, adminReposApi } from './admin';
+export { adminUsersApi, adminReposApi } from './admin';
 export { enrichmentApi } from './enrichment';
 export { exportApi } from './export';
 export { datasetValidationApi } from './validation';
@@ -42,9 +42,6 @@ export type {
     UserCreatePayload,
     UserUpdatePayload,
     UserRoleUpdatePayload,
-    Invitation,
-    InvitationListResponse,
-    InvitationCreatePayload,
     RepoAccessSummary,
     RepoAccessListResponse,
     RepoAccessResponse,

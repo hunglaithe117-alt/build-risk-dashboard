@@ -37,10 +37,9 @@ class Settings(BaseSettings):
     # RBAC / Organization Access
     GITHUB_ORGANIZATION: str
 
-    # Google OAuth (for guest login via Gmail)
+    # Google API credentials (Gmail notifications)
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/google/callback"
 
     # CircleCI
     CIRCLECI_TOKEN: Optional[str] = None

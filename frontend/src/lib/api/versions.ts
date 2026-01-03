@@ -87,6 +87,10 @@ export interface VersionDataResponse {
         builds_processed: number;
         builds_processing_failed: number;
         selected_features: string[];
+        scan_metrics?: {
+            trivy?: string[];
+            sonarqube?: string[];
+        };
         created_at: string | null;
         completed_at: string | null;
     };

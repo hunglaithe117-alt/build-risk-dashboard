@@ -14,7 +14,7 @@ class AdminUserResponse(BaseModel):
     id: PyObjectIdStr = Field(..., alias="_id")
     email: str
     name: Optional[str] = None
-    role: Literal["admin", "user", "guest"]
+    role: Literal["admin", "user"]
     created_at: datetime
 
     model_config = ConfigDict(populate_by_name=True, from_attributes=True)

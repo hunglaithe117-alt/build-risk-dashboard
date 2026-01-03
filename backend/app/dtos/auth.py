@@ -48,10 +48,3 @@ class UserDetailResponse(BaseModel):
     created_at: Optional[str] = None
     github: GitHubInfo
 
-
-class GoogleAuthorizeResponse(TokenResponse):
-    """Response for Google OAuth initiation."""
-
-    authorize_url: str
-    state: str
-    refresh_token: Optional[str] = None

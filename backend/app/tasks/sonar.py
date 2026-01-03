@@ -18,8 +18,8 @@ from app.paths import get_worktree_path
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
 from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.sonar_commit_scan import SonarCommitScanRepository
-from app.tasks.base import PipelineTask
-from app.tasks.shared.events import publish_scan_error, publish_scan_update
+from app.tasks.base import PipelineTask, SafeTask, TaskState
+from app.tasks.shared.events import publish_scan_update
 
 logger = logging.getLogger(__name__)
 
@@ -27,14 +27,15 @@ logger = logging.getLogger(__name__)
 # SCAN TASK - Runs on dedicated sonar_scan queue
 @celery_app.task(
     bind=True,
-    base=PipelineTask,
+    base=SafeTask,
     name="app.tasks.sonar.start_sonar_scan_for_version_commit",
     queue="sonar_scan",
     soft_time_limit=1800,
     time_limit=2100,
+    max_retries=3,
 )
 def start_sonar_scan_for_version_commit(
-    self,
+    self: SafeTask,
     version_id: str,
     commit_sha: str,
     repo_full_name: str,
@@ -43,34 +44,25 @@ def start_sonar_scan_for_version_commit(
     component_key: str,
     config_file_path: str = "",
     correlation_id: str = "",
-):
+) -> dict:
     """
-    Start SonarQube scan for a commit in a dataset version.
+    Start SonarQube scan for a commit using SafeTask.run_safe() pattern.
 
-    Creates/updates SonarCommitScan record for tracking.
-    Webhook will backfill results to all builds with matching commit.
+    Phases:
+    - START: Create scan record, validate worktree
+    - SCANNING: Run sonar-scanner CLI (async - webhook handles completion)
+    - DONE: Return status
 
-    Args:
-        version_id: DatasetVersion ID
-        commit_sha: Commit SHA to scan
-        repo_full_name: Repository full name (owner/repo)
-        raw_repo_id: RawRepository MongoDB ID
-        github_repo_id: GitHub's internal repository ID for paths
-        component_key: SonarQube project key (format: reponame_commithash)
-        config_file_path: External config file path (sonar-project.properties)
-        correlation_id: Correlation ID for tracing
+    Note: Results are handled by export_metrics_from_webhook via SonarQube webhook.
     """
     from pathlib import Path
 
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
-    logger.info(
-        f"{corr_prefix} Starting SonarQube scan for {commit_sha[:8]} in version {version_id[:8]}"
-    )
 
     db = get_database()
     scan_repo = SonarCommitScanRepository(db)
 
-    # Create or get scan record (stores raw_repo_id for retry)
+    # Pre-validation: Create or get scan record
     scan_record = scan_repo.create_or_get(
         version_id=ObjectId(version_id),
         commit_sha=commit_sha,
@@ -79,56 +71,15 @@ def start_sonar_scan_for_version_commit(
         component_key=component_key,
     )
 
-    # Check if already scanning
+    # Check if already scanning (idempotent)
     if scan_record.status.value == "scanning":
         logger.info(f"{corr_prefix} Scan already in progress for {component_key}")
         return {"status": "already_scanning", "component_key": component_key}
 
-    # Get worktree path using github_repo_id
-    worktree_path = get_worktree_path(github_repo_id, commit_sha)
-    if not worktree_path.exists():
-        error_msg = f"Worktree not found for {repo_full_name} @ {commit_sha[:8]}"
-        logger.error(error_msg)
-        scan_repo.mark_failed(scan_record.id, error_msg)
-        raise ValueError(error_msg)
-
-    worktree_path_str = str(worktree_path)
-
-    # Mark as scanning
-    scan_repo.mark_scanning(scan_record.id)
-
-    # Publish scanning status
-    publish_scan_update(
-        version_id=version_id,
-        scan_id=str(scan_record.id),
-        commit_sha=commit_sha,
-        tool_type="sonarqube",
-        status="scanning",
-    )
-
-    try:
-        project_key = component_key.rsplit("_", 1)[0]
-        sonar_tool = SonarQubeTool(project_key=project_key, github_repo_id=github_repo_id)
-        sonar_tool.scan_commit(
-            commit_sha=commit_sha,
-            full_name=repo_full_name,
-            config_file_path=Path(config_file_path) if config_file_path else None,
-            shared_worktree_path=worktree_path_str,
-            component_key=component_key,
-        )
-
-        logger.info(
-            f"{corr_prefix} SonarQube scan initiated for {component_key}, waiting for webhook"
-        )
-        return {"status": "scanning", "component_key": component_key}
-
-    except Exception as exc:
+    def _mark_failed(exc: Exception) -> None:
+        """Mark scan as failed and publish error."""
         error_msg = str(exc)
-        retry_count = self.request.retries
-        logger.error(f"{corr_prefix} SonarQube scan failed for {component_key}: {error_msg}")
         scan_repo.mark_failed(scan_record.id, error_msg)
-
-        # Publish failed status
         publish_scan_update(
             version_id=version_id,
             scan_id=str(scan_record.id),
@@ -138,30 +89,76 @@ def start_sonar_scan_for_version_commit(
             error=error_msg,
         )
 
-        # Check if max retries exhausted
-        if retry_count >= 2:
-            # Publish dedicated error event when all retries failed
-            publish_scan_error(
+    def _cleanup(state: TaskState) -> None:
+        """Reset scan status for retry."""
+        # No cleanup needed - scan record status is reset by create_or_get on retry
+        pass
+
+    def _work(state: TaskState) -> dict:
+        """SonarQube scan work function with phases."""
+        # Phase: START - Validate worktree
+        if state.phase == "START":
+            logger.info(
+                f"{corr_prefix} Starting SonarQube scan for {commit_sha[:8]} "
+                f"in version {version_id[:8]}"
+            )
+
+            worktree_path = get_worktree_path(github_repo_id, commit_sha)
+            if not worktree_path.exists():
+                error_msg = f"Worktree not found for {repo_full_name} @ {commit_sha[:8]}"
+                logger.error(error_msg)
+                scan_repo.mark_failed(scan_record.id, error_msg)
+                raise ValueError(error_msg)
+
+            state.meta["worktree_path"] = str(worktree_path)
+
+            # Mark as scanning
+            scan_repo.mark_scanning(scan_record.id)
+            publish_scan_update(
                 version_id=version_id,
                 scan_id=str(scan_record.id),
                 commit_sha=commit_sha,
                 tool_type="sonarqube",
-                error=error_msg,
-                retry_count=retry_count,
+                status="scanning",
             )
-            logger.warning(
-                f"{corr_prefix} SonarQube scan exhausted all retries for {component_key}"
-            )
-            return {"status": "failed", "error": error_msg, "retries_exhausted": True}
 
-        raise self.retry(
-            exc=exc,
-            countdown=min(60 * (2**retry_count), 1800),
-            max_retries=2,
-        ) from exc
+            state.phase = "SCANNING"
+
+        # Phase: SCANNING - Run sonar-scanner CLI
+        if state.phase == "SCANNING":
+            worktree_path_str = state.meta["worktree_path"]
+
+            project_key = component_key.rsplit("_", 1)[0]
+            sonar_tool = SonarQubeTool(project_key=project_key, github_repo_id=github_repo_id)
+            sonar_tool.scan_commit(
+                commit_sha=commit_sha,
+                full_name=repo_full_name,
+                config_file_path=Path(config_file_path) if config_file_path else None,
+                shared_worktree_path=worktree_path_str,
+                component_key=component_key,
+            )
+
+            logger.info(
+                f"{corr_prefix} SonarQube scan initiated for {component_key}, waiting for webhook"
+            )
+
+            state.meta["result"] = {"status": "scanning", "component_key": component_key}
+            state.phase = "DONE"
+
+        # Phase: DONE
+        return state.meta.get("result", {"status": "completed"})
+
+    return self.run_safe(
+        job_id=f"sonar:{version_id}:{commit_sha[:8]}",
+        work=_work,
+        mark_failed_fn=_mark_failed,
+        cleanup_fn=_cleanup,
+        fail_on_unknown=False,  # Unknown errors → retry
+    )
 
 
 # WEBHOOK HANDLER - Processes results when SonarQube analysis completes
+# Note: Stays as PipelineTask since it's a quick webhook handler
 @celery_app.task(
     bind=True,
     base=PipelineTask,

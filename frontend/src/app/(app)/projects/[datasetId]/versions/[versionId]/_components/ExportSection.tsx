@@ -66,6 +66,7 @@ export function ExportSection({
         sample_features: string[];
     } | null>(null);
     const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+    const [scanMetrics, setScanMetrics] = useState<{ trivy?: string[], sonarqube?: string[] }>({});
     const { toast } = useToast();
 
     const isVersionCompleted = ["processed", "completed"].includes(versionStatus);
@@ -82,6 +83,7 @@ export function ExportSection({
                 // Fetch version data for selected features
                 const versionData = await datasetVersionApi.getVersionData(datasetId, versionId, 1, 1, false);
                 setSelectedFeatures(versionData.version.selected_features || []);
+                setScanMetrics(versionData.version.scan_metrics || {});
             } catch (err) {
                 console.error("Failed to fetch export data:", err);
             }
@@ -244,7 +246,7 @@ export function ExportSection({
                 </CardHeader>
                 <CardContent className="space-y-6">
                     {/* Stats */}
-                    <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
+                    <div className="grid grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
                         <div>
                             <p className="text-2xl font-bold">{previewInfo?.total_rows?.toLocaleString() || 0}</p>
                             <p className="text-sm text-muted-foreground">Total Rows</p>
@@ -253,7 +255,29 @@ export function ExportSection({
                             <p className="text-2xl font-bold">{selectedFeatures.length}</p>
                             <p className="text-sm text-muted-foreground">Features</p>
                         </div>
+                        <div>
+                            <p className="text-2xl font-bold">
+                                {(scanMetrics.sonarqube?.length || 0) + (scanMetrics.trivy?.length || 0)}
+                            </p>
+                            <p className="text-sm text-muted-foreground">Scan Metrics</p>
+                        </div>
                     </div>
+
+                    {/* Scan Metrics Details */}
+                    {((scanMetrics.sonarqube?.length || 0) + (scanMetrics.trivy?.length || 0)) > 0 && (
+                        <div className="flex flex-wrap gap-2 text-xs">
+                            {scanMetrics.sonarqube && scanMetrics.sonarqube.length > 0 && (
+                                <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                                    SonarQube: {scanMetrics.sonarqube.length} metrics
+                                </Badge>
+                            )}
+                            {scanMetrics.trivy && scanMetrics.trivy.length > 0 && (
+                                <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                                    Trivy: {scanMetrics.trivy.length} metrics
+                                </Badge>
+                            )}
+                        </div>
+                    )}
 
                     {/* Format Selection */}
                     <div className="flex items-center gap-4">

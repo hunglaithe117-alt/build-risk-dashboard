@@ -42,7 +42,7 @@ from app.repositories.model_import_build import ModelImportBuildRepository
 from app.repositories.model_repo_config import ModelRepoConfigRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
-from app.tasks.base import ModelPipelineTask
+from app.tasks.base import PipelineTask, SafeTask, TransientError
 from app.tasks.model_processing import publish_status
 from app.tasks.pipeline.resource_dag import get_ingestion_tasks_by_level
 from app.tasks.shared import build_ingestion_workflow
@@ -53,14 +53,14 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(
     bind=True,
-    base=ModelPipelineTask,
+    base=PipelineTask,
     name="app.tasks.model_processing.start_model_processing",
     queue="processing",
     soft_time_limit=120,
     time_limit=180,
 )
 def start_model_processing(
-    self: ModelPipelineTask,
+    self: PipelineTask,
     repo_config_id: str,
     ci_provider: str,
     max_builds: Optional[int] = None,
@@ -73,35 +73,35 @@ def start_model_processing(
 
     Flow: start_model_processing -> ingest_model_builds -> dispatch_build_processing
     """
-    from app.entities.model_repo_config import ModelImportStatus
-    from app.repositories.model_repo_config import ModelRepoConfigRepository
-
-    # Generate correlation_id for tracing entire flow
-    correlation_id = str(uuid.uuid4())
-
-    # Set tracing context for structured logging
-    TracingContext.set(
-        correlation_id=correlation_id,
-        repo_id=repo_config_id,
-        pipeline_type="model_processing",
-    )
-
-    model_repo_config_repo = ModelRepoConfigRepository(self.db)
-
-    # Validate repo exists
-    repo = model_repo_config_repo.find_by_id(repo_config_id)
-    if not repo:
-        logger.error(f"Repository {repo_config_id} not found")
-        return {"status": "error", "error": "Repository not found"}
-
-    # Mark as started
-    model_repo_config_repo.update_repository(
-        repo_config_id,
-        {"status": ModelImportStatus.INGESTING.value},
-    )
-    publish_status(repo_config_id, "ingesting", "Starting import workflow...")
-
     try:
+        from app.entities.model_repo_config import ModelImportStatus
+        from app.repositories.model_repo_config import ModelRepoConfigRepository
+
+        # Generate correlation_id for tracing entire flow
+        correlation_id = str(uuid.uuid4())
+
+        # Set tracing context for structured logging
+        TracingContext.set(
+            correlation_id=correlation_id,
+            repo_id=repo_config_id,
+            pipeline_type="model_processing",
+        )
+
+        model_repo_config_repo = ModelRepoConfigRepository(self.db)
+
+        # Validate repo exists
+        repo = model_repo_config_repo.find_by_id(repo_config_id)
+        if not repo:
+            logger.error(f"Repository {repo_config_id} not found")
+            return {"status": "error", "error": "Repository not found"}
+
+        # Mark as started
+        model_repo_config_repo.update_repository(
+            repo_config_id,
+            {"status": ModelImportStatus.INGESTING.value},
+        )
+        publish_status(repo_config_id, "ingesting", "Starting import workflow...")
+
         ingest_model_builds.delay(
             repo_config_id=repo_config_id,
             ci_provider=ci_provider,
@@ -137,14 +137,14 @@ def start_model_processing(
 
 @celery_app.task(
     bind=True,
-    base=ModelPipelineTask,
+    base=PipelineTask,
     name="app.tasks.model_ingestion.ingest_model_builds",
     queue="ingestion",
     soft_time_limit=120,
     time_limit=180,
 )
 def ingest_model_builds(
-    self: ModelPipelineTask,
+    self: PipelineTask,
     repo_config_id: str,
     ci_provider: str,
     max_builds: Optional[int] = None,
@@ -270,14 +270,15 @@ def ingest_model_builds(
 
 @celery_app.task(
     bind=True,
-    base=ModelPipelineTask,
+    base=SafeTask,
     name="app.tasks.model_ingestion.fetch_builds_until_existing",
     queue="ingestion",
     soft_time_limit=600,
     time_limit=900,
+    max_retries=3,
 )
 def fetch_builds_until_existing(
-    self: ModelPipelineTask,
+    self: SafeTask,
     repo_config_id: str,
     ci_provider: str,
     batch_size: int,
@@ -356,28 +357,8 @@ def fetch_builds_until_existing(
                 loop.close()
                 asyncio.set_event_loop(None)
         except Exception as e:
-            error_msg = f"Failed to fetch builds from CI API: {str(e)}"
-            logger.error(f"{log_ctx} {error_msg}", exc_info=True)
-
-            # Update repo status to FAILED
-            repo_config_repo.update_repository(
-                repo_config_id,
-                {
-                    "status": ModelImportStatus.FAILED.value,
-                    "error_message": error_msg,
-                },
-            )
-            publish_status(
-                repo_config_id,
-                "failed",
-                f"Sync failed: {error_msg}",
-            )
-            return {
-                "status": "failed",
-                "error": error_msg,
-                "pages_fetched": page - 1,
-                "new_builds": total_new_builds,
-            }
+            # Raise TransientError for automatic retry with backoff
+            raise TransientError(f"Failed to fetch builds from CI API: {e}") from e
 
         if not builds:
             logger.info(f"{log_ctx} Page {page}: No builds returned, stopping")
@@ -512,14 +493,15 @@ def fetch_builds_until_existing(
 
 @celery_app.task(
     bind=True,
-    base=ModelPipelineTask,
+    base=SafeTask,
     name="app.tasks.model_ingestion.fetch_builds_batch",
     queue="ingestion",
     soft_time_limit=300,
     time_limit=360,
+    max_retries=3,
 )
 def fetch_builds_batch(
-    self: ModelPipelineTask,
+    self: SafeTask,
     repo_config_id: str,
     ci_provider: str,
     page: int,
@@ -531,8 +513,9 @@ def fetch_builds_batch(
     """
     Fetch a single page of builds and create ModelImportBuild records.
 
-    Returns:
-        Dict with page info and count of builds fetched
+    Uses SafeTask pattern:
+    - TransientError: API failures → retry with backoff
+    - Returns dict with page info and count of builds fetched
     """
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
     log_ctx = f"{corr_prefix}[fetch_batch][page={page}]"
@@ -564,7 +547,7 @@ def fetch_builds_batch(
         "only_completed": True,
     }
 
-    # Fetch page with error handling
+    # Fetch page - raise TransientError for API failures to trigger retry
     try:
         loop = asyncio.new_event_loop()
         try:
@@ -574,14 +557,8 @@ def fetch_builds_batch(
             loop.close()
             asyncio.set_event_loop(None)
     except Exception as e:
-        error_msg = f"Failed to fetch builds page {page}: {str(e)}"
-        logger.error(f"{log_ctx} {error_msg}", exc_info=True)
-        return {
-            "page": page,
-            "builds": 0,
-            "has_more": False,
-            "error": error_msg,
-        }
+        # Wrap as TransientError for automatic retry with backoff
+        raise TransientError(f"Failed to fetch builds page {page}: {e}") from e
 
     if not builds:
         logger.info(f"{log_ctx} No builds found")
@@ -669,14 +646,14 @@ def fetch_builds_batch(
 
 @celery_app.task(
     bind=True,
-    base=ModelPipelineTask,
+    base=PipelineTask,
     name="app.tasks.model_ingestion.aggregate_fetch_results",
     queue="ingestion",
     soft_time_limit=60,
     time_limit=120,
 )
 def aggregate_fetch_results(
-    self: ModelPipelineTask,
+    self: PipelineTask,
     results: List[Dict[str, Any]],
     repo_config_id: str,
     correlation_id: str = "",
@@ -767,14 +744,14 @@ def aggregate_fetch_results(
 
 @celery_app.task(
     bind=True,
-    base=ModelPipelineTask,
+    base=PipelineTask,
     name="app.tasks.model_ingestion.dispatch_ingestion",
     queue="ingestion",
     soft_time_limit=120,
     time_limit=180,
 )
 def dispatch_ingestion(
-    self: ModelPipelineTask,
+    self: PipelineTask,
     repo_config_id: str,
     raw_repo_id: str,
     github_repo_id: int,
@@ -876,14 +853,14 @@ def dispatch_ingestion(
 
 @celery_app.task(
     bind=True,
-    base=ModelPipelineTask,
+    base=PipelineTask,
     name="app.tasks.model_ingestion.aggregate_model_ingestion_results",
     queue="ingestion",
     soft_time_limit=30,
     time_limit=60,
 )
 def aggregate_model_ingestion_results(
-    self: ModelPipelineTask,
+    self: PipelineTask,
     results: Any,
     repo_config_id: str,
     correlation_id: str = "",
@@ -1037,14 +1014,14 @@ def aggregate_model_ingestion_results(
 
 @celery_app.task(
     bind=True,
-    base=ModelPipelineTask,
+    base=PipelineTask,
     name="app.tasks.model_ingestion.handle_ingestion_chord_error",
     queue="ingestion",
     soft_time_limit=60,
     time_limit=120,
 )
 def handle_ingestion_chord_error(
-    self: ModelPipelineTask,
+    self: PipelineTask,
     request,
     exc,
     traceback,
@@ -1145,14 +1122,14 @@ def handle_ingestion_chord_error(
 # REINGEST FAILED BUILDS
 @celery_app.task(
     bind=True,
-    base=ModelPipelineTask,
+    base=PipelineTask,
     name="app.tasks.ingestion.reingest_failed_builds",
     queue="ingestion",
     soft_time_limit=600,
     time_limit=900,
 )
 def reingest_failed_builds(
-    self: ModelPipelineTask,
+    self: PipelineTask,
     repo_config_id: str,
 ) -> Dict[str, Any]:
     """

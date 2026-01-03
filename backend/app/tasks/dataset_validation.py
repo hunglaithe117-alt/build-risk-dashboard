@@ -40,7 +40,7 @@ from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
 from app.services.github.github_client import get_public_github_client
-from app.tasks.base import PipelineTask
+from app.tasks.base import SafeTask
 from app.tasks.dataset_validation_helpers import (
     batch_create_dataset_builds,
     calculate_progress,
@@ -58,10 +58,11 @@ from app.utils.datetime import utc_now
 logger = logging.getLogger(__name__)
 
 
-class DatasetValidationTask(PipelineTask):
+class DatasetValidationTask(SafeTask):
     """
     Custom task class for dataset validation with entity failure handling.
 
+    Inherits from SafeTask for automatic retry with exponential backoff.
     When a task fails (timeout, unhandled error), automatically updates
     Dataset.validation_status to FAILED and publishes WebSocket event.
     """
@@ -341,6 +342,7 @@ def dataset_validation_orchestrator(self, dataset_id: str) -> Dict[str, Any]:
     queue="validation",
     soft_time_limit=600,
     time_limit=660,
+    max_retries=3,
 )
 def validate_repo_chunk(
     self,
@@ -456,6 +458,7 @@ def validate_repo_chunk(
     queue="validation",
     soft_time_limit=300,
     time_limit=360,
+    max_retries=3,
 )
 def validate_builds_chunk(
     self,

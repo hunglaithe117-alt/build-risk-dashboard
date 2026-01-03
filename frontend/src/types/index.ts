@@ -558,16 +558,11 @@ export interface GithubAuthorizeResponse {
   state: string;
 }
 
-export interface GoogleAuthorizeResponse {
-  authorize_url: string;
-  state: string;
-}
-
 export interface UserAccount {
   id: string;
   email: string;
   name?: string | null;
-  role: "admin" | "user" | "guest";
+  role: "admin" | "user";
   notification_email?: string | null;
   created_at: string;
   github?: {

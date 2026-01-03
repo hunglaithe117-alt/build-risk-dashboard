@@ -35,7 +35,7 @@ from app.repositories.dataset_repository import DatasetRepository
 from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
-from app.tasks.base import EnrichmentTask, PipelineTask
+from app.tasks.base import PipelineTask
 from app.tasks.shared.events import publish_enrichment_update
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.start_enrichment",
     queue="processing",
     soft_time_limit=120,
@@ -313,7 +313,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.aggregate_ingestion_results",
     queue="processing",
     soft_time_limit=30,
@@ -481,7 +481,7 @@ def aggregate_ingestion_results(
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.handle_enrichment_chord_error",
     queue="processing",
     soft_time_limit=60,
@@ -581,7 +581,7 @@ def handle_enrichment_chord_error(
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.reingest_failed_builds",
     queue="processing",
     soft_time_limit=300,

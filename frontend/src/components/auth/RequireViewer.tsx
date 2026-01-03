@@ -12,16 +12,16 @@ interface RequireViewerProps {
 }
 
 /**
- * Component that requires viewer role (admin or guest) to view its children.
+ * Component that requires viewer role (admin or user) to view its children.
  * Redirects non-viewer users to the fallback path (default: /overview).
- * 
- * Use this for read-only pages that both admin and guest should access.
+ *
+ * Use this for read-only pages that both admin and user should access.
  */
 export function RequireViewer({ children, fallbackPath = '/overview' }: RequireViewerProps) {
     const router = useRouter()
     const { authenticated, loading, user } = useAuth()
 
-    const isViewer = user?.role === 'admin' || user?.role === 'guest'
+    const isViewer = user?.role === 'admin' || user?.role === 'user'
 
     useEffect(() => {
         if (loading) return

@@ -33,7 +33,7 @@ def list_datasets(
     db: Database = Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
-    """List datasets for the signed-in user (Admin and Guest only)."""
+    """List datasets for the signed-in user (Admin only)."""
     user_id = str(current_user["_id"])
     service = DatasetService(db)
     return service.list_datasets(user_id, skip=skip, limit=limit, q=q)
@@ -52,7 +52,7 @@ async def upload_dataset(
     db: Database = Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.MANAGE_DATASETS)),
 ):
-    """Upload a CSV file and create dataset (Admin and Guest)."""
+    """Upload a CSV file and create dataset (Admin only)."""
     user_id = str(current_user["_id"])
     upload_fobj = file.file
     try:
@@ -83,7 +83,7 @@ def get_dataset(
     db: Database = Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
-    """Get dataset details (Admin and Guest only)."""
+    """Get dataset details (Admin only)."""
     user_id = str(current_user["_id"])
     service = DatasetService(db)
     return service.get_dataset(dataset_id, user_id)
@@ -98,7 +98,7 @@ def delete_dataset(
     db: Database = Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.MANAGE_DATASETS)),
 ):
-    """Delete a dataset and all associated data (Admin and Guest)."""
+    """Delete a dataset and all associated data (Admin only)."""
     user_id = str(current_user["_id"])
     service = DatasetService(db)
     service.delete_dataset(dataset_id, user_id)
@@ -116,7 +116,7 @@ def update_dataset(
     db: Database = Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.MANAGE_DATASETS)),
 ):
-    """Update dataset fields (Admin and Guest)."""
+    """Update dataset fields (Admin only)."""
 
     user_id = str(current_user["_id"])
     service = DatasetService(db)

@@ -31,7 +31,7 @@ class Permission(str, Enum):
     VIEW_REPOS = "view:repos"
     VIEW_BUILDS = "view:builds"
 
-    # Dataset permissions (Admin + Guest)
+    # Dataset permissions (Admin only)
     VIEW_DATASETS = "view:datasets"  # Includes versions & scans
     MANAGE_DATASETS = "manage:datasets"
     START_SCANS = "start:scans"
@@ -70,17 +70,6 @@ ROLE_PERMISSIONS: dict[str, Set[Permission]] = {
         Permission.VIEW_DASHBOARD,
         Permission.VIEW_REPOS,
         Permission.VIEW_BUILDS,
-        Permission.VIEW_OWN_DASHBOARD,
-        Permission.VIEW_NOTIFICATIONS,
-        Permission.MANAGE_NOTIFICATIONS,
-    },
-    "guest": {
-        # Guest: CHỈ datasets + own dashboard + notifications
-        # KHÔNG có VIEW_REPOS, VIEW_BUILDS
-        Permission.VIEW_DATASETS,
-        Permission.MANAGE_DATASETS,
-        Permission.START_SCANS,
-        Permission.EXPORT_DATA,
         Permission.VIEW_OWN_DASHBOARD,
         Permission.VIEW_NOTIFICATIONS,
         Permission.MANAGE_NOTIFICATIONS,

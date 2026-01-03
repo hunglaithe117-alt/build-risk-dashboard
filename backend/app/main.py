@@ -8,7 +8,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
-    admin_invitations,
     admin_users,
     auth,
     dashboard,
@@ -112,7 +111,6 @@ app.include_router(preprocessing.router, prefix="/api", tags=["Preprocessing"])
 
 # Admin-only routes
 app.include_router(admin_users.router, prefix="/api", tags=["Admin - Users"])
-app.include_router(admin_invitations.router, prefix="/api", tags=["Admin - Invitations"])
 
 
 @app.get("/")

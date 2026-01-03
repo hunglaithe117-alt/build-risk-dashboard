@@ -22,27 +22,6 @@ export interface UserRoleUpdatePayload {
     role: "admin" | "user";
 }
 
-export interface Invitation {
-    id: string;
-    email: string;
-    status: "pending" | "accepted" | "expired" | "revoked";
-    role: "admin" | "user";
-    invited_by: string;
-    expires_at: string;
-    accepted_at?: string | null;
-    created_at: string;
-}
-
-export interface InvitationListResponse {
-    items: Invitation[];
-    total: number;
-}
-
-export interface InvitationCreatePayload {
-    email: string;
-    role?: "admin" | "user" | "guest";
-}
-
 export interface RepoAccessSummary {
     id: string;
     full_name: string;
@@ -81,28 +60,6 @@ export const adminUsersApi = {
     },
     delete: async (userId: string): Promise<void> => {
         await api.delete(`/admin/users/${userId}`);
-    },
-};
-
-// Admin Invitations API
-export const adminInvitationsApi = {
-    list: async (status?: string): Promise<InvitationListResponse> => {
-        const response = await api.get<InvitationListResponse>("/admin/invitations", {
-            params: status ? { status } : undefined,
-        });
-        return response.data;
-    },
-    create: async (payload: InvitationCreatePayload): Promise<Invitation> => {
-        const response = await api.post<Invitation>("/admin/invitations", payload);
-        return response.data;
-    },
-    get: async (invitationId: string): Promise<Invitation> => {
-        const response = await api.get<Invitation>(`/admin/invitations/${invitationId}`);
-        return response.data;
-    },
-    revoke: async (invitationId: string): Promise<Invitation> => {
-        const response = await api.delete<Invitation>(`/admin/invitations/${invitationId}`);
-        return response.data;
     },
 };
 

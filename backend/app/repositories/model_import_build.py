@@ -617,6 +617,40 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
         )
         return result.modified_count
 
+    def update_status_by_ci_run_ids(
+        self,
+        config_id: str,
+        ci_run_ids: List[str],
+        from_status: str,
+        updates: dict,
+    ) -> int:
+        """
+        Update build status for builds matching specific CI run IDs.
+
+        Used by IngestionBuildTask to mark specific builds as FAILED on timeout.
+
+        Args:
+            config_id: ModelRepoConfig ID
+            ci_run_ids: List of CI run IDs to update
+            from_status: Current status to filter (e.g., INGESTING)
+            updates: Fields to update (e.g., status, ingestion_error, failed_at)
+
+        Returns:
+            Number of builds updated
+        """
+        if not ci_run_ids:
+            return 0
+
+        result = self.collection.update_many(
+            {
+                "model_repo_config_id": ObjectId(config_id),
+                "status": from_status,
+                "ci_run_id": {"$in": ci_run_ids},
+            },
+            {"$set": updates},
+        )
+        return result.modified_count
+
     def get_resource_status_summary(self, config_id: str) -> dict:
         """
         Get aggregated resource status counts for a repo config.

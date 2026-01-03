@@ -44,7 +44,7 @@ class DatasetRepository(BaseRepository[DatasetProject]):
         Count datasets with optional user filter.
 
         Args:
-            user_id: Optional user ID to filter by (admin/guest sees all if None)
+            user_id: Optional user ID to filter by (admin sees all if None)
 
         Returns:
             Number of datasets matching the filter

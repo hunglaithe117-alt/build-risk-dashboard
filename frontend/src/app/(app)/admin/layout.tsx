@@ -26,12 +26,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
         // All /admin/* routes are admin-only now
         if (!isAdmin) {
-            // Redirect based on role
-            if (userRole === "guest") {
-                router.replace("/projects");
-            } else {
-                router.replace("/overview");
-            }
+            router.replace("/overview");
         }
     }, [authenticated, loading, isAdmin, userRole, router]);
 

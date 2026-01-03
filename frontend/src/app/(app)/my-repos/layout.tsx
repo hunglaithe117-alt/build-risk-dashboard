@@ -29,12 +29,8 @@ export default function MyReposLayout({ children }: { children: ReactNode }) {
         }
 
         if (!hasAccess) {
-            // Guest redirects to projects
-            if (userRole === 'guest') {
-                router.replace('/projects');
-            } else {
-                router.replace('/overview');
-            }
+            // Non-members redirect to overview
+            router.replace('/overview');
         }
     }, [authenticated, loading, hasAccess, userRole, router]);
 

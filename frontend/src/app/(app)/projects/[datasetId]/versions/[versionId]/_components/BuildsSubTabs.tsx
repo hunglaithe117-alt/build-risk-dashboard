@@ -54,6 +54,7 @@ import {
     SearchFilterBar,
     DATASET_INGESTION_STATUS_OPTIONS,
     PROCESSING_STATUS_OPTIONS,
+    SCAN_STATUS_OPTIONS,
 } from "@/components/builds";
 
 interface BuildsSubTabsProps {
@@ -746,11 +747,24 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
     return `${(diff / 1000).toFixed(1)}s`;
 }
 
+const SCANS_PER_PAGE = 10;
+
 function IntegrationScansSection({ datasetId, versionId }: { datasetId: string; versionId: string }) {
     const [scans, setScans] = useState<CommitScansResponse | null>(null);
     const [loading, setLoading] = useState(false);
     const [retrying, setRetrying] = useState<string | null>(null);
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Search and filter state
+    const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
+
+    // Pagination state for each tab
+    const [sonarPage, setSonarPage] = useState(1);
+    const [trivyPage, setTrivyPage] = useState(1);
+
+    // Active tab for Retry Failed button
+    const [activeTab, setActiveTab] = useState<"sonarqube" | "trivy">("sonarqube");
 
     const fetchScans = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
@@ -802,47 +816,79 @@ function IntegrationScansSection({ datasetId, versionId }: { datasetId: string; 
         }
     };
 
+    const handleRetryAllFailed = async (toolType: string) => {
+        const scanList = toolType === "sonarqube" ? scans?.sonarqube : scans?.trivy;
+        const failedScans = scanList?.filter(s => s.status === "failed") || [];
+        for (const scan of failedScans) {
+            await handleRetry(scan.commit_sha, toolType);
+        }
+    };
+
+    // Filter scans based on search and status
+    const filterScans = useCallback((scanList: CommitScan[]) => {
+        return scanList.filter(scan => {
+            const matchesSearch = searchQuery === "" ||
+                scan.commit_sha.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                scan.repo_full_name.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesStatus = statusFilter === "all" || scan.status === statusFilter;
+            return matchesSearch && matchesStatus;
+        });
+    }, [searchQuery, statusFilter]);
+
+    // Reset pagination when filter changes
+    useEffect(() => {
+        setSonarPage(1);
+        setTrivyPage(1);
+    }, [searchQuery, statusFilter]);
+
     const renderStatus = (status: string) => {
-        const config: Record<string, { icon: React.ReactNode; variant: "default" | "destructive" | "secondary" | "outline" }> = {
-            completed: { icon: <CheckCircle2 className="h-3 w-3" />, variant: "default" },
-            failed: { icon: <XCircle className="h-3 w-3" />, variant: "destructive" },
-            scanning: { icon: <Loader2 className="h-3 w-3 animate-spin" />, variant: "secondary" },
-            pending: { icon: <Clock className="h-3 w-3" />, variant: "outline" },
+        const config: Record<string, { icon: React.ReactNode; className: string }> = {
+            completed: { icon: <CheckCircle2 className="h-3 w-3" />, className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" },
+            failed: { icon: <XCircle className="h-3 w-3" />, className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
+            scanning: { icon: <Loader2 className="h-3 w-3 animate-spin" />, className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" },
+            pending: { icon: <Clock className="h-3 w-3" />, className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400" },
         };
         const c = config[status] || config.pending;
         return (
-            <Badge variant={c.variant}>
+            <Badge variant="outline" className={c.className}>
                 <span className="flex items-center gap-1">{c.icon} {status}</span>
             </Badge>
         );
     };
 
-    const renderScanTable = (scanList: CommitScan[], toolType: string) => {
-        if (!scanList || scanList.length === 0) {
-            return <p className="text-sm text-muted-foreground py-4">No scans</p>;
+    const renderScanTable = (scanList: CommitScan[], toolType: string, currentPage: number, setPage: (p: number) => void) => {
+        const filteredList = filterScans(scanList);
+
+        if (!filteredList || filteredList.length === 0) {
+            return <p className="text-sm text-muted-foreground py-4">No scans match your criteria</p>;
         }
 
         const stats = {
-            total: scanList.length,
-            completed: scanList.filter(s => s.status === "completed").length,
-            failed: scanList.filter(s => s.status === "failed").length,
-            pending: scanList.filter(s => s.status === "pending" || s.status === "scanning").length,
+            total: filteredList.length,
+            completed: filteredList.filter(s => s.status === "completed").length,
+            failed: filteredList.filter(s => s.status === "failed").length,
+            pending: filteredList.filter(s => s.status === "pending" || s.status === "scanning").length,
         };
 
+        const totalPages = Math.ceil(filteredList.length / SCANS_PER_PAGE);
+        const startIdx = (currentPage - 1) * SCANS_PER_PAGE;
+        const paginatedList = filteredList.slice(startIdx, startIdx + SCANS_PER_PAGE);
+
         return (
-            <div className="space-y-2">
-                <div className="flex gap-2 text-xs text-muted-foreground mb-2">
+            <div className="space-y-3">
+                <div className="flex gap-2 text-xs text-muted-foreground">
                     <span>{stats.total} total</span>
                     <span>•</span>
-                    <span className="text-green-600">{stats.completed} completed</span>
+                    <span className="text-green-600">{stats.completed} completed (page)</span>
                     {stats.failed > 0 && <><span>•</span><span className="text-red-600">{stats.failed} failed</span></>}
                     {stats.pending > 0 && <><span>•</span><span>{stats.pending} pending</span></>}
                 </div>
-                <div className="border rounded-lg overflow-hidden max-h-[200px] overflow-y-auto">
+                <div className="border rounded-lg overflow-hidden">
                     <Table>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Commit</TableHead>
+                                <TableHead>Repo</TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead>Builds</TableHead>
                                 <TableHead>Duration</TableHead>
@@ -850,10 +896,13 @@ function IntegrationScansSection({ datasetId, versionId }: { datasetId: string; 
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {scanList.slice(0, 10).map((scan) => (
+                            {paginatedList.map((scan) => (
                                 <TableRow key={scan.id}>
                                     <TableCell className="font-mono text-xs">
                                         {scan.commit_sha.substring(0, 7)}
+                                    </TableCell>
+                                    <TableCell className="text-sm truncate max-w-[150px]" title={scan.repo_full_name}>
+                                        {scan.repo_full_name.split('/').pop() || scan.repo_full_name}
                                     </TableCell>
                                     <TableCell>{renderStatus(scan.status)}</TableCell>
                                     <TableCell>{scan.builds_affected}</TableCell>
@@ -881,10 +930,34 @@ function IntegrationScansSection({ datasetId, versionId }: { datasetId: string; 
                         </TableBody>
                     </Table>
                 </div>
-                {scanList.length > 10 && (
-                    <p className="text-xs text-muted-foreground text-center">
-                        Showing 10 of {scanList.length} scans
-                    </p>
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">
+                            Showing {startIdx + 1}-{Math.min(startIdx + SCANS_PER_PAGE, filteredList.length)} of {filteredList.length} scans
+                        </span>
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2"
+                                onClick={() => setPage(Math.max(1, currentPage - 1))}
+                                disabled={currentPage === 1}
+                            >
+                                <ChevronLeft className="h-3 w-3" />
+                            </Button>
+                            <span className="px-2">Page {currentPage} of {totalPages}</span>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2"
+                                onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
+                                disabled={currentPage === totalPages}
+                            >
+                                <ChevronRight className="h-3 w-3" />
+                            </Button>
+                        </div>
+                    </div>
                 )}
             </div>
         );
@@ -909,6 +982,11 @@ function IntegrationScansSection({ datasetId, versionId }: { datasetId: string; 
         );
     }
 
+    const failedCount = [
+        ...(scans.sonarqube || []),
+        ...(scans.trivy || [])
+    ].filter(s => s.status === "failed").length;
+
     return (
         <Card>
             <CardHeader className="pb-3">
@@ -919,41 +997,74 @@ function IntegrationScansSection({ datasetId, versionId }: { datasetId: string; 
                             SonarQube and Trivy security scans
                         </CardDescription>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => fetchScans()}>
-                        <RefreshCw className="h-4 w-4 mr-1" />
-                        Refresh
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        {failedCount > 0 && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleRetryAllFailed(activeTab)}
+                                className="text-red-600 border-red-200 hover:bg-red-50"
+                            >
+                                <RotateCcw className="h-4 w-4 mr-1" />
+                                Retry Failed ({failedCount})
+                            </Button>
+                        )}
+                        <Button variant="outline" size="sm" onClick={() => fetchScans()}>
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            Refresh
+                        </Button>
+                    </div>
                 </div>
             </CardHeader>
-            <CardContent>
-                <Accordion type="multiple" defaultValue={["sonarqube", "trivy"]}>
+            <CardContent className="space-y-4">
+                {/* Search and Filter */}
+                <SearchFilterBar
+                    placeholder="Search by commit SHA or repository..."
+                    statusOptions={SCAN_STATUS_OPTIONS}
+                    onSearch={setSearchQuery}
+                    onStatusFilter={setStatusFilter}
+                    isLoading={loading}
+                />
+
+                {/* Tab Navigation for SonarQube/Trivy */}
+                <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit">
                     {scans.sonarqube.length > 0 && (
-                        <AccordionItem value="sonarqube">
-                            <AccordionTrigger className="text-sm font-medium">
-                                <div className="flex items-center gap-2">
-                                    <Shield className="h-4 w-4 text-blue-600" />
-                                    SonarQube ({scans.sonarqube.length})
-                                </div>
-                            </AccordionTrigger>
-                            <AccordionContent>
-                                {renderScanTable(scans.sonarqube, "sonarqube")}
-                            </AccordionContent>
-                        </AccordionItem>
+                        <button
+                            onClick={() => setActiveTab("sonarqube")}
+                            className={cn(
+                                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5",
+                                activeTab === "sonarqube"
+                                    ? "bg-background text-foreground shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            <Shield className="h-4 w-4 text-blue-600" />
+                            SonarQube ({filterScans(scans.sonarqube).length})
+                        </button>
                     )}
                     {scans.trivy.length > 0 && (
-                        <AccordionItem value="trivy">
-                            <AccordionTrigger className="text-sm font-medium">
-                                <div className="flex items-center gap-2">
-                                    <AlertTriangle className="h-4 w-4 text-amber-600" />
-                                    Trivy ({scans.trivy.length})
-                                </div>
-                            </AccordionTrigger>
-                            <AccordionContent>
-                                {renderScanTable(scans.trivy, "trivy")}
-                            </AccordionContent>
-                        </AccordionItem>
+                        <button
+                            onClick={() => setActiveTab("trivy")}
+                            className={cn(
+                                "px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5",
+                                activeTab === "trivy"
+                                    ? "bg-background text-foreground shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                            Trivy ({filterScans(scans.trivy).length})
+                        </button>
                     )}
-                </Accordion>
+                </div>
+
+                {/* Scan Tables */}
+                {activeTab === "sonarqube" && scans.sonarqube.length > 0 && (
+                    renderScanTable(scans.sonarqube, "sonarqube", sonarPage, setSonarPage)
+                )}
+                {activeTab === "trivy" && scans.trivy.length > 0 && (
+                    renderScanTable(scans.trivy, "trivy", trivyPage, setTrivyPage)
+                )}
             </CardContent>
         </Card>
     );

@@ -1,6 +1,6 @@
 """Dataset manager role requirement middleware for FastAPI.
 
-This middleware allows both admin and guest roles to perform dataset management
+This middleware allows only the admin role to perform dataset management
 operations including:
 - Upload datasets
 - Create/delete/cancel dataset versions
@@ -18,25 +18,25 @@ async def require_dataset_manager(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """
-    Dependency that requires dataset manager access (admin or guest).
+    Dependency that requires dataset manager access (admin only).
 
-    Guest has full dataset enrichment capabilities:
+    Admin has full dataset enrichment capabilities:
     - Upload datasets
     - Create/delete/cancel versions
     - Start/cancel scans
     - Export data
 
     Raises:
-        HTTPException: 403 Forbidden if user is not an admin or guest
+        HTTPException: 403 Forbidden if user is not an admin
 
     Returns:
         The user dict if they have dataset manager access
     """
     user_role = current_user.get("role")
-    if user_role not in ("admin", "guest"):
+    if user_role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Dataset manager access required. Admins and guests can perform this action.",
+            detail="Dataset manager access required. Admins can perform this action.",
         )
     return current_user
 
@@ -45,20 +45,20 @@ async def require_dataset_viewer(
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """
-    Dependency that requires dataset viewer access (admin or guest).
+    Dependency that requires dataset viewer access (admin only).
 
-    This is for read-only dataset operations that both admin and guest can access.
+    This is for read-only dataset operations that only admins can access.
 
     Raises:
-        HTTPException: 403 Forbidden if user is not an admin or guest
+        HTTPException: 403 Forbidden if user is not an admin
 
     Returns:
         The user dict if they have dataset viewer access
     """
     user_role = current_user.get("role")
-    if user_role not in ("admin", "guest"):
+    if user_role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Dataset viewer access required. Only admins and guests can view datasets.",
+            detail="Dataset viewer access required. Only admins can view datasets.",
         )
     return current_user

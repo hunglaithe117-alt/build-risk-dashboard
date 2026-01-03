@@ -13,7 +13,7 @@ class User(BaseEntity):
 
     email: str
     name: Optional[str] = None
-    role: Literal["admin", "user", "guest"] = "user"
+    role: Literal["admin", "user"] = "user"
     notification_email: Optional[str] = None
     github_accessible_repos: List[str] = Field(default_factory=list)
     github_repos_synced_at: Optional[datetime] = None

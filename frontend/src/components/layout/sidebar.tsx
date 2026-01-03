@@ -18,7 +18,6 @@ const navigation = [
     href: "/overview",
     icon: Home,
     adminOnly: false,
-    guestOnly: false,
     userOnly: false, // Shown to all
   },
   {
@@ -26,15 +25,13 @@ const navigation = [
     href: "/my-repos",
     icon: GitBranch,
     adminOnly: false,
-    guestOnly: false,
     userOnly: true, // Only for org members
   },
   {
     label: "Projects",
     href: "/projects",
     icon: Database,
-    adminOnly: false,
-    guestOnly: true, // Admin + Guest
+    adminOnly: true, // Admin only
     userOnly: false,
   },
   {
@@ -42,7 +39,6 @@ const navigation = [
     href: "/repositories",
     icon: BadgeCheck,
     adminOnly: true, // Admin only
-    guestOnly: false,
     userOnly: false,
   },
   {
@@ -50,7 +46,6 @@ const navigation = [
     href: "/admin/monitoring",
     icon: Activity,
     adminOnly: true, // Admin only
-    guestOnly: false,
     userOnly: false,
   },
   {
@@ -58,7 +53,6 @@ const navigation = [
     href: "/admin/users",
     icon: Users,
     adminOnly: true, // Admin only
-    guestOnly: false,
     userOnly: false,
   },
   {
@@ -66,7 +60,6 @@ const navigation = [
     href: "/admin/settings",
     icon: Settings,
     adminOnly: true, // Admin only
-    guestOnly: false,
     userOnly: false,
   },
 ];
@@ -81,15 +74,12 @@ export function Sidebar({ collapsed = false, onToggleCollapse }: SidebarProps) {
   const { user } = useAuth();
 
   const isAdmin = user?.role === "admin";
-  const isGuest = user?.role === "guest";
 
   const visibleNavigation = navigation.filter((item) => {
     // Admin sees everything except userOnly
     if (isAdmin) return !item.userOnly;
-    // Guest sees guestOnly and common pages, not adminOnly or userOnly
-    if (isGuest) return item.guestOnly || (!item.adminOnly && !item.userOnly);
     // User (org member) sees userOnly and common pages
-    return item.userOnly || (!item.adminOnly && !item.guestOnly);
+    return !item.adminOnly;
   });
 
   const CollapseIcon = collapsed ? PanelLeft : PanelLeftClose;

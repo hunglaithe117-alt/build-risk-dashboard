@@ -1,7 +1,6 @@
 import type {
     AuthVerifyResponse,
     GithubAuthorizeResponse,
-    GoogleAuthorizeResponse,
     RefreshTokenResponse,
     UserAccount,
 } from "@/types";
@@ -16,12 +15,6 @@ export const integrationApi = {
         const response = await api.post<GithubAuthorizeResponse>(
             "/auth/github/login",
             { redirect_path: redirectPath }
-        );
-        return response.data;
-    },
-    startGoogleOAuth: async () => {
-        const response = await api.post<GoogleAuthorizeResponse>(
-            "/auth/google/login"
         );
         return response.data;
     },

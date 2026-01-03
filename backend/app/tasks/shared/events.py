@@ -188,8 +188,12 @@ def publish_ingestion_build_update(
     chunk_index: int = 0,
     total_chunks: int = 1,
     pipeline_type: str = "",  # "model" or "dataset"
-    commit_shas: Optional[List[str]] = None,  # for git_worktree
-    build_ids: Optional[List[str]] = None,  # for build_logs (ci_run_ids)
+    # For git_worktree - separate completed/failed commits
+    completed_commit_shas: Optional[List[str]] = None,
+    failed_commit_shas: Optional[List[str]] = None,
+    # For build_logs - separate completed/failed build ids
+    completed_build_ids: Optional[List[str]] = None,
+    failed_build_ids: Optional[List[str]] = None,
 ) -> bool:
     """
     Publish ingestion build update for real-time per-resource status updates.
@@ -197,13 +201,15 @@ def publish_ingestion_build_update(
     Args:
         repo_id: Repository ID (ModelRepoConfig._id) or Version ID (DatasetVersion._id)
         resource: Resource type (git_history, git_worktree, build_logs)
-        status: Resource status (in_progress, completed, failed)
-        builds_affected: Number of builds affected by this update
+        status: Overall status (in_progress, completed, failed, completed_with_errors)
+        builds_affected: Number of builds successfully affected
         chunk_index: Current chunk index (for chunked operations)
         total_chunks: Total number of chunks
         pipeline_type: "model" or "dataset" to identify the pipeline
-        commit_shas: List of commit SHAs affected (for git_worktree)
-        build_ids: List of build IDs affected (for build_logs - ci_run_ids)
+        completed_commit_shas: Commits that succeeded (for git_worktree)
+        failed_commit_shas: Commits that failed (for git_worktree)
+        completed_build_ids: Builds that succeeded (for build_logs)
+        failed_build_ids: Builds that failed (for build_logs)
 
     Returns:
         True if published successfully, False otherwise
@@ -217,10 +223,18 @@ def publish_ingestion_build_update(
         "total_chunks": total_chunks,
         "pipeline_type": pipeline_type,
     }
-    if commit_shas:
-        payload["commit_shas"] = commit_shas
-    if build_ids:
-        payload["build_ids"] = build_ids
+
+    # Git worktree: completed/failed commit shas
+    if completed_commit_shas:
+        payload["completed_commit_shas"] = completed_commit_shas
+    if failed_commit_shas:
+        payload["failed_commit_shas"] = failed_commit_shas
+
+    # Build logs: completed/failed build ids
+    if completed_build_ids:
+        payload["completed_build_ids"] = completed_build_ids
+    if failed_build_ids:
+        payload["failed_build_ids"] = failed_build_ids
 
     return publish_event("INGESTION_BUILD_UPDATE", payload)
 

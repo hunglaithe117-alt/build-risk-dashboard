@@ -36,7 +36,7 @@ from app.repositories.dataset_import_build import DatasetImportBuildRepository
 from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
-from app.tasks.base import EnrichmentTask, PipelineTask
+from app.tasks.base import PipelineTask, SafeTask, TaskState
 from app.tasks.shared import extract_features_for_build
 from app.tasks.shared.events import publish_enrichment_update
 from app.tasks.shared.processing_tracker import ProcessingTracker
@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.start_enrichment_processing",
     queue="processing",
     soft_time_limit=60,
@@ -107,7 +107,7 @@ def start_enrichment_processing(
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.dispatch_scans_and_processing",
     queue="processing",
     soft_time_limit=30,
@@ -243,7 +243,7 @@ def handle_enrichment_processing_chain_error(
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.dispatch_enrichment_batches",
     queue="processing",
     soft_time_limit=120,
@@ -383,14 +383,15 @@ def dispatch_enrichment_batches(
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=SafeTask,
     name="app.tasks.version_enrichment.process_single_enrichment",
     queue="processing",
     soft_time_limit=300,
     time_limit=600,
+    max_retries=3,
 )
 def process_single_enrichment(
-    self: PipelineTask,
+    self: SafeTask,
     version_id: str,
     enrichment_build_id: str,
     selected_features: List[str],
@@ -399,7 +400,9 @@ def process_single_enrichment(
     """
     Process a single enrichment build for feature extraction.
 
-    This is the sequential version matching model pipeline's process_workflow_run.
+    Uses SafeTask.run_safe() for:
+    - SoftTimeLimitExceeded → checkpoint + retry
+    - Proper error handling and status updates
     """
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
 
@@ -408,17 +411,15 @@ def process_single_enrichment(
     raw_build_run_repo = RawBuildRunRepository(self.db)
     raw_repo_repo = RawRepositoryRepository(self.db)
 
-    # Get enrichment build
+    # Pre-validation (outside run_safe - these are permanent errors)
     enrichment_build = enrichment_build_repo.find_by_id(enrichment_build_id)
     if not enrichment_build:
         logger.error(f"{corr_prefix} EnrichmentBuild {enrichment_build_id} not found")
         return {"status": "error", "error": "EnrichmentBuild not found"}
 
-    # Skip if already processed
     if enrichment_build.extraction_status != ExtractionStatus.PENDING.value:
         return {"status": "skipped", "reason": "already_processed"}
 
-    # Get raw build run
     raw_build_run = raw_build_run_repo.find_by_id(enrichment_build.raw_build_run_id)
     if not raw_build_run:
         enrichment_build_repo.update_one(
@@ -430,7 +431,6 @@ def process_single_enrichment(
         )
         return {"status": "failed", "error": "RawBuildRun not found"}
 
-    # Get raw repo
     raw_repo = raw_repo_repo.find_by_id(raw_build_run.raw_repo_id)
     if not raw_repo:
         enrichment_build_repo.update_one(
@@ -442,65 +442,81 @@ def process_single_enrichment(
         )
         return {"status": "failed", "error": "RawRepository not found"}
 
-    # Get version for feature config
     dataset_version = version_repo.find_by_id(version_id)
     if not dataset_version:
         return {"status": "error", "error": "Version not found"}
 
-    # Extract features using shared helper
-    result = extract_features_for_build(
-        db=self.db,
-        raw_repo=raw_repo,
-        feature_config=dataset_version.feature_configs,
-        raw_build_run=raw_build_run,
-        selected_features=selected_features,
-        output_build_id=enrichment_build_id,
-        category=AuditLogCategory.DATASET_ENRICHMENT,
-    )
+    def _mark_failed(exc: Exception) -> None:
+        """Mark build as FAILED."""
+        enrichment_build_repo.update_one(
+            enrichment_build_id,
+            {"extraction_status": ExtractionStatus.FAILED.value, "extraction_error": str(exc)},
+        )
 
-    # Update enrichment build with results
-    updates = {
-        "feature_vector_id": result.get("feature_vector_id"),
-    }
+    def _work(state: TaskState) -> Dict[str, Any]:
+        """Feature extraction work function."""
+        if state.phase == "START":
+            enrichment_build_repo.update_one(
+                enrichment_build_id, {"extraction_status": ExtractionStatus.IN_PROGRESS.value}
+            )
+            state.phase = "EXTRACTING"
 
-    if result["status"] == "completed":
-        updates["extraction_status"] = ExtractionStatus.COMPLETED.value
-    elif result["status"] == "partial":
-        updates["extraction_status"] = ExtractionStatus.PARTIAL.value
-    else:
-        updates["extraction_status"] = ExtractionStatus.FAILED.value
+        if state.phase == "EXTRACTING":
+            result = extract_features_for_build(
+                db=self.db,
+                raw_repo=raw_repo,
+                feature_config=dataset_version.feature_configs,
+                raw_build_run=raw_build_run,
+                selected_features=selected_features,
+                output_build_id=enrichment_build_id,
+                category=AuditLogCategory.DATASET_ENRICHMENT,
+            )
+            state.meta["result"] = result
+            state.phase = "DONE"
 
-    if result.get("errors"):
-        updates["extraction_error"] = "; ".join(result["errors"])
+        # Update build status
+        result = state.meta.get("result", {"status": "failed"})
+        updates = {"feature_vector_id": result.get("feature_vector_id")}
 
-    enrichment_build_repo.update_one(enrichment_build_id, updates)
-
-    # Update version progress
-    version_repo.increment_builds_processed(version_id)
-
-    # Track result in Redis for finalize aggregation (matching model pipeline)
-    if correlation_id:
-        tracker = ProcessingTracker(self.redis, version_id, correlation_id)
-        if result["status"] in ("completed", "partial"):
-            tracker.record_success(enrichment_build_id)
+        if result["status"] == "completed":
+            updates["extraction_status"] = ExtractionStatus.COMPLETED.value
+        elif result["status"] == "partial":
+            updates["extraction_status"] = ExtractionStatus.PARTIAL.value
         else:
-            tracker.record_failure(enrichment_build_id)
+            updates["extraction_status"] = ExtractionStatus.FAILED.value
 
-    logger.debug(
-        f"{corr_prefix} Processed enrichment build {enrichment_build_id}: "
-        f"status={result['status']}"
+        if result.get("errors"):
+            updates["extraction_error"] = "; ".join(result["errors"])
+
+        enrichment_build_repo.update_one(enrichment_build_id, updates)
+        version_repo.increment_builds_processed(version_id)
+
+        # Track in Redis
+        if correlation_id:
+            tracker = ProcessingTracker(self.redis, version_id, correlation_id)
+            if result["status"] in ("completed", "partial"):
+                tracker.record_success(enrichment_build_id)
+            else:
+                tracker.record_failure(enrichment_build_id)
+
+        return {
+            "status": result["status"],
+            "build_id": enrichment_build_id,
+            "feature_count": result.get("feature_count", 0),
+        }
+
+    return self.run_safe(
+        job_id=f"{version_id}:{enrichment_build_id}",
+        work=_work,
+        mark_failed_fn=_mark_failed,
+        cleanup_fn=None,
+        fail_on_unknown=False,
     )
-
-    return {
-        "status": result["status"],
-        "build_id": enrichment_build_id,
-        "feature_count": result.get("feature_count", 0),
-    }
 
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.reprocess_failed_enrichment_builds",
     queue="processing",
     soft_time_limit=300,
@@ -612,7 +628,7 @@ def reprocess_failed_enrichment_builds(
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.finalize_enrichment",
     queue="processing",
     soft_time_limit=30,
@@ -832,7 +848,7 @@ def process_version_export_job(self: PipelineTask, job_id: str) -> Dict[str, Any
 
 @celery_app.task(
     bind=True,
-    base=EnrichmentTask,
+    base=PipelineTask,
     name="app.tasks.version_enrichment.dispatch_version_scans",
     queue="processing",
     soft_time_limit=300,

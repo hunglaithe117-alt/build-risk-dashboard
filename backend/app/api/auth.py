@@ -15,7 +15,6 @@ from app.config import settings
 from app.database.mongo import get_db
 from app.dtos.auth import (
     AuthVerifyResponse,
-    GoogleAuthorizeResponse,
     TokenResponse,
     UserDetailResponse,
 )
@@ -177,60 +176,3 @@ def logout(response: Response):
         samesite="lax",
     )
 
-
-# Google OAuth (for Guest login)
-
-
-@router.post(
-    "/google/login",
-    response_model=GoogleAuthorizeResponse,
-    response_model_by_alias=False,
-)
-def initiate_google_login(db: Database = Depends(get_db)):
-    """Initiate Google OAuth flow for guest login."""
-    service = AuthService(db)
-    return service.initiate_google_login()
-
-
-@router.get("/google/callback")
-async def google_oauth_callback(
-    code: str = Query(..., description="Google authorization code"),
-    state: str = Query(..., description="Google OAuth state token"),
-    db: Database = Depends(get_db),
-):
-    """Handle Google OAuth callback for guest login."""
-    from urllib.parse import quote
-
-    service = AuthService(db)
-
-    try:
-        jwt_token, refresh_token = await service.handle_google_callback(code, state)
-    except HTTPException as e:
-        redirect_target = settings.FRONTEND_BASE_URL.rstrip("/")
-        error_message = quote(e.detail)
-        return RedirectResponse(url=f"{redirect_target}/login?error={error_message}")
-
-    redirect_target = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/overview"
-    response = RedirectResponse(url=redirect_target)
-
-    # Set cookies
-    response.set_cookie(
-        key="access_token",
-        value=jwt_token,
-        httponly=True,
-        secure=not settings.DEBUG,
-        samesite="lax",
-        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        path="/",
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        secure=not settings.DEBUG,
-        samesite="lax",
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        path="/",
-    )
-
-    return response

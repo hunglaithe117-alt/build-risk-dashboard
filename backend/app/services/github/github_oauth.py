@@ -245,7 +245,7 @@ async def exchange_code_for_token(
     github_login = user_data.get("login")
     is_org_member = await check_org_membership(access_token, github_login)
 
-    # If not org member, check for valid invitation
+    # If not org member, deny access
     if not is_org_member:
         org_name = settings.GITHUB_ORGANIZATION
         raise HTTPException(

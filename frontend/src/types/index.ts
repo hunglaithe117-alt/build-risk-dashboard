@@ -312,6 +312,7 @@ export interface UnifiedBuild {
   model_import_build_id: string;
   // Build basics from RawBuildRun
   build_number?: number;
+  ci_run_id?: string;
   commit_sha: string;
   branch: string;
   ci_conclusion: string;

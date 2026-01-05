@@ -30,7 +30,9 @@ def _to_response(version: DatasetVersion) -> VersionResponse:
         description=version.description,
         selected_features=version.selected_features,
         status=(
-            version.status.value if isinstance(version.status, VersionStatus) else version.status
+            version.status.value
+            if isinstance(version.status, VersionStatus)
+            else version.status
         ),
         builds_total=version.builds_total,
         builds_ingested=version.builds_ingested,
@@ -99,7 +101,9 @@ async def get_version(
     return _to_response(version)
 
 
-@router.get("/{version_id}/ingestion-progress", response_model=IngestionProgressResponse)
+@router.get(
+    "/{version_id}/ingestion-progress", response_model=IngestionProgressResponse
+)
 async def get_ingestion_progress(
     dataset_id: str,
     version_id: str,
@@ -331,6 +335,30 @@ async def get_commit_scans(
         tool_type=tool_type,
         skip=skip,
         limit=limit,
+    )
+
+
+@router.get("/{version_id}/commit-scans/{commit_sha}")
+async def get_commit_scan_detail(
+    dataset_id: str,
+    version_id: str,
+    commit_sha: str,
+    db=Depends(get_db),
+    current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
+):
+    """
+    Get detailed scan metrics and related builds for a specific commit.
+
+    Returns:
+    - Trivy and SonarQube scan results with metrics
+    - List of builds (with ci_run_id) that use this commit
+    """
+    service = DatasetVersionService(db)
+    return service.get_commit_scan_detail(
+        dataset_id=dataset_id,
+        version_id=version_id,
+        commit_sha=commit_sha,
+        user_id=str(current_user["_id"]),
     )
 
 

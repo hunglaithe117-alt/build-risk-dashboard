@@ -6,5 +6,4 @@ export { FeatureDistributionCarousel } from "./FeatureDistributionCarousel";
 export { VersionMiniStepper } from "./VersionMiniStepper";
 export { VersionIngestionCard } from "./VersionIngestionCard";
 export { VersionProcessingCard } from "./VersionProcessingCard";
-export { BuildsSubTabs } from "./BuildsSubTabs";
 

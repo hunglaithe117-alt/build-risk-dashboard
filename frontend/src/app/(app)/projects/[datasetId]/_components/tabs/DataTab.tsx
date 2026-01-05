@@ -45,6 +45,7 @@ interface BuildItem {
     status: string;
     validation_error?: string;
     validated_at?: string;
+    ci_run_id?: string;
     build_number?: number;
     branch?: string;
     commit_sha?: string;
@@ -53,6 +54,7 @@ interface BuildItem {
     conclusion?: string;
     started_at?: string;
     completed_at?: string;
+    created_at?: string;
     duration_seconds?: number;
     logs_available?: boolean;
     logs_expired?: boolean;
@@ -166,13 +168,14 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
                                         <TableHead>Ref</TableHead>
                                         <TableHead>Status</TableHead>
                                         <TableHead>Duration</TableHead>
+                                        <TableHead>Started At</TableHead>
                                         <TableHead className="w-[50px]"></TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
                                     {builds.length === 0 ? (
                                         <TableRow>
-                                            <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                            <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                                                 No builds found
                                             </TableCell>
                                         </TableRow>
@@ -180,7 +183,7 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
                                         builds.map((build) => (
                                             <TableRow key={build.id}>
                                                 <TableCell className="font-mono text-xs">
-                                                    #{build.build_number || build.build_id_from_csv}
+                                                    {build.ci_run_id || build.build_id_from_csv}
                                                 </TableCell>
                                                 <TableCell className="max-w-[200px]">
                                                     <div className="flex flex-col">
@@ -204,6 +207,9 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
                                                 </TableCell>
                                                 <TableCell className="text-xs text-muted-foreground">
                                                     {build.duration_seconds ? formatDuration(build.duration_seconds) : "-"}
+                                                </TableCell>
+                                                <TableCell className="text-xs text-muted-foreground">
+                                                    {build.created_at ? new Date(build.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }) : "-"}
                                                 </TableCell>
                                                 <TableCell>
                                                     {build.web_url && (

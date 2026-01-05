@@ -54,15 +54,23 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
 
     def find_ingesting_builds(self, version_id: str) -> List[DatasetImportBuild]:
         """Find builds currently ingesting."""
-        return self.find_by_version(version_id, status=DatasetImportBuildStatus.INGESTING)
+        return self.find_by_version(
+            version_id, status=DatasetImportBuildStatus.INGESTING
+        )
 
     def find_ingested_builds(self, version_id: str) -> List[DatasetImportBuild]:
         """Find successfully ingested builds."""
-        return self.find_by_version(version_id, status=DatasetImportBuildStatus.INGESTED)
+        return self.find_by_version(
+            version_id, status=DatasetImportBuildStatus.INGESTED
+        )
 
-    def find_missing_resource_imports(self, version_id: str) -> List[DatasetImportBuild]:
+    def find_missing_resource_imports(
+        self, version_id: str
+    ) -> List[DatasetImportBuild]:
         """Find builds with missing resources (not retryable - logs expired, etc)."""
-        return self.find_by_version(version_id, status=DatasetImportBuildStatus.MISSING_RESOURCE)
+        return self.find_by_version(
+            version_id, status=DatasetImportBuildStatus.MISSING_RESOURCE
+        )
 
     def find_processable_builds(self, version_id: str) -> List[DatasetImportBuild]:
         """
@@ -74,15 +82,17 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
         Returns:
             List of DatasetImportBuild with status INGESTED or MISSING_RESOURCE
         """
-        return self.find_many({
-            "dataset_version_id": ObjectId(version_id),
-            "status": {
-                "$in": [
-                    DatasetImportBuildStatus.INGESTED.value,
-                    DatasetImportBuildStatus.MISSING_RESOURCE.value,
-                ]
-            },
-        })
+        return self.find_many(
+            {
+                "dataset_version_id": ObjectId(version_id),
+                "status": {
+                    "$in": [
+                        DatasetImportBuildStatus.INGESTED.value,
+                        DatasetImportBuildStatus.MISSING_RESOURCE.value,
+                    ]
+                },
+            }
+        )
 
     def find_failed_builds(self, version_id: str) -> List[DatasetImportBuild]:
         """Find builds with FAILED status (retryable - actual errors like timeout, network)."""
@@ -262,7 +272,9 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
         result = self.collection.distinct("ci_run_id", query)
         return list(result)
 
-    def delete_by_version(self, version_id: str, session: ClientSession | None = None) -> int:
+    def delete_by_version(
+        self, version_id: str, session: ClientSession | None = None
+    ) -> int:
         """Delete all import builds for a dataset version."""
         result = self.collection.delete_many(
             {"dataset_version_id": ObjectId(version_id)},
@@ -709,11 +721,19 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
                 "$group": {
                     "_id": "$raw_repo_id",
                     "repo_full_name": {"$first": "$repo_full_name"},
-                    "pending": {"$sum": {"$cond": [{"$eq": ["$status", "pending"]}, 1, 0]}},
-                    "ingesting": {"$sum": {"$cond": [{"$eq": ["$status", "ingesting"]}, 1, 0]}},
-                    "ingested": {"$sum": {"$cond": [{"$eq": ["$status", "ingested"]}, 1, 0]}},
+                    "pending": {
+                        "$sum": {"$cond": [{"$eq": ["$status", "pending"]}, 1, 0]}
+                    },
+                    "ingesting": {
+                        "$sum": {"$cond": [{"$eq": ["$status", "ingesting"]}, 1, 0]}
+                    },
+                    "ingested": {
+                        "$sum": {"$cond": [{"$eq": ["$status", "ingested"]}, 1, 0]}
+                    },
                     "missing_resource": {
-                        "$sum": {"$cond": [{"$eq": ["$status", "missing_resource"]}, 1, 0]}
+                        "$sum": {
+                            "$cond": [{"$eq": ["$status", "missing_resource"]}, 1, 0]
+                        }
                     },
                     "total": {"$sum": 1},
                 }
@@ -776,6 +796,7 @@ class DatasetImportBuildRepository(BaseRepository[DatasetImportBuild]):
                     # From RawBuildRun
                     "ci_run_id": "$raw_build_run.ci_run_id",
                     "build_number": "$raw_build_run.build_number",
+                    "repo_name": "$raw_build_run.repo_name",
                     "commit_sha": "$raw_build_run.commit_sha",
                     "branch": "$raw_build_run.branch",
                     "conclusion": "$raw_build_run.conclusion",

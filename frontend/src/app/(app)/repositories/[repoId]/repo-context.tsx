@@ -10,6 +10,7 @@ export interface ImportProgress {
         accepted_failed: number;
         stats: Record<string, number>;
         last_processed_build_number?: number | null;
+        last_processed_ci_run_id?: string | null;
         pending_processing_count?: number;
     };
     import_builds: {

@@ -92,7 +92,9 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
 
     def find_fetched_builds(self, config_id: str) -> List[ModelImportBuild]:
         """Find successfully fetched builds."""
-        return self.find_by_repo_config(config_id, status=ModelImportBuildStatus.FETCHED)
+        return self.find_by_repo_config(
+            config_id, status=ModelImportBuildStatus.FETCHED
+        )
 
     def find_missing_resource_builds(
         self, config_id: str, after_id: Optional[ObjectId] = None
@@ -346,7 +348,10 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
                 "model_repo_config_id": ObjectId(config_id),
                 "raw_build_run_id": ObjectId(raw_build_run_id),
             },
-            {"$set": update_data, "$setOnInsert": {"created_at": ObjectId().generation_time}},
+            {
+                "$set": update_data,
+                "$setOnInsert": {"created_at": ObjectId().generation_time},
+            },
             upsert=True,
             return_document=ReturnDocument.AFTER,
         )
@@ -660,7 +665,7 @@ class ModelImportBuildRepository(BaseRepository[ModelImportBuild]):
             config_id: ModelRepoConfig ID
             ci_run_ids: List of CI run IDs to update
             from_status: Current status to filter (e.g., INGESTING)
-            updates: Fields to update (e.g., status, ingestion_error, failed_at)
+            updates: Fields to update (e.g., status, ingestion_error)
 
         Returns:
             Number of builds updated

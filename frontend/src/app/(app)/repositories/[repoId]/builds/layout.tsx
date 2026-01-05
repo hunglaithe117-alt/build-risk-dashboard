@@ -29,7 +29,7 @@ export default function BuildsLayout({ children }: { children: React.ReactNode }
     const canStartProcessing = ["ingested", "processed"].includes(repoStatus.toLowerCase());
 
     // Get counts from progress API
-    const lastProcessedBuildNumber = progress?.checkpoint?.last_processed_build_number;
+    const lastProcessedCiRunId = progress?.checkpoint?.last_processed_ci_run_id;
     const pendingProcessingCount = progress?.checkpoint?.pending_processing_count ?? 0;
 
     // Disable Start Processing if no pending builds
@@ -53,11 +53,11 @@ export default function BuildsLayout({ children }: { children: React.ReactNode }
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         {/* Last Processed indicator */}
-                        {lastProcessedBuildNumber && !isSyncing && (
+                        {lastProcessedCiRunId && !isSyncing && (
                             <div className="flex items-center gap-2 text-sm">
                                 <span className="text-muted-foreground">Last Processed:</span>
                                 <span className="font-mono text-xs bg-muted px-2 py-1 rounded">
-                                    #{lastProcessedBuildNumber}
+                                    {lastProcessedCiRunId}
                                 </span>
                                 {hasNothingToProcess && (
                                     <span className="text-xs text-green-600">(Up to date)</span>

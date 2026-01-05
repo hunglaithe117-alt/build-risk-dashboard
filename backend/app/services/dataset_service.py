@@ -38,7 +38,11 @@ class DatasetService:
         self.import_build_repo = DatasetImportBuildRepository(db)
 
     def _serialize(self, dataset, versions_count: int = 0) -> DatasetResponse:
-        payload = dataset.model_dump(by_alias=True) if hasattr(dataset, "model_dump") else dataset
+        payload = (
+            dataset.model_dump(by_alias=True)
+            if hasattr(dataset, "model_dump")
+            else dataset
+        )
         if isinstance(payload, dict):
             payload["versions_count"] = versions_count
         return DatasetResponse.model_validate(payload)
@@ -92,12 +96,16 @@ class DatasetService:
         """Get dataset details. Permission validated at API layer."""
         dataset = self.repo.find_by_id(dataset_id)
         if not dataset:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+            )
 
         count = self.version_repo.count_by_dataset(dataset.id)
         return self._serialize(dataset, versions_count=count)
 
-    def create_dataset(self, user_id: str, payload: DatasetCreateRequest) -> DatasetResponse:
+    def create_dataset(
+        self, user_id: str, payload: DatasetCreateRequest
+    ) -> DatasetResponse:
         now = datetime.now(timezone.utc)
         data = payload.model_dump(exclude_none=True)
         data["user_id"] = ObjectId(user_id) if user_id else None
@@ -119,8 +127,12 @@ class DatasetService:
             return None
 
         return {
-            "build_id": find_match(["build_id", "build id", "id", "ci_run_id", "run_id"]),
-            "repo_name": find_match(["repo", "repository", "repo_name", "full_name", "project"]),
+            "build_id": find_match(
+                ["build_id", "build id", "id", "ci_run_id", "run_id"]
+            ),
+            "repo_name": find_match(
+                ["repo", "repository", "repo_name", "full_name", "project"]
+            ),
         }
 
     def create_from_upload(
@@ -192,7 +204,9 @@ class DatasetService:
             else:
                 missing_rate = 0.0
 
-            duplicate_rate = 0.0  # Placeholder, skipping expensive global duplicate check
+            duplicate_rate = (
+                0.0  # Placeholder, skipping expensive global duplicate check
+            )
 
             stats = DatasetStats(
                 missing_rate=missing_rate,
@@ -237,7 +251,9 @@ class DatasetService:
         final_path = DATASET_DIR / f"{dataset.id}_{filename}"
         try:
             temp_path.rename(final_path)
-            self.repo.update_one(str(dataset.id), {"file_path": str(final_path.resolve())})
+            self.repo.update_one(
+                str(dataset.id), {"file_path": str(final_path.resolve())}
+            )
         except Exception as e:
             logger.warning("Failed to move uploaded dataset file: %s", e)
             # file_path already set to temp_path, so just log warning
@@ -272,7 +288,9 @@ class DatasetService:
 
         dataset = self.repo.find_by_id(dataset_id)
         if not dataset or (dataset.user_id and str(dataset.user_id) != user_id):
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+            )
 
         dataset_oid = ObjectId(dataset_id)
         repo_stats_repo = DatasetRepoStatsRepository(self.db)
@@ -291,42 +309,64 @@ class DatasetService:
             )
         )
         feature_vector_ids = [
-            b["feature_vector_id"] for b in enrichment_builds if b.get("feature_vector_id")
+            b["feature_vector_id"]
+            for b in enrichment_builds
+            if b.get("feature_vector_id")
         ]
 
         # Use transaction to ensure all deletes happen atomically
         with get_transaction() as session:
             # 1. Delete associated FeatureAuditLogs
-            audit_deleted = audit_log_repo.delete_by_dataset_id(dataset_id, session=session)
+            audit_deleted = audit_log_repo.delete_by_dataset_id(
+                dataset_id, session=session
+            )
             logger.info(f"Deleted {audit_deleted} audit logs for dataset {dataset_id}")
 
             # 2. Delete associated FeatureVectors (by feature_vector_ids)
             if feature_vector_ids:
-                fv_deleted = feature_vector_repo.delete_by_ids(feature_vector_ids, session=session)
-                logger.info(f"Deleted {fv_deleted} FeatureVectors for dataset {dataset_id}")
+                fv_deleted = feature_vector_repo.delete_by_ids(
+                    feature_vector_ids, session=session
+                )
+                logger.info(
+                    f"Deleted {fv_deleted} FeatureVectors for dataset {dataset_id}"
+                )
 
             # 3. Delete associated enrichment builds (DatasetEnrichmentBuild)
             deleted_enrichment = self.enrichment_build_repo.delete_by_dataset(
                 dataset_oid, session=session
             )
-            logger.info(f"Deleted {deleted_enrichment} enrichment builds for dataset {dataset_id}")
+            logger.info(
+                f"Deleted {deleted_enrichment} enrichment builds for dataset {dataset_id}"
+            )
 
             # 4. Delete associated import builds (DatasetImportBuild)
-            deleted_import = self.import_build_repo.delete_by_dataset(dataset_oid, session=session)
-            logger.info(f"Deleted {deleted_import} import builds for dataset {dataset_id}")
+            deleted_import = self.import_build_repo.delete_by_dataset(
+                dataset_oid, session=session
+            )
+            logger.info(
+                f"Deleted {deleted_import} import builds for dataset {dataset_id}"
+            )
 
             # 5. Delete associated dataset builds (DatasetBuild)
-            deleted_builds = self.build_repo.delete_by_dataset(dataset_id, session=session)
-            logger.info(f"Deleted {deleted_builds} dataset builds for dataset {dataset_id}")
+            deleted_builds = self.build_repo.delete_by_dataset(
+                dataset_id, session=session
+            )
+            logger.info(
+                f"Deleted {deleted_builds} dataset builds for dataset {dataset_id}"
+            )
 
             # 6. Delete repo stats (DatasetRepoStats)
-            deleted_stats = repo_stats_repo.delete_by_dataset(dataset_id, session=session)
+            deleted_stats = repo_stats_repo.delete_by_dataset(
+                dataset_id, session=session
+            )
             logger.info(f"Deleted {deleted_stats} repo stats for dataset {dataset_id}")
 
             # 7. Delete versions (DatasetVersion)
             # First delete associated scans for these versions
             # We need version IDs for this
-            versions = list(version_repo.collection.find({"dataset_id": dataset_oid}, {"_id": 1}))
+            versions = list(
+                version_repo.collection.find({"dataset_id": dataset_oid}, {"_id": 1})
+            )
             version_ids = [v["_id"] for v in versions]
 
             if version_ids:
@@ -344,12 +384,18 @@ class DatasetService:
                     f"Deleted {t_deleted.deleted_count} Trivy scans for dataset {dataset_id}"
                 )
 
-            deleted_versions = version_repo.delete_by_dataset(dataset_id, session=session)
+            deleted_versions = version_repo.delete_by_dataset(
+                dataset_id, session=session
+            )
             logger.info(f"Deleted {deleted_versions} versions for dataset {dataset_id}")
 
             # 8. Delete quality reports (DataQualityReport)
-            deleted_quality = quality_repo.delete_by_dataset(dataset_id, session=session)
-            logger.info(f"Deleted {deleted_quality} quality reports for dataset {dataset_id}")
+            deleted_quality = quality_repo.delete_by_dataset(
+                dataset_id, session=session
+            )
+            logger.info(
+                f"Deleted {deleted_quality} quality reports for dataset {dataset_id}"
+            )
 
             # 9. Delete the dataset document (DatasetProject)
             self.repo.delete_one(dataset_id, session=session)
@@ -384,7 +430,9 @@ class DatasetService:
 
         dataset = self.repo.find_by_id(dataset_id)
         if not dataset:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+            )
 
         # Block config changes if validation is completed
         # These fields affect which builds are validated, so changing them
@@ -446,68 +494,103 @@ class DatasetService:
         List builds for a dataset with enriched details from RawBuildRun.
 
         Returns paginated list of builds with RawBuildRun enrichment.
+        Sorted by RawBuildRun.created_at descending.
         """
         import re
-
-        from app.repositories.raw_build_run import RawBuildRunRepository
 
         # Access check and dataset existence
         self.get_dataset(dataset_id, user_id)
 
-        raw_build_repo = RawBuildRunRepository(self.db)
         dataset_oid = ObjectId(dataset_id)
 
-        # Build query
-        query: Dict = {"dataset_id": dataset_oid}
+        # Build match query
+        match_query: Dict = {"dataset_id": dataset_oid}
         if status_filter:
-            query["status"] = status_filter
+            match_query["status"] = status_filter
 
         # Add search filter
         if q:
             search_regex = re.compile(re.escape(q), re.IGNORECASE)
-            query["$or"] = [
+            match_query["$or"] = [
                 {"repo_name_from_csv": {"$regex": search_regex}},
                 {"build_id_from_csv": {"$regex": search_regex}},
             ]
 
-        # Get total and items
-        total = self.build_repo.count_by_query(query)
-        builds = self.build_repo.find_by_query(
-            query, skip=skip, limit=limit, sort_by="validated_at"
-        )
+        # Get total count
+        total = self.build_repo.count_by_query(match_query)
+
+        # Aggregation pipeline with $lookup to join RawBuildRun
+        pipeline = [
+            {"$match": match_query},
+            # Join with raw_build_runs collection
+            {
+                "$lookup": {
+                    "from": "raw_build_runs",
+                    "localField": "raw_run_id",
+                    "foreignField": "_id",
+                    "as": "raw_build",
+                }
+            },
+            # Unwind the joined array (1:1 relationship)
+            {"$unwind": {"path": "$raw_build", "preserveNullAndEmptyArrays": True}},
+            # Sort by raw_build.started_at descending (newest first)
+            {"$sort": {"raw_build.started_at": -1}},
+            # Pagination
+            {"$skip": skip},
+            {"$limit": limit},
+            # Project only needed fields
+            {
+                "$project": {
+                    "_id": 1,
+                    "build_id_from_csv": 1,
+                    "repo_name_from_csv": 1,
+                    "status": 1,
+                    "validation_error": 1,
+                    "validated_at": 1,
+                    # Fields from RawBuildRun
+                    "ci_run_id": "$raw_build.ci_run_id",
+                    "build_number": "$raw_build.build_number",
+                    "branch": "$raw_build.branch",
+                    "commit_sha": "$raw_build.commit_sha",
+                    "commit_message": "$raw_build.commit_message",
+                    "commit_author": "$raw_build.commit_author",
+                    "conclusion": "$raw_build.conclusion",
+                    "started_at": "$raw_build.started_at",
+                    "completed_at": "$raw_build.completed_at",
+                    "duration_seconds": "$raw_build.duration_seconds",
+                    "logs_available": "$raw_build.logs_available",
+                    "web_url": "$raw_build.web_url",
+                    # Use started_at as created_at (created_at not stored in DB)
+                    "created_at": "$raw_build.started_at",
+                }
+            },
+        ]
 
         items = []
-        for build in builds:
-            build_item = {
-                "id": str(build.id),
-                "build_id_from_csv": build.build_id_from_csv,
-                "repo_name_from_csv": build.repo_name_from_csv,
-                "status": build.status,
-                "validation_error": build.validation_error,
-                "validated_at": build.validated_at,
-            }
-
-            # Enrich with RawBuildRun data if available
-            if build.raw_run_id:
-                raw_build = raw_build_repo.find_by_id(build.raw_run_id)
-                if raw_build:
-                    build_item.update(
-                        {
-                            "build_number": raw_build.build_number,
-                            "branch": raw_build.branch,
-                            "commit_sha": raw_build.commit_sha,
-                            "commit_message": raw_build.commit_message,
-                            "commit_author": raw_build.commit_author,
-                            "conclusion": raw_build.conclusion,
-                            "started_at": raw_build.started_at,
-                            "completed_at": raw_build.completed_at,
-                            "duration_seconds": raw_build.duration_seconds,
-                            "logs_available": raw_build.logs_available,
-                            "web_url": raw_build.web_url,
-                        }
-                    )
-
-            items.append(build_item)
+        for doc in self.db.dataset_builds.aggregate(pipeline):
+            items.append(
+                {
+                    "id": str(doc["_id"]),
+                    "build_id_from_csv": doc.get("build_id_from_csv"),
+                    "repo_name_from_csv": doc.get("repo_name_from_csv"),
+                    "status": doc.get("status"),
+                    "validation_error": doc.get("validation_error"),
+                    "validated_at": doc.get("validated_at"),
+                    "ci_run_id": doc.get("ci_run_id"),
+                    "build_number": doc.get("build_number"),
+                    "branch": doc.get("branch"),
+                    "commit_sha": doc.get("commit_sha"),
+                    "commit_message": doc.get("commit_message"),
+                    "commit_author": doc.get("commit_author"),
+                    "conclusion": doc.get("conclusion"),
+                    "started_at": doc.get("started_at"),
+                    "completed_at": doc.get("completed_at"),
+                    "duration_seconds": doc.get("duration_seconds"),
+                    "logs_available": doc.get("logs_available"),
+                    "web_url": doc.get("web_url"),
+                    "created_at": doc.get("created_at"),
+                }
+            )
 
         return {
             "items": items,
@@ -544,12 +627,18 @@ class DatasetService:
         # Get validated builds for conclusion breakdown
         validated_builds = list(
             self.db.dataset_builds.find(
-                {"dataset_id": dataset_oid, "status": "found", "raw_run_id": {"$ne": None}},
+                {
+                    "dataset_id": dataset_oid,
+                    "status": "found",
+                    "raw_run_id": {"$ne": None},
+                },
                 {"raw_run_id": 1},
             )
         )
 
-        workflow_run_ids = [b["raw_run_id"] for b in validated_builds if b.get("raw_run_id")]
+        workflow_run_ids = [
+            b["raw_run_id"] for b in validated_builds if b.get("raw_run_id")
+        ]
 
         # Conclusion breakdown from RawBuildRun
         conclusion_breakdown = {}
@@ -558,8 +647,12 @@ class DatasetService:
                 {"$match": {"_id": {"$in": workflow_run_ids}}},
                 {"$group": {"_id": "$conclusion", "count": {"$sum": 1}}},
             ]
-            conclusion_counts = list(self.db.raw_build_runs.aggregate(conclusion_pipeline))
-            conclusion_breakdown = {item["_id"]: item["count"] for item in conclusion_counts}
+            conclusion_counts = list(
+                self.db.raw_build_runs.aggregate(conclusion_pipeline)
+            )
+            conclusion_breakdown = {
+                item["_id"]: item["count"] for item in conclusion_counts
+            }
 
         # Builds per repo (for bar chart)
         repo_pipeline = [
@@ -569,7 +662,9 @@ class DatasetService:
             {"$limit": 10},
         ]
         repo_counts = list(self.db.dataset_builds.aggregate(repo_pipeline))
-        builds_per_repo = [{"repo": item["_id"], "count": item["count"]} for item in repo_counts]
+        builds_per_repo = [
+            {"repo": item["_id"], "count": item["count"]} for item in repo_counts
+        ]
 
         # Duration stats
         avg_duration = None
@@ -599,9 +694,13 @@ class DatasetService:
                     "$group": {
                         "_id": None,
                         "available": {
-                            "$sum": {"$cond": [{"$eq": ["$logs_available", True]}, 1, 0]}
+                            "$sum": {
+                                "$cond": [{"$eq": ["$logs_available", True]}, 1, 0]
+                            }
                         },
-                        "expired": {"$sum": {"$cond": [{"$eq": ["$logs_expired", True]}, 1, 0]}},
+                        "expired": {
+                            "$sum": {"$cond": [{"$eq": ["$logs_expired", True]}, 1, 0]}
+                        },
                         "total": {"$sum": 1},
                     }
                 },
@@ -611,7 +710,9 @@ class DatasetService:
                 logs_stats["available"] = logs_result[0].get("available", 0)
                 logs_stats["expired"] = logs_result[0].get("expired", 0)
                 logs_stats["unavailable"] = (
-                    logs_result[0]["total"] - logs_stats["available"] - logs_stats["expired"]
+                    logs_result[0]["total"]
+                    - logs_stats["available"]
+                    - logs_stats["expired"]
                 )
 
         return {

@@ -13,6 +13,14 @@ import {
     CardTitle,
 } from "@/components/ui/card";
 import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
+import {
     CheckCircle2,
     ChevronDown,
     ChevronLeft,
@@ -31,7 +39,8 @@ import {
     RefreshCw,
 } from "lucide-react";
 import { datasetVersionApi, type ImportBuildItem } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
+import { CIProviderLabels, CIProvider } from "@/types";
 import {
     SearchFilterBar,
     DATASET_INGESTION_STATUS_OPTIONS,
@@ -39,22 +48,8 @@ import {
 
 const ITEMS_PER_PAGE = 20;
 
-/** Format relative time */
-const formatRelativeTime = (dateStr: string | null): string => {
-    if (!dateStr) return "—";
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+/** Format date and time as short string */
 
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-};
 
 /** Status config for import builds */
 const getImportStatusConfig = (status: string) => {
@@ -476,141 +471,157 @@ function ImportBuildsTable({
                     </div>
                 </div>
             </CardHeader>
-            <CardContent className="space-y-2">
-                {builds.map((build) => {
-                    const statusConfig = getImportStatusConfig(build.status);
-                    const StatusIcon = statusConfig.icon;
-                    const isExpanded = expandedId === build.id;
+            <CardContent className="p-0">
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead className="w-8"></TableHead>
+                            <TableHead>Build ID</TableHead>
+                            <TableHead>Repository</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Resources</TableHead>
+                            <TableHead className="text-right">Ingested At</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {builds.map((build) => {
+                            const statusConfig = getImportStatusConfig(build.status);
+                            const StatusIcon = statusConfig.icon;
+                            const isExpanded = expandedId === build.id;
 
-                    return (
-                        <div key={build.id} className="border rounded-lg overflow-hidden">
-                            {/* Main Row - Clickable */}
-                            <div
-                                className="flex items-center gap-4 p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                                onClick={() => toggleExpand(build.id)}
-                            >
-                                <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
+                            return (
+                                <>
+                                    <TableRow
+                                        key={build.id}
+                                        className="cursor-pointer hover:bg-muted/50"
+                                        onClick={() => toggleExpand(build.id)}
+                                    >
+                                        <TableCell className="py-2">
+                                            <ChevronDown className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-180")} />
+                                        </TableCell>
+                                        <TableCell className="font-mono text-sm py-2" title={`CI Run: ${build.build_id}`}>
+                                            {build.build_id}
+                                        </TableCell>
+                                        <TableCell className="text-sm py-2">
+                                            {build.repo_name || "—"}
+                                        </TableCell>
+                                        <TableCell className="py-2">
+                                            <Badge variant="outline" className={cn("justify-center", statusConfig.color)}>
+                                                <StatusIcon className={cn("mr-1 h-3 w-3", build.status === "ingesting" && "animate-spin")} />
+                                                {statusConfig.label}
+                                            </Badge>
+                                        </TableCell>
+                                        <TableCell className="py-2">
+                                            <ResourceStatusBadges resourceStatus={build.resource_status} />
+                                        </TableCell>
+                                        <TableCell className="text-right text-xs text-muted-foreground py-2">
+                                            {formatDateTime(build.ingested_at)}
+                                        </TableCell>
+                                    </TableRow>
 
-                                <span className="font-mono text-sm w-[80px]">
-                                    {build.build_number ? `#${build.build_number}` : `...${build.build_id.slice(-6)}`}
-                                </span>
+                                    {/* Expanded Details */}
+                                    {isExpanded && (
+                                        <TableRow>
+                                            <TableCell colSpan={6} className="p-0">
+                                                <div className="border-t bg-muted/30 p-4 space-y-4">
+                                                    {/* Commit Info */}
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div className="space-y-2">
+                                                            <h4 className="text-sm font-medium flex items-center gap-2">
+                                                                <GitCommit className="h-4 w-4" />
+                                                                Commit Info
+                                                            </h4>
+                                                            <div className="text-sm space-y-1 text-muted-foreground">
+                                                                <p><span className="font-medium">SHA:</span> <code className="text-xs">{build.commit_sha}</code></p>
+                                                                <p><span className="font-medium">Branch:</span> {build.branch || "—"}</p>
+                                                                {build.commit_message && (
+                                                                    <p className="truncate"><span className="font-medium">Message:</span> {build.commit_message}</p>
+                                                                )}
+                                                                {build.commit_author && (
+                                                                    <p><span className="font-medium">Author:</span> {build.commit_author}</p>
+                                                                )}
+                                                            </div>
+                                                        </div>
 
-                                <span className="font-mono text-sm w-[80px]">
-                                    {build.commit_sha.slice(0, 7)}
-                                </span>
-
-                                <span className="text-sm truncate max-w-[120px]">
-                                    {build.branch}
-                                </span>
-
-                                <Badge variant="outline" className={cn("ml-auto", statusConfig.color)}>
-                                    <StatusIcon className={cn("mr-1 h-3 w-3", build.status === "ingesting" && "animate-spin")} />
-                                    {statusConfig.label}
-                                </Badge>
-
-                                <ResourceStatusBadges resourceStatus={build.resource_status} />
-
-                                <span className="text-xs text-muted-foreground w-[80px] text-right">
-                                    {formatRelativeTime(build.ingested_at)}
-                                </span>
-                            </div>
-
-                            {/* Expanded Details */}
-                            {isExpanded && (
-                                <div className="border-t bg-muted/30 p-4 space-y-4">
-                                    {/* Commit Info */}
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-2">
-                                            <h4 className="text-sm font-medium flex items-center gap-2">
-                                                <GitCommit className="h-4 w-4" />
-                                                Commit Info
-                                            </h4>
-                                            <div className="text-sm space-y-1 text-muted-foreground">
-                                                <p><span className="font-medium">SHA:</span> <code className="text-xs">{build.commit_sha}</code></p>
-                                                {build.commit_message && (
-                                                    <p className="truncate"><span className="font-medium">Message:</span> {build.commit_message}</p>
-                                                )}
-                                                {build.commit_author && (
-                                                    <p><span className="font-medium">Author:</span> {build.commit_author}</p>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* CI Build Info */}
-                                        <div className="space-y-2">
-                                            <h4 className="text-sm font-medium flex items-center gap-2">
-                                                <Timer className="h-4 w-4" />
-                                                CI Build Info
-                                            </h4>
-                                            <div className="text-sm space-y-1 text-muted-foreground">
-                                                <p><span className="font-medium">Provider:</span> {build.provider || "—"}</p>
-                                                <p><span className="font-medium">Conclusion:</span> {build.conclusion || "—"}</p>
-                                                <p><span className="font-medium">Duration:</span> {formatDuration(build.duration_seconds)}</p>
-                                                {build.web_url && (
-                                                    <a
-                                                        href={build.web_url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-blue-600 hover:underline flex items-center gap-1"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        View on CI <ExternalLink className="h-3 w-3" />
-                                                    </a>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Resources Collected */}
-                                    <div className="space-y-2">
-                                        <h4 className="text-sm font-medium flex items-center gap-2">
-                                            <FileText className="h-4 w-4" />
-                                            Resources Collected
-                                        </h4>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            {Object.entries(build.resource_status || {}).map(([resource, info]) => (
-                                                <div
-                                                    key={resource}
-                                                    className={cn(
-                                                        "p-2 rounded text-xs border",
-                                                        info.status === "completed" && "bg-green-50 border-green-200 dark:bg-green-950/30",
-                                                        info.status === "failed" && "bg-red-50 border-red-200 dark:bg-red-950/30",
-                                                        info.status === "pending" && "bg-gray-50 border-gray-200 dark:bg-gray-950/30",
-                                                    )}
-                                                >
-                                                    <div className="font-medium capitalize">{resource.replace(/_/g, " ")}</div>
-                                                    <div className={cn(
-                                                        info.status === "completed" && "text-green-600",
-                                                        info.status === "failed" && "text-red-600",
-                                                    )}>
-                                                        {info.status}
+                                                        {/* CI Build Info */}
+                                                        <div className="space-y-2">
+                                                            <h4 className="text-sm font-medium flex items-center gap-2">
+                                                                <Timer className="h-4 w-4" />
+                                                                CI Build Info
+                                                            </h4>
+                                                            <div className="text-sm space-y-1 text-muted-foreground">
+                                                                <p><span className="font-medium">Provider:</span> {build.provider ? (CIProviderLabels[build.provider as CIProvider] || build.provider) : "—"}</p>
+                                                                <p><span className="font-medium">Conclusion:</span> {build.conclusion || "—"}</p>
+                                                                <p><span className="font-medium">Duration:</span> {formatDuration(build.duration_seconds)}</p>
+                                                                {build.web_url && (
+                                                                    <a
+                                                                        href={build.web_url}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-blue-600 hover:underline flex items-center gap-1"
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                    >
+                                                                        View on CI <ExternalLink className="h-3 w-3" />
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    {info.error && (
-                                                        <div className="text-red-500 truncate" title={info.error}>
-                                                            {info.error}
+
+                                                    {/* Resources Collected */}
+                                                    <div className="space-y-2">
+                                                        <h4 className="text-sm font-medium flex items-center gap-2">
+                                                            <FileText className="h-4 w-4" />
+                                                            Resources Collected
+                                                        </h4>
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            {Object.entries(build.resource_status || {}).map(([resource, info]) => (
+                                                                <div
+                                                                    key={resource}
+                                                                    className={cn(
+                                                                        "p-2 rounded text-xs border",
+                                                                        info.status === "completed" && "bg-green-50 border-green-200 dark:bg-green-950/30",
+                                                                        info.status === "failed" && "bg-red-50 border-red-200 dark:bg-red-950/30",
+                                                                        info.status === "pending" && "bg-gray-50 border-gray-200 dark:bg-gray-950/30",
+                                                                    )}
+                                                                >
+                                                                    <div className="font-medium capitalize">{resource.replace(/_/g, " ")}</div>
+                                                                    <div className={cn(
+                                                                        info.status === "completed" && "text-green-600",
+                                                                        info.status === "failed" && "text-red-600",
+                                                                    )}>
+                                                                        {info.status}
+                                                                    </div>
+                                                                    {info.error && (
+                                                                        <div className="text-red-500 truncate" title={info.error}>
+                                                                            {info.error}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+
+                                                        {/* Logs status */}
+                                                        <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
+                                                            <span>Logs: {build.logs_available ? "✓ Available" : build.logs_expired ? "⚠ Expired" : "Pending"}</span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Error Message */}
+                                                    {build.ingestion_error && (
+                                                        <div className="p-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded text-sm text-red-700 dark:text-red-300">
+                                                            <span className="font-medium">Error:</span> {build.ingestion_error}
                                                         </div>
                                                     )}
                                                 </div>
-                                            ))}
-                                        </div>
-
-                                        {/* Logs status */}
-                                        <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                                            <span>Logs: {build.logs_available ? "✓ Available" : build.logs_expired ? "⚠ Expired" : "Pending"}</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Error Message */}
-                                    {build.ingestion_error && (
-                                        <div className="p-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded text-sm text-red-700 dark:text-red-300">
-                                            <span className="font-medium">Error:</span> {build.ingestion_error}
-                                        </div>
+                                            </TableCell>
+                                        </TableRow>
                                     )}
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
+                                </>
+                            );
+                        })}
+                    </TableBody>
+                </Table>
             </CardContent>
         </Card>
     );

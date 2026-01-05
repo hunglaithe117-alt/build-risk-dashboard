@@ -228,6 +228,7 @@ class UnifiedBuildSummary(BaseModel):
 
     # Build basics (from RawBuildRun via joins)
     build_number: Optional[int] = None
+    ci_run_id: Optional[str] = None  # CI provider's unique run ID
     commit_sha: str = ""
     branch: str = ""
     ci_conclusion: str = "unknown"  # Build result (success/failure)
@@ -245,7 +246,9 @@ class UnifiedBuildSummary(BaseModel):
 
     # Phase 3: Extraction (optional - only if ModelTrainingBuild exists)
     training_build_id: Optional[str] = None
-    extraction_status: Optional[str] = None  # pending, in_progress, completed, partial, failed
+    extraction_status: Optional[str] = (
+        None  # pending, in_progress, completed, partial, failed
+    )
     feature_count: int = 0
     extraction_error: Optional[str] = None
 

@@ -58,7 +58,9 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id)
         return self._repo.find_by_dataset(dataset_id, skip=skip, limit=limit)
 
-    def get_version(self, dataset_id: str, version_id: str, user_id: str) -> DatasetVersion:
+    def get_version(
+        self, dataset_id: str, version_id: str, user_id: str
+    ) -> DatasetVersion:
         """Get a specific version."""
         self._verify_dataset_access(dataset_id, user_id)
         return self._get_version(dataset_id, version_id)
@@ -107,7 +109,10 @@ class DatasetVersionService:
             # Frontend sends: {config: {sonarqube: {...}, trivy: {...}}, metrics: {...}}
             # Store as repo-level only: {sonarqube: {repos: {...}}, trivy: {repos: {...}}}
             normalized_scan_metrics = {"sonarqube": [], "trivy": []}
-            normalized_scan_config = {"sonarqube": {"repos": {}}, "trivy": {"repos": {}}}
+            normalized_scan_config = {
+                "sonarqube": {"repos": {}},
+                "trivy": {"repos": {}},
+            }
 
             if scan_config:
                 # Extract from nested structure
@@ -122,7 +127,9 @@ class DatasetVersionService:
                 sonar_config = config_data.get("sonarqube", {})
                 trivy_config = config_data.get("trivy", {})
 
-                normalized_scan_config["sonarqube"]["repos"] = sonar_config.get("repos", {})
+                normalized_scan_config["sonarqube"]["repos"] = sonar_config.get(
+                    "repos", {}
+                )
                 normalized_scan_config["trivy"]["repos"] = trivy_config.get("repos", {})
 
             # Also handle legacy scan_metrics param (backward compatibility)
@@ -222,7 +229,9 @@ class DatasetVersionService:
             media_type=media_type,
         )
 
-    def get_ingestion_progress(self, dataset_id: str, version_id: str, user_id: str) -> dict:
+    def get_ingestion_progress(
+        self, dataset_id: str, version_id: str, user_id: str
+    ) -> dict:
         """Get ingestion progress summary for a dataset version."""
         self._verify_dataset_access(dataset_id, user_id)
         self._get_version(dataset_id, version_id)
@@ -270,16 +279,26 @@ class DatasetVersionService:
                     "id": str(build.get("_id")),
                     "build_id": build.get("ci_run_id", ""),
                     "build_number": build.get("build_number"),
+                    "repo_name": build.get("repo_name", ""),
                     "commit_sha": build.get("commit_sha", ""),
                     "branch": build.get("branch", ""),
                     "conclusion": build.get("conclusion", "unknown"),
                     "created_at": (
-                        build["created_at"].isoformat() if build.get("created_at") else None
+                        build["created_at"].isoformat()
+                        if build.get("created_at")
+                        else None
                     ),
                     "web_url": build.get("web_url"),
                     "status": build.get("status", "pending"),
                     "ingested_at": (
-                        build["ingested_at"].isoformat() if build.get("ingested_at") else None
+                        build["ingested_at"].isoformat()
+                        if build.get("ingested_at")
+                        else None
+                    ),
+                    "ingested_at": (
+                        build["ingested_at"].isoformat()
+                        if build.get("ingested_at")
+                        else None
                     ),
                     "resource_status": build.get("resource_status", {}),
                     "required_resources": build.get("required_resources", []),
@@ -288,10 +307,14 @@ class DatasetVersionService:
                     "commit_author": build.get("commit_author"),
                     "duration_seconds": build.get("duration_seconds"),
                     "started_at": (
-                        build["started_at"].isoformat() if build.get("started_at") else None
+                        build["started_at"].isoformat()
+                        if build.get("started_at")
+                        else None
                     ),
                     "completed_at": (
-                        build["completed_at"].isoformat() if build.get("completed_at") else None
+                        build["completed_at"].isoformat()
+                        if build.get("completed_at")
+                        else None
                     ),
                     "provider": build.get("provider"),
                     "logs_available": build.get("logs_available"),
@@ -338,6 +361,7 @@ class DatasetVersionService:
                 {
                     "id": str(build.get("_id")),
                     "raw_build_run_id": str(build.get("raw_build_run_id")),
+                    "ci_run_id": build.get("ci_run_id", ""),
                     "repo_full_name": build.get("repo_full_name", "Unknown"),
                     "web_url": build.get("web_url"),
                     "provider": build.get("provider"),
@@ -347,7 +371,14 @@ class DatasetVersionService:
                     "expected_feature_count": expected_features,
                     "missing_resources": build.get("missing_resources", []),
                     "created_at": (
-                        build["created_at"].isoformat() if build.get("created_at") else None
+                        build["created_at"].isoformat()
+                        if build.get("created_at")
+                        else None
+                    ),
+                    "enriched_at": (
+                        build["enriched_at"].isoformat()
+                        if build.get("enriched_at")
+                        else None
                     ),
                 }
             )
@@ -469,7 +500,9 @@ class DatasetVersionService:
             "format": job.format,
             "total_rows": job.total_rows,
             "processed_rows": job.processed_rows,
-            "progress": (job.processed_rows / job.total_rows * 100 if job.total_rows else 0),
+            "progress": (
+                job.processed_rows / job.total_rows * 100 if job.total_rows else 0
+            ),
             "file_path": job.file_path,
             "file_size": job.file_size,
             "error_message": job.error_message,
@@ -529,7 +562,9 @@ class DatasetVersionService:
 
         return job.file_path
 
-    def get_export_preview(self, dataset_id: str, version_id: str, user_id: str) -> dict:
+    def get_export_preview(
+        self, dataset_id: str, version_id: str, user_id: str
+    ) -> dict:
         """Get preview of exportable data."""
         from app.utils.export_utils import format_feature_row
 
@@ -594,40 +629,62 @@ class DatasetVersionService:
             )
         )
         feature_vector_ids = [
-            b["feature_vector_id"] for b in enrichment_builds if b.get("feature_vector_id")
+            b["feature_vector_id"]
+            for b in enrichment_builds
+            if b.get("feature_vector_id")
         ]
 
         # Use transaction for atomic deletion
         with get_transaction() as session:
             # 1. Delete associated FeatureAuditLogs
-            audit_deleted = audit_log_repo.delete_by_version_id(version_id, session=session)
+            audit_deleted = audit_log_repo.delete_by_version_id(
+                version_id, session=session
+            )
             logger.info(f"Deleted {audit_deleted} audit logs for version {version_id}")
 
             # 2. Delete associated quality reports
-            quality_deleted = quality_repo.delete_by_version(version_id, session=session)
-            logger.info(f"Deleted {quality_deleted} quality reports for version {version_id}")
+            quality_deleted = quality_repo.delete_by_version(
+                version_id, session=session
+            )
+            logger.info(
+                f"Deleted {quality_deleted} quality reports for version {version_id}"
+            )
 
             # 3. Delete associated scans
-            sonar_deleted = sonar_scan_repo.delete_by_version(version_id, session=session)
+            sonar_deleted = sonar_scan_repo.delete_by_version(
+                version_id, session=session
+            )
             logger.info(f"Deleted {sonar_deleted} Sonar scans for version {version_id}")
 
-            trivy_deleted = trivy_scan_repo.delete_by_version(version_id, session=session)
+            trivy_deleted = trivy_scan_repo.delete_by_version(
+                version_id, session=session
+            )
             logger.info(f"Deleted {trivy_deleted} Trivy scans for version {version_id}")
 
             # 3. Delete associated FeatureVectors (by feature_vector_ids)
             if feature_vector_ids:
-                fv_deleted = feature_vector_repo.delete_by_ids(feature_vector_ids, session=session)
-                logger.info(f"Deleted {fv_deleted} FeatureVectors for version {version_id}")
+                fv_deleted = feature_vector_repo.delete_by_ids(
+                    feature_vector_ids, session=session
+                )
+                logger.info(
+                    f"Deleted {fv_deleted} FeatureVectors for version {version_id}"
+                )
 
             # 4. Delete associated enrichment builds
             deleted_enrichment = self._enrichment_build_repo.delete_by_version(
                 version_id, session=session
             )
-            logger.info(f"Deleted {deleted_enrichment} enrichment builds for version {version_id}")
+            logger.info(
+                f"Deleted {deleted_enrichment} enrichment builds for version {version_id}"
+            )
 
             # 5. Delete associated import builds
-            deleted_import = self._import_build_repo.delete_by_version(version_id, session=session)
-            logger.info(f"Deleted {deleted_import} import builds for version {version_id}")
+            deleted_import = self._import_build_repo.delete_by_version(
+                version_id, session=session
+            )
+            logger.info(
+                f"Deleted {deleted_import} import builds for version {version_id}"
+            )
 
             # 6. Delete the version
             self._repo.delete(version_id, session=session)
@@ -681,7 +738,9 @@ class DatasetVersionService:
                     "expected_feature_count": expected_feature_count,
                     "missing_resources": build.get("missing_resources", []),
                     "created_at": (
-                        build["created_at"].isoformat() if build.get("created_at") else None
+                        build["created_at"].isoformat()
+                        if build.get("created_at")
+                        else None
                     ),
                     "features": build.get("features", {}),
                 }
@@ -693,7 +752,9 @@ class DatasetVersionService:
                 "name": version.name,
                 "version_number": version.version_number,
                 "status": (
-                    version.status.value if hasattr(version.status, "value") else version.status
+                    version.status.value
+                    if hasattr(version.status, "value")
+                    else version.status
                 ),
                 "builds_total": version.builds_total,
                 "builds_ingested": version.builds_ingested,
@@ -701,7 +762,10 @@ class DatasetVersionService:
                 "builds_processed": version.builds_processed,
                 "builds_processing_failed": version.builds_processing_failed,
                 "selected_features": version.selected_features,
-                "created_at": (version.created_at.isoformat() if version.created_at else None),
+                "scan_metrics": version.scan_metrics,
+                "created_at": (
+                    version.created_at.isoformat() if version.created_at else None
+                ),
                 "completed_at": (
                     version.completed_at.isoformat() if version.completed_at else None
                 ),
@@ -806,20 +870,26 @@ class DatasetVersionService:
             commit_sha=raw_build_run.commit_sha,
             commit_message=raw_build_run.commit_message,
             commit_author=raw_build_run.commit_author,
-            status=raw_build_run.status.value
-            if hasattr(raw_build_run.status, "value")
-            else str(raw_build_run.status),
-            conclusion=raw_build_run.conclusion.value
-            if hasattr(raw_build_run.conclusion, "value")
-            else str(raw_build_run.conclusion),
+            status=(
+                raw_build_run.status.value
+                if hasattr(raw_build_run.status, "value")
+                else str(raw_build_run.status)
+            ),
+            conclusion=(
+                raw_build_run.conclusion.value
+                if hasattr(raw_build_run.conclusion, "value")
+                else str(raw_build_run.conclusion)
+            ),
             created_at=raw_build_run.created_at,
             started_at=raw_build_run.started_at,
             completed_at=raw_build_run.completed_at,
             duration_seconds=raw_build_run.duration_seconds,
             web_url=raw_build_run.web_url,
-            provider=raw_build_run.provider.value
-            if hasattr(raw_build_run.provider, "value")
-            else str(raw_build_run.provider),
+            provider=(
+                raw_build_run.provider.value
+                if hasattr(raw_build_run.provider, "value")
+                else str(raw_build_run.provider)
+            ),
             logs_available=raw_build_run.logs_available,
             logs_expired=raw_build_run.logs_expired,
             is_bot_commit=raw_build_run.is_bot_commit,
@@ -829,7 +899,9 @@ class DatasetVersionService:
         features = feature_vector.features if feature_vector else {}
         scan_metrics = feature_vector.scan_metrics if feature_vector else {}
         feature_count = feature_vector.feature_count if feature_vector else 0
-        is_missing_commit = feature_vector.is_missing_commit if feature_vector else False
+        is_missing_commit = (
+            feature_vector.is_missing_commit if feature_vector else False
+        )
         missing_resources = feature_vector.missing_resources if feature_vector else []
         skipped_features = feature_vector.skipped_features if feature_vector else []
 
@@ -837,9 +909,11 @@ class DatasetVersionService:
 
         enrichment_detail = EnrichmentBuildDetail(
             id=str(enrichment_build.id),
-            extraction_status=enrichment_build.extraction_status.value
-            if hasattr(enrichment_build.extraction_status, "value")
-            else str(enrichment_build.extraction_status),
+            extraction_status=(
+                enrichment_build.extraction_status.value
+                if hasattr(enrichment_build.extraction_status, "value")
+                else str(enrichment_build.extraction_status)
+            ),
             extraction_error=enrichment_build.extraction_error,
             is_missing_commit=is_missing_commit,
             missing_resources=missing_resources,
@@ -857,7 +931,9 @@ class DatasetVersionService:
             node_results = [
                 NodeExecutionDetail(
                     node_name=n.node_name,
-                    status=n.status.value if hasattr(n.status, "value") else str(n.status),
+                    status=(
+                        n.status.value if hasattr(n.status, "value") else str(n.status)
+                    ),
                     started_at=n.started_at,
                     completed_at=n.completed_at,
                     duration_ms=n.duration_ms,
@@ -909,7 +985,9 @@ class DatasetVersionService:
         self._verify_dataset_access(dataset_id, user_id)
         self._get_version(dataset_id, version_id)  # Verify exists
 
-        from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
+        from app.repositories.dataset_enrichment_build import (
+            DatasetEnrichmentBuildRepository,
+        )
 
         enrichment_repo = DatasetEnrichmentBuildRepository(self._repo.db)
         return enrichment_repo.get_scan_status_by_version(ObjectId(version_id))
@@ -991,7 +1069,9 @@ class DatasetVersionService:
         result = {}
 
         if tool_type is None or tool_type == "trivy":
-            trivy_scans, trivy_total = trivy_repo.list_by_version(version_oid, skip, limit)
+            trivy_scans, trivy_total = trivy_repo.list_by_version(
+                version_oid, skip, limit
+            )
             result["trivy"] = {
                 "items": [format_scan(s) for s in trivy_scans],
                 "total": trivy_total,
@@ -1000,15 +1080,143 @@ class DatasetVersionService:
             }
 
         if tool_type is None or tool_type == "sonarqube":
-            sonar_scans, sonar_total = sonar_repo.list_by_version(version_oid, skip, limit)
+            sonar_scans, sonar_total = sonar_repo.list_by_version(
+                version_oid, skip, limit
+            )
             result["sonarqube"] = {
-                "items": [format_scan(s, include_component_key=True) for s in sonar_scans],
+                "items": [
+                    format_scan(s, include_component_key=True) for s in sonar_scans
+                ],
                 "total": sonar_total,
                 "skip": skip,
                 "limit": limit,
             }
 
         return result
+
+    def get_commit_scan_detail(
+        self,
+        dataset_id: str,
+        version_id: str,
+        commit_sha: str,
+        user_id: str,
+    ) -> dict:
+        """
+        Get detailed scan metrics and related builds for a specific commit.
+
+        Returns:
+        - Trivy scan with metrics
+        - SonarQube scan with metrics
+        - List of builds (with ci_run_id) that use this commit
+        """
+        from app.repositories.sonar_commit_scan import SonarCommitScanRepository
+        from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
+
+        self._verify_dataset_access(dataset_id, user_id)
+        self._get_version(dataset_id, version_id)
+
+        version_oid = ObjectId(version_id)
+        trivy_repo = TrivyCommitScanRepository(self._db)
+        sonar_repo = SonarCommitScanRepository(self._db)
+
+        # Get Trivy scan for this commit
+        trivy_scan = trivy_repo.find_by_version_and_commit(version_oid, commit_sha)
+        trivy_data = None
+        if trivy_scan:
+            trivy_data = {
+                "id": str(trivy_scan.id),
+                "status": trivy_scan.status.value,
+                "error_message": trivy_scan.error_message,
+                "started_at": (
+                    trivy_scan.started_at.isoformat() if trivy_scan.started_at else None
+                ),
+                "completed_at": (
+                    trivy_scan.completed_at.isoformat()
+                    if trivy_scan.completed_at
+                    else None
+                ),
+                "metrics": trivy_scan.metrics or {},
+                "scan_duration_ms": trivy_scan.scan_duration_ms,
+            }
+
+        # Get SonarQube scan for this commit
+        sonar_scan = sonar_repo.find_by_version_and_commit(version_oid, commit_sha)
+        sonar_data = None
+        if sonar_scan:
+            sonar_data = {
+                "id": str(sonar_scan.id),
+                "status": sonar_scan.status.value,
+                "error_message": sonar_scan.error_message,
+                "started_at": (
+                    sonar_scan.started_at.isoformat() if sonar_scan.started_at else None
+                ),
+                "completed_at": (
+                    sonar_scan.completed_at.isoformat()
+                    if sonar_scan.completed_at
+                    else None
+                ),
+                "metrics": sonar_scan.metrics or {},
+                "component_key": sonar_scan.component_key,
+            }
+
+        # Get all builds for this commit in this version
+        # Find enrichment builds -> raw_build_run -> ci_run_id
+        builds = []
+        pipeline = [
+            {"$match": {"dataset_version_id": version_oid}},
+            {
+                "$lookup": {
+                    "from": "raw_build_runs",
+                    "localField": "raw_build_run_id",
+                    "foreignField": "_id",
+                    "as": "run",
+                }
+            },
+            {"$unwind": "$run"},
+            {"$match": {"run.commit_sha": commit_sha}},
+            {
+                "$lookup": {
+                    "from": "raw_repositories",
+                    "localField": "raw_repo_id",
+                    "foreignField": "_id",
+                    "as": "repo",
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "ci_run_id": "$run.ci_run_id",
+                    "branch": "$run.branch",
+                    "conclusion": "$run.conclusion",
+                    "web_url": "$run.web_url",
+                    "repo_full_name": {"$arrayElemAt": ["$repo.full_name", 0]},
+                }
+            },
+        ]
+
+        enrichment_builds = list(
+            self._enrichment_build_repo.collection.aggregate(pipeline)
+        )
+
+        for b in enrichment_builds:
+            builds.append(
+                {
+                    "id": str(b.get("_id")),
+                    "ci_run_id": b.get("ci_run_id"),
+                    "branch": b.get("branch"),
+                    "conclusion": b.get("conclusion"),
+                    "web_url": b.get("web_url"),
+                    "repo_full_name": b.get("repo_full_name"),
+                }
+            )
+
+        return {
+            "commit_sha": commit_sha,
+            "trivy": trivy_data,
+            "sonarqube": sonar_data,
+            "builds": builds,
+            "builds_count": len(builds),
+        }
 
     def retry_commit_scan(
         self,
@@ -1059,8 +1267,12 @@ class DatasetVersionService:
                 raise HTTPException(status_code=404, detail="Repository not found")
 
             # Get config file path (may have been created during initial scan)
-            trivy_config_path = get_trivy_config_path(version_id, raw_repo.github_repo_id)
-            config_file_path = str(trivy_config_path) if trivy_config_path.exists() else None
+            trivy_config_path = get_trivy_config_path(
+                version_id, raw_repo.github_repo_id
+            )
+            config_file_path = (
+                str(trivy_config_path) if trivy_config_path.exists() else None
+            )
 
             task = start_trivy_scan_for_version_commit.delay(
                 version_id=version_id,
@@ -1094,8 +1306,12 @@ class DatasetVersionService:
                 raise HTTPException(status_code=404, detail="Repository not found")
 
             # Get config file path (may have been created during initial scan)
-            sonar_config_path = get_sonarqube_config_path(version_id, raw_repo.github_repo_id)
-            config_file_path = str(sonar_config_path) if sonar_config_path.exists() else None
+            sonar_config_path = get_sonarqube_config_path(
+                version_id, raw_repo.github_repo_id
+            )
+            config_file_path = (
+                str(sonar_config_path) if sonar_config_path.exists() else None
+            )
 
             task = start_sonar_scan_for_version_commit.delay(
                 version_id=version_id,
@@ -1110,7 +1326,9 @@ class DatasetVersionService:
             return {"status": "dispatched", "task_id": task.id, "tool": "sonarqube"}
 
         else:
-            raise HTTPException(status_code=400, detail=f"Invalid tool type: {tool_type}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid tool type: {tool_type}"
+            )
 
     # =========================================================================
     # Processing Phase Control (matching model pipeline)

@@ -389,7 +389,9 @@ def fetch_builds_until_existing(
                 continue
 
             # Check if RawBuildRun already exists - if so, skip it (already imported)
-            existing_run = build_run_repo.find_by_build_id(ObjectId(raw_repo_id), build.build_id)
+            existing_run = build_run_repo.find_by_build_id(
+                ObjectId(raw_repo_id), build.build_id
+            )
 
             if existing_run:
                 # Build already exists in database, count as existing and skip
@@ -435,7 +437,9 @@ def fetch_builds_until_existing(
             all_ci_run_ids.append(build.build_id)
 
         total_new_builds += new_on_page
-        logger.info(f"{log_ctx} Page {page}: {new_on_page} new, {existing_on_page} existing")
+        logger.info(
+            f"{log_ctx} Page {page}: {new_on_page} new, {existing_on_page} existing"
+        )
 
         # Stop if we hit ANY existing build
         if existing_on_page > 0:
@@ -537,7 +541,9 @@ def fetch_builds_batch(
     raw_repo_id = str(repo_config.raw_repo_id)
     full_name = repo_config.full_name
 
-    since_dt = datetime.now(timezone.utc) - timedelta(days=since_days) if since_days else None
+    since_dt = (
+        datetime.now(timezone.utc) - timedelta(days=since_days) if since_days else None
+    )
 
     # Get CI provider instance
     ci_provider_enum = CIProvider(ci_provider)
@@ -558,7 +564,9 @@ def fetch_builds_batch(
         loop = asyncio.new_event_loop()
         try:
             asyncio.set_event_loop(loop)
-            builds = loop.run_until_complete(ci_instance.fetch_builds(full_name, **fetch_kwargs))
+            builds = loop.run_until_complete(
+                ci_instance.fetch_builds(full_name, **fetch_kwargs)
+            )
         finally:
             loop.close()
             asyncio.set_event_loop(None)
@@ -623,7 +631,9 @@ def fetch_builds_batch(
         )
 
         # Check if ModelImportBuild already exists
-        existing = import_build_repo.find_by_business_key(repo_config_id, str(raw_build_run.id))
+        existing = import_build_repo.find_by_business_key(
+            repo_config_id, str(raw_build_run.id)
+        )
         if existing:
             continue  # Already created
 
@@ -642,7 +652,9 @@ def fetch_builds_batch(
         import_build_repo.bulk_insert(import_builds_to_insert)
 
     has_more = len(builds) >= batch_size
-    logger.info(f"{log_ctx} Saved {len(import_builds_to_insert)} builds, has_more={has_more}")
+    logger.info(
+        f"{log_ctx} Saved {len(import_builds_to_insert)} builds, has_more={has_more}"
+    )
 
     return {
         "page": page,
@@ -680,7 +692,9 @@ def aggregate_fetch_results(
 
     # Sum up builds from chord results (these are guaranteed complete)
     total_from_results = sum(r.get("builds", 0) for r in results if r)
-    logger.info(f"{log_ctx} Chord results: {total_from_results} builds from {len(results)} tasks")
+    logger.info(
+        f"{log_ctx} Chord results: {total_from_results} builds from {len(results)} tasks"
+    )
 
     # If chord says 0 builds, mark as processed
     if total_from_results == 0:
@@ -700,7 +714,9 @@ def aggregate_fetch_results(
 
     # Log discrepancy if any (shouldn't happen with chord)
     if total_fetched != total_from_results:
-        logger.warning(f"{log_ctx} Discrepancy: chord={total_from_results}, db={total_fetched}")
+        logger.warning(
+            f"{log_ctx} Discrepancy: chord={total_from_results}, db={total_fetched}"
+        )
 
     logger.info(f"{log_ctx} Found {total_fetched} fetched builds in DB")
 
@@ -792,7 +808,7 @@ def handle_fetch_chord_error(
         {
             "status": ModelImportStatus.FAILED.value,
             "error_message": f"Fetch failed: {error_msg}",
-            "failed_at": datetime.utcnow(),
+            "ingested_at": datetime.utcnow(),
         },
     )
 
@@ -851,7 +867,9 @@ def dispatch_ingestion(
     from app.services.dataset_template_service import DatasetTemplateService
 
     template_service = DatasetTemplateService(self.db)
-    required_resources = template_service.get_required_resources_for_template("Risk Prediction")
+    required_resources = template_service.get_required_resources_for_template(
+        "Risk Prediction"
+    )
     tasks_by_level = get_ingestion_tasks_by_level(list(required_resources))
 
     import_build_repo.init_resource_status(repo_config_id, list(required_resources))
@@ -881,7 +899,9 @@ def dispatch_ingestion(
             pipeline_type="model",
         )
 
-    logger.info(f"{log_ctx} Resources={sorted(required_resources)}, tasks={tasks_by_level}")
+    logger.info(
+        f"{log_ctx} Resources={sorted(required_resources)}, tasks={tasks_by_level}"
+    )
 
     # Build ingestion workflow
     ingestion_workflow = build_ingestion_workflow(
@@ -974,7 +994,7 @@ def aggregate_model_ingestion_results(
             updates={
                 "status": ModelImportBuildStatus.FAILED.value,
                 "ingestion_error": "Clone failed",
-                "failed_at": now,
+                "ingested_at": now,
             },
         )
     else:
@@ -989,15 +1009,14 @@ def aggregate_model_ingestion_results(
                 "$set": {
                     "status": ModelImportBuildStatus.FAILED.value,
                     "ingestion_error": "Worktree creation failed",
-                    "failed_at": now,
+                    "ingested_at": now,
                 }
             },
         )
 
-        # 3. Mark builds with failed build_logs as FAILED (retryable)
-        # Note: We differentiate between actual failures and expired logs
-        # For now, treat all log failures as MISSING_RESOURCE (not retryable)
-        # Set ingested_at (not failed_at) because ingestion is complete, just partial
+        # 3. Mark builds with failed build_logs as MISSING_RESOURCE (not retryable)
+        # Set both ingested_at (ingestion completed with partial resources)
+        # (when the resource failure occurred) so UI can display both timestamps
         import_build_repo.collection.update_many(
             {
                 "model_repo_config_id": ObjectId(repo_config_id),
@@ -1026,7 +1045,9 @@ def aggregate_model_ingestion_results(
     # Count by status to determine final state
     status_counts = import_build_repo.count_by_status(repo_config_id)
     ingested = status_counts.get(ModelImportBuildStatus.INGESTED.value, 0)
-    missing_resource = status_counts.get(ModelImportBuildStatus.MISSING_RESOURCE.value, 0)
+    missing_resource = status_counts.get(
+        ModelImportBuildStatus.MISSING_RESOURCE.value, 0
+    )
     failed = status_counts.get(ModelImportBuildStatus.FAILED.value, 0)
 
     # Determine final ingestion status - always INGESTED
@@ -1040,7 +1061,9 @@ def aggregate_model_ingestion_results(
             parts.append(f"{missing_resource} missing resources")
         msg = f"Ingestion done: {', '.join(parts)}. Review or start processing."
     else:
-        msg = f"Ingestion complete: {ingested} builds ready. Start processing when ready."
+        msg = (
+            f"Ingestion complete: {ingested} builds ready. Start processing when ready."
+        )
 
     # Update repo config with final status and timestamps
     total_builds = ingested + missing_resource + failed
@@ -1119,7 +1142,9 @@ def handle_ingestion_chord_error(
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
     error_msg = str(exc) if exc else "Unknown ingestion error"
 
-    logger.error(f"{corr_prefix} Ingestion chord failed for {repo_config_id}: {error_msg}")
+    logger.error(
+        f"{corr_prefix} Ingestion chord failed for {repo_config_id}: {error_msg}"
+    )
 
     import_build_repo = ModelImportBuildRepository(self.db)
     repo_config_repo = ModelRepoConfigRepository(self.db)
@@ -1133,7 +1158,7 @@ def handle_ingestion_chord_error(
         updates={
             "status": ModelImportBuildStatus.FAILED.value,
             "ingestion_error": f"Ingestion chord failed: {error_msg}",
-            "failed_at": now,
+            "ingested_at": now,
         },
     )
 
@@ -1224,7 +1249,9 @@ def reingest_failed_builds(
 
     # Find FAILED builds after checkpoint (not MISSING_RESOURCE - those are not retryable)
     checkpoint_id = repo_config.last_processed_import_build_id
-    failed_builds = import_build_repo.find_failed_builds(repo_config_id, after_id=checkpoint_id)
+    failed_builds = import_build_repo.find_failed_builds(
+        repo_config_id, after_id=checkpoint_id
+    )
 
     if not failed_builds:
         # Also count missing_resource for user feedback
@@ -1261,7 +1288,7 @@ def reingest_failed_builds(
                 {
                     "status": ModelImportBuildStatus.FETCHED.value,
                     "ingestion_error": None,
-                    "failed_at": None,
+                    "ingested_at": None,
                 },
             )
             reset_count += 1

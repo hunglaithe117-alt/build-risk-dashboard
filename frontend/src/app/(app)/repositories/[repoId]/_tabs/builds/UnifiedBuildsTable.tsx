@@ -6,10 +6,13 @@ import {
     ChevronDown,
     ChevronRight,
     Clock,
+    ExternalLink,
+    GitBranch,
     GitCommit,
     Loader2,
     RefreshCw,
     RotateCcw,
+    Settings,
     XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -312,7 +315,7 @@ export function UnifiedBuildsTable({
                         <thead className="bg-slate-50 dark:bg-slate-900/40">
                             <tr>
                                 <th className="px-4 py-3 w-[50px]" />
-                                <th className="px-4 py-3 text-left font-medium text-slate-500">#</th>
+                                <th className="px-4 py-3 text-left font-medium text-slate-500">Build ID</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-500">Commit</th>
                                 <th className="px-4 py-3 text-center font-medium text-slate-500">Pipeline</th>
                                 <th className="px-4 py-3 text-left font-medium text-slate-500">Risk</th>
@@ -367,16 +370,9 @@ export function UnifiedBuildsTable({
                                                         )}
                                                     </td>
                                                     <td className="px-4 py-3">
-                                                        <div className="flex flex-col gap-0.5">
-                                                            <span className="font-medium">
-                                                                #{build.build_number || "—"}
-                                                            </span>
-                                                            {build.branch && (
-                                                                <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 font-normal w-fit">
-                                                                    {build.branch}
-                                                                </Badge>
-                                                            )}
-                                                        </div>
+                                                        <span className="font-medium font-mono text-xs">
+                                                            {build.ci_run_id || "—"}
+                                                        </span>
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex items-center gap-1 font-mono text-xs">
@@ -421,24 +417,96 @@ export function UnifiedBuildsTable({
                                                     <CollapsibleContent asChild>
                                                         <tr className="bg-slate-50 dark:bg-slate-900/20 shadow-inner">
                                                             <td colSpan={6} className="px-4 py-4">
-                                                                <div className="space-y-3">
-                                                                    <h4 className="font-medium text-sm text-slate-900 dark:text-slate-100">
-                                                                        Resource Status
-                                                                    </h4>
-                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                                                        {Object.entries(build.resource_status || {}).map(
-                                                                            ([resourceName, resourceData]) => (
-                                                                                <ResourceStatusIndicator
-                                                                                    key={resourceName}
-                                                                                    resourceName={resourceName}
-                                                                                    status={resourceData.status}
-                                                                                    error={resourceData.error}
-                                                                                />
-                                                                            )
-                                                                        )}
+                                                                <div className="space-y-4">
+                                                                    {/* Commit Info and CI Build Info */}
+                                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                                        {/* Commit Info */}
+                                                                        <div>
+                                                                            <h4 className="font-medium text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2 mb-2">
+                                                                                <GitCommit className="h-4 w-4" />
+                                                                                Commit Info
+                                                                            </h4>
+                                                                            <div className="space-y-1 text-sm">
+                                                                                <div>
+                                                                                    <span className="text-muted-foreground">SHA: </span>
+                                                                                    <span className="font-mono text-xs">{build.commit_sha}</span>
+                                                                                </div>
+                                                                                <div>
+                                                                                    <span className="text-muted-foreground">Branch: </span>
+                                                                                    <span>{build.branch || "—"}</span>
+                                                                                </div>
+                                                                                {build.commit_message && (
+                                                                                    <div>
+                                                                                        <span className="text-muted-foreground">Message: </span>
+                                                                                        <span className="text-xs">{build.commit_message}</span>
+                                                                                    </div>
+                                                                                )}
+                                                                                {build.commit_author && (
+                                                                                    <div>
+                                                                                        <span className="text-muted-foreground">Author: </span>
+                                                                                        <span>{build.commit_author}</span>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* CI Build Info */}
+                                                                        <div>
+                                                                            <h4 className="font-medium text-sm text-slate-900 dark:text-slate-100 flex items-center gap-2 mb-2">
+                                                                                <Settings className="h-4 w-4" />
+                                                                                CI Build Info
+                                                                            </h4>
+                                                                            <div className="space-y-1 text-sm">
+                                                                                <div>
+                                                                                    <span className="text-muted-foreground">Provider: </span>
+                                                                                    <span>GitHub Actions</span>
+                                                                                </div>
+                                                                                <div>
+                                                                                    <span className="text-muted-foreground">Conclusion: </span>
+                                                                                    <span className={build.ci_conclusion === "success" ? "text-green-600" : build.ci_conclusion === "failure" ? "text-red-600" : ""}>
+                                                                                        {build.ci_conclusion}
+                                                                                    </span>
+                                                                                </div>
+                                                                                {build.web_url && (
+                                                                                    <div>
+                                                                                        <a
+                                                                                            href={build.web_url}
+                                                                                            target="_blank"
+                                                                                            rel="noopener noreferrer"
+                                                                                            className="text-blue-600 hover:underline flex items-center gap-1"
+                                                                                            onClick={(e) => e.stopPropagation()}
+                                                                                        >
+                                                                                            View on CI <ExternalLink className="h-3 w-3" />
+                                                                                        </a>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
                                                                     </div>
+
+                                                                    {/* Resources Collected */}
+                                                                    {hasResources && (
+                                                                        <div>
+                                                                            <h4 className="font-medium text-sm text-slate-900 dark:text-slate-100 mb-2">
+                                                                                Resources Collected
+                                                                            </h4>
+                                                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                                                {Object.entries(build.resource_status || {}).map(
+                                                                                    ([resourceName, resourceData]) => (
+                                                                                        <ResourceStatusIndicator
+                                                                                            key={resourceName}
+                                                                                            resourceName={resourceName}
+                                                                                            status={resourceData.status}
+                                                                                            error={resourceData.error}
+                                                                                        />
+                                                                                    )
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+
                                                                     {build.extraction_error && (
-                                                                        <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                                                                        <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
                                                                             <p className="font-medium text-red-600 text-sm">
                                                                                 Extraction Error:
                                                                             </p>

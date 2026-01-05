@@ -30,6 +30,7 @@ export interface ScanSummaryResponse {
 export interface EnrichedBuildData {
     id: string;
     raw_build_run_id: string;
+    ci_run_id: string;
     repo_full_name: string;
     repo_url?: string;
     provider?: string;
@@ -51,6 +52,7 @@ export interface ImportBuildItem {
     id: string;
     build_id: string;
     build_number?: number;
+    repo_name: string;
     commit_sha: string;
     branch: string;
     conclusion: string;

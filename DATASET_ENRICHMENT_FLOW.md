@@ -1207,7 +1207,6 @@ filtered_metrics = _filter_trivy_metrics(
     
     # Error tracking
     ingestion_error: str,  # Detailed error message
-    failed_at: datetime,   # When the failure occurred
     
     # Denormalized fields
     ci_run_id: str,
@@ -1404,7 +1403,7 @@ Key repositories for enrichment:
 ```
 If ANY task in chord fails:
     ├─ Mark all IN_PROGRESS builds as FAILED (retryable)
-    ├─ Store error details (ingestion_error, failed_at)
+    ├─ Store error details (ingestion_error)
     ├─ Check if any builds made it to INGESTED
     ├─ If yes → Version status = INGESTED (can proceed)
     ├─ If no → Version status = FAILED (cannot proceed)

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cn, formatDateTime } from "@/lib/utils";
 import {
     Card,
     CardContent,
@@ -72,6 +73,11 @@ export default function ScansPage() {
     const params = useParams<{ datasetId: string; versionId: string }>();
     const datasetId = params.datasetId;
     const versionId = params.versionId;
+    const searchParams = useSearchParams();
+    const router = useRouter();
+    const pathname = usePathname();
+
+    const activeTab = searchParams.get("tab") || "sonarqube";
 
     const [trivyData, setTrivyData] = useState<ScanListResponse | null>(null);
     const [sonarData, setSonarData] = useState<ScanListResponse | null>(null);
@@ -80,46 +86,59 @@ export default function ScansPage() {
     const [retryAllLoading, setRetryAllLoading] = useState(false);
     const [sonarPage, setSonarPage] = useState(1);
     const [trivyPage, setTrivyPage] = useState(1);
+    // Removed local activeTab state
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleTabChange = (value: string) => {
+        const params = new URLSearchParams(searchParams.toString());
+        params.set("tab", value);
+        router.push(`${pathname}?${params.toString()}`);
+    };
 
     const fetchScans = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
-        try {
-            // Fetch trivy scans
-            const trivySkip = (trivyPage - 1) * ITEMS_PER_PAGE;
-            const trivyRes = await fetch(
-                `${API_BASE}/datasets/${datasetId}/versions/${versionId}/commit-scans?tool_type=trivy&skip=${trivySkip}&limit=${ITEMS_PER_PAGE}`,
-                { credentials: "include" }
-            );
-            let newTrivyData: ScanListResponse | null = null;
-            if (trivyRes.ok) {
-                const data = await trivyRes.json();
-                newTrivyData = data.trivy || null;
-                setTrivyData(newTrivyData);
-            }
+        console.log("Fetching scans for:", activeTab, "dataset:", datasetId, "version:", versionId);
 
-            // Fetch sonarqube scans
-            const sonarSkip = (sonarPage - 1) * ITEMS_PER_PAGE;
-            const sonarRes = await fetch(
-                `${API_BASE}/datasets/${datasetId}/versions/${versionId}/commit-scans?tool_type=sonarqube&skip=${sonarSkip}&limit=${ITEMS_PER_PAGE}`,
-                { credentials: "include" }
-            );
-            let newSonarData: ScanListResponse | null = null;
-            if (sonarRes.ok) {
-                const data = await sonarRes.json();
-                newSonarData = data.sonarqube || null;
-                setSonarData(newSonarData);
+        try {
+            let currentData: ScanListResponse | null = null;
+
+            if (activeTab === "trivy") {
+                // Fetch trivy scans
+                const trivySkip = (trivyPage - 1) * ITEMS_PER_PAGE;
+                const url = `${API_BASE}/datasets/${datasetId}/versions/${versionId}/commit-scans?tool_type=trivy&skip=${trivySkip}&limit=${ITEMS_PER_PAGE}`;
+                console.log("Request URL:", url);
+                const trivyRes = await fetch(url, { credentials: "include" });
+
+                if (trivyRes.ok) {
+                    const data = await trivyRes.json();
+                    setTrivyData(data.trivy || null);
+                    currentData = data.trivy;
+                } else {
+                    console.error("Trivy fetch failed:", trivyRes.status, trivyRes.statusText);
+                }
+            } else {
+                // Fetch sonarqube scans
+                const sonarSkip = (sonarPage - 1) * ITEMS_PER_PAGE;
+                const url = `${API_BASE}/datasets/${datasetId}/versions/${versionId}/commit-scans?tool_type=sonarqube&skip=${sonarSkip}&limit=${ITEMS_PER_PAGE}`;
+                console.log("Request URL:", url);
+                const sonarRes = await fetch(url, { credentials: "include" });
+
+                if (sonarRes.ok) {
+                    const data = await sonarRes.json();
+                    setSonarData(data.sonarqube || null);
+                    currentData = data.sonarqube;
+                } else {
+                    console.error("SonarQube fetch failed:", sonarRes.status, sonarRes.statusText);
+                }
             }
 
             // Check for running scans for polling using fresh data
-            const allItems = [
-                ...(newTrivyData?.items || []),
-                ...(newSonarData?.items || []),
-            ];
-            const hasRunning = allItems.some(
-                (s) => s.status === "scanning" || s.status === "pending"
+            const hasRunning = currentData?.items.some(
+                (s: any) => s.status === "scanning" || s.status === "pending"
             );
+
             if (hasRunning && !pollingRef.current) {
+                // Polling triggers silent fetch
                 pollingRef.current = setInterval(() => fetchScans(true), 5000);
             } else if (!hasRunning && pollingRef.current) {
                 clearInterval(pollingRef.current);
@@ -130,7 +149,7 @@ export default function ScansPage() {
         } finally {
             if (!silent) setLoading(false);
         }
-    }, [datasetId, versionId, trivyPage, sonarPage]);
+    }, [datasetId, versionId, trivyPage, sonarPage, activeTab]);
 
     useEffect(() => {
         if (versionId) fetchScans();
@@ -138,7 +157,7 @@ export default function ScansPage() {
             if (pollingRef.current) clearInterval(pollingRef.current);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [versionId, trivyPage, sonarPage]);
+    }, [versionId, trivyPage, sonarPage, activeTab]);
 
     // Listen for real-time SCAN_UPDATE events
     useEffect(() => {
@@ -229,15 +248,15 @@ export default function ScansPage() {
     };
 
     const renderStatus = (status: string) => {
-        const config: Record<string, { icon: React.ReactNode; variant: "default" | "destructive" | "secondary" | "outline" }> = {
-            completed: { icon: <CheckCircle2 className="h-3 w-3" />, variant: "default" },
-            failed: { icon: <XCircle className="h-3 w-3" />, variant: "destructive" },
-            scanning: { icon: <Loader2 className="h-3 w-3 animate-spin" />, variant: "secondary" },
-            pending: { icon: <Clock className="h-3 w-3" />, variant: "outline" },
+        const config: Record<string, { icon: React.ReactNode; color: string }> = {
+            completed: { icon: <CheckCircle2 className="h-3 w-3" />, color: "text-green-600 border-green-600/20 bg-green-50" },
+            failed: { icon: <XCircle className="h-3 w-3" />, color: "text-destructive border-destructive/20 bg-destructive/10" },
+            scanning: { icon: <Loader2 className="h-3 w-3 animate-spin" />, color: "text-secondary-foreground" },
+            pending: { icon: <Clock className="h-3 w-3" />, color: "text-muted-foreground" },
         };
         const c = config[status] || config.pending;
         return (
-            <Badge variant={c.variant}>
+            <Badge variant="outline" className={cn("font-medium", c.color)}>
                 <span className="flex items-center gap-1">{c.icon} {status}</span>
             </Badge>
         );
@@ -249,6 +268,15 @@ export default function ScansPage() {
         currentPage: number,
         setPage: (page: number) => void
     ) => {
+        if (loading) {
+            return (
+                <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                    <span className="text-sm text-muted-foreground">Loading scans...</span>
+                </div>
+            );
+        }
+
         if (!scanData || scanData.items.length === 0) {
             return <p className="text-sm text-muted-foreground py-4">No scans</p>;
         }
@@ -276,31 +304,36 @@ export default function ScansPage() {
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Commit</TableHead>
-                                <TableHead>Status</TableHead>
-                                <TableHead>Builds</TableHead>
-                                <TableHead>Duration</TableHead>
+                                <TableHead className="w-[100px]">Commit</TableHead>
+                                <TableHead className="w-[140px]">Status</TableHead>
+                                <TableHead className="w-[80px]">Builds</TableHead>
+                                <TableHead className="w-[100px]">Duration</TableHead>
+                                <TableHead className="w-[140px] text-right">Completed At</TableHead>
                                 <TableHead className="w-16"></TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {items.map((scan) => (
                                 <TableRow key={scan.id}>
-                                    <TableCell className="font-mono text-xs">
+                                    <TableCell className="font-mono text-xs py-2">
                                         {scan.commit_sha.substring(0, 7)}
                                     </TableCell>
-                                    <TableCell>{renderStatus(scan.status)}</TableCell>
-                                    <TableCell>{scan.builds_affected}</TableCell>
-                                    <TableCell className="text-xs">
+                                    <TableCell className="py-2">{renderStatus(scan.status)}</TableCell>
+                                    <TableCell className="py-2">{scan.builds_affected}</TableCell>
+                                    <TableCell className="text-xs py-2">
                                         {formatDuration(scan.started_at, scan.completed_at)}
                                     </TableCell>
-                                    <TableCell>
+                                    <TableCell className="text-xs py-2 text-right text-muted-foreground">
+                                        {formatDateTime(scan.completed_at)}
+                                    </TableCell>
+                                    <TableCell className="py-2">
                                         {scan.status === "failed" && (
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
                                                 disabled={retrying === `${toolType}-${scan.commit_sha}`}
                                                 onClick={() => handleRetry(scan.commit_sha, toolType)}
+                                                className="h-8 w-8 p-0"
                                             >
                                                 {retrying === `${toolType}-${scan.commit_sha}` ? (
                                                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -346,14 +379,7 @@ export default function ScansPage() {
         );
     };
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                <span className="text-muted-foreground">Loading scans...</span>
-            </div>
-        );
-    }
+
 
     const hasTrivyScans = trivyData && trivyData.total > 0;
     const hasSonarScans = sonarData && sonarData.total > 0;
@@ -401,32 +427,24 @@ export default function ScansPage() {
                 </div>
             </CardHeader>
             <CardContent>
-                <Tabs defaultValue={hasSonarScans ? "sonarqube" : "trivy"} className="w-full">
+                <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
                     <TabsList className="mb-4">
-                        {hasSonarScans && (
-                            <TabsTrigger value="sonarqube" className="flex items-center gap-2">
-                                <BarChart3 className="h-4 w-4 text-blue-600" />
-                                SonarQube ({sonarData?.total || 0})
-                            </TabsTrigger>
-                        )}
-                        {hasTrivyScans && (
-                            <TabsTrigger value="trivy" className="flex items-center gap-2">
-                                <Shield className="h-4 w-4 text-green-600" />
-                                Trivy ({trivyData?.total || 0})
-                            </TabsTrigger>
-                        )}
+                        <TabsTrigger value="sonarqube" className="flex items-center gap-2">
+                            <BarChart3 className="h-4 w-4 text-blue-600" />
+                            SonarQube ({sonarData?.total || 0})
+                        </TabsTrigger>
+                        <TabsTrigger value="trivy" className="flex items-center gap-2">
+                            <Shield className="h-4 w-4 text-green-600" />
+                            Trivy ({trivyData?.total || 0})
+                        </TabsTrigger>
                     </TabsList>
 
-                    {hasSonarScans && (
-                        <TabsContent value="sonarqube">
-                            {renderScanTable(sonarData, "sonarqube", sonarPage, setSonarPage)}
-                        </TabsContent>
-                    )}
-                    {hasTrivyScans && (
-                        <TabsContent value="trivy">
-                            {renderScanTable(trivyData, "trivy", trivyPage, setTrivyPage)}
-                        </TabsContent>
-                    )}
+                    <TabsContent value="sonarqube">
+                        {renderScanTable(sonarData, "sonarqube", sonarPage, setSonarPage)}
+                    </TabsContent>
+                    <TabsContent value="trivy">
+                        {renderScanTable(trivyData, "trivy", trivyPage, setTrivyPage)}
+                    </TabsContent>
                 </Tabs>
             </CardContent>
         </Card>

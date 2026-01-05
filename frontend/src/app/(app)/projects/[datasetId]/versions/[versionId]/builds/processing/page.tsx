@@ -31,7 +31,7 @@ import {
     RefreshCw,
 } from "lucide-react";
 import { datasetVersionApi, type EnrichedBuildData } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, formatDateTime } from "@/lib/utils";
 import {
     SearchFilterBar,
     PROCESSING_STATUS_OPTIONS,
@@ -40,21 +40,7 @@ import {
 const ITEMS_PER_PAGE = 20;
 
 /** Format relative time */
-const formatRelativeTime = (dateStr: string | null): string => {
-    if (!dateStr) return "—";
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-};
 
 /** Status config for enrichment builds */
 const getEnrichmentStatusConfig = (status: string) => {
@@ -239,11 +225,12 @@ export default function ProcessingPage() {
                             <Table>
                                 <TableHeader>
                                     <TableRow>
-                                        <TableHead className="w-[100px]">Build ID</TableHead>
-                                        <TableHead className="w-[180px]">Repository</TableHead>
-                                        <TableHead className="w-[100px]">Status</TableHead>
-                                        <TableHead className="w-[100px]">Features</TableHead>
-                                        <TableHead className="w-[100px]">Created At</TableHead>
+                                        <TableHead className="w-8"></TableHead>
+                                        <TableHead>Build ID</TableHead>
+                                        <TableHead>Repository</TableHead>
+                                        <TableHead className="text-center">Status</TableHead>
+                                        <TableHead className="text-center">Features</TableHead>
+                                        <TableHead className="text-right">Created At</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -257,25 +244,26 @@ export default function ProcessingPage() {
                                                 className="cursor-pointer hover:bg-muted/50"
                                                 onClick={() => router.push(`/projects/${datasetId}/builds/${build.id}?versionId=${versionId}`)}
                                             >
-                                                <TableCell className="font-mono text-sm">
-                                                    #{build.raw_build_run_id.slice(-8)}
+                                                <TableCell className="py-2"></TableCell>
+                                                <TableCell className="font-mono text-sm py-2" title={build.ci_run_id}>
+                                                    {build.ci_run_id}
                                                 </TableCell>
-                                                <TableCell className="max-w-[180px] truncate">
+                                                <TableCell className="text-sm py-2">
                                                     {build.repo_full_name}
                                                 </TableCell>
-                                                <TableCell>
-                                                    <Badge variant="outline" className={statusConfig.color}>
-                                                        <StatusIcon className={cn("mr-1 h-3 w-3", build.extraction_status === "in_progress" && "animate-spin")} />
-                                                        {statusConfig.label}
-                                                    </Badge>
+                                                <TableCell className="py-2">
+                                                    <div className="flex justify-center">
+                                                        <Badge variant="outline" className={cn("justify-center", statusConfig.color)}>
+                                                            <StatusIcon className={cn("mr-1 h-3 w-3", build.extraction_status === "in_progress" && "animate-spin")} />
+                                                            {statusConfig.label}
+                                                        </Badge>
+                                                    </div>
                                                 </TableCell>
-                                                <TableCell>
-                                                    <span className="text-sm">
-                                                        {build.feature_count}/{build.expected_feature_count}
-                                                    </span>
+                                                <TableCell className="text-center text-sm py-2">
+                                                    {build.feature_count}/{build.expected_feature_count}
                                                 </TableCell>
-                                                <TableCell className="text-muted-foreground text-sm">
-                                                    {formatRelativeTime(build.created_at)}
+                                                <TableCell className="text-right text-xs text-muted-foreground py-2">
+                                                    {formatDateTime(build.created_at)}
                                                 </TableCell>
                                             </TableRow>
                                         );

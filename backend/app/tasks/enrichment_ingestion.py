@@ -70,7 +70,9 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
     Chains are built directly here (not wrapped in tasks) so chord properly
     waits for ALL chain tasks to complete before calling the callback.
     """
-    from app.tasks.pipeline.feature_dag._metadata import get_required_resources_for_features
+    from app.tasks.pipeline.feature_dag._metadata import (
+        get_required_resources_for_features,
+    )
     from app.tasks.pipeline.resource_dag import get_ingestion_tasks_by_level
     from app.tasks.shared import build_ingestion_workflow
 
@@ -107,14 +109,18 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
             raise ValueError(f"Dataset {dataset_version.dataset_id} not found")
 
         # Get validated builds
-        validated_builds = dataset_build_repo.find_validated_builds(str(dataset_version.dataset_id))
+        validated_builds = dataset_build_repo.find_validated_builds(
+            str(dataset_version.dataset_id)
+        )
 
         builds_total = len(validated_builds)
         if builds_total == 0:
             raise ValueError("No validated builds found. Please run validation first.")
 
         # Get validated repos from dataset stats
-        repo_stats_list = dataset_repo_stats_repo.find_by_dataset(str(dataset_version.dataset_id))
+        repo_stats_list = dataset_repo_stats_repo.find_by_dataset(
+            str(dataset_version.dataset_id)
+        )
         validated_raw_repo_ids = [str(stat.raw_repo_id) for stat in repo_stats_list]
 
         version_repo.update_one(
@@ -143,7 +149,9 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
 
         # Calculate required resources from features
         feature_set = (
-            set(dataset_version.selected_features) if dataset_version.selected_features else set()
+            set(dataset_version.selected_features)
+            if dataset_version.selected_features
+            else set()
         )
         required_resources = get_required_resources_for_features(feature_set)
 
@@ -169,7 +177,9 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
             validated_builds=validated_builds,
             required_resources=list(required_resources),
         )
-        logger.info(f"[start_enrichment] Created {import_builds_created} import build records")
+        logger.info(
+            f"[start_enrichment] Created {import_builds_created} import build records"
+        )
 
         # Build INGESTION CHAINS directly (not wrapped in tasks)
         # This ensures chord properly waits for all chain tasks
@@ -199,7 +209,9 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
             repo_builds = dataset_build_repo.find_found_builds_by_repo(
                 str(dataset_version.dataset_id), raw_repo_id
             )
-            build_csv_ids = list({str(build.build_id_from_csv) for build in repo_builds})
+            build_csv_ids = list(
+                {str(build.build_id_from_csv) for build in repo_builds}
+            )
 
             if not build_csv_ids:
                 continue
@@ -211,7 +223,9 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
                     raw_repo_id, build_csv_id, ci_provider
                 )
                 if raw_build_run and raw_build_run.commit_sha:
-                    commit_shas.append(raw_build_run.effective_sha or raw_build_run.commit_sha)
+                    commit_shas.append(
+                        raw_build_run.effective_sha or raw_build_run.commit_sha
+                    )
             commit_shas = list(set(commit_shas))
 
             # Build ingestion chain for this repo
@@ -244,7 +258,9 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
 
         if not ingestion_chains:
             # No ingestion needed (no tasks required for features)
-            logger.info("[start_enrichment] No ingestion chains needed, marking as ingested")
+            logger.info(
+                "[start_enrichment] No ingestion chains needed, marking as ingested"
+            )
             # Mark import builds as INGESTED since no ingestion is needed
             import_build_repo = DatasetImportBuildRepository(self.db)
             import_build_repo.mark_ingested_batch(version_id)
@@ -270,8 +286,12 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
 
         # Initialize resource status for all import builds before ingestion
         import_build_repo = DatasetImportBuildRepository(self.db)
-        init_count = import_build_repo.init_resource_status(version_id, list(required_resources))
-        logger.info(f"[start_enrichment] Initialized resource status for {init_count} builds")
+        init_count = import_build_repo.init_resource_status(
+            version_id, list(required_resources)
+        )
+        logger.info(
+            f"[start_enrichment] Initialized resource status for {init_count} builds"
+        )
 
         # Use chord: run all repo ingestion chains in parallel → aggregate results
         # Note: chord waits for ALL chains to complete (including retries/failures)
@@ -340,7 +360,9 @@ def aggregate_ingestion_results(
     # NOTE: Redis results are no longer used for status determination.
     # Resource status is now progressively saved directly to DB by shared tasks.
     # We only log stats from Redis for debugging purposes.
-    all_results = _fetch_and_parse_results(self.redis, correlation_id, results, corr_prefix)
+    all_results = _fetch_and_parse_results(
+        self.redis, correlation_id, results, corr_prefix
+    )
     logger.info(
         f"{corr_prefix}[aggregate] Chord returned {len(all_results)} results (for logging only)"
     )
@@ -383,7 +405,7 @@ def aggregate_ingestion_results(
             updates={
                 "status": DatasetImportBuildStatus.FAILED.value,
                 "ingestion_error": "Clone failed",
-                "failed_at": now,
+                "ingested_at": now,
             },
         )
     else:
@@ -398,13 +420,14 @@ def aggregate_ingestion_results(
                 "$set": {
                     "status": DatasetImportBuildStatus.FAILED.value,
                     "ingestion_error": "Worktree creation failed",
-                    "failed_at": now,
+                    "ingested_at": now,
                 }
             },
         )
 
         # 3. Mark builds with failed build_logs as MISSING_RESOURCE (not retryable)
-        # Note: Set ingested_at (not failed_at) because ingestion is complete, just partial
+        # Set both ingested_at (ingestion completed with partial resources) and ingested_at
+        # (when the resource failure occurred) so UI can display both timestamps
         import_build_repo.collection.update_many(
             {
                 "dataset_version_id": ObjectId(version_id),
@@ -426,7 +449,9 @@ def aggregate_ingestion_results(
     # Count by status to determine final state
     status_counts = import_build_repo.count_by_status(version_id)
     ingested = status_counts.get(DatasetImportBuildStatus.INGESTED.value, 0)
-    missing_resource = status_counts.get(DatasetImportBuildStatus.MISSING_RESOURCE.value, 0)
+    missing_resource = status_counts.get(
+        DatasetImportBuildStatus.MISSING_RESOURCE.value, 0
+    )
     failed = status_counts.get(DatasetImportBuildStatus.FAILED.value, 0)
 
     # Determine final ingestion status
@@ -440,7 +465,9 @@ def aggregate_ingestion_results(
             parts.append(f"{missing_resource} missing resources")
         msg = f"Ingestion done: {', '.join(parts)}. Start processing when ready."
     else:
-        msg = f"Ingestion complete: {ingested} builds ready. Start processing when ready."
+        msg = (
+            f"Ingestion complete: {ingested} builds ready. Start processing when ready."
+        )
 
     total_builds = ingested + missing_resource + failed
     version_repo.update_one(
@@ -518,7 +545,9 @@ def handle_enrichment_chord_error(
     except Exception as e:
         logger.warning(f"Could not retrieve exception for task {task_id}: {e}")
 
-    logger.error(f"{corr_prefix} Ingestion chord failed for version {version_id}: {error_msg}")
+    logger.error(
+        f"{corr_prefix} Ingestion chord failed for version {version_id}: {error_msg}"
+    )
 
     import_build_repo = DatasetImportBuildRepository(self.db)
     version_repo = DatasetVersionRepository(self.db)
@@ -534,7 +563,7 @@ def handle_enrichment_chord_error(
         updates={
             "status": DatasetImportBuildStatus.FAILED.value,
             "ingestion_error": f"Ingestion chord failed: {error_msg}",
-            "failed_at": now,
+            "ingested_at": now,
         },
     )
 
@@ -735,12 +764,16 @@ def _fetch_and_parse_results(
             key = f"ingestion:results:{correlation_id}"
             redis_results: List[bytes] = redis_client.lrange(key, 0, -1)  # type: ignore[assignment]
             if redis_results:
-                logger.info(f"{log_prefix} Fetched {len(redis_results)} results from Redis")
+                logger.info(
+                    f"{log_prefix} Fetched {len(redis_results)} results from Redis"
+                )
                 for r_str in redis_results:
                     try:
                         all_results.append(json.loads(r_str))
                     except Exception as e:
-                        logger.warning(f"{log_prefix} Failed to decode Redis result: {e}")
+                        logger.warning(
+                            f"{log_prefix} Failed to decode Redis result: {e}"
+                        )
         except Exception as e:
             logger.error(f"{log_prefix} Error fetching results from Redis: {e}")
 

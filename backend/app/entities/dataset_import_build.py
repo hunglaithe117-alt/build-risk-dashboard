@@ -143,7 +143,3 @@ class DatasetImportBuild(BaseEntity):
         None,
         description="Detailed error message if ingestion failed.",
     )
-    failed_at: Optional[datetime] = Field(
-        None,
-        description="Timestamp when the build failed",
-    )

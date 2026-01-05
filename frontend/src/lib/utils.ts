@@ -76,3 +76,20 @@ export function formatBytes(bytes?: number, decimals: number = 2): string {
 
   return `${parseFloat((bytes / Math.pow(k, index)).toFixed(dm))} ${sizes[index]}`;
 }
+
+/**
+ * Format date and time as short string (vi-VN locale)
+ * @param dateStr - ISO date string
+ * @returns Formatted string like "04/01/2026 03:17"
+ */
+export const formatDateTime = (dateStr: string | null): string => {
+  if (!dateStr) return "—";
+  const date = new Date(dateStr);
+  return date.toLocaleString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};

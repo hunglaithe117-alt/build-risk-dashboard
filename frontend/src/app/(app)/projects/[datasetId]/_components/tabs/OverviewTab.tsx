@@ -532,60 +532,6 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                         )}
                     </CardContent>
                 </Card>
-
-                {/* Source Preview */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Database className="h-5 w-5" />
-                            Raw Data Preview
-                        </CardTitle>
-                        <CardDescription>
-                            Previewing first 10 rows of uploaded CSV. Total rows: {dataset.rows?.toLocaleString()}
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                        <div className="overflow-x-auto border-t">
-                            <table className="min-w-full text-sm">
-                                <thead className="bg-slate-50 dark:bg-slate-800/50">
-                                    <tr>
-                                        {dataset.columns?.map((col) => {
-                                            const isMapped = col === dataset.mapped_fields?.build_id ||
-                                                col === dataset.mapped_fields?.repo_name;
-                                            return (
-                                                <th
-                                                    key={col}
-                                                    className={`px-4 py-3 text-left font-medium whitespace-nowrap border-b ${isMapped ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"
-                                                        }`}
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        {col}
-                                                        {isMapped && (
-                                                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-5 border-blue-200 text-blue-600">
-                                                                Mapped
-                                                            </Badge>
-                                                        )}
-                                                    </div>
-                                                </th>
-                                            );
-                                        })}
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                    {dataset.preview?.slice(0, 10).map((row, idx) => (
-                                        <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
-                                            {dataset.columns?.map((col) => (
-                                                <td key={col} className="px-4 py-2.5 text-muted-foreground whitespace-nowrap max-w-[300px] truncate">
-                                                    {String(row[col] ?? "—")}
-                                                </td>
-                                            ))}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </CardContent>
-                </Card>
             </div>
         </div>
     );

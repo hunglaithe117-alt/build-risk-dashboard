@@ -22,7 +22,7 @@ interface ImportProgress {
         last_checkpoint_at: string | null;
         accepted_failed: number;
         stats: Record<string, number>;
-        current_processing_build_number?: number | null;
+        last_processed_ci_run_id?: string | null;
     };
     import_builds: {
         pending: number;
@@ -190,10 +190,9 @@ function getPhaseInfo(status: string, progress: ImportProgress | null): PhaseInf
     // Processing phase
     if (statusLower === "processing") {
         const { completed, partial, pending, total, failed } = progress.training_builds;
-        const currentBuildNumber = progress.checkpoint?.current_processing_build_number;
         return {
             title: "Feature Extraction",
-            description: currentBuildNumber ? `Processing build #${currentBuildNumber}` : "",
+            description: "Extracting features from ingested builds",
             current: completed + partial,
             total: total || progress.import_builds.ingested,
             failed,
@@ -340,12 +339,12 @@ export function CurrentPhaseCard({ status, progress, isLoading, onRetryFailed }:
                 )}
 
                 {/* Last Processed Build Checkpoint - shown when checkpoint exists */}
-                {progress?.checkpoint?.current_processing_build_number && (
+                {progress?.checkpoint?.last_processed_ci_run_id && (
                     <div className="mt-4 pt-4 border-t">
                         <div className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">Last Processed Build:</span>
                             <Badge variant="outline" className="font-mono">
-                                #{progress.checkpoint.current_processing_build_number}
+                                {progress.checkpoint.last_processed_ci_run_id}
                             </Badge>
                         </div>
                     </div>

@@ -57,7 +57,9 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         """List builds for a dataset with pagination."""
         query: Dict[str, Any] = {"dataset_id": dataset_id}
         if status:
-            query["extraction_status"] = status.value if hasattr(status, "value") else status
+            query["extraction_status"] = (
+                status.value if hasattr(status, "value") else status
+            )
 
         return self.paginate(query, sort=[("_id", 1)], skip=skip, limit=limit)
 
@@ -293,7 +295,9 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         """Count builds for a dataset, optionally filtered by status."""
         query: Dict[str, Any] = {"dataset_id": dataset_id}
         if status:
-            query["extraction_status"] = status.value if hasattr(status, "value") else status
+            query["extraction_status"] = (
+                status.value if hasattr(status, "value") else status
+            )
         return self.collection.count_documents(query)
 
     def get_enriched_for_export(
@@ -328,7 +332,12 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
                 }
             },
             # Unwind the joined array (1:1 relationship)
-            {"$unwind": {"path": "$feature_vector", "preserveNullAndEmptyArrays": True}},
+            {
+                "$unwind": {
+                    "path": "$feature_vector",
+                    "preserveNullAndEmptyArrays": True,
+                }
+            },
             # Project only features and scan_metrics for export
             {
                 "$project": {
@@ -381,7 +390,13 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
                 }
             },
             {"$unwind": {"path": "$fv", "preserveNullAndEmptyArrays": False}},
-            {"$project": {"feature_keys": {"$objectToArray": {"$ifNull": ["$fv.features", {}]}}}},
+            {
+                "$project": {
+                    "feature_keys": {
+                        "$objectToArray": {"$ifNull": ["$fv.features", {}]}
+                    }
+                }
+            },
             {"$unwind": {"path": "$feature_keys", "preserveNullAndEmptyArrays": False}},
             {"$group": {"_id": None, "keys": {"$addToSet": "$feature_keys.k"}}},
         ]
@@ -398,7 +413,13 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
                 }
             },
             {"$unwind": {"path": "$fv", "preserveNullAndEmptyArrays": False}},
-            {"$project": {"scan_keys": {"$objectToArray": {"$ifNull": ["$fv.scan_metrics", {}]}}}},
+            {
+                "$project": {
+                    "scan_keys": {
+                        "$objectToArray": {"$ifNull": ["$fv.scan_metrics", {}]}
+                    }
+                }
+            },
             {"$unwind": {"path": "$scan_keys", "preserveNullAndEmptyArrays": False}},
             {"$group": {"_id": None, "keys": {"$addToSet": "$scan_keys.k"}}},
         ]
@@ -424,10 +445,14 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
             dataset_id: Dataset ID to delete builds for
             session: Optional MongoDB session for transaction support
         """
-        result = self.collection.delete_many({"dataset_id": dataset_id}, session=session)
+        result = self.collection.delete_many(
+            {"dataset_id": dataset_id}, session=session
+        )
         return result.deleted_count
 
-    def delete_by_version(self, version_id: str, session: Optional["ClientSession"] = None) -> int:
+    def delete_by_version(
+        self, version_id: str, session: Optional["ClientSession"] = None
+    ) -> int:
         """Delete all builds for a version.
 
         Args:
@@ -521,7 +546,11 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
             # Determine type from samples
             value_type = "unknown"
             for doc in sample_docs:
-                val = doc.get("features", {}).get(feature) if doc.get("features") else None
+                val = (
+                    doc.get("features", {}).get(feature)
+                    if doc.get("features")
+                    else None
+                )
                 if val is not None:
                     if isinstance(val, bool):
                         value_type = "boolean"
@@ -638,7 +667,9 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
 
         matching_docs = list(self.collection.aggregate(pipeline))
         feature_vector_ids = [
-            doc["feature_vector_id"] for doc in matching_docs if doc.get("feature_vector_id")
+            doc["feature_vector_id"]
+            for doc in matching_docs
+            if doc.get("feature_vector_id")
         ]
 
         if not feature_vector_ids:
@@ -727,16 +758,22 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
         sonar_completed = sonar_repo.count_by_version_and_status(
             version_id, SonarScanStatus.COMPLETED
         )
-        sonar_failed = sonar_repo.count_by_version_and_status(version_id, SonarScanStatus.FAILED)
+        sonar_failed = sonar_repo.count_by_version_and_status(
+            version_id, SonarScanStatus.FAILED
+        )
 
         trivy_total = trivy_repo.count_by_version(version_id)
         trivy_completed = trivy_repo.count_by_version_and_status(
             version_id, TrivyScanStatus.COMPLETED
         )
-        trivy_failed = trivy_repo.count_by_version_and_status(version_id, TrivyScanStatus.FAILED)
+        trivy_failed = trivy_repo.count_by_version_and_status(
+            version_id, TrivyScanStatus.FAILED
+        )
 
         # Get enrichment build count
-        total_builds = self.collection.count_documents({"dataset_version_id": version_id})
+        total_builds = self.collection.count_documents(
+            {"dataset_version_id": version_id}
+        )
         completed_builds = self.collection.count_documents(
             {
                 "dataset_version_id": version_id,
@@ -783,7 +820,16 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
 
         pipeline = [
             {"$match": match_query},
-            {"$sort": {"enriched_at": -1}},
+            {
+                "$lookup": {
+                    "from": "raw_build_runs",
+                    "localField": "raw_build_run_id",
+                    "foreignField": "_id",
+                    "as": "run",
+                }
+            },
+            # Sort by RawBuildRun.created_at (CI build creation time)
+            {"$sort": {"run.created_at": -1, "run.ci_run_id": -1}},
             {
                 "$facet": {
                     "metadata": [{"$count": "total"}],
@@ -800,23 +846,28 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
                         },
                         {
                             "$lookup": {
-                                "from": "raw_build_runs",
-                                "localField": "raw_build_run_id",
-                                "foreignField": "_id",
-                                "as": "run",
-                            }
-                        },
-                        {
-                            "$lookup": {
                                 "from": "dataset_repo_stats",
-                                "let": {"dataset_id": "$dataset_id", "repo_id": "$raw_repo_id"},
+                                "let": {
+                                    "dataset_id": "$dataset_id",
+                                    "repo_id": "$raw_repo_id",
+                                },
                                 "pipeline": [
                                     {
                                         "$match": {
                                             "$expr": {
                                                 "$and": [
-                                                    {"$eq": ["$dataset_id", "$$dataset_id"]},
-                                                    {"$eq": ["$raw_repo_id", "$$repo_id"]},
+                                                    {
+                                                        "$eq": [
+                                                            "$dataset_id",
+                                                            "$$dataset_id",
+                                                        ]
+                                                    },
+                                                    {
+                                                        "$eq": [
+                                                            "$raw_repo_id",
+                                                            "$$repo_id",
+                                                        ]
+                                                    },
                                                 ]
                                             }
                                         }
@@ -836,49 +887,91 @@ class DatasetEnrichmentBuildRepository(BaseRepository[DatasetEnrichmentBuild]):
                         },
                         {
                             "$addFields": {
-                                "repo_full_name": {"$arrayElemAt": ["$repo.full_name", 0]},
-                                "provider": {"$arrayElemAt": ["$repo_stats.ci_provider", 0]},
+                                "repo_full_name": {
+                                    "$arrayElemAt": ["$repo.full_name", 0]
+                                },
+                                "provider": {
+                                    "$arrayElemAt": ["$repo_stats.ci_provider", 0]
+                                },
                                 "web_url": {"$arrayElemAt": ["$run.web_url", 0]},
+                                "ci_run_id": {"$arrayElemAt": ["$run.ci_run_id", 0]},
                                 # Features from FeatureVector
                                 "features": {
                                     "$ifNull": [
-                                        {"$arrayElemAt": ["$feature_vector.features", 0]},
+                                        {
+                                            "$arrayElemAt": [
+                                                "$feature_vector.features",
+                                                0,
+                                            ]
+                                        },
                                         {},
                                     ]
                                 },
                                 "scan_metrics": {
                                     "$ifNull": [
-                                        {"$arrayElemAt": ["$feature_vector.scan_metrics", 0]},
+                                        {
+                                            "$arrayElemAt": [
+                                                "$feature_vector.scan_metrics",
+                                                0,
+                                            ]
+                                        },
                                         {},
                                     ]
                                 },
                                 "feature_count": {
                                     "$ifNull": [
-                                        {"$arrayElemAt": ["$feature_vector.feature_count", 0]},
+                                        {
+                                            "$arrayElemAt": [
+                                                "$feature_vector.feature_count",
+                                                0,
+                                            ]
+                                        },
                                         0,
                                     ]
                                 },
                                 "is_missing_commit": {
                                     "$ifNull": [
-                                        {"$arrayElemAt": ["$feature_vector.is_missing_commit", 0]},
+                                        {
+                                            "$arrayElemAt": [
+                                                "$feature_vector.is_missing_commit",
+                                                0,
+                                            ]
+                                        },
                                         False,
                                     ]
                                 },
                                 "missing_resources": {
                                     "$ifNull": [
-                                        {"$arrayElemAt": ["$feature_vector.missing_resources", 0]},
+                                        {
+                                            "$arrayElemAt": [
+                                                "$feature_vector.missing_resources",
+                                                0,
+                                            ]
+                                        },
                                         [],
                                     ]
                                 },
                                 "skipped_features": {
                                     "$ifNull": [
-                                        {"$arrayElemAt": ["$feature_vector.skipped_features", 0]},
+                                        {
+                                            "$arrayElemAt": [
+                                                "$feature_vector.skipped_features",
+                                                0,
+                                            ]
+                                        },
                                         [],
                                     ]
                                 },
                             }
                         },
-                        {"$project": {"repo": 0, "run": 0, "repo_stats": 0, "feature_vector": 0}},
+                        {
+                            "$project": {
+                                "repo": 0,
+                                "run": 0,
+                                "repo_stats": 0,
+                                "feature_vector": 0,
+                            }
+                        },
                     ],
                 }
             },

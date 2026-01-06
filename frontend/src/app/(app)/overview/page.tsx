@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { ReactNode } from "react";
-import { ShieldCheck, Workflow, Clock, GitBranch, Settings2, Plus, GripVertical, LayoutGrid, Grid2x2, Grid3x3, LayoutPanelLeft, Download, Upload } from "lucide-react";
-import { FailureHeatmap } from "@/components/dashboard/FailureHeatmap";
+import { ShieldCheck, Workflow, GitBranch, Settings2, Plus, GripVertical, LayoutGrid, Grid2x2, Grid3x3, LayoutPanelLeft, Download, Upload } from "lucide-react";
+
 import GridLayout from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 
@@ -379,18 +379,6 @@ export default function OverviewPage() {
             isEditing={isEditing}
           />
         );
-      case "avg_duration":
-        return (
-          <StatCard
-            className={commonCardClass}
-            icon={<Clock className="h-5 w-5 text-amber-500 flex-shrink-0" />}
-            title={widget.title}
-            value={metrics.average_duration_minutes}
-            format="minutes"
-            sublabel="Average build time"
-            isEditing={isEditing}
-          />
-        );
       case "active_repos":
         return (
           <StatCard
@@ -461,7 +449,7 @@ export default function OverviewPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm truncate">{widget.title}</CardTitle>
               <CardDescription className="text-xs truncate">
-                Latest build runs
+                Latest builds with risk level
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0 overflow-auto flex-1">
@@ -469,7 +457,7 @@ export default function OverviewPage() {
                 <thead className="bg-slate-50 dark:bg-slate-900/40">
                   <tr>
                     <th className="px-3 py-2 text-left font-semibold">Build</th>
-                    <th className="px-3 py-2 text-left font-semibold">Status</th>
+                    <th className="px-3 py-2 text-left font-semibold">Risk</th>
                     <th className="px-3 py-2 text-left font-semibold">Branch</th>
                   </tr>
                 </thead>
@@ -490,12 +478,17 @@ export default function OverviewPage() {
                           #{build.build_number || build.commit_sha?.slice(0, 7)}
                         </td>
                         <td className="px-3 py-2">
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${build.conclusion === "success" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
-                            build.conclusion === "failure" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
-                              "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400"
-                            }`}>
-                            {build.conclusion}
-                          </span>
+                          {build.predicted_label ? (
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${build.predicted_label === "LOW" ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" :
+                              build.predicted_label === "MEDIUM" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                                build.predicted_label === "HIGH" ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" :
+                                  "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400"
+                              }`}>
+                              {build.predicted_label}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-2 text-muted-foreground truncate max-w-[100px]">
                           {build.branch}
@@ -508,18 +501,16 @@ export default function OverviewPage() {
             </CardContent>
           </Card>
         );
-      case "dataset_summary":
-        return (
-          <StatCard
-            className={commonCardClass}
-            icon={<Workflow className="h-5 w-5 text-indigo-500 flex-shrink-0" />}
-            title={widget.title}
-            value={summary.dataset_count}
-            sublabel="Total datasets"
-            isEditing={isEditing}
-          />
-        );
       case "risk_trend":
+        // Calculate risk distribution from recent builds
+        const riskCounts = { LOW: 0, MEDIUM: 0, HIGH: 0 };
+        recentBuilds.forEach((b) => {
+          if (b.predicted_label === "LOW") riskCounts.LOW++;
+          else if (b.predicted_label === "MEDIUM") riskCounts.MEDIUM++;
+          else if (b.predicted_label === "HIGH") riskCounts.HIGH++;
+        });
+        const hasRiskData = riskCounts.LOW + riskCounts.MEDIUM + riskCounts.HIGH > 0;
+
         return (
           <Card className={commonCardClass}>
             {isEditing && (
@@ -530,20 +521,64 @@ export default function OverviewPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm truncate">{widget.title}</CardTitle>
               <CardDescription className="text-xs truncate">
-                Build risk score trend over time
+                Recent build risk levels
               </CardDescription>
             </CardHeader>
             <CardContent className="flex items-center justify-center h-[calc(100%-60px)]">
-              <div className="text-center space-y-2">
-                <ShieldCheck className="h-8 w-8 mx-auto text-muted-foreground/50" />
-                <p className="text-xs text-muted-foreground">
-                  Risk model integration pending
-                </p>
-              </div>
+              {hasRiskData ? (
+                <div className="w-full space-y-2 px-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs w-12">LOW</span>
+                    <div className="flex-1 h-4 bg-slate-100 dark:bg-slate-800 rounded overflow-hidden">
+                      <div
+                        className="h-full bg-green-500"
+                        style={{ width: `${(riskCounts.LOW / recentBuilds.length) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs w-6 text-right">{riskCounts.LOW}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs w-12">MED</span>
+                    <div className="flex-1 h-4 bg-slate-100 dark:bg-slate-800 rounded overflow-hidden">
+                      <div
+                        className="h-full bg-amber-500"
+                        style={{ width: `${(riskCounts.MEDIUM / recentBuilds.length) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs w-6 text-right">{riskCounts.MEDIUM}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs w-12">HIGH</span>
+                    <div className="flex-1 h-4 bg-slate-100 dark:bg-slate-800 rounded overflow-hidden">
+                      <div
+                        className="h-full bg-red-500"
+                        style={{ width: `${(riskCounts.HIGH / recentBuilds.length) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-xs w-6 text-right">{riskCounts.HIGH}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center space-y-2">
+                  <ShieldCheck className="h-8 w-8 mx-auto text-muted-foreground/50" />
+                  <p className="text-xs text-muted-foreground">
+                    No prediction data available
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         );
-      case "failure_heatmap":
+      case "risk_distribution":
+        // Donut-style display of risk levels
+        const distCounts = { LOW: 0, MEDIUM: 0, HIGH: 0 };
+        recentBuilds.forEach((b) => {
+          if (b.predicted_label === "LOW") distCounts.LOW++;
+          else if (b.predicted_label === "MEDIUM") distCounts.MEDIUM++;
+          else if (b.predicted_label === "HIGH") distCounts.HIGH++;
+        });
+        const totalPredicted = distCounts.LOW + distCounts.MEDIUM + distCounts.HIGH;
+
         return (
           <Card className={commonCardClass}>
             {isEditing && (
@@ -554,13 +589,47 @@ export default function OverviewPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm truncate">{widget.title}</CardTitle>
               <CardDescription className="text-xs truncate">
-                Failures by day and hour
+                Risk level breakdown
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-2">
-              <FailureHeatmap />
+            <CardContent className="flex items-center justify-center h-[calc(100%-60px)]">
+              {totalPredicted > 0 ? (
+                <div className="flex items-center gap-4">
+                  <div className="flex flex-col items-center">
+                    <div className="text-2xl font-bold text-green-600">{distCounts.LOW}</div>
+                    <div className="text-xs text-muted-foreground">Low</div>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <div className="text-2xl font-bold text-amber-600">{distCounts.MEDIUM}</div>
+                    <div className="text-xs text-muted-foreground">Medium</div>
+                  </div>
+                  <div className="flex flex-col items-center">
+                    <div className="text-2xl font-bold text-red-600">{distCounts.HIGH}</div>
+                    <div className="text-xs text-muted-foreground">High</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center space-y-2">
+                  <ShieldCheck className="h-8 w-8 mx-auto text-muted-foreground/50" />
+                  <p className="text-xs text-muted-foreground">
+                    No predictions yet
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
+        );
+      case "high_risk_builds":
+        const highRiskCount = recentBuilds.filter((b) => b.predicted_label === "HIGH").length;
+        return (
+          <StatCard
+            className={cn(commonCardClass, highRiskCount > 0 && "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-900/20")}
+            icon={<ShieldCheck className={`h-5 w-5 flex-shrink-0 ${highRiskCount > 0 ? "text-red-500" : "text-muted-foreground"}`} />}
+            title={widget.title}
+            value={highRiskCount}
+            sublabel="Predicted as HIGH risk"
+            isEditing={isEditing}
+          />
         );
       default:
         return (

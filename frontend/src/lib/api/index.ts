@@ -94,4 +94,10 @@ export type {
     NodeExecutionResult,
     FeatureAuditLogDto,
     AuditLogListResponse,
+    MetricSummary,
+    TrivySummary,
+    SonarSummary,
+    ScanSummary,
+    ScanMetricsStatisticsResponse,
 } from './statistics';
+

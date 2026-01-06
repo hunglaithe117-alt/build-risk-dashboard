@@ -209,6 +209,7 @@ export default function RepoLayout({ children }: { children: React.ReactNode }) 
     // Determine active tab from pathname
     const isOverviewActive = pathname === `/repositories/${repoId}` || pathname.endsWith("/overview");
     const isBuildsActive = pathname.includes("/builds");
+    const isAnalyticsActive = pathname.includes("/analytics");
     // Check if we're on a build detail page (hide tabs for cleaner UI)
     const isBuildDetailPage = pathname.includes("/build/") && pathname.split("/").length > 4;
 
@@ -310,6 +311,17 @@ export default function RepoLayout({ children }: { children: React.ReactNode }) 
                                 )}
                             >
                                 Builds
+                            </Link>
+                            <Link
+                                href={`/repositories/${repoId}/analytics`}
+                                className={cn(
+                                    "flex-1 text-center pb-3 text-sm font-medium transition-colors border-b-2",
+                                    isAnalyticsActive
+                                        ? "border-primary text-primary"
+                                        : "border-transparent text-muted-foreground hover:text-foreground"
+                                )}
+                            >
+                                Analytics
                             </Link>
                         </nav>
                     </div>

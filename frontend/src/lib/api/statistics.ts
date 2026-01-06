@@ -152,6 +152,67 @@ export interface AuditLogListResponse {
     limit: number;
 }
 
+// Scan Metrics Types
+export interface MetricSummary {
+    sum: number;
+    avg: number;
+    max: number;
+    min: number;
+    count: number;
+}
+
+export interface TrivySummary {
+    vuln_total: MetricSummary;
+    vuln_critical: MetricSummary;
+    vuln_high: MetricSummary;
+    vuln_medium: MetricSummary;
+    vuln_low: MetricSummary;
+    misconfig_total: MetricSummary;
+    misconfig_critical: MetricSummary;
+    misconfig_high: MetricSummary;
+    misconfig_medium: MetricSummary;
+    misconfig_low: MetricSummary;
+    secrets_count: MetricSummary;
+    scan_duration_ms: MetricSummary;
+    has_critical_count: number;
+    has_high_count: number;
+    total_scans: number;
+}
+
+export interface SonarSummary {
+    bugs: MetricSummary;
+    code_smells: MetricSummary;
+    vulnerabilities: MetricSummary;
+    security_hotspots: MetricSummary;
+    complexity: MetricSummary;
+    cognitive_complexity: MetricSummary;
+    duplicated_lines_density: MetricSummary;
+    ncloc: MetricSummary;
+    reliability_rating_avg: number | null;
+    security_rating_avg: number | null;
+    maintainability_rating_avg: number | null;
+    alert_status_ok_count: number;
+    alert_status_error_count: number;
+    total_scans: number;
+}
+
+export interface ScanSummary {
+    total_builds: number;
+    builds_with_trivy: number;
+    builds_with_sonar: number;
+    builds_with_any_scan: number;
+    trivy_coverage_pct: number;
+    sonar_coverage_pct: number;
+}
+
+export interface ScanMetricsStatisticsResponse {
+    version_id: string;
+    dataset_id: string;
+    scan_summary: ScanSummary;
+    trivy_summary: TrivySummary;
+    sonar_summary: SonarSummary;
+}
+
 export const statisticsApi = {
     getVersionStatistics: async (
         datasetId: string,
@@ -195,6 +256,16 @@ export const statisticsApi = {
             {
                 params: features ? { features: features.join(",") } : undefined,
             }
+        );
+        return response.data;
+    },
+
+    getScanMetrics: async (
+        datasetId: string,
+        versionId: string
+    ): Promise<ScanMetricsStatisticsResponse> => {
+        const response = await api.get<ScanMetricsStatisticsResponse>(
+            `/datasets/${datasetId}/versions/${versionId}/statistics/scans`
         );
         return response.data;
     },

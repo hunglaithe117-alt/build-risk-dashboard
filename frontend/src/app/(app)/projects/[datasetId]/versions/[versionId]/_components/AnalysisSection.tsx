@@ -41,6 +41,7 @@ import {
 import { FeatureDistributionChart } from "./FeatureDistributionChart";
 import { CorrelationMatrixChart } from "./CorrelationMatrixChart";
 import { FeatureDistributionCarousel } from "./FeatureDistributionCarousel";
+import { ScanMetricsSection } from "./ScanMetricsSection";
 
 interface AnalysisSectionProps {
     datasetId: string;
@@ -252,6 +253,13 @@ export function AnalysisSection({ datasetId, versionId, versionStatus }: Analysi
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Scan Metrics Section */}
+            <ScanMetricsSection
+                datasetId={datasetId}
+                versionId={versionId}
+                versionStatus={versionStatus}
+            />
 
             {/* Feature Analysis - Collapsible */}
             <Collapsible open={isFeatureAnalysisOpen} onOpenChange={setIsFeatureAnalysisOpen}>

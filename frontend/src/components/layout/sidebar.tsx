@@ -21,6 +21,13 @@ const navigation = [
     userOnly: false, // Shown to all
   },
   {
+    label: "Build Risk Evaluation",
+    href: "/repositories",
+    icon: BadgeCheck,
+    adminOnly: true, // Admin only
+    userOnly: false,
+  },
+  {
     label: "My Repositories",
     href: "/my-repos",
     icon: GitBranch,
@@ -28,16 +35,9 @@ const navigation = [
     userOnly: true, // Only for org members
   },
   {
-    label: "Projects",
+    label: "Data Enrichments",
     href: "/projects",
     icon: Database,
-    adminOnly: true, // Admin only
-    userOnly: false,
-  },
-  {
-    label: "Repositories",
-    href: "/repositories",
-    icon: BadgeCheck,
     adminOnly: true, // Admin only
     userOnly: false,
   },

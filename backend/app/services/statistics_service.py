@@ -30,6 +30,13 @@ from app.dtos.statistics import (
     VersionStatistics,
     VersionStatisticsResponse,
 )
+from app.dtos.scan_statistics import (
+    MetricSummary,
+    ScanMetricsStatisticsResponse,
+    ScanSummary,
+    SonarSummary,
+    TrivySummary,
+)
 from app.entities.dataset_enrichment_build import DatasetEnrichmentBuild
 from app.repositories.data_quality_repository import DataQualityRepository
 from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
@@ -50,7 +57,9 @@ class StatisticsService:
         self.quality_repo = DataQualityRepository(db)
         self.feature_service = FeatureService()
 
-    def get_version_statistics(self, dataset_id: str, version_id: str) -> VersionStatisticsResponse:
+    def get_version_statistics(
+        self, dataset_id: str, version_id: str
+    ) -> VersionStatisticsResponse:
         """
         Get comprehensive statistics for a dataset version.
 
@@ -96,7 +105,11 @@ class StatisticsService:
             version_id=version_id,
             dataset_id=dataset_id,
             version_name=version.name or f"v{version.version_number}",
-            status=version.status if isinstance(version.status, str) else version.status.value,
+            status=(
+                version.status
+                if isinstance(version.status, str)
+                else version.status.value
+            ),
             statistics=stats,
             build_status_breakdown=status_breakdown,
             feature_completeness=feature_completeness,
@@ -157,13 +170,19 @@ class StatisticsService:
                 data_type = self._infer_data_type(values)
 
             if data_type in ("integer", "float"):
-                dist = self._calculate_numeric_distribution(feature_name, values, bins=bins)
+                dist = self._calculate_numeric_distribution(
+                    feature_name, values, bins=bins
+                )
             else:
-                dist = self._calculate_categorical_distribution(feature_name, values, top_n=top_n)
+                dist = self._calculate_categorical_distribution(
+                    feature_name, values, top_n=top_n
+                )
 
             distributions[feature_name] = dist.model_dump()
 
-        return FeatureDistributionResponse(version_id=version_id, distributions=distributions)
+        return FeatureDistributionResponse(
+            version_id=version_id, distributions=distributions
+        )
 
     def get_correlation_matrix(
         self,
@@ -204,7 +223,9 @@ class StatisticsService:
         builds = self.build_repo.find_by_version_with_features(version_id)
 
         # Build value matrix
-        feature_values: Dict[str, List[Optional[float]]] = {f: [] for f in numeric_features}
+        feature_values: Dict[str, List[Optional[float]]] = {
+            f: [] for f in numeric_features
+        }
 
         for build in builds:
             for feature in numeric_features:
@@ -230,7 +251,9 @@ class StatisticsService:
                     # Already calculated, copy symmetric value
                     row.append(matrix[j][i])
                 else:
-                    corr = self._calculate_correlation(feature_values[f1], feature_values[f2])
+                    corr = self._calculate_correlation(
+                        feature_values[f1], feature_values[f2]
+                    )
                     row.append(corr)
 
                     # Track significant correlations
@@ -254,6 +277,240 @@ class StatisticsService:
             features=numeric_features,
             matrix=matrix,
             significant_pairs=significant_pairs,
+        )
+
+    def get_scan_metrics_statistics(
+        self,
+        dataset_id: str,
+        version_id: str,
+    ) -> ScanMetricsStatisticsResponse:
+        """
+        Get aggregated scan metrics statistics for a dataset version.
+
+        Aggregates Trivy and SonarQube scan metrics from FeatureVector.scan_metrics.
+
+        Args:
+            dataset_id: Dataset ID
+            version_id: Version ID
+
+        Returns:
+            ScanMetricsStatisticsResponse with Trivy and SonarQube summaries
+        """
+        version = self.version_repo.find_by_id(version_id)
+        if not version:
+            raise HTTPException(status_code=404, detail="Version not found")
+
+        if str(version.dataset_id) != dataset_id:
+            raise HTTPException(status_code=404, detail="Version not found in dataset")
+
+        # Get all builds with scan_metrics from FeatureVector
+        builds = self.build_repo.find_by_version_with_features(version_id)
+
+        # Initialize summaries
+        scan_summary = ScanSummary(total_builds=len(builds))
+        trivy_summary = TrivySummary()
+        sonar_summary = SonarSummary()
+
+        # Collect metrics
+        trivy_metrics: Dict[str, List[float]] = {
+            "vuln_total": [],
+            "vuln_critical": [],
+            "vuln_high": [],
+            "vuln_medium": [],
+            "vuln_low": [],
+            "misconfig_total": [],
+            "misconfig_critical": [],
+            "misconfig_high": [],
+            "misconfig_medium": [],
+            "misconfig_low": [],
+            "secrets_count": [],
+            "scan_duration_ms": [],
+        }
+
+        sonar_metrics: Dict[str, List[float]] = {
+            "bugs": [],
+            "code_smells": [],
+            "vulnerabilities": [],
+            "security_hotspots": [],
+            "complexity": [],
+            "cognitive_complexity": [],
+            "duplicated_lines_density": [],
+            "ncloc": [],
+            "reliability_rating": [],
+            "security_rating": [],
+            "sqale_rating": [],
+        }
+
+        has_critical_count = 0
+        has_high_count = 0
+        alert_status_ok = 0
+        alert_status_error = 0
+
+        for build in builds:
+            scan_metrics = build.get("scan_metrics", {})
+            if not scan_metrics:
+                continue
+
+            # Check if has Trivy metrics
+            has_trivy = any(k.startswith("trivy_") for k in scan_metrics.keys())
+            has_sonar = any(k.startswith("sonar_") for k in scan_metrics.keys())
+
+            if has_trivy:
+                scan_summary.builds_with_trivy += 1
+
+                # Collect Trivy metrics
+                for key, values_list in trivy_metrics.items():
+                    metric_key = f"trivy_{key}"
+                    if metric_key in scan_metrics:
+                        try:
+                            val = float(scan_metrics[metric_key])
+                            values_list.append(val)
+                        except (ValueError, TypeError):
+                            pass
+
+                # Check for critical/high
+                if scan_metrics.get("trivy_has_critical", False):
+                    has_critical_count += 1
+                if scan_metrics.get("trivy_has_high", False):
+                    has_high_count += 1
+
+            if has_sonar:
+                scan_summary.builds_with_sonar += 1
+
+                # Collect SonarQube metrics
+                for key, values_list in sonar_metrics.items():
+                    metric_key = f"sonar_{key}"
+                    if metric_key in scan_metrics:
+                        try:
+                            val = float(scan_metrics[metric_key])
+                            values_list.append(val)
+                        except (ValueError, TypeError):
+                            pass
+
+                # Alert status
+                alert_status = scan_metrics.get("sonar_alert_status", "")
+                if alert_status == "OK":
+                    alert_status_ok += 1
+                elif alert_status in ("ERROR", "WARN"):
+                    alert_status_error += 1
+
+            if has_trivy or has_sonar:
+                scan_summary.builds_with_any_scan += 1
+
+        # Calculate coverage rates
+        if scan_summary.total_builds > 0:
+            scan_summary.trivy_coverage_pct = round(
+                scan_summary.builds_with_trivy / scan_summary.total_builds * 100, 1
+            )
+            scan_summary.sonar_coverage_pct = round(
+                scan_summary.builds_with_sonar / scan_summary.total_builds * 100, 1
+            )
+
+        # Build Trivy summary
+        trivy_summary.vuln_total = self._calculate_metric_summary(
+            trivy_metrics["vuln_total"]
+        )
+        trivy_summary.vuln_critical = self._calculate_metric_summary(
+            trivy_metrics["vuln_critical"]
+        )
+        trivy_summary.vuln_high = self._calculate_metric_summary(
+            trivy_metrics["vuln_high"]
+        )
+        trivy_summary.vuln_medium = self._calculate_metric_summary(
+            trivy_metrics["vuln_medium"]
+        )
+        trivy_summary.vuln_low = self._calculate_metric_summary(
+            trivy_metrics["vuln_low"]
+        )
+        trivy_summary.misconfig_total = self._calculate_metric_summary(
+            trivy_metrics["misconfig_total"]
+        )
+        trivy_summary.misconfig_critical = self._calculate_metric_summary(
+            trivy_metrics["misconfig_critical"]
+        )
+        trivy_summary.misconfig_high = self._calculate_metric_summary(
+            trivy_metrics["misconfig_high"]
+        )
+        trivy_summary.misconfig_medium = self._calculate_metric_summary(
+            trivy_metrics["misconfig_medium"]
+        )
+        trivy_summary.misconfig_low = self._calculate_metric_summary(
+            trivy_metrics["misconfig_low"]
+        )
+        trivy_summary.secrets_count = self._calculate_metric_summary(
+            trivy_metrics["secrets_count"]
+        )
+        trivy_summary.scan_duration_ms = self._calculate_metric_summary(
+            trivy_metrics["scan_duration_ms"]
+        )
+        trivy_summary.has_critical_count = has_critical_count
+        trivy_summary.has_high_count = has_high_count
+        trivy_summary.total_scans = scan_summary.builds_with_trivy
+
+        # Build SonarQube summary
+        sonar_summary.bugs = self._calculate_metric_summary(sonar_metrics["bugs"])
+        sonar_summary.code_smells = self._calculate_metric_summary(
+            sonar_metrics["code_smells"]
+        )
+        sonar_summary.vulnerabilities = self._calculate_metric_summary(
+            sonar_metrics["vulnerabilities"]
+        )
+        sonar_summary.security_hotspots = self._calculate_metric_summary(
+            sonar_metrics["security_hotspots"]
+        )
+        sonar_summary.complexity = self._calculate_metric_summary(
+            sonar_metrics["complexity"]
+        )
+        sonar_summary.cognitive_complexity = self._calculate_metric_summary(
+            sonar_metrics["cognitive_complexity"]
+        )
+        sonar_summary.duplicated_lines_density = self._calculate_metric_summary(
+            sonar_metrics["duplicated_lines_density"]
+        )
+        sonar_summary.ncloc = self._calculate_metric_summary(sonar_metrics["ncloc"])
+
+        # Ratings
+        if sonar_metrics["reliability_rating"]:
+            sonar_summary.reliability_rating_avg = round(
+                sum(sonar_metrics["reliability_rating"])
+                / len(sonar_metrics["reliability_rating"]),
+                2,
+            )
+        if sonar_metrics["security_rating"]:
+            sonar_summary.security_rating_avg = round(
+                sum(sonar_metrics["security_rating"])
+                / len(sonar_metrics["security_rating"]),
+                2,
+            )
+        if sonar_metrics["sqale_rating"]:
+            sonar_summary.maintainability_rating_avg = round(
+                sum(sonar_metrics["sqale_rating"]) / len(sonar_metrics["sqale_rating"]),
+                2,
+            )
+
+        sonar_summary.alert_status_ok_count = alert_status_ok
+        sonar_summary.alert_status_error_count = alert_status_error
+        sonar_summary.total_scans = scan_summary.builds_with_sonar
+
+        return ScanMetricsStatisticsResponse(
+            version_id=version_id,
+            dataset_id=dataset_id,
+            scan_summary=scan_summary,
+            trivy_summary=trivy_summary,
+            sonar_summary=sonar_summary,
+        )
+
+    def _calculate_metric_summary(self, values: List[float]) -> MetricSummary:
+        """Calculate summary statistics for a list of metric values."""
+        if not values:
+            return MetricSummary()
+
+        return MetricSummary(
+            sum=round(sum(values), 2),
+            avg=round(sum(values) / len(values), 2),
+            max=round(max(values), 2),
+            min=round(min(values), 2),
+            count=len(values),
         )
 
     # =========================================================================
@@ -332,9 +589,13 @@ class StatisticsService:
         total = len(builds)
 
         if total == 0:
-            return VersionStatistics(total_features_selected=len(version.selected_features or []))
+            return VersionStatistics(
+                total_features_selected=len(version.selected_features or [])
+            )
 
-        enriched = sum(1 for b in builds if b.get("features") and len(b.get("features", {})) > 0)
+        enriched = sum(
+            1 for b in builds if b.get("features") and len(b.get("features", {})) > 0
+        )
         failed = sum(1 for b in builds if b.get("extraction_status") == "failed")
         partial = sum(
             1
@@ -344,7 +605,9 @@ class StatisticsService:
         )
 
         # Calculate feature stats
-        total_features = sum(len(b.get("features", {})) for b in builds if b.get("features"))
+        total_features = sum(
+            len(b.get("features", {})) for b in builds if b.get("features")
+        )
         avg_features = total_features / enriched if enriched > 0 else 0
 
         # Processing duration
@@ -358,7 +621,9 @@ class StatisticsService:
             failed_builds=failed,
             partial_builds=partial,
             enrichment_rate=(enriched / total * 100) if total > 0 else 0,
-            success_rate=(enriched / (enriched + failed) * 100 if (enriched + failed) > 0 else 0),
+            success_rate=(
+                enriched / (enriched + failed) * 100 if (enriched + failed) > 0 else 0
+            ),
             total_features_selected=len(version.selected_features or []),
             avg_features_per_build=round(avg_features, 2),
             total_feature_values_extracted=total_features,
@@ -388,7 +653,9 @@ class StatisticsService:
                 count=count,
                 percentage=round(count / total * 100, 1),
             )
-            for status, count in sorted(status_counts.items(), key=lambda x: x[1], reverse=True)
+            for status, count in sorted(
+                status_counts.items(), key=lambda x: x[1], reverse=True
+            )
         ]
 
     def _calculate_feature_completeness(
@@ -422,7 +689,9 @@ class StatisticsService:
                     feature_name=feature,
                     non_null_count=non_null,
                     null_count=null_count,
-                    completeness_pct=round(non_null / total * 100, 1) if total > 0 else 0,
+                    completeness_pct=(
+                        round(non_null / total * 100, 1) if total > 0 else 0
+                    ),
                     data_type=data_type,
                 )
             )
@@ -559,7 +828,9 @@ class StatisticsService:
         """Calculate Pearson correlation between two value lists."""
         # Filter to pairs where both values are not None
         pairs = [
-            (xi, yi) for xi, yi in zip(x, y, strict=False) if xi is not None and yi is not None
+            (xi, yi)
+            for xi, yi in zip(x, y, strict=False)
+            if xi is not None and yi is not None
         ]
 
         if len(pairs) < 3:

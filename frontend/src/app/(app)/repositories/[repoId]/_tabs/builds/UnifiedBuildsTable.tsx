@@ -370,9 +370,17 @@ export function UnifiedBuildsTable({
                                                         )}
                                                     </td>
                                                     <td className="px-4 py-3">
-                                                        <span className="font-medium font-mono text-xs">
-                                                            {build.ci_run_id || "—"}
-                                                        </span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-medium font-mono text-xs">
+                                                                {build.ci_run_id || "—"}
+                                                            </span>
+                                                            {/* Show Pending badge for builds ingested but not processed */}
+                                                            {build.ingestion_status === "ingested" && !build.training_build_id && (
+                                                                <Badge variant="outline" className="text-[10px] border-amber-400 text-amber-600 bg-amber-50">
+                                                                    Pending
+                                                                </Badge>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <div className="flex items-center gap-1 font-mono text-xs">

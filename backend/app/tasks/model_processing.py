@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
     bind=True,
     base=PipelineTask,
     name="app.tasks.model_ingestion.start_processing_phase",
-    queue="processing",
+    queue="model_processing",
     soft_time_limit=60,
     time_limit=120,
 )
@@ -150,7 +150,7 @@ def start_processing_phase(
     bind=True,
     base=PipelineTask,
     name="app.tasks.model_processing.dispatch_build_processing",
-    queue="processing",
+    queue="model_processing",
     soft_time_limit=300,
     time_limit=360,
 )
@@ -344,7 +344,7 @@ def dispatch_build_processing(
     bind=True,
     base=PipelineTask,
     name="app.tasks.processing.finalize_model_processing",
-    queue="processing",
+    queue="model_processing",
     soft_time_limit=60,
     time_limit=120,
 )
@@ -468,7 +468,7 @@ def finalize_model_processing(
     bind=True,
     base=PipelineTask,
     name="app.tasks.processing.finalize_prediction",
-    queue="prediction",
+    queue="model_prediction",
     soft_time_limit=60,
     time_limit=120,
 )
@@ -601,7 +601,7 @@ def finalize_prediction(
     bind=True,
     base=SafeTask,
     name="app.tasks.processing.process_workflow_run",
-    queue="processing",
+    queue="model_processing",
     soft_time_limit=600,
     time_limit=900,
     max_retries=3,
@@ -759,7 +759,7 @@ def process_workflow_run(
     bind=True,
     base=PipelineTask,
     name="app.tasks.processing.retry_failed_builds",
-    queue="processing",
+    queue="model_processing",
     soft_time_limit=300,
     time_limit=360,
 )
@@ -928,7 +928,7 @@ def retry_failed_builds(self: PipelineTask, repo_config_id: str) -> Dict[str, An
     bind=True,
     base=PipelineTask,
     name="app.tasks.processing.handle_processing_chain_error",
-    queue="processing",
+    queue="model_processing",
     soft_time_limit=60,
     time_limit=120,
 )
@@ -1032,7 +1032,7 @@ def handle_processing_chain_error(
     bind=True,
     base=SafeTask,
     name="app.tasks.processing.predict_builds_batch",
-    queue="prediction",
+    queue="model_prediction",
     soft_time_limit=300,
     time_limit=360,
     max_retries=3,

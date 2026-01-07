@@ -45,23 +45,37 @@ celery_app.conf.update(
             Exchange("buildguard"),
             routing_key="pipeline.default",
         ),
-        # Ingestion: clone repos, create worktrees, download logs, fetch builds
+        # Model Pipeline Queues
         Queue(
-            "ingestion",
+            "model_ingestion",
             Exchange("buildguard"),
-            routing_key="pipeline.ingestion",
+            routing_key="pipeline.model_ingestion",
         ),
-        # Processing: feature extraction, enrichment, export
         Queue(
-            "processing",
+            "model_processing",
             Exchange("buildguard"),
-            routing_key="pipeline.processing",
+            routing_key="pipeline.model_processing",
         ),
-        # Validation: dataset repo/build validation (can be long-running)
         Queue(
-            "validation",
+            "model_prediction",
             Exchange("buildguard"),
-            routing_key="pipeline.validation",
+            routing_key="pipeline.model_prediction",
+        ),
+        # Dataset Enrichment Pipeline Queues
+        Queue(
+            "dataset_ingestion",
+            Exchange("buildguard"),
+            routing_key="pipeline.dataset_ingestion",
+        ),
+        Queue(
+            "dataset_processing",
+            Exchange("buildguard"),
+            routing_key="pipeline.dataset_processing",
+        ),
+        Queue(
+            "dataset_validation",
+            Exchange("buildguard"),
+            routing_key="pipeline.dataset_validation",
         ),
         # Sonar: CPU-intensive external tool, long-running
         Queue(
@@ -74,12 +88,6 @@ celery_app.conf.update(
             "trivy_scan",
             Exchange("buildguard"),
             routing_key="pipeline.trivy_scan",
-        ),
-        # Prediction: ML model inference, separate from processing
-        Queue(
-            "prediction",
-            Exchange("buildguard"),
-            routing_key="pipeline.prediction",
         ),
     ],
     broker_connection_retry_on_startup=True,

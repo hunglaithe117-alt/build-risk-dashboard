@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
     bind=True,
     base=PipelineTask,
     name="app.tasks.model_processing.start_model_processing",
-    queue="processing",
+    queue="model_processing",
     soft_time_limit=120,
     time_limit=180,
 )
@@ -139,7 +139,7 @@ def start_model_processing(
     bind=True,
     base=PipelineTask,
     name="app.tasks.model_ingestion.ingest_model_builds",
-    queue="ingestion",
+    queue="model_ingestion",
     soft_time_limit=120,
     time_limit=180,
 )
@@ -277,7 +277,7 @@ def ingest_model_builds(
     bind=True,
     base=SafeTask,
     name="app.tasks.model_ingestion.fetch_builds_until_existing",
-    queue="ingestion",
+    queue="model_ingestion",
     soft_time_limit=600,
     time_limit=900,
     max_retries=3,
@@ -505,7 +505,7 @@ def fetch_builds_until_existing(
     bind=True,
     base=SafeTask,
     name="app.tasks.model_ingestion.fetch_builds_batch",
-    queue="ingestion",
+    queue="model_ingestion",
     soft_time_limit=300,
     time_limit=360,
     max_retries=3,
@@ -667,7 +667,7 @@ def fetch_builds_batch(
     bind=True,
     base=PipelineTask,
     name="app.tasks.model_ingestion.aggregate_fetch_results",
-    queue="ingestion",
+    queue="model_ingestion",
     soft_time_limit=60,
     time_limit=120,
 )
@@ -769,7 +769,7 @@ def aggregate_fetch_results(
     bind=True,
     base=PipelineTask,
     name="app.tasks.model_ingestion.handle_fetch_chord_error",
-    queue="ingestion",
+    queue="model_ingestion",
     soft_time_limit=30,
     time_limit=60,
 )

@@ -231,7 +231,7 @@ services:
       uv run celery -A app.celery_app worker 
       --loglevel=info 
       --concurrency=${CELERY_CONCURRENCY:-4}
-      -Q pipeline.default,ingestion,processing,validation,sonar_scan,trivy_scan
+      -Q pipeline.default,model_ingestion,model_processing,model_prediction,dataset_ingestion,dataset_processing,dataset_validation,sonar_scan,trivy_scan
     user: "${APP_UID:-1000}:${APP_GID:-1000}"
     environment:
       MONGODB_URI: mongodb://mongo:27017

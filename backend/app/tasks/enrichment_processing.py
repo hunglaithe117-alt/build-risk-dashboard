@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.start_enrichment_processing",
-    queue="processing",
+    queue="dataset_processing",
     soft_time_limit=60,
     time_limit=120,
 )
@@ -110,7 +110,7 @@ def start_enrichment_processing(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.dispatch_scans_and_processing",
-    queue="processing",
+    queue="dataset_processing",
     soft_time_limit=30,
     time_limit=60,
 )
@@ -165,7 +165,7 @@ def dispatch_scans_and_processing(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.handle_enrichment_processing_chain_error",
-    queue="processing",
+    queue="dataset_processing",
     soft_time_limit=60,
     time_limit=120,
 )
@@ -260,7 +260,7 @@ def handle_enrichment_processing_chain_error(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.dispatch_enrichment_batches",
-    queue="processing",
+    queue="dataset_processing",
     soft_time_limit=120,
     time_limit=180,
 )
@@ -402,7 +402,7 @@ def dispatch_enrichment_batches(
     bind=True,
     base=SafeTask,
     name="app.tasks.version_enrichment.process_single_enrichment",
-    queue="processing",
+    queue="dataset_processing",
     soft_time_limit=300,
     time_limit=600,
     max_retries=3,
@@ -531,7 +531,7 @@ def process_single_enrichment(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.reprocess_failed_enrichment_builds",
-    queue="processing",
+    queue="dataset_processing",
     soft_time_limit=300,
     time_limit=360,
 )
@@ -657,7 +657,7 @@ def reprocess_failed_enrichment_builds(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.finalize_enrichment",
-    queue="processing",
+    queue="dataset_processing",
     soft_time_limit=30,
     time_limit=60,
 )
@@ -761,7 +761,7 @@ def finalize_enrichment(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.process_version_export_job",
-    queue="processing",
+    queue="dataset_processing",
     soft_time_limit=600,
     time_limit=900,
 )

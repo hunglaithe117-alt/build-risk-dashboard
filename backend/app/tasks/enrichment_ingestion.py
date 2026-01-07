@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.start_enrichment",
-    queue="ingestion",
+    queue="dataset_ingestion",
     soft_time_limit=120,
     time_limit=180,
 )
@@ -326,7 +326,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.aggregate_ingestion_results",
-    queue="ingestion",
+    queue="dataset_ingestion",
     soft_time_limit=30,
     time_limit=60,
 )
@@ -479,7 +479,7 @@ def aggregate_ingestion_results(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.handle_enrichment_chord_error",
-    queue="ingestion",
+    queue="dataset_ingestion",
     soft_time_limit=60,
     time_limit=120,
 )
@@ -581,7 +581,7 @@ def handle_enrichment_chord_error(
     bind=True,
     base=PipelineTask,
     name="app.tasks.version_enrichment.reingest_failed_builds",
-    queue="ingestion",
+    queue="dataset_ingestion",
     soft_time_limit=300,
     time_limit=360,
 )

@@ -1,0 +1,297 @@
+{
+  "apiVersion": 1,
+  "groups": [
+    {
+      "orgId": 1,
+      "name": "Build Risk Alerts",
+      "folder": "Build Risk Dashboard",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "celery-workers-offline",
+          "title": "Celery Workers Offline",
+          "condition": "C",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "datasourceUid": "infinity",
+              "model": {
+                "type": "json",
+                "source": "url",
+                "url": "${API_BASE}/monitoring/system",
+                "root_selector": "celery.worker_count"
+              }
+            },
+            {
+              "refId": "B",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [1],
+                      "type": "lt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": ["A"]
+                    },
+                    "reducer": {
+                      "type": "last"
+                    },
+                    "type": "query"
+                  }
+                ],
+                "refId": "B",
+                "type": "classic_conditions"
+              }
+            }
+          ],
+          "noDataState": "Alerting",
+          "execErrState": "Alerting",
+          "for": "2m",
+          "annotations": {
+            "summary": "No Celery workers are running",
+            "description": "Celery worker count has dropped to 0. Background tasks will not be processed."
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "celery"
+          }
+        },
+        {
+          "uid": "queue-backlog-high",
+          "title": "Queue Backlog High",
+          "condition": "B",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "infinity",
+              "model": {
+                "type": "json",
+                "source": "url",
+                "url": "${API_BASE}/monitoring/system",
+                "root_selector": "celery.queues"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [50],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "or"
+                    },
+                    "query": {
+                      "params": ["A"]
+                    },
+                    "reducer": {
+                      "type": "max"
+                    }
+                  }
+                ],
+                "refId": "B",
+                "type": "classic_conditions"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "OK",
+          "for": "5m",
+          "annotations": {
+            "summary": "High queue backlog detected",
+            "description": "One or more Celery queues have more than 50 pending tasks. Consider scaling workers."
+          },
+          "labels": {
+            "severity": "warning",
+            "service": "celery"
+          }
+        },
+        {
+          "uid": "redis-disconnected",
+          "title": "Redis Disconnected",
+          "condition": "B",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "infinity",
+              "model": {
+                "type": "json",
+                "source": "url",
+                "url": "${API_BASE}/monitoring/system",
+                "root_selector": "redis.connected"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [],
+                      "type": "eq_false"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": ["A"]
+                    },
+                    "reducer": {
+                      "type": "last"
+                    }
+                  }
+                ],
+                "refId": "B",
+                "type": "classic_conditions"
+              }
+            }
+          ],
+          "noDataState": "Alerting",
+          "execErrState": "Alerting",
+          "for": "1m",
+          "annotations": {
+            "summary": "Redis connection lost",
+            "description": "Cannot connect to Redis. Celery task queue and caching will not work."
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "redis"
+          }
+        },
+        {
+          "uid": "mongodb-disconnected",
+          "title": "MongoDB Disconnected",
+          "condition": "B",
+          "data": [
+            {
+              "refId": "A",
+              "datasourceUid": "infinity",
+              "model": {
+                "type": "json",
+                "source": "url",
+                "url": "${API_BASE}/monitoring/system",
+                "root_selector": "mongodb.connected"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [],
+                      "type": "eq_false"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": ["A"]
+                    },
+                    "reducer": {
+                      "type": "last"
+                    }
+                  }
+                ],
+                "refId": "B",
+                "type": "classic_conditions"
+              }
+            }
+          ],
+          "noDataState": "Alerting",
+          "execErrState": "Alerting",
+          "for": "1m",
+          "annotations": {
+            "summary": "MongoDB connection lost",
+            "description": "Cannot connect to MongoDB. Application data storage is unavailable."
+          },
+          "labels": {
+            "severity": "critical",
+            "service": "mongodb"
+          }
+        }
+      ]
+    },
+    {
+      "orgId": 1,
+      "name": "Log-Based Alerts",
+      "folder": "Build Risk Dashboard",
+      "interval": "1m",
+      "rules": [
+        {
+          "uid": "error-rate-high",
+          "title": "High Error Rate",
+          "condition": "B",
+          "data": [
+            {
+              "refId": "A",
+              "relativeTimeRange": {
+                "from": 300,
+                "to": 0
+              },
+              "datasourceUid": "loki",
+              "model": {
+                "expr": "sum(count_over_time({job=\"backend\"} |= \"ERROR\" [5m]))",
+                "refId": "A"
+              }
+            },
+            {
+              "refId": "B",
+              "datasourceUid": "__expr__",
+              "model": {
+                "conditions": [
+                  {
+                    "evaluator": {
+                      "params": [20],
+                      "type": "gt"
+                    },
+                    "operator": {
+                      "type": "and"
+                    },
+                    "query": {
+                      "params": ["A"]
+                    },
+                    "reducer": {
+                      "type": "last"
+                    }
+                  }
+                ],
+                "refId": "B",
+                "type": "classic_conditions"
+              }
+            }
+          ],
+          "noDataState": "OK",
+          "execErrState": "OK",
+          "for": "5m",
+          "annotations": {
+            "summary": "High error rate detected",
+            "description": "More than 20 errors logged in the last 5 minutes. Check application logs for details."
+          },
+          "labels": {
+            "severity": "warning",
+            "service": "backend"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,9 +1,35 @@
 apiVersion: 1
 
 datasources:
+  # Loki - Log aggregation
   - name: Loki
     type: loki
     access: proxy
     url: http://loki:3100
+    isDefault: false
     jsonData:
       maxLines: 1000
+      derivedFields:
+        - datasourceUid: prometheus
+          matcherRegex: correlation_id=(\w+)
+          name: correlation_id
+
+  # Prometheus - Metrics
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: 2.45.0
+
+  # Infinity - JSON API for custom dashboards
+  - name: Infinity
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    uid: infinity
+    jsonData:
+      global_queries: []

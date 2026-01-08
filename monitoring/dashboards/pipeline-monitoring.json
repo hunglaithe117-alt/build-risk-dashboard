@@ -1,0 +1,525 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "panels": [],
+      "title": "Model Pipeline Status",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "queued": { "color": "blue", "index": 0, "text": "QUEUED" },
+                "fetching": { "color": "yellow", "index": 1, "text": "FETCHING" },
+                "ingesting": { "color": "orange", "index": 2, "text": "INGESTING" },
+                "ingested": { "color": "purple", "index": 3, "text": "INGESTED" },
+                "processing": { "color": "blue", "index": 4, "text": "PROCESSING" },
+                "processed": { "color": "green", "index": 5, "text": "PROCESSED" },
+                "failed": { "color": "red", "index": 6, "text": "FAILED" }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/repositories?page=1&page_size=100",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "Model Repository Pipeline Status",
+      "transformations": [
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "status": {
+                "aggregations": ["count"],
+                "operation": "groupby"
+              }
+            }
+          }
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "panels": [],
+      "title": "Dataset Enrichment Status",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "pending": { "color": "blue", "index": 0 },
+                "validating": { "color": "yellow", "index": 1 },
+                "ready": { "color": "purple", "index": 2 },
+                "ingesting": { "color": "orange", "index": 3 },
+                "processing": { "color": "blue", "index": 4 },
+                "completed": { "color": "green", "index": 5 },
+                "failed": { "color": "red", "index": 6 }
+              },
+              "type": "value"
+            }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 6 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/projects?page=1&page_size=100",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "Dataset Enrichment Status",
+      "transformations": [
+        {
+          "id": "groupBy",
+          "options": {
+            "fields": {
+              "status": {
+                "aggregations": ["count"],
+                "operation": "groupby"
+              }
+            }
+          }
+        }
+      ],
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 },
+      "id": 102,
+      "panels": [],
+      "title": "Celery Workers & Queues",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "online": { "color": "green", "index": 0, "text": "ONLINE" },
+                "offline": { "color": "red", "index": 1, "text": "OFFLINE" }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 11 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/^status$/",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "root_selector": "celery",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/monitoring/system",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "Celery Status",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 11 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/^worker_count$/",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "root_selector": "celery",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/monitoring/system",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "Worker Count",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "red", "value": 50 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 11 },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "root_selector": "celery.queues",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/monitoring/system",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "Queue Depths",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 103,
+      "panels": [],
+      "title": "Infrastructure Status",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "options": {
+                "true": { "color": "green", "index": 0, "text": "Connected" },
+                "false": { "color": "red", "index": 1, "text": "Disconnected" }
+              },
+              "type": "value"
+            }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
+      "id": 6,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/^connected$/",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "root_selector": "redis",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/monitoring/system",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "🔴 Redis",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "true": { "color": "green", "text": "Connected" },
+                "false": { "color": "red", "text": "Disconnected" }
+              },
+              "type": "value"
+            }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
+      "id": 7,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/^connected$/",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "root_selector": "mongodb",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/monitoring/system",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "🍃 MongoDB",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "true": { "color": "green", "text": "Connected" },
+                "false": { "color": "red", "text": "Disconnected" }
+              },
+              "type": "value"
+            }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
+      "id": 8,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/^connected$/",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "root_selector": "trivy",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/monitoring/system",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "🔒 Trivy",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "true": { "color": "green", "text": "Connected" },
+                "false": { "color": "red", "text": "Disconnected" }
+              },
+              "type": "value"
+            }
+          ]
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
+      "id": 9,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/^connected$/",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "root_selector": "sonarqube",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/monitoring/system",
+          "url_options": { "method": "GET" }
+        }
+      ],
+      "title": "📊 SonarQube",
+      "type": "stat"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["build-risk", "pipeline", "monitoring"],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "http://localhost:8000/api",
+          "value": "http://localhost:8000/api"
+        },
+        "hide": 0,
+        "name": "API_BASE",
+        "options": [
+          {
+            "selected": true,
+            "text": "http://localhost:8000/api",
+            "value": "http://localhost:8000/api"
+          }
+        ],
+        "query": "http://localhost:8000/api",
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Pipeline Monitoring",
+  "uid": "pipeline-monitoring",
+  "version": 1
+}

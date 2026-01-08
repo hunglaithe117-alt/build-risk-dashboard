@@ -59,8 +59,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { formatDuration, cn } from "@/lib/utils";
 
 const GRID_COLS = 12; // Use 12-column grid for more flexibility
-const GRID_COLS_TABLET = 6; // Tablet uses 6 columns for stacking
-const TABLET_BREAKPOINT = 1024; // Switch to tablet cols below this width
+const GRID_COLS_LAPTOP = 6; // Laptop uses 6 columns for stacking
+const LAPTOP_BREAKPOINT = 1280; // Below 1280px is Laptop mode (1024-1279px)
 const ROW_HEIGHT = 100;
 
 // Preset layouts
@@ -130,8 +130,8 @@ export default function OverviewPage() {
   }, []);
 
   // Dynamic grid cols based on screen width
-  const isTabletView = containerWidth < TABLET_BREAKPOINT;
-  const gridCols = isTabletView ? GRID_COLS_TABLET : GRID_COLS;
+  const isLaptopView = containerWidth < LAPTOP_BREAKPOINT;
+  const gridCols = isLaptopView ? GRID_COLS_LAPTOP : GRID_COLS;
 
   useEffect(() => {
     if (authLoading || !authenticated) {
@@ -643,6 +643,143 @@ export default function OverviewPage() {
             isEditing={isEditing}
           />
         );
+      // Admin-only widgets
+      case "dataset_enrichment_summary":
+        const enrichmentStats = summary?.admin_extras?.dataset_enrichment;
+        return (
+          <Card className={commonCardClass}>
+            {isEditing && (
+              <div className="absolute top-2 left-2 z-10">
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm truncate">{widget.title}</CardTitle>
+              <CardDescription className="text-xs truncate">
+                Dataset Enrichment Pipeline
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center justify-center gap-4 h-[calc(100%-60px)]">
+              <div className="flex flex-col items-center">
+                <div className="text-2xl font-bold text-blue-600">{enrichmentStats?.active_projects ?? 0}</div>
+                <div className="text-xs text-muted-foreground">Projects</div>
+              </div>
+              <div className="flex flex-col items-center">
+                <div className="text-2xl font-bold text-amber-600">{enrichmentStats?.processing_versions ?? 0}</div>
+                <div className="text-xs text-muted-foreground">Processing</div>
+              </div>
+              <div className="flex flex-col items-center">
+                <div className="text-2xl font-bold text-green-600">{enrichmentStats?.total_enriched_builds ?? 0}</div>
+                <div className="text-xs text-muted-foreground">Enriched</div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      case "monitoring_summary":
+        const monitoringStats = summary?.admin_extras?.monitoring;
+        const hasErrors = (monitoringStats?.error_count_24h ?? 0) > 0;
+        return (
+          <Card className={cn(commonCardClass, hasErrors && "border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-900/20")}>
+            {isEditing && (
+              <div className="absolute top-2 left-2 z-10">
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm truncate">{widget.title}</CardTitle>
+              <CardDescription className="text-xs truncate">
+                System monitoring (24h)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center justify-center gap-4 h-[calc(100%-60px)]">
+              <div className="flex flex-col items-center">
+                <div className={`text-2xl font-bold ${hasErrors ? "text-amber-600" : "text-green-600"}`}>
+                  {monitoringStats?.error_count_24h ?? 0}
+                </div>
+                <div className="text-xs text-muted-foreground">Errors</div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      case "user_activity":
+        const totalUsers = summary?.admin_extras?.total_users ?? 0;
+        return (
+          <StatCard
+            className={commonCardClass}
+            icon={<GitBranch className="h-5 w-5 text-indigo-500 flex-shrink-0" />}
+            title={widget.title}
+            value={totalUsers}
+            sublabel="Registered users"
+            isEditing={isEditing}
+          />
+        );
+      // User-only widget
+      case "getting_started":
+        const hasRepos = totalRepositories > 0;
+        const hasBuilds = metrics.total_builds > 0;
+        if (hasRepos && hasBuilds) {
+          // User already has data, show minimal widget
+          return (
+            <Card className={commonCardClass}>
+              <CardContent className="flex items-center justify-center h-full">
+                <div className="text-center space-y-2">
+                  <ShieldCheck className="h-8 w-8 mx-auto text-green-500" />
+                  <p className="text-sm font-medium text-green-600">You&apos;re all set!</p>
+                  <p className="text-xs text-muted-foreground">
+                    {totalRepositories} repos, {metrics.total_builds} builds
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        }
+        return (
+          <Card className={cn(commonCardClass, "border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/20")}>
+            {isEditing && (
+              <div className="absolute top-2 left-2 z-10">
+                <GripVertical className="h-4 w-4 text-muted-foreground" />
+              </div>
+            )}
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm truncate">{widget.title}</CardTitle>
+              <CardDescription className="text-xs truncate">
+                Quick start guide
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2 overflow-auto">
+              <div className="flex items-center gap-2">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${hasRepos ? "bg-green-500 text-white" : "bg-blue-500 text-white"}`}>
+                  {hasRepos ? "✓" : "1"}
+                </div>
+                <span className={`text-sm ${hasRepos ? "line-through text-muted-foreground" : ""}`}>
+                  Import a repository
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${hasBuilds ? "bg-green-500 text-white" : "bg-slate-300 text-slate-600"}`}>
+                  {hasBuilds ? "✓" : "2"}
+                </div>
+                <span className={`text-sm ${hasBuilds ? "line-through text-muted-foreground" : "text-muted-foreground"}`}>
+                  Wait for ingestion
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold bg-slate-300 text-slate-600">
+                  3
+                </div>
+                <span className="text-sm text-muted-foreground">Start processing</span>
+              </div>
+              {!hasRepos && !isEditing && (
+                <button
+                  onClick={() => router.push("/repositories/import")}
+                  className="mt-2 w-full px-3 py-1.5 text-xs font-medium text-white bg-blue-500 rounded hover:bg-blue-600 transition"
+                >
+                  Import Repository
+                </button>
+              )}
+            </CardContent>
+          </Card>
+        );
       default:
         return (
           <Card className={commonCardClass}>
@@ -810,12 +947,12 @@ export default function OverviewPage() {
         className="layout"
         layout={layout}
         cols={gridCols}
-        rowHeight={isTabletView ? 90 : ROW_HEIGHT}
+        rowHeight={isLaptopView ? 90 : ROW_HEIGHT}
         width={containerWidth}
         onLayoutChange={handleLayoutChange}
         isDraggable={isEditing}
         isResizable={isEditing}
-        margin={isTabletView ? [8, 8] : [12, 12]}
+        margin={isLaptopView ? [8, 8] : [12, 12]}
         containerPadding={[0, 0]}
         useCSSTransforms
       >

@@ -1,0 +1,246 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Dataset Enrichment Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "root_selector": "total",
+          "url": "${API_BASE}/projects?page=1&page_size=1"
+        }
+      ],
+      "title": "Total Datasets",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "root_selector": "items",
+          "url": "${API_BASE}/projects?page=1&page_size=100"
+        }
+      ],
+      "title": "Completed",
+      "transformations": [
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [{ "fieldName": "status", "config": { "id": "equal", "options": { "value": "completed" }}}],
+            "type": "include"
+          }
+        },
+        { "id": "calculateField", "options": { "mode": "reduceRow", "reduce": { "reducer": "count" }}}
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "options": { "colorMode": "value", "graphMode": "none" },
+      "title": "In Progress",
+      "transformations": [
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [{ "fieldName": "status", "config": { "id": "regex", "options": { "value": "validating|ingesting|processing" }}}],
+            "type": "include"
+          }
+        },
+        { "id": "calculateField", "options": { "mode": "reduceRow", "reduce": { "reducer": "count" }}}
+      ],
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }] }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "options": { "colorMode": "value", "graphMode": "none" },
+      "title": "Failed",
+      "transformations": [
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [{ "fieldName": "status", "config": { "id": "equal", "options": { "value": "failed" }}}],
+            "type": "include"
+          }
+        },
+        { "id": "calculateField", "options": { "mode": "reduceRow", "reduce": { "reducer": "count" }}}
+      ],
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "Dataset Status Table",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "auto" }},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "status" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  { "options": { "pending": { "color": "gray", "text": "PENDING" }}, "type": "value" },
+                  { "options": { "validating": { "color": "yellow", "text": "VALIDATING" }}, "type": "value" },
+                  { "options": { "ready": { "color": "purple", "text": "READY" }}, "type": "value" },
+                  { "options": { "ingesting": { "color": "orange", "text": "INGESTING" }}, "type": "value" },
+                  { "options": { "processing": { "color": "blue", "text": "PROCESSING" }}, "type": "value" },
+                  { "options": { "completed": { "color": "green", "text": "COMPLETED" }}, "type": "value" },
+                  { "options": { "failed": { "color": "red", "text": "FAILED" }}, "type": "value" }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-background" }}
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
+      "id": 5,
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "targets": [
+        {
+          "columns": [
+            { "selector": "name", "text": "Dataset Name", "type": "string" },
+            { "selector": "status", "text": "Status", "type": "string" },
+            { "selector": "rows", "text": "Total Rows", "type": "number" },
+            { "selector": "created_at", "text": "Created", "type": "timestamp" },
+            { "selector": "updated_at", "text": "Updated", "type": "timestamp" }
+          ],
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "root_selector": "items",
+          "url": "${API_BASE}/projects?page=1&page_size=50"
+        }
+      ],
+      "title": "All Datasets",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "id": 102,
+      "title": "Feature Extraction Audit Logs",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "status" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  { "options": { "completed": { "color": "green" }}, "type": "value" },
+                  { "options": { "failed": { "color": "red" }}, "type": "value" },
+                  { "options": { "processing": { "color": "blue" }}, "type": "value" }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-background" }}
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 17 },
+      "id": 6,
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "targets": [
+        {
+          "columns": [
+            { "selector": "category", "text": "Category", "type": "string" },
+            { "selector": "status", "text": "Status", "type": "string" },
+            { "selector": "feature_count", "text": "Features", "type": "number" },
+            { "selector": "duration_ms", "text": "Duration (ms)", "type": "number" },
+            { "selector": "nodes_succeeded", "text": "Nodes OK", "type": "number" },
+            { "selector": "nodes_failed", "text": "Nodes Failed", "type": "number" },
+            { "selector": "completed_at", "text": "Completed", "type": "timestamp" }
+          ],
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "root_selector": "logs",
+          "url": "${API_BASE}/monitoring/audit-logs?limit=30"
+        }
+      ],
+      "title": "Recent Feature Extraction Logs",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["build-risk", "dataset-enrichment"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "http://localhost:8000/api", "value": "http://localhost:8000/api" },
+        "name": "API_BASE",
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "title": "Dataset Enrichment Details",
+  "uid": "dataset-enrichment-details",
+  "version": 1
+}

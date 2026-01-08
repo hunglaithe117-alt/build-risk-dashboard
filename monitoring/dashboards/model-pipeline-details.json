@@ -1,0 +1,300 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Model Pipeline Overview",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["sum"], "fields": "/^builds_fetched$/", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "root_selector": "items",
+          "url": "${API_BASE}/repositories?page=1&page_size=100"
+        }
+      ],
+      "title": "Total Fetched",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "yellow", "value": null }]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["sum"], "fields": "/^builds_ingested$/", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "root_selector": "items",
+          "url": "${API_BASE}/repositories?page=1&page_size=100"
+        }
+      ],
+      "title": "Total Ingested",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["sum"], "fields": "/^builds_completed$/", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "root_selector": "items",
+          "url": "${API_BASE}/repositories?page=1&page_size=100"
+        }
+      ],
+      "title": "Total Processed",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["sum"], "fields": "/^builds_processing_failed$/", "values": false }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "root_selector": "items",
+          "url": "${API_BASE}/repositories?page=1&page_size=100"
+        }
+      ],
+      "title": "Total Failed",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 80 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area"
+      },
+      "title": "Pipeline Success Rate",
+      "type": "stat",
+      "transformations": [
+        {
+          "id": "calculateField",
+          "options": {
+            "mode": "binary",
+            "reduce": { "reducer": "sum" }
+          }
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "Repository Status Table",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "status" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  { "options": { "queued": { "color": "blue", "text": "QUEUED" }}, "type": "value" },
+                  { "options": { "fetching": { "color": "yellow", "text": "FETCHING" }}, "type": "value" },
+                  { "options": { "ingesting": { "color": "orange", "text": "INGESTING" }}, "type": "value" },
+                  { "options": { "ingested": { "color": "purple", "text": "INGESTED" }}, "type": "value" },
+                  { "options": { "processing": { "color": "blue", "text": "PROCESSING" }}, "type": "value" },
+                  { "options": { "processed": { "color": "green", "text": "PROCESSED" }}, "type": "value" },
+                  { "options": { "failed": { "color": "red", "text": "FAILED" }}, "type": "value" }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-background" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
+      "id": 6,
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "targets": [
+        {
+          "columns": [
+            { "selector": "full_name", "text": "Repository", "type": "string" },
+            { "selector": "ci_provider", "text": "CI Provider", "type": "string" },
+            { "selector": "status", "text": "Status", "type": "string" },
+            { "selector": "builds_fetched", "text": "Fetched", "type": "number" },
+            { "selector": "builds_ingested", "text": "Ingested", "type": "number" },
+            { "selector": "builds_completed", "text": "Processed", "type": "number" },
+            { "selector": "builds_processing_failed", "text": "Failed", "type": "number" },
+            { "selector": "last_synced_at", "text": "Last Sync", "type": "timestamp" }
+          ],
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "root_selector": "items",
+          "url": "${API_BASE}/repositories?page=1&page_size=50"
+        }
+      ],
+      "title": "All Repositories",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "id": 102,
+      "title": "Recent Builds with Predictions",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "predicted_label" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  { "options": { "LOW": { "color": "green" }}, "type": "value" },
+                  { "options": { "MEDIUM": { "color": "orange" }}, "type": "value" },
+                  { "options": { "HIGH": { "color": "red" }}, "type": "value" }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "mode": "basic", "type": "color-background" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 17 },
+      "id": 7,
+      "options": { "cellHeight": "sm", "showHeader": true },
+      "targets": [
+        {
+          "columns": [
+            { "selector": "build_number", "text": "Build #", "type": "number" },
+            { "selector": "branch", "text": "Branch", "type": "string" },
+            { "selector": "conclusion", "text": "CI Result", "type": "string" },
+            { "selector": "predicted_label", "text": "Risk Level", "type": "string" },
+            { "selector": "prediction_confidence", "text": "Confidence", "type": "number" },
+            { "selector": "created_at", "text": "Created", "type": "timestamp" }
+          ],
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "url": "${API_BASE}/dashboard/recent-builds?limit=30"
+        }
+      ],
+      "title": "Recent Builds with Predictions",
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["build-risk", "model-pipeline"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "http://localhost:8000/api", "value": "http://localhost:8000/api" },
+        "name": "API_BASE",
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "title": "Model Pipeline Details",
+  "uid": "model-pipeline-details",
+  "version": 1
+}

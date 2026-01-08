@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'Build Risk Dashboards'
+    orgId: 1
+    folder: 'Build Risk Dashboard'
+    folderUid: 'build-risk'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards/json

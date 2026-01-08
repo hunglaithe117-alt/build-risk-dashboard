@@ -306,26 +306,37 @@ class ModelBuildService:
     def get_recent_builds(
         self, limit: int = 10, current_user: dict = None
     ) -> List[BuildSummary]:
-        """Get most recent builds across repos accessible to user."""
+        """Get most recent builds across repos accessible to user.
+
+        Only returns builds from IMPORTED repositories (status='imported').
+        - Admin: sees all imported repos
+        - User: sees only repos in their github_accessible_repos that are imported
+        """
         user_role = current_user.get("role", "user") if current_user else "admin"
         accessible_repos = (
             current_user.get("github_accessible_repos", []) if current_user else []
         )
 
-        # Build query filter based on RBAC
-        # Admin sees all, users see filtered by accessible repos
-        query = {}
-        if user_role != "admin" and accessible_repos:
-            # Get raw_repo_ids for accessible repos
-            repo_filter = {
-                "full_name": {"$in": accessible_repos},
-            }
-            repos = self.db.repositories.find(repo_filter, {"raw_repo_id": 1})
-            raw_repo_ids = [r["raw_repo_id"] for r in repos if r.get("raw_repo_id")]
+        # Build repository filter - MUST be imported repos
+        repo_filter: dict = {"status": "imported"}
 
-            if not raw_repo_ids:
-                return []
-            query["raw_repo_id"] = {"$in": raw_repo_ids}
+        # For non-admin users, also filter by accessible repos
+        if user_role != "admin" and accessible_repos:
+            repo_filter["full_name"] = {"$in": accessible_repos}
+        elif user_role != "admin" and not accessible_repos:
+            # User has no accessible repos, return empty
+            return []
+
+        # Get raw_repo_ids from imported repositories only
+        repos = list(self.db.repositories.find(repo_filter, {"raw_repo_id": 1}))
+        raw_repo_ids = [r["raw_repo_id"] for r in repos if r.get("raw_repo_id")]
+
+        if not raw_repo_ids:
+            # No imported repos found, return empty
+            return []
+
+        # Query raw_build_runs filtered by imported repos
+        query = {"raw_repo_id": {"$in": raw_repo_ids}}
 
         raw_cursor = (
             self.db.raw_build_runs.find(query).sort("created_at", -1).limit(limit)
@@ -335,7 +346,7 @@ class ModelBuildService:
         if not raw_builds:
             return []
 
-        # Get training data
+        # Get training data (predictions)
         raw_ids = [b["_id"] for b in raw_builds]
         training_cursor = self.db.model_training_builds.find(
             {"raw_build_run_id": {"$in": raw_ids}}
@@ -370,6 +381,13 @@ class ModelBuildService:
                     ),
                     missing_resources=(
                         training.get("missing_resources", []) if training else []
+                    ),
+                    # Add prediction fields
+                    predicted_label=(
+                        training.get("predicted_label") if training else None
+                    ),
+                    prediction_confidence=(
+                        training.get("prediction_confidence") if training else None
                     ),
                 )
             )

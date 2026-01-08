@@ -4,7 +4,13 @@ from bson import ObjectId
 from pymongo.database import Database
 
 from app.dtos import DashboardMetrics, DashboardSummaryResponse, RepoDistributionEntry
-from app.dtos.dashboard import DashboardLayoutResponse, WidgetConfigDto
+from app.dtos.dashboard import (
+    AdminDashboardExtras,
+    DashboardLayoutResponse,
+    DatasetEnrichmentStats,
+    MonitoringSummary,
+    WidgetConfigDto,
+)
 from app.entities.user_dashboard_layout import (
     DEFAULT_WIDGETS,
     UserDashboardLayout,
@@ -22,7 +28,9 @@ class DashboardService:
         self.layout_repo = UserDashboardLayoutRepository(db)
         self._dataset_repo = DatasetRepository(db)
 
-    def get_summary(self, current_user: Optional[dict] = None) -> DashboardSummaryResponse:
+    def get_summary(
+        self, current_user: Optional[dict] = None
+    ) -> DashboardSummaryResponse:
         """
         Get dashboard summary with RBAC filtering.
 
@@ -30,7 +38,9 @@ class DashboardService:
         - User: sees only repos in their github_accessible_repos
         """
         user_role = current_user.get("role", "user") if current_user else "admin"
-        accessible_repos = current_user.get("github_accessible_repos", []) if current_user else []
+        accessible_repos = (
+            current_user.get("github_accessible_repos", []) if current_user else []
+        )
 
         # Base repo filter
         repo_filter: dict = {"status": "imported"}
@@ -52,7 +62,9 @@ class DashboardService:
         # 3. Success rate
         success_filter = {**build_filter, "tr_status": "passed"}
         successful_builds = self.build_collection.count_documents(success_filter)
-        success_rate = (successful_builds / total_builds * 100) if total_builds > 0 else 0.0
+        success_rate = (
+            (successful_builds / total_builds * 100) if total_builds > 0 else 0.0
+        )
 
         # 4. Average duration
         pipeline = [
@@ -60,7 +72,9 @@ class DashboardService:
             {"$group": {"_id": None, "avg_duration": {"$avg": "$tr_duration"}}},
         ]
         avg_duration_result = list(self.build_collection.aggregate(pipeline))
-        avg_duration_seconds = avg_duration_result[0]["avg_duration"] if avg_duration_result else 0
+        avg_duration_seconds = (
+            avg_duration_result[0]["avg_duration"] if avg_duration_result else 0
+        )
         avg_duration_minutes = avg_duration_seconds / 60 if avg_duration_seconds else 0
 
         # 5. Repo distribution (already filtered)
@@ -85,6 +99,11 @@ class DashboardService:
                 user_id_for_filter = str(user_id)
         dataset_count = self._dataset_repo.count_by_filter(user_id=user_id_for_filter)
 
+        # 7. Admin extras (only for admin role)
+        admin_extras = None
+        if user_role == "admin":
+            admin_extras = self._get_admin_extras()
+
         return DashboardSummaryResponse(
             metrics=DashboardMetrics(
                 total_builds=total_builds,
@@ -94,6 +113,50 @@ class DashboardService:
             trends=[],  # Can be implemented later
             repo_distribution=repo_distribution,
             dataset_count=dataset_count,
+            admin_extras=admin_extras,
+        )
+
+    def _get_admin_extras(self) -> AdminDashboardExtras:
+        """Get admin-only dashboard extras: dataset enrichment stats and monitoring."""
+        # Dataset Enrichment stats
+        dataset_project_collection = self.db["dataset_projects"]
+        dataset_version_collection = self.db["dataset_versions"]
+        enrichment_build_collection = self.db["dataset_enrichment_builds"]
+
+        active_projects = dataset_project_collection.count_documents({})
+        processing_versions = dataset_version_collection.count_documents(
+            {"status": {"$in": ["processing", "ingesting", "validating"]}}
+        )
+        total_enriched_builds = enrichment_build_collection.count_documents({})
+
+        # Monitoring stats - queue depth and workers
+        # We'll use simplified stats here, real stats come from monitoring API
+        from datetime import datetime, timedelta
+
+        logs_collection = self.db["system_logs"]
+        now = datetime.utcnow()
+        day_ago = now - timedelta(hours=24)
+
+        error_count_24h = logs_collection.count_documents(
+            {"level": "ERROR", "timestamp": {"$gte": day_ago}}
+        )
+
+        # Count users
+        users_collection = self.db["users"]
+        total_users = users_collection.count_documents({})
+
+        return AdminDashboardExtras(
+            dataset_enrichment=DatasetEnrichmentStats(
+                active_projects=active_projects,
+                processing_versions=processing_versions,
+                total_enriched_builds=total_enriched_builds,
+            ),
+            monitoring=MonitoringSummary(
+                celery_workers=0,  # Will be fetched separately if needed
+                queue_depth=0,  # Will be fetched separately if needed
+                error_count_24h=error_count_24h,
+            ),
+            total_users=total_users,
         )
 
     def _widget_config_to_dto(self, widget: WidgetConfig) -> WidgetConfigDto:

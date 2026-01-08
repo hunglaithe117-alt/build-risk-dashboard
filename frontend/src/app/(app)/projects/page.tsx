@@ -210,7 +210,7 @@ export default function DatasetsPage() {
     <div className="space-y-6">
       {/* Header Card */}
       <Card>
-        <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <CardHeader className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <CardTitle>Dataset Management</CardTitle>
             <CardDescription>

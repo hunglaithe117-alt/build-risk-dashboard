@@ -198,7 +198,7 @@ export default function MonitoringPage() {
     };
 
     return (
-        <div className="container mx-auto py-4 md:py-6 space-y-4 md:space-y-6">
+        <div className="container mx-auto py-4 md:py-6 flex flex-col gap-4 md:gap-6 h-full min-h-0">
             {/* Header */}
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-3">
@@ -229,21 +229,22 @@ export default function MonitoringPage() {
             {/* Grafana Integration */}
             <GrafanaLinksCard />
 
-            {/* Recent Errors (Simplified Logs) */}
-            <LogsViewer
-                logs={logs.filter(log => ["ERROR", "WARN", "WARNING"].includes(log.level.toUpperCase()))}
-                isLoading={isLoadingLogs}
-                onRefresh={fetchLogs}
-                isPaused={isPaused}
-                onTogglePause={() => setIsPaused(!isPaused)}
-                containerFilter={containerFilter}
-                onContainerFilterChange={setContainerFilter}
-                levelFilter="error"
-                onLevelFilterChange={setLevelFilter}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-            />
+            {/* Application Logs - fills remaining space */}
+            <div className="flex-1 min-h-0 flex flex-col">
+                <LogsViewer
+                    logs={logs.filter(log => ["ERROR", "WARN", "WARNING"].includes(log.level.toUpperCase()))}
+                    isLoading={isLoadingLogs}
+                    onRefresh={fetchLogs}
+                    isPaused={isPaused}
+                    onTogglePause={() => setIsPaused(!isPaused)}
+                    containerFilter={containerFilter}
+                    onContainerFilterChange={setContainerFilter}
+                    levelFilter="error"
+                    onLevelFilterChange={setLevelFilter}
+                    searchQuery={searchQuery}
+                    onSearchChange={setSearchQuery}
+                />
+            </div>
         </div>
     );
 }
-

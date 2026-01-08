@@ -380,8 +380,9 @@ export interface RepositoryRecord {
   builds_fetched: number;
   builds_ingested: number;
   builds_completed: number;
-  builds_missing_resource: number;  // Ingestion phase failures
-  builds_extraction_failed: number; // Feature extraction phase failures
+  builds_missing_resource: number;    // Ingestion phase: resources not available
+  builds_ingestion_failed: number;    // Ingestion phase: actual errors (retryable)
+  builds_processing_failed: number;   // Processing phase: extraction/prediction failures
   // Status
   status: "queued" | "fetching" | "ingesting" | "ingestion_complete" | "ingestion_partial" | "processing" | "imported" | "partial" | "failed";
   error_message?: string;
@@ -597,11 +598,31 @@ export interface FeatureDAGResponse {
   total_nodes: number;
 }
 
+// Admin-only Dashboard Types
+export interface DatasetEnrichmentStats {
+  active_projects: number;
+  processing_versions: number;
+  total_enriched_builds: number;
+}
+
+export interface MonitoringSummary {
+  celery_workers: number;
+  queue_depth: number;
+  error_count_24h: number;
+}
+
+export interface AdminDashboardExtras {
+  dataset_enrichment: DatasetEnrichmentStats;
+  monitoring: MonitoringSummary;
+  total_users: number;
+}
+
 export interface DashboardSummaryResponse {
   metrics: DashboardMetrics;
   trends: DashboardTrendPoint[];
   repo_distribution: RepoDistributionEntry[];
   dataset_count: number;
+  admin_extras?: AdminDashboardExtras | null;
 }
 
 export interface GithubAuthorizeResponse {

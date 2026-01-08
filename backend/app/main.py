@@ -99,7 +99,9 @@ app.include_router(logs.router, prefix="/api", tags=["Logs"])
 app.include_router(features.router, prefix="/api", tags=["Feature Definitions"])
 app.include_router(datasets.router, prefix="/api", tags=["Datasets"])
 app.include_router(tokens.router, prefix="/api", tags=["GitHub Tokens"])
-app.include_router(dataset_validation.router, prefix="/api", tags=["Dataset Validation"])
+app.include_router(
+    dataset_validation.router, prefix="/api", tags=["Dataset Validation"]
+)
 app.include_router(dataset_versions.router, prefix="/api", tags=["Dataset Versions"])
 app.include_router(templates.router, prefix="/api", tags=["Templates"])
 app.include_router(settings.router, prefix="/api", tags=["Settings"])
@@ -173,3 +175,12 @@ async def startup_event():
         logger.info("MongoDB logging handler enabled for WARNING+ logs")
     except Exception as e:
         logger.warning(f"Failed to setup MongoDB logging: {e}")
+
+    # Setup Prometheus metrics
+    try:
+        from app.utils.prometheus_metrics import setup_prometheus
+
+        setup_prometheus(app)
+        logger.info("Prometheus metrics enabled at /api/metrics")
+    except Exception as e:
+        logger.warning(f"Failed to setup Prometheus metrics: {e}")

@@ -82,7 +82,7 @@ export function LogsViewer({
     });
 
     return (
-        <Card className="flex flex-col h-[500px]">
+        <Card className="flex flex-col min-h-[400px] flex-1">
             <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                     <CardTitle className="text-lg">Application Logs</CardTitle>

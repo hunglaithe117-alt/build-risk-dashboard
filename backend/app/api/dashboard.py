@@ -71,89 +71,166 @@ def get_available_widgets(
     """
     from app.middleware.rbac import Permission, has_permission
 
-    # Map widget_id to required permission
-    WIDGET_PERMISSIONS = {
-        "total_builds": Permission.VIEW_BUILDS,
-        "success_rate": Permission.VIEW_BUILDS,
-        "active_repos": Permission.VIEW_REPOS,
-        "repo_distribution": Permission.VIEW_REPOS,
-        "recent_builds": Permission.VIEW_BUILDS,
-        "risk_trend": Permission.VIEW_BUILDS,
-        "risk_distribution": Permission.VIEW_BUILDS,
-        "high_risk_builds": Permission.VIEW_BUILDS,
-    }
-
-    all_widgets = [
-        WidgetDefinition(
-            widget_id="total_builds",
-            widget_type="stat",
-            title="Total Builds",
-            description="Total number of builds tracked",
-            default_w=1,
-            default_h=1,
-        ),
-        WidgetDefinition(
-            widget_id="success_rate",
-            widget_type="stat",
-            title="Success Rate",
-            description="Percentage of successful builds",
-            default_w=1,
-            default_h=1,
-        ),
-        WidgetDefinition(
-            widget_id="active_repos",
-            widget_type="stat",
-            title="Active Repos",
-            description="Number of connected repositories",
-            default_w=1,
-            default_h=1,
-        ),
-        WidgetDefinition(
-            widget_id="repo_distribution",
-            widget_type="table",
-            title="Repository Distribution",
-            description="Build count per repository",
-            default_w=2,
-            default_h=2,
-        ),
-        WidgetDefinition(
-            widget_id="recent_builds",
-            widget_type="table",
-            title="Recent Builds",
-            description="Latest build runs with risk levels",
-            default_w=2,
-            default_h=2,
-        ),
-        WidgetDefinition(
-            widget_id="risk_trend",
-            widget_type="chart",
-            title="Risk Trend",
-            description="Build risk distribution over time",
-            default_w=2,
-            default_h=2,
-        ),
-        WidgetDefinition(
-            widget_id="risk_distribution",
-            widget_type="chart",
-            title="Risk Distribution",
-            description="Overall risk level breakdown (LOW/MED/HIGH)",
-            default_w=2,
-            default_h=2,
-        ),
-        WidgetDefinition(
-            widget_id="high_risk_builds",
-            widget_type="stat",
-            title="High Risk Builds",
-            description="Count of builds predicted as HIGH risk",
-            default_w=1,
-            default_h=1,
-        ),
-    ]
-
-    # Filter widgets by user role
     role = current_user.get("role", "user")
-    return [
-        widget
-        for widget in all_widgets
-        if has_permission(role, WIDGET_PERMISSIONS.get(widget.widget_id))
+
+    # Common widgets (available to all users with appropriate permissions)
+    common_widgets = [
+        (
+            WidgetDefinition(
+                widget_id="total_builds",
+                widget_type="stat",
+                title="Total Builds",
+                description="Total number of builds tracked",
+                default_w=1,
+                default_h=1,
+            ),
+            Permission.VIEW_BUILDS,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="success_rate",
+                widget_type="stat",
+                title="Success Rate",
+                description="Percentage of successful builds",
+                default_w=1,
+                default_h=1,
+            ),
+            Permission.VIEW_BUILDS,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="avg_duration",
+                widget_type="stat",
+                title="Avg Duration",
+                description="Average build duration",
+                default_w=1,
+                default_h=1,
+            ),
+            Permission.VIEW_BUILDS,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="active_repos",
+                widget_type="stat",
+                title="Active Repos",
+                description="Number of connected repositories",
+                default_w=1,
+                default_h=1,
+            ),
+            Permission.VIEW_REPOS,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="repo_distribution",
+                widget_type="table",
+                title="Repository Distribution",
+                description="Build count per repository",
+                default_w=2,
+                default_h=2,
+            ),
+            Permission.VIEW_REPOS,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="recent_builds",
+                widget_type="table",
+                title="Recent Builds",
+                description="Latest build runs with risk levels",
+                default_w=2,
+                default_h=2,
+            ),
+            Permission.VIEW_BUILDS,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="risk_trend",
+                widget_type="chart",
+                title="Risk Trend",
+                description="Build risk distribution over time",
+                default_w=2,
+                default_h=2,
+            ),
+            Permission.VIEW_BUILDS,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="risk_distribution",
+                widget_type="chart",
+                title="Risk Distribution",
+                description="Overall risk level breakdown (LOW/MED/HIGH)",
+                default_w=2,
+                default_h=2,
+            ),
+            Permission.VIEW_BUILDS,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="high_risk_builds",
+                widget_type="stat",
+                title="High Risk Builds",
+                description="Count of builds predicted as HIGH risk",
+                default_w=1,
+                default_h=1,
+            ),
+            Permission.VIEW_BUILDS,
+        ),
     ]
+
+    # Admin-only widgets (based on sidebar features)
+    admin_widgets = [
+        (
+            WidgetDefinition(
+                widget_id="dataset_enrichment_summary",
+                widget_type="stat",
+                title="Data Enrichments",
+                description="Active projects and processing status",
+                default_w=2,
+                default_h=1,
+            ),
+            Permission.VIEW_DATASETS,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="monitoring_summary",
+                widget_type="stat",
+                title="Monitoring Summary",
+                description="System errors and alerts (24h)",
+                default_w=2,
+                default_h=1,
+            ),
+            Permission.ADMIN_FULL,
+        ),
+        (
+            WidgetDefinition(
+                widget_id="user_activity",
+                widget_type="stat",
+                title="User Activity",
+                description="Total registered users",
+                default_w=1,
+                default_h=1,
+            ),
+            Permission.MANAGE_USERS,
+        ),
+    ]
+
+    # User-only widgets (when user has no data, show onboarding)
+    # Note: getting_started is dynamically shown based on user data, not permissions
+    user_widgets = [
+        (
+            WidgetDefinition(
+                widget_id="getting_started",
+                widget_type="card",
+                title="Getting Started",
+                description="Quick start guide for new users",
+                default_w=3,
+                default_h=2,
+            ),
+            Permission.VIEW_OWN_DASHBOARD,
+        ),
+    ]
+
+    # Return ALL widgets for all authenticated users
+    # Role-based data filtering happens in the service layer, not widget visibility
+    all_widgets = common_widgets + admin_widgets + user_widgets
+
+    return [widget for widget, _ in all_widgets]

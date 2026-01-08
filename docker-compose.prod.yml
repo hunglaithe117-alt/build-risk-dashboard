@@ -184,6 +184,7 @@ services:
       # Security
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: "False"
+      ENV: "prod"
       # SonarQube
       SONAR_HOST_URL: http://sonarqube:9000
       SONAR_TOKEN: ${SONAR_TOKEN:-}
@@ -199,6 +200,7 @@ services:
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      GITHUB_TOKENS: ${GITHUB_TOKENS:-}
       # Email (Gmail API)
       GMAIL_ENABLED: ${GMAIL_ENABLED:-false}
       GMAIL_SENDER_EMAIL: ${GMAIL_SENDER_EMAIL:-}
@@ -241,6 +243,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: ${SECRET_KEY}
       HOME: /tmp
+      ENV: "prod"
       # SonarQube
       SONAR_HOST_URL: http://sonarqube:9000
       SONAR_TOKEN: ${SONAR_TOKEN:-}
@@ -253,6 +256,7 @@ services:
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
       GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-}
+      GITHUB_TOKENS: ${GITHUB_TOKENS:-}
     volumes:
       - repo_data:/app/repo-data
       - shared_data:/app/data
@@ -284,6 +288,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: ${SECRET_KEY}
       HOME: /tmp
+      ENV: "prod"
     volumes:
       - shared_data:/app/data
     depends_on:
@@ -305,11 +310,13 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
+        NEXT_PUBLIC_GRAFANA_URL: ${NEXT_PUBLIC_GRAFANA_URL:-http://localhost:3001}
     container_name: prod-frontend
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL}
+      NEXT_PUBLIC_GRAFANA_URL: ${NEXT_PUBLIC_GRAFANA_URL:-http://localhost:3001}
       NEXTAUTH_URL: ${NEXTAUTH_URL}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
     restart: unless-stopped
@@ -350,6 +357,29 @@ services:
     networks:
       - app-network
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prod-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus-config.yaml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerting:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - app-network
+
   grafana:
     image: grafana/grafana:10.2.3
     container_name: prod-grafana
@@ -358,13 +388,19 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASS:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
+      GF_INSTALL_PLUGINS: yesoreyeram-infinity-datasource
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
     ports:
       - "3001:3000"  # Expose Grafana for local access
     volumes:
       - ./monitoring/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./monitoring/dashboards:/etc/grafana/provisioning/dashboards/json:ro
+      - ./monitoring/grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
       - grafana_data:/var/lib/grafana
     depends_on:
       loki:
+        condition: service_healthy
+      prometheus:
         condition: service_healthy
     restart: unless-stopped
     networks:
@@ -387,4 +423,5 @@ volumes:
   shared_data:
   loki_data:
   alloy_data:
+  prometheus_data:
   grafana_data:

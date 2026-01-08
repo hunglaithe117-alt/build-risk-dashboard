@@ -183,7 +183,7 @@ export default function AdminReposPage() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <CardHeader className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <CardTitle>Repository & Data Management</CardTitle>
             <CardDescription>
@@ -203,7 +203,7 @@ export default function AdminReposPage() {
       ) : null}
 
       <Card>
-        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <CardTitle>Connected repositories</CardTitle>
             <CardDescription>
@@ -305,7 +305,7 @@ export default function AdminReposPage() {
                           totalFetched={repo.builds_fetched}
                           totalIngested={repo.builds_ingested}
                           totalProcessed={repo.builds_completed}
-                          totalFailed={repo.builds_missing_resource + repo.builds_processing_failed}
+                          totalFailed={repo.builds_ingestion_failed + repo.builds_processing_failed}
                           importStatus={repo.status}
                         />
                       </td>

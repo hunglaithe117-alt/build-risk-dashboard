@@ -8,20 +8,19 @@ module.exports = {
     './src/**/*.{ts,tsx}',
   ],
   theme: {
-    // Custom breakpoints for Desktop/Laptop/Tablet
+    // Custom breakpoints: Laptop (1024px+) and Desktop (1280px+)
     screens: {
-      'sm': '640px',   // Mobile landscape
-      'md': '768px',   // Tablet
-      'lg': '1024px',  // Laptop
-      'xl': '1280px',  // Desktop
+      'md': '768px',   // Content layouts (grids, cards)
+      'lg': '1024px',  // Laptop: 1024px - 1279px (collapsible sidebar, fluid grid)
+      'xl': '1280px',  // Desktop: 1280px+ (persistent sidebar, multi-column)
       '2xl': '1536px', // Large Desktop
     },
     container: {
       center: true,
       padding: {
         DEFAULT: "1rem",
-        md: "1.5rem",
-        lg: "2rem",
+        lg: "1.5rem",   // Laptop
+        xl: "2rem",     // Desktop
       },
       screens: {
         "2xl": "1400px",

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -8,9 +7,6 @@ import {
     BarChart3,
     FileText,
     AlertTriangle,
-    Maximize2,
-    Minimize2,
-    RefreshCw,
 } from "lucide-react";
 
 const GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL || "http://localhost:3001";
@@ -44,13 +40,6 @@ const GRAFANA_LINKS: GrafanaLink[] = [
 ];
 
 export function GrafanaLinksCard() {
-    const [isExpanded, setIsExpanded] = useState(false);
-    const [iframeKey, setIframeKey] = useState(0);
-
-    const handleRefreshIframe = () => {
-        setIframeKey((prev) => prev + 1);
-    };
-
     return (
         <Card>
             <CardHeader className="pb-3">
@@ -59,45 +48,23 @@ export function GrafanaLinksCard() {
                         <BarChart3 className="h-5 w-5 text-orange-500" />
                         <CardTitle className="text-lg">Grafana Monitoring</CardTitle>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleRefreshIframe}
-                            title="Refresh dashboard"
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        asChild
+                    >
+                        <a
+                            href={GRAFANA_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
                         >
-                            <RefreshCw className="h-4 w-4" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setIsExpanded(!isExpanded)}
-                            title={isExpanded ? "Minimize" : "Expand"}
-                        >
-                            {isExpanded ? (
-                                <Minimize2 className="h-4 w-4" />
-                            ) : (
-                                <Maximize2 className="h-4 w-4" />
-                            )}
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            asChild
-                        >
-                            <a
-                                href={GRAFANA_URL}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                            >
-                                <ExternalLink className="h-4 w-4 mr-2" />
-                                Open Grafana
-                            </a>
-                        </Button>
-                    </div>
+                            <ExternalLink className="h-4 w-4 mr-2" />
+                            Open Grafana
+                        </a>
+                    </Button>
                 </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent>
                 {/* Quick Links */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     {GRAFANA_LINKS.map((link) => (
@@ -120,27 +87,6 @@ export function GrafanaLinksCard() {
                         </a>
                     ))}
                 </div>
-
-                {/* Embedded Dashboard */}
-                <div
-                    className={`relative rounded-lg border overflow-hidden transition-all duration-300 ${isExpanded ? "h-[600px]" : "h-[350px]"
-                        }`}
-                >
-                    <iframe
-                        key={iframeKey}
-                        src={`${GRAFANA_URL}/d/loki-logs/logs-overview?orgId=1&refresh=10s&kiosk`}
-                        className="w-full h-full border-0"
-                        title="Grafana Dashboard"
-                        loading="lazy"
-                    />
-                    <div className="absolute bottom-2 right-2 text-xs text-muted-foreground bg-background/80 px-2 py-1 rounded">
-                        Logs Overview Dashboard
-                    </div>
-                </div>
-
-                <p className="text-xs text-muted-foreground text-center">
-                    💡 Tip: Create a dashboard with UID &quot;loki-logs&quot; in Grafana for embedded view
-                </p>
             </CardContent>
         </Card>
     );

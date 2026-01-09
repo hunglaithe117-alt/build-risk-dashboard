@@ -55,27 +55,21 @@ class DatasetVersion(FeatureConfigBase):
 
     status: VersionStatus = VersionStatus.QUEUED
 
-    # === BUILD STATS (aligned with ModelRepoConfig) ===
-    builds_total: int = Field(
-        default=0, description="Total validated builds in version"
-    )
-    builds_ingested: int = Field(
-        default=0, description="Builds with resources prepared"
-    )
+    # === BUILD STATS ===
+    builds_total: int = Field(default=0, description="Total validated builds in version")
+    builds_ingested: int = Field(default=0, description="Builds with resources prepared")
     builds_missing_resource: int = Field(
         default=0, description="Builds with missing resources (not retryable)"
     )
     builds_ingestion_failed: int = Field(
         default=0, description="Builds that failed with actual errors (retryable)"
     )
-    builds_features_extracted: int = Field(
-        default=0, description="Builds with features extracted"
-    )
+    builds_features_extracted: int = Field(default=0, description="Builds with features extracted")
     builds_extraction_failed: int = Field(
         default=0, description="Builds that failed during feature extraction"
     )
 
-    # === SCAN TRACKING (separate from feature extraction) ===
+    # === SCAN TRACKING ===
     scans_total: int = Field(
         default=0, description="Total scans to run (unique commits × enabled tools)"
     )
@@ -83,9 +77,7 @@ class DatasetVersion(FeatureConfigBase):
     scans_failed: int = Field(default=0, description="Failed scans")
 
     # === COMPLETION FLAGS ===
-    feature_extraction_completed: bool = Field(
-        default=False, description="All features extracted"
-    )
+    feature_extraction_completed: bool = Field(default=False, description="All features extracted")
     scan_extraction_completed: bool = Field(
         default=False, description="All scans done (completed + failed = total)"
     )

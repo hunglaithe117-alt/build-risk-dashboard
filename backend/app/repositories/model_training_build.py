@@ -97,10 +97,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         # Check if it was newly created by comparing created_at
         was_created = (
             doc.get("created_at") is not None
-            and (
-                datetime.utcnow() - doc.get("created_at", datetime.utcnow())
-            ).total_seconds()
-            < 2
+            and (datetime.utcnow() - doc.get("created_at", datetime.utcnow())).total_seconds() < 2
         )
         return build, was_created
 
@@ -164,9 +161,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
         """Count builds for a config, optionally filtered by status."""
         query: Dict[str, Any] = {"model_repo_config_id": model_repo_config_id}
         if status:
-            query["extraction_status"] = (
-                status.value if hasattr(status, "value") else status
-            )
+            query["extraction_status"] = status.value if hasattr(status, "value") else status
         return self.collection.count_documents(query)
 
     def find_existing_by_raw_build_run_ids(
@@ -279,15 +274,24 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
                     "preserveNullAndEmptyArrays": True,
                 }
             },
-            # Add features field from feature_vector
+            # Add features from feature_vector and prediction fields from training build
             {
                 "$addFields": {
                     "features": {"$ifNull": ["$feature_vector.features", {}]},
                     "feature_count": {"$ifNull": ["$feature_vector.feature_count", 0]},
+                    "scan_metrics": {"$ifNull": ["$feature_vector.scan_metrics", {}]},
                 }
             },
-            # Remove the temporary feature_vector field
-            {"$project": {"feature_vector": 0}},
+            # Project final fields including predictions
+            {
+                "$project": {
+                    "feature_vector": 0,  # Remove temp lookup field
+                    # Keep all other fields including:
+                    # - features, feature_count, scan_metrics (from feature_vector)
+                    # - predicted_label, prediction_confidence, uncertainty
+                    # - ground_truth, head_sha, build_number, build_created_at (metadata)
+                }
+            },
         ]
 
         if limit:
@@ -354,11 +358,7 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
                 }
             },
             # Extract feature keys from feature_vector.features
-            {
-                "$project": {
-                    "feature_keys": {"$objectToArray": "$feature_vector.features"}
-                }
-            },
+            {"$project": {"feature_keys": {"$objectToArray": "$feature_vector.features"}}},
             {"$unwind": {"path": "$feature_keys", "preserveNullAndEmptyArrays": False}},
             {"$group": {"_id": None, "keys": {"$addToSet": "$feature_keys.k"}}},
         ]
@@ -467,12 +467,8 @@ class ModelTrainingBuildRepository(BaseRepository[ModelTrainingBuild]):
             {
                 "$group": {
                     "_id": None,
-                    "predicted": {
-                        "$sum": {"$cond": [{"$ne": ["$predicted_label", None]}, 1, 0]}
-                    },
-                    "failed": {
-                        "$sum": {"$cond": [{"$ne": ["$prediction_error", None]}, 1, 0]}
-                    },
+                    "predicted": {"$sum": {"$cond": [{"$ne": ["$predicted_label", None]}, 1, 0]}},
+                    "failed": {"$sum": {"$cond": [{"$ne": ["$prediction_error", None]}, 1, 0]}},
                     "pending": {
                         "$sum": {
                             "$cond": [

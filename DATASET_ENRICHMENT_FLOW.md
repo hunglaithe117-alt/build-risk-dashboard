@@ -1293,31 +1293,22 @@ Step 2: Configure Dataset
 ### Version Dashboard Components
 
 ```
-VersionDashboard (in _components/VersionDashboard.tsx)
-├── VersionMiniStepper     # 2-phase indicator (Ingestion → Processing)
-├── VersionIngestionCard   # Ingestion stats & controls
-│   ├── Ingested count / total
-│   ├── Missing resource count
-│   ├── Failed count
-│   ├── Progress bar
-│   └── [Retry Failed] button
-├── VersionProcessingCard  # Processing stats & controls
-│   ├── Processed count / total
-│   ├── Failed count
-│   ├── Progress bar
-│   └── [Retry Failed] button
-├── ScanMetricsSection     # Trivy/SonarQube scan results
-│   ├── Scan coverage (commits scanned)
-│   ├── Trivy vulnerability summary
-│   └── SonarQube quality metrics
-├── AnalysisSection        # Feature analysis
+### Version Dashboard Page (`page.tsx`)
+├── VersionMiniStepper     # 2-phase indicator
+├── Status Cards Row
+│   ├── VersionIngestionCard   # Ingestion stats & controls
+│   └── VersionProcessingCard  # Processing stats & scan progress
+└── VersionDashboard       # KPI Cards & Charts
+    ├── KPI Cards (Builds, Enriched, Quality, Features)
+    ├── Build Status Bar
+    └── Top Issues List
+├── AnalysisSection        # Feature analysis & Scan Metrics
+│   ├── Quality Scores (Completeness, Validity, etc.)
+│   ├── Scan Metrics (Trivy/SonarQube results)
 │   ├── Feature distribution charts
 │   ├── Correlation matrix
 │   └── Statistics overview
-├── PreprocessingSection   # Data preprocessing options
-│   ├── Missing value handling
-│   ├── Feature normalization
-│   └── Preview transformations
+
 └── ExportSection          # Export configuration
     ├── Format selection (CSV/JSON)
     ├── Feature selection
@@ -1332,6 +1323,9 @@ VersionBuildsPage (in builds/page.tsx)
 │   ├── Ingestion tab → /builds/ingestion
 │   ├── Processing tab → /builds/processing
 │   └── Scans tab → /builds/scans
+│       ├── Tabs: SonarQube, Trivy
+│       └── Components: ScanTable (Commit, Status, Builds, Duration, Actions)
+
 └── Content Area
     ├── IngestionBuildsTable (per-build ingestion status)
     │   ├── Build info (ID, repo, commit)

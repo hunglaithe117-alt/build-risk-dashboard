@@ -1,0 +1,236 @@
+================================================================================
+FINAL DATASET FEATURE DICTIONARY
+================================================================================
+File: final_dataset/final_clean.csv
+Total Columns: 70 (bao gồm metadata, features, và labels)
+Total Samples: 357,781 builds
+================================================================================
+
+================================================================================
+DATASET OVERVIEW
+================================================================================
+Đây là bộ dữ liệu dùng để huấn luyện mô hình LSTM Bayesian dự đoán rủi ro lỗi
+phần mềm (Software Defect Risk Prediction).
+
+NGUỒN DỮ LIỆU:
+- TravisTorrent: Dữ liệu CI/CD builds từ Travis CI (~500k builds)
+- GitHub API: Thông tin repository, commit, PR, team
+- Git History: Lịch sử commit, churn, entropy
+- SonarQube: Phân tích chất lượng code để tạo nhãn rủi ro
+
+TIÊU CHÍ LỌC DỮ LIỆU:
+- Projects có > 400 commits trigger builds
+- Tuổi đời project > 2 năm
+- Ngôn ngữ: Java, Python, Ruby
+- Loại bỏ builds canceled/errored
+
+MỤC ĐÍCH:
+Dự đoán mức độ rủi ro (Low/Medium/High) của mỗi build dựa trên:
+- Lịch sử builds trước đó (temporal patterns)
+- Đặc điểm code changes, team, thời gian (cross-artifact synergy)
+
+KIẾN TRÚC MODEL:
+- Temporal Branch: LSTM + Attention - học xu hướng thời gian (5 features)
+- Static Branch: Bayesian MLP - học tương tác giữa các features (35 features)
+- Fusion: Kết hợp 2 branches với uncertainty estimation (MC Dropout)
+
+
+
+================================================================================
+1. METADATA (Identification - không dùng để train)
+================================================================================
+tr_build_id              : ID duy nhất của build trong Travis CI
+tr_original_commit       : SHA của commit trigger build
+tr_build_number          : Số thứ tự của build trong project
+gh_project_name          : Tên project trên GitHub (owner/repo) - GROUP_COL
+gh_lang                  : Ngôn ngữ chính của repository
+git_branch               : Nhánh được build
+tr_status                : Trạng thái build gốc (passed/failed/errored)
+gh_build_started_at      : Thời điểm build bắt đầu - TIME_COL
+tr_prev_build            : ID của build trước - PREV_BUILD_COL
+
+================================================================================
+2. TEMPORAL FEATURES (5 features - Input cho LSTM Branch)
+================================================================================
+Các features này được lấy từ sequence builds trước để LSTM học pattern theo thời
+gian. Sequence length: 10, minimum length: 4.
+
+is_prev_failed           : 1 nếu build trước failed, 0 nếu không
+prev_fail_streak         : Số build failed liên tiếp trước build hiện tại
+fail_rate_last_10        : Tỷ lệ failed trong 10 build gần nhất (0.0 - 1.0)
+avg_src_churn_last_5     : Trung bình churn của 5 build gần nhất
+time_since_prev_build    : Số giờ kể từ build trước
+
+================================================================================
+3. STATIC FEATURES (35 features - Input cho MLP Branch)
+================================================================================
+Các features được trích xuất từ build hiện tại, bao gồm thông tin code changes,
+repository metrics, team activity, test metrics, và monitoring context.
+
+--- 3.1 SOURCE CODE CHANGES (9 features) ---
+git_diff_src_churn       : Số dòng thêm+bớt trong file source code
+gh_diff_files_added      : Số file được thêm mới
+gh_diff_files_deleted    : Số file bị xóa
+gh_diff_files_modified   : Số file bị sửa đổi
+gh_diff_tests_added      : Số test case thêm
+gh_diff_tests_deleted    : Số test case xóa
+gh_diff_src_files        : Số file source code bị thay đổi
+gh_diff_doc_files        : Số file tài liệu bị thay đổi
+gh_diff_other_files      : Số file khác bị thay đổi
+
+--- 3.2 CHANGE COMPLEXITY (4 features) ---
+gh_num_commits_on_files_touched: Số commit khác trên các file bị tác động (3 tháng)
+files_modified_ratio     : Tỷ lệ file modified / tổng file thay đổi
+change_entropy           : Shannon Entropy đo độ phân tán thay đổi trên các file
+                           (entropy cao = thay đổi rải rác = rủi ro cao)
+churn_ratio_vs_avg       : Tỷ lệ churn hiện tại / trung bình 5 build trước
+                           (> 1 = thay đổi nhiều hơn bình thường)
+
+--- 3.3 REPOSITORY METRICS (6 features) ---
+gh_sloc                  : Số dòng code thực thi trong toàn bộ repository
+gh_repo_age              : Tuổi của repository (ngày)
+gh_repo_num_commits      : Tổng số commit trong repository
+gh_test_lines_per_kloc   : Số dòng test code / 1000 dòng code
+gh_test_cases_per_kloc   : Số test case / 1000 dòng code
+gh_asserts_cases_per_kloc: Số lệnh assert / 1000 dòng code
+
+--- 3.4 TEAM ACTIVITY (4 features) ---
+gh_team_size             : Số developer đã commit trong 3 tháng gần nhất
+author_ownership         : Tỷ lệ đóng góp của tác giả lên các file được sửa
+                           (ownership cao = quen thuộc với code = rủi ro thấp)
+is_new_contributor       : 1 nếu tác giả mới (< 90 ngày), 0 nếu không
+                           (người mới = rủi ro cao hơn)
+days_since_last_author_commit: Số ngày kể từ commit cuối của tác giả
+                           (gap dài = có thể không quen code hiện tại)
+
+--- 3.5 BUILD & TEST METRICS (9 features) ---
+tr_log_num_jobs          : Số job trong build
+tr_log_tests_run_sum     : Tổng số test được chạy
+tr_log_tests_failed_sum  : Tổng số test failed
+tr_log_tests_skipped_sum : Tổng số test bị skip
+tr_log_tests_ok_sum      : Tổng số test passed
+tr_log_testduration_sum  : Tổng thời gian chạy test (giây)
+tr_log_tests_fail_rate   : Tỷ lệ test failed / test run
+tr_duration              : Tổng thời gian build (giây)
+tr_status_num            : Trạng thái build dạng số (0=passed, 1=failed, -1=other)
+                           [DERIVED: được tạo từ tr_status trong quá trình training]
+
+--- 3.6 MONITORING CONTEXT (3 features) ---
+build_time_sin           : sin(2π × hour/24) - Mã hóa cyclical thời gian
+build_time_cos           : cos(2π × hour/24) - Mã hóa cyclical thời gian
+                           (Giúp model học pattern theo giờ trong ngày)
+build_hour_risk_score    : Điểm rủi ro theo giờ:
+                           - 1.0: Đêm khuya (0h-5h) - mệt mỏi
+                           - 0.9: Chiều thứ 6 (sau 16h) - vội cuối tuần
+                           - 0.8: Cuối tuần - ít hỗ trợ
+                           - 0.1: Giờ hành chính - bình thường
+
+================================================================================
+4. FEATURES KHÔNG ĐƯỢC DÙNG TRONG TRAINING
+================================================================================
+Các cột sau có trong dataset nhưng KHÔNG được sử dụng trong quá trình training:
+
+--- 4.1 Metadata/Chain Columns ---
+git_prev_commit_resolution_status: Lý do dừng khi lần ngược lịch sử
+git_prev_built_commit    : Commit của build trước
+git_all_built_commits    : Danh sách commit (nối bằng #)
+git_trigger_commit       : Commit trigger build
+gh_num_commit_comments   : Số comment trên các commit
+tr_log_analyzers_all     : Các analyzer được sử dụng
+tr_log_frameworks_all    : Các test framework
+tr_log_lan_all           : Ngôn ngữ từ log
+tr_jobs                  : ID của job
+
+--- 4.2 Features Có Trong Dataset Nhưng Không Dùng ---
+file_change_frequency    : Trung bình số lần mỗi file bị sửa trong 3 tháng
+gh_by_core_team_member   : 1 nếu tất cả tác giả thuộc core team
+gh_is_pr                 : 1 nếu build từ PR, 0 nếu không
+gh_has_bug_label         : 1 nếu PR có label "bug" hoặc "fix"
+prev_tr_status           : Trạng thái build trước đó (string)
+git_num_all_built_commits: Số commit trong git_all_built_commits
+commit_message_length    : Độ dài trung bình của commit message
+has_issue_reference      : 1 nếu commit có tham chiếu issue (#123)
+is_merge_commit          : 1 nếu là merge commit
+author_total_commits     : Tổng số commit của tác giả trong toàn bộ repo
+
+================================================================================
+5. LABELS (Nhãn - từ SonarQube analysis)
+================================================================================
+risk_score               : Điểm rủi ro liên tục (0.0 - 1.0)
+                           Được tính bằng weighted sum:
+                           - Maintainability: 51%
+                           - Violations: 42%
+                           - Complexity: 4%
+                           - Reliability: 2%
+                           - Duplication: 1%
+
+risk_label               : Nhãn rủi ro phân loại
+                           - "Low": risk_score <= 33rd percentile
+                           - "Medium": 33rd < risk_score <= 66th percentile
+                           - "High": risk_score > 66th percentile
+
+risk_label_numeric       : Nhãn số cho ML (TARGET COLUMN)
+                           - 0 = Low
+                           - 1 = Medium
+                           - 2 = High
+
+================================================================================
+6. DATA PREPROCESSING (trong training)
+================================================================================
+
+LOG1P_FEATURES (được áp dụng log1p transform):
+- git_diff_src_churn, gh_diff_files_added, gh_diff_files_deleted
+- gh_diff_files_modified, gh_diff_tests_added, gh_diff_tests_deleted
+- gh_diff_src_files, gh_diff_doc_files, gh_diff_other_files
+- gh_num_commits_on_files_touched, gh_sloc, gh_repo_age
+- gh_repo_num_commits, tr_log_num_jobs, tr_log_tests_run_sum
+- tr_log_tests_failed_sum, tr_log_tests_skipped_sum, tr_log_tests_ok_sum
+- tr_log_testduration_sum, tr_duration, time_since_prev_build
+- days_since_last_author_commit
+
+SCALING:
+- StandardScaler được áp dụng riêng cho TEMPORAL_FEATURES và STATIC_FEATURES
+- Scaler được fit trên training set (80%) và transform trên toàn bộ data
+
+MISSING VALUES:
+- Binary features: điền mode từ training set
+- Numeric features: điền median từ training set
+
+================================================================================
+7. MODEL HYPERPARAMETERS
+================================================================================
+SEQUENCE:
+- SEQ_LEN = 10 (độ dài chuỗi build history)
+- MIN_SEQ_LEN = 4 (tối thiểu 4 builds trong history mới được dùng)
+
+LSTM:
+- LSTM_HIDDEN_DIM = 96
+- LSTM_LAYERS = 2
+- LSTM_DROPOUT = 0.2
+- TEMPORAL_DROPOUT = 0.2
+
+TRAINING:
+- BATCH_SIZE = 256
+- LR = 1e-3
+- WEIGHT_DECAY = 1e-4
+- EPOCHS = 20
+- EARLY_STOP_PATIENCE = 5
+- LABEL_SMOOTHING = 0.03
+- GRAD_CLIP_NORM = 1.0
+
+DATA SPLIT:
+- Train: 80%, Val: 20% (by repository timeline, không shuffle)
+
+================================================================================
+8. MODEL PERFORMANCE (Best Checkpoint)
+================================================================================
+- Best Epoch: 6
+- Validation Accuracy: 82.00%
+- Validation F1 (macro): 81.88%
+
+Confusion Matrix:
+              Predicted
+              Low    Medium   High
+Actual Low   3533     892      47
+       Med    500    5664     662
+       High    21    1533    7455

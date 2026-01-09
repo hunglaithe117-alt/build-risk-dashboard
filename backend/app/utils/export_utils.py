@@ -172,6 +172,7 @@ def format_feature_row(
 
     Used by ModelRepositoryService and DatasetVersionService.
     Merges both 'features' and 'scan_metrics' fields for export.
+    Also includes prediction results and build metadata when available.
 
     Args:
         doc: MongoDB document (ModelTrainingBuild or EnrichmentBuild)
@@ -181,12 +182,21 @@ def format_feature_row(
     Returns:
         Dict mapping feature names to values
     """
+    # Build metadata (always included as first columns)
+    row: Dict[str, Any] = {}
+
+    # Add build identification metadata
+    if doc.get("head_sha"):
+        row["head_sha"] = doc.get("head_sha")
+    if doc.get("build_number"):
+        row["build_number"] = doc.get("build_number")
+    if doc.get("build_created_at"):
+        row["build_created_at"] = doc.get("build_created_at")
+
     # Merge features and scan_metrics for export
     feature_dict = doc.get("features", {})
     scan_metrics = doc.get("scan_metrics", {})
     merged = {**feature_dict, **scan_metrics}
-
-    row: Dict[str, Any] = {}
 
     if features:
         for f in features:
@@ -196,6 +206,16 @@ def format_feature_row(
             row[f] = merged.get(f)
     else:
         row.update(merged)
+
+    # Add prediction results (at the end for ML dataset export)
+    if doc.get("predicted_label") is not None:
+        row["predicted_label"] = doc.get("predicted_label")
+    if doc.get("prediction_confidence") is not None:
+        row["prediction_confidence"] = doc.get("prediction_confidence")
+    if doc.get("prediction_uncertainty") is not None:
+        row["prediction_uncertainty"] = doc.get("prediction_uncertainty")
+    if doc.get("ground_truth") is not None:
+        row["ground_truth"] = doc.get("ground_truth")
 
     return row
 

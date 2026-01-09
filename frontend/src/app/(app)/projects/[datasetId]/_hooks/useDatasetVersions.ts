@@ -10,12 +10,19 @@ export interface DatasetVersion {
     name: string;
     description: string | null;
     selected_features: string[];
+    scan_metrics: {
+        sonarqube: string[];
+        trivy: string[];
+    };
     status: "queued" | "ingesting" | "ingested" | "processing" | "processed" | "failed";
     builds_total: number;
     builds_ingested: number;
     builds_missing_resource: number;
     builds_features_extracted: number;
     builds_extraction_failed: number;
+    scans_total: number;
+    scans_completed: number;
+    scans_failed: number;
     progress_percent: number;
     file_name: string | null;
     file_size_bytes: number | null;

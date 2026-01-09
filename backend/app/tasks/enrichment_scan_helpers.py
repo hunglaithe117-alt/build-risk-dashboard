@@ -54,7 +54,7 @@ def _build_sonar_config_content(sonar_config: dict) -> Optional[str]:
     bind=True,
     base=PipelineTask,
     name="app.tasks.enrichment_scan_helpers.dispatch_scan_for_commit",
-    queue="processing",
+    queue="dataset_processing",
     soft_time_limit=60,
     time_limit=120,
 )
@@ -139,7 +139,9 @@ def dispatch_scan_for_commit(
             )
 
             results["trivy"] = {"status": "dispatched"}
-            logger.info(f"{corr_prefix} Dispatched Trivy scan for commit {commit_sha[:8]}")
+            logger.info(
+                f"{corr_prefix} Dispatched Trivy scan for commit {commit_sha[:8]}"
+            )
 
         except Exception as exc:
             logger.warning(
@@ -165,7 +167,9 @@ def dispatch_scan_for_commit(
             # Write config to external path (only if not exists)
             sonar_config_path = None
             if config_content:
-                sonar_config_path = get_sonarqube_config_path(version_id, github_repo_id)
+                sonar_config_path = get_sonarqube_config_path(
+                    version_id, github_repo_id
+                )
                 if not sonar_config_path.exists():
                     _write_config_file(sonar_config_path, config_content)
 
@@ -182,8 +186,13 @@ def dispatch_scan_for_commit(
                 correlation_id=correlation_id,
             )
 
-            results["sonarqube"] = {"status": "dispatched", "component_key": component_key}
-            logger.info(f"{corr_prefix} Dispatched SonarQube scan for commit {commit_sha[:8]}")
+            results["sonarqube"] = {
+                "status": "dispatched",
+                "component_key": component_key,
+            }
+            logger.info(
+                f"{corr_prefix} Dispatched SonarQube scan for commit {commit_sha[:8]}"
+            )
 
         except Exception as exc:
             logger.warning(

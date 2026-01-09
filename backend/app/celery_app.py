@@ -23,6 +23,7 @@ celery_app = Celery(
         "app.tasks.export",
         "app.tasks.sonar",
         "app.tasks.trivy",
+        "app.tasks.shared.ingestion_tasks",
     ],
 )
 
@@ -88,6 +89,17 @@ celery_app.conf.update(
             "trivy_scan",
             Exchange("buildguard"),
             routing_key="pipeline.trivy_scan",
+        ),
+        # Shared / Generic Queues
+        Queue(
+            "ingestion",
+            Exchange("buildguard"),
+            routing_key="pipeline.ingestion",
+        ),
+        Queue(
+            "processing",
+            Exchange("buildguard"),
+            routing_key="pipeline.processing",
         ),
     ],
     broker_connection_retry_on_startup=True,

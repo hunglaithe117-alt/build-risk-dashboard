@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     bind=True,
     base=SafeTask,
-    name="app.tasks.shared.clone_repo",
+    name="app.tasks.shared.ingestion_tasks.clone_repo",
     queue="ingestion",
     soft_time_limit=600,
     time_limit=660,
@@ -112,7 +112,9 @@ def clone_repo(
                         pipeline_id=pipeline_id,
                         raw_repo_id=raw_repo_id,
                     )
-                    updater.update_resource_batch("git_history", ResourceStatus.IN_PROGRESS)
+                    updater.update_resource_batch(
+                        "git_history", ResourceStatus.IN_PROGRESS
+                    )
                 except Exception as e:
                     logger.warning(f"{log_ctx} Failed to update IN_PROGRESS: {e}")
 
@@ -129,7 +131,9 @@ def clone_repo(
                 ):
                     _execute_git_clone_or_fetch(repo_path, full_name, log_ctx)
             except subprocess.CalledProcessError as e:
-                error_msg = f"Git command failed: {e.stderr.decode() if e.stderr else str(e)}"
+                error_msg = (
+                    f"Git command failed: {e.stderr.decode() if e.stderr else str(e)}"
+                )
                 raise TransientError(error_msg) from e
             except subprocess.TimeoutExpired as e:
                 raise TransientError(f"Git command timed out: {e}") from e
@@ -151,8 +155,12 @@ def clone_repo(
                         pipeline_id=pipeline_id,
                         raw_repo_id=raw_repo_id,
                     )
-                    updated = updater.update_resource_batch("git_history", ResourceStatus.COMPLETED)
-                    logger.info(f"{log_ctx} Marked {updated} builds git_history=COMPLETED")
+                    updated = updater.update_resource_batch(
+                        "git_history", ResourceStatus.COMPLETED
+                    )
+                    logger.info(
+                        f"{log_ctx} Marked {updated} builds git_history=COMPLETED"
+                    )
                 except Exception as e:
                     logger.warning(f"{log_ctx} Progressive save failed: {e}")
 
@@ -179,7 +187,9 @@ def clone_repo(
                     pipeline_id=pipeline_id,
                     raw_repo_id=raw_repo_id,
                 )
-                updater.update_resource_batch("git_history", ResourceStatus.FAILED, error_msg)
+                updater.update_resource_batch(
+                    "git_history", ResourceStatus.FAILED, error_msg
+                )
             except Exception as e:
                 logger.warning(f"{log_ctx} Failed to mark FAILED: {e}")
 
@@ -261,7 +271,7 @@ def _execute_git_clone_or_fetch(repo_path: Path, full_name: str, log_ctx: str) -
 @celery_app.task(
     bind=True,
     base=SafeTask,
-    name="app.tasks.shared.create_worktree_chunk",
+    name="app.tasks.shared.ingestion_tasks.create_worktree_chunk",
     queue="ingestion",
     soft_time_limit=600,  # 10 min per chunk (fork replay needs more time)
     time_limit=660,
@@ -388,7 +398,9 @@ def create_worktree_chunk(
                     state.meta["processed_commits"].append(sha)
                     continue
 
-                build_run = build_run_repo.find_by_commit_or_effective_sha(raw_repo_id, sha)
+                build_run = build_run_repo.find_by_commit_or_effective_sha(
+                    raw_repo_id, sha
+                )
 
                 try:
                     res = _process_worktree_commit(
@@ -443,7 +455,9 @@ def create_worktree_chunk(
             _save_worktree_progress(
                 self.db, pipeline_id, pipeline_type, raw_repo_id, result, log_ctx
             )
-            _publish_worktree_update(pipeline_id, pipeline_type, chunk_index, total_chunks, result)
+            _publish_worktree_update(
+                pipeline_id, pipeline_type, chunk_index, total_chunks, result
+            )
 
         return result
 
@@ -475,7 +489,12 @@ def create_worktree_chunk(
 
 
 def _save_worktree_progress(
-    db, pipeline_id: str, pipeline_type: str, raw_repo_id: str, result: dict, log_ctx: str
+    db,
+    pipeline_id: str,
+    pipeline_type: str,
+    raw_repo_id: str,
+    result: dict,
+    log_ctx: str,
 ) -> None:
     """Save worktree progress to database."""
     if not pipeline_id or not pipeline_type:
@@ -510,7 +529,11 @@ def _save_worktree_progress(
 
 
 def _publish_worktree_update(
-    pipeline_id: str, pipeline_type: str, chunk_index: int, total_chunks: int, result: dict
+    pipeline_id: str,
+    pipeline_type: str,
+    chunk_index: int,
+    total_chunks: int,
+    result: dict,
 ) -> None:
     """Publish WebSocket update for worktree progress."""
     is_final_chunk = chunk_index == total_chunks - 1
@@ -519,7 +542,9 @@ def _publish_worktree_update(
 
     # Determine overall status
     has_failures = result.get("worktrees_failed", 0) > 0
-    has_successes = result.get("worktrees_created", 0) + result.get("worktrees_skipped", 0) > 0
+    has_successes = (
+        result.get("worktrees_created", 0) + result.get("worktrees_skipped", 0) > 0
+    )
 
     if has_failures and not has_successes:
         ws_status = "failed"
@@ -532,7 +557,8 @@ def _publish_worktree_update(
         repo_id=pipeline_id,
         resource="git_worktree",
         status=ws_status,
-        builds_affected=result.get("worktrees_created", 0) + result.get("worktrees_skipped", 0),
+        builds_affected=result.get("worktrees_created", 0)
+        + result.get("worktrees_skipped", 0),
         chunk_index=chunk_index,
         total_chunks=total_chunks,
         pipeline_type=pipeline_type,
@@ -583,7 +609,9 @@ def _process_worktree_commit(
                         if synthetic_sha:
                             if synthetic_sha != sha:
                                 if build_run:
-                                    build_run_repo.update_effective_sha(build_run.id, synthetic_sha)
+                                    build_run_repo.update_effective_sha(
+                                        build_run.id, synthetic_sha
+                                    )
                                 result["replayed"] = 1
                             commit_sha_to_use = synthetic_sha
                         else:
@@ -636,7 +664,7 @@ def _create_worktree(repo_path: Any, worktrees_dir: Any, sha: str) -> None:
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.shared.aggregate_logs_results",
+    name="app.tasks.shared.ingestion_tasks.aggregate_logs_results",
     queue="ingestion",
     soft_time_limit=60,
     time_limit=120,
@@ -676,13 +704,17 @@ def aggregate_logs_results(
             chunks_with_errors.append(
                 {"chunk_index": "?", "error": f"{type(r).__name__}: {str(r)}"}
             )
-            logger.warning(f"{log_ctx} Chunk failed with exception: {type(r).__name__}: {r}")
+            logger.warning(
+                f"{log_ctx} Chunk failed with exception: {type(r).__name__}: {r}"
+            )
             continue
         if not isinstance(r, dict):
             continue
         chunk_idx = r.get("chunk_index", "?")
         if r.get("error"):
-            chunks_with_errors.append({"chunk_index": chunk_idx, "error": r.get("error")})
+            chunks_with_errors.append(
+                {"chunk_index": chunk_idx, "error": r.get("error")}
+            )
             logger.warning(f"{log_ctx} Chunk {chunk_idx} had error: {r.get('error')}")
         else:
             successful_chunks.append(r)
@@ -697,8 +729,12 @@ def aggregate_logs_results(
     total_downloaded = sum(
         r.get("logs_downloaded", 0) for r in chunk_results if isinstance(r, dict)
     )
-    total_expired = sum(r.get("logs_expired", 0) for r in chunk_results if isinstance(r, dict))
-    total_skipped = sum(r.get("logs_skipped", 0) for r in chunk_results if isinstance(r, dict))
+    total_expired = sum(
+        r.get("logs_expired", 0) for r in chunk_results if isinstance(r, dict)
+    )
+    total_skipped = sum(
+        r.get("logs_skipped", 0) for r in chunk_results if isinstance(r, dict)
+    )
 
     # Determine overall status
     if chunks_with_errors:
@@ -867,7 +903,7 @@ async def _download_log_for_build(
 @celery_app.task(
     bind=True,
     base=SafeTask,
-    name="app.tasks.shared.download_logs_chunk",
+    name="app.tasks.shared.ingestion_tasks.download_logs_chunk",
     queue="ingestion",
     soft_time_limit=600,  # 10 min per chunk
     time_limit=660,
@@ -1050,8 +1086,12 @@ def download_logs_chunk(
 
         # Phase: DONE → Progressive save and publish WebSocket
         if state.phase == "DONE":
-            _save_logs_progress(self.db, pipeline_id, pipeline_type, raw_repo_id, result, log_ctx)
-            _publish_logs_update(pipeline_id, pipeline_type, chunk_index, total_chunks, result)
+            _save_logs_progress(
+                self.db, pipeline_id, pipeline_type, raw_repo_id, result, log_ctx
+            )
+            _publish_logs_update(
+                pipeline_id, pipeline_type, chunk_index, total_chunks, result
+            )
 
         return result
 
@@ -1073,7 +1113,9 @@ def download_logs_chunk(
             all_failed.extend(unprocessed)
             result["failed_log_ids"] = all_failed
 
-            _save_logs_progress(self.db, pipeline_id, pipeline_type, raw_repo_id, result, log_ctx)
+            _save_logs_progress(
+                self.db, pipeline_id, pipeline_type, raw_repo_id, result, log_ctx
+            )
 
             # Publish error event
             from app.tasks.shared.events import publish_ingestion_error
@@ -1096,7 +1138,12 @@ def download_logs_chunk(
 
 
 def _save_logs_progress(
-    db, pipeline_id: str, pipeline_type: str, raw_repo_id: str, result: dict, log_ctx: str
+    db,
+    pipeline_id: str,
+    pipeline_type: str,
+    raw_repo_id: str,
+    result: dict,
+    log_ctx: str,
 ) -> None:
     """Save log download progress to database."""
     if not pipeline_id or not pipeline_type:
@@ -1113,7 +1160,9 @@ def _save_logs_progress(
         )
 
         # Mark downloaded/skipped as COMPLETED
-        successful = result.get("downloaded_log_ids", []) + result.get("skipped_log_ids", [])
+        successful = result.get("downloaded_log_ids", []) + result.get(
+            "skipped_log_ids", []
+        )
         if successful:
             updated = updater.update_resource_by_ci_run_ids(
                 "build_logs", successful, ResourceStatus.COMPLETED
@@ -1124,7 +1173,10 @@ def _save_logs_progress(
         failed = result.get("failed_log_ids", []) + result.get("expired_log_ids", [])
         if failed:
             updated = updater.update_resource_by_ci_run_ids(
-                "build_logs", failed, ResourceStatus.FAILED, "Log download failed or expired"
+                "build_logs",
+                failed,
+                ResourceStatus.FAILED,
+                "Log download failed or expired",
             )
             logger.info(f"{log_ctx} Marked {updated} builds build_logs=FAILED")
     except Exception as e:
@@ -1132,14 +1184,20 @@ def _save_logs_progress(
 
 
 def _publish_logs_update(
-    pipeline_id: str, pipeline_type: str, chunk_index: int, total_chunks: int, result: dict
+    pipeline_id: str,
+    pipeline_type: str,
+    chunk_index: int,
+    total_chunks: int,
+    result: dict,
 ) -> None:
     """Publish WebSocket update for logs download progress (per chunk)."""
     if not pipeline_id:
         return
 
     # Determine overall status for this chunk
-    completed_ids = result.get("downloaded_log_ids", []) + result.get("skipped_log_ids", [])
+    completed_ids = result.get("downloaded_log_ids", []) + result.get(
+        "skipped_log_ids", []
+    )
     failed_ids = result.get("failed_log_ids", []) + result.get("expired_log_ids", [])
 
     has_failures = len(failed_ids) > 0

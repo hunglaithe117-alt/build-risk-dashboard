@@ -298,7 +298,7 @@ export function AnalyticsTab() {
                             <ResponsiveContainer width="100%" height={300}>
                                 <AreaChart
                                     data={sortedDates.map((date) => ({
-                                        date: new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+                                        date: new Date(date).toLocaleDateString("vi-VN", { month: "2-digit", day: "2-digit" }),
                                         LOW: buildsByDate[date].LOW,
                                         MEDIUM: buildsByDate[date].MEDIUM,
                                         HIGH: buildsByDate[date].HIGH,

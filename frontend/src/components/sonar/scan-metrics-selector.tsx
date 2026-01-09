@@ -297,22 +297,51 @@ export function ScanMetricsSelector({
         <div className={cn("space-y-4", className)}>
             {/* Header - only show when displaying both tools */}
             {!showOnlyTool && (
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-4">
                     <div>
                         <h3 className="text-lg font-semibold">Select Scan Metrics</h3>
                         <p className="text-sm text-muted-foreground">
                             Choose metrics to include in your dataset features
                         </p>
                     </div>
-                    <div className="flex items-center gap-2 text-sm">
-                        <Badge variant="outline" className="bg-blue-50">
-                            <BarChart3 className="h-3 w-3 mr-1" />
-                            SonarQube: {selectedSonarMetrics.length}
-                        </Badge>
-                        <Badge variant="outline" className="bg-green-50">
-                            <Shield className="h-3 w-3 mr-1" />
-                            Trivy: {selectedTrivyMetrics.length}
-                        </Badge>
+                    <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 text-sm mr-4">
+                            <Badge variant="outline" className="bg-blue-50">
+                                <BarChart3 className="h-3 w-3 mr-1" />
+                                SonarQube: {selectedSonarMetrics.length}
+                            </Badge>
+                            <Badge variant="outline" className="bg-green-50">
+                                <Shield className="h-3 w-3 mr-1" />
+                                Trivy: {selectedTrivyMetrics.length}
+                            </Badge>
+                        </div>
+
+                        <div className="h-4 w-px bg-border mx-1" />
+
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => {
+                                if (availableMetrics) {
+                                    onSonarChange(availableMetrics.sonarqube.all_keys);
+                                    onTrivyChange(availableMetrics.trivy.all_keys);
+                                }
+                            }}
+                        >
+                            Select All
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => {
+                                onSonarChange([]);
+                                onTrivyChange([]);
+                            }}
+                        >
+                            Clear All
+                        </Button>
                     </div>
                 </div>
             )}
@@ -332,6 +361,38 @@ export function ScanMetricsSelector({
             {showOnlyTool ? (
                 // Single tool view - no tabs
                 <div className="mt-2">
+                    <div className="flex justify-end gap-2 mb-2">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => {
+                                if (!availableMetrics) return;
+                                if (showOnlyTool === "sonarqube") {
+                                    onSonarChange(availableMetrics.sonarqube.all_keys);
+                                } else {
+                                    onTrivyChange(availableMetrics.trivy.all_keys);
+                                }
+                            }}
+                        >
+                            Select All
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => {
+                                if (showOnlyTool === "sonarqube") {
+                                    onSonarChange([]);
+                                } else {
+                                    onTrivyChange([]);
+                                }
+                            }}
+                            disabled={showOnlyTool === "sonarqube" ? selectedSonarMetrics.length === 0 : selectedTrivyMetrics.length === 0}
+                        >
+                            Clear All
+                        </Button>
+                    </div>
                     {showOnlyTool === "sonarqube" && (
                         <ScrollArea className="h-[300px] pr-4">
                             <Accordion type="multiple" className="space-y-2">
@@ -376,22 +437,69 @@ export function ScanMetricsSelector({
             ) : (
                 // Both tools view - with tabs
                 <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="sonarqube" className="gap-2">
-                            <BarChart3 className="h-4 w-4" />
-                            SonarQube
-                            <Badge variant="secondary" className="ml-1">
-                                {selectedSonarMetrics.length}
-                            </Badge>
-                        </TabsTrigger>
-                        <TabsTrigger value="trivy" className="gap-2">
-                            <Shield className="h-4 w-4" />
-                            Trivy
-                            <Badge variant="secondary" className="ml-1">
-                                {selectedTrivyMetrics.length}
-                            </Badge>
-                        </TabsTrigger>
-                    </TabsList>
+                    <div className="flex items-center justify-between mb-2">
+                        <TabsList className="grid w-[60%] grid-cols-2">
+                            <TabsTrigger value="sonarqube" className="gap-2">
+                                <BarChart3 className="h-4 w-4" />
+                                SonarQube
+                                <Badge variant="secondary" className="ml-1">
+                                    {selectedSonarMetrics.length}
+                                </Badge>
+                            </TabsTrigger>
+                            <TabsTrigger value="trivy" className="gap-2">
+                                <Shield className="h-4 w-4" />
+                                Trivy
+                                <Badge variant="secondary" className="ml-1">
+                                    {selectedTrivyMetrics.length}
+                                </Badge>
+                            </TabsTrigger>
+                        </TabsList>
+
+                        {/* Tab-specific actions (e.g., Clear All for current tab only) could go here if needed */}
+                        <div className="flex gap-1 ml-auto">
+                            {activeTab === 'sonarqube' ? (
+                                <>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-xs h-7"
+                                        onClick={() => availableMetrics && onSonarChange(availableMetrics.sonarqube.all_keys)}
+                                    >
+                                        Select All
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-xs h-7"
+                                        onClick={() => onSonarChange([])}
+                                        disabled={selectedSonarMetrics.length === 0}
+                                    >
+                                        Clear Sonar
+                                    </Button>
+                                </>
+                            ) : (
+                                <>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-xs h-7"
+                                        onClick={() => availableMetrics && onTrivyChange(availableMetrics.trivy.all_keys)}
+                                    >
+                                        Select All
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-xs h-7"
+                                        onClick={() => onTrivyChange([])}
+                                        disabled={selectedTrivyMetrics.length === 0}
+                                    >
+                                        Clear Trivy
+                                    </Button>
+                                </>
+                            )}
+                        </div>
+                    </div>
 
                     <TabsContent value="sonarqube" className="mt-4">
                         <ScrollArea className="h-[400px] pr-4">
@@ -436,45 +544,6 @@ export function ScanMetricsSelector({
                     </TabsContent>
                 </Tabs>
             )}
-
-            {/* Quick Actions */}
-            <div className="flex gap-2 pt-2 border-t">
-                <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                    onSonarChange(availableMetrics.sonarqube.all_keys);
-                                    onTrivyChange(availableMetrics.trivy.all_keys);
-                                }}
-                            >
-                                Select All
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Select all metrics from both tools</TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
-
-                <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                    onSonarChange([]);
-                                    onTrivyChange([]);
-                                }}
-                            >
-                                Clear All
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Clear all selections</TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
-            </div>
         </div>
     );
 }

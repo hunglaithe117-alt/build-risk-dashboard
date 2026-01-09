@@ -214,7 +214,7 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
             {/* key metrics grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card>
-                    <CardContent className="p-6 flex flex-col items-center text-center gap-2">
+                    <CardContent className="p-4 flex flex-col items-center text-center gap-2">
                         <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-full mb-1">
                             <FileSpreadsheet className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                         </div>
@@ -225,7 +225,7 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                     </CardContent>
                 </Card>
                 <Card>
-                    <CardContent className="p-6 flex flex-col items-center text-center gap-2">
+                    <CardContent className="p-4 flex flex-col items-center text-center gap-2">
                         <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-full mb-1">
                             <Layers className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                         </div>
@@ -236,7 +236,7 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                     </CardContent>
                 </Card>
                 <Card>
-                    <CardContent className="p-6 flex flex-col items-center text-center gap-2">
+                    <CardContent className="p-4 flex flex-col items-center text-center gap-2">
                         <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-full mb-1">
                             <GitBranch className="h-6 w-6 text-orange-600 dark:text-orange-400" />
                         </div>
@@ -247,7 +247,7 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                     </CardContent>
                 </Card>
                 <Card>
-                    <CardContent className="p-6 flex flex-col items-center text-center gap-2">
+                    <CardContent className="p-4 flex flex-col items-center text-center gap-2">
                         <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full mb-1">
                             <HardDrive className="h-6 w-6 text-slate-600 dark:text-slate-400" />
                         </div>
@@ -338,7 +338,7 @@ export function OverviewTab({ dataset, onRefresh }: OverviewTabProps) {
                             Quality indicators calculated during analysis
                         </CardDescription>
                     </CardHeader>
-                    <CardContent className="grid sm:grid-cols-3 gap-4">
+                    <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <QualityMeter
                             label="Missing Rate"
                             value={stats_metadata.missing_rate}

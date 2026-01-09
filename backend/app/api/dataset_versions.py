@@ -34,6 +34,7 @@ def _to_response(version: DatasetVersion) -> VersionResponse:
             if isinstance(version.status, VersionStatus)
             else version.status
         ),
+        scan_metrics=version.scan_metrics,
         builds_total=version.builds_total,
         builds_ingested=version.builds_ingested,
         builds_missing_resource=version.builds_missing_resource,

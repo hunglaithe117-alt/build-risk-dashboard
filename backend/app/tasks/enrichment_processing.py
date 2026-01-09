@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.start_enrichment_processing",
+    name="app.tasks.enrichment_processing.start_enrichment_processing",
     queue="dataset_processing",
     soft_time_limit=60,
     time_limit=120,
@@ -109,7 +109,7 @@ def start_enrichment_processing(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.dispatch_scans_and_processing",
+    name="app.tasks.enrichment_processing.dispatch_scans_and_processing",
     queue="dataset_processing",
     soft_time_limit=30,
     time_limit=60,
@@ -164,7 +164,7 @@ def dispatch_scans_and_processing(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.handle_enrichment_processing_chain_error",
+    name="app.tasks.enrichment_processing.handle_enrichment_processing_chain_error",
     queue="dataset_processing",
     soft_time_limit=60,
     time_limit=120,
@@ -259,7 +259,7 @@ def handle_enrichment_processing_chain_error(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.dispatch_enrichment_batches",
+    name="app.tasks.enrichment_processing.dispatch_enrichment_batches",
     queue="dataset_processing",
     soft_time_limit=120,
     time_limit=180,
@@ -401,7 +401,7 @@ def dispatch_enrichment_batches(
 @celery_app.task(
     bind=True,
     base=SafeTask,
-    name="app.tasks.version_enrichment.process_single_enrichment",
+    name="app.tasks.enrichment_processing.process_single_enrichment",
     queue="dataset_processing",
     soft_time_limit=300,
     time_limit=600,
@@ -530,7 +530,7 @@ def process_single_enrichment(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.reprocess_failed_enrichment_builds",
+    name="app.tasks.enrichment_processing.reprocess_failed_enrichment_builds",
     queue="dataset_processing",
     soft_time_limit=300,
     time_limit=360,
@@ -656,7 +656,7 @@ def reprocess_failed_enrichment_builds(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.finalize_enrichment",
+    name="app.tasks.enrichment_processing.finalize_enrichment",
     queue="dataset_processing",
     soft_time_limit=30,
     time_limit=60,
@@ -760,7 +760,7 @@ def finalize_enrichment(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.process_version_export_job",
+    name="app.tasks.enrichment_processing.process_version_export_job",
     queue="dataset_processing",
     soft_time_limit=600,
     time_limit=900,
@@ -879,7 +879,7 @@ def process_version_export_job(self: PipelineTask, job_id: str) -> Dict[str, Any
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.dispatch_version_scans",
+    name="app.tasks.enrichment_processing.dispatch_version_scans",
     queue="dataset_processing",
     soft_time_limit=300,
     time_limit=600,
@@ -895,12 +895,16 @@ def dispatch_version_scans(
     Uses chunked processing to handle:
     1. Paginate through builds using cursor pagination
     2. Batch query RawBuildRuns and RawRepositories
-    3. Dispatch scan tasks in configurable batches
+    3. Collect all unique commits first
+    4. Dispatch scan batches sequentially using Celery chain
 
     Config settings:
-        SCAN_BUILDS_PER_QUERY: Builds fetched per paginated query (default: 1000)
-        SCAN_COMMITS_PER_BATCH: Commits dispatched per batch (default: 100)
-        SCAN_BATCH_DELAY_SECONDS: Delay between batch dispatches (default: 0.5)
+        SCAN_BUILDS_PER_QUERY: Builds fetched per paginated query (default: 200)
+        SCAN_COMMITS_PER_BATCH: Commits dispatched per batch (default: 20)
+
+    Sequential Processing:
+        Each batch waits for the previous batch to complete before starting.
+        This prevents overloading SonarQube server.
     """
     corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
 
@@ -928,20 +932,15 @@ def dispatch_version_scans(
     # Config
     builds_per_query = settings.SCAN_BUILDS_PER_QUERY
     commits_per_batch = settings.SCAN_COMMITS_PER_BATCH
-    batch_delay = settings.SCAN_BATCH_DELAY_SECONDS
 
     builds_scanned = 0
-    total_batches_dispatched = 0
 
     logger.info(
-        f"{corr_prefix} Starting chunked scan dispatch for version {version_id[:8]} "
+        f"{corr_prefix} Starting scan dispatch for version {version_id[:8]} "
         f"(builds_per_query={builds_per_query}, commits_per_batch={commits_per_batch})"
     )
 
-    # Import scan helper here
-    from app.tasks.enrichment_scan_helpers import dispatch_scan_for_commit
-
-    # Iterate through builds using cursor pagination
+    # Step 1: Collect all unique commits first
     for build_batch in dataset_build_repo.iterate_builds_with_run_ids_paginated(
         dataset_id=str(version.dataset_id),
         batch_size=builds_per_query,
@@ -996,41 +995,236 @@ def dispatch_version_scans(
                     "repo_full_name": raw_repo.full_name,
                 }
 
-        # Check if we should dispatch a batch
-        if len(commits_to_scan) >= commits_per_batch:
-            batch_count = _dispatch_scan_batch(
-                version_id=version_id,
-                commits=list(commits_to_scan.values())[:commits_per_batch],
-                dispatch_scan_for_commit=dispatch_scan_for_commit,
-                corr_prefix=corr_prefix,
-            )
-            total_batches_dispatched += 1
+    # Step 2: Split commits into batches
+    all_commits = list(commits_to_scan.values())
+    total_commits = len(all_commits)
 
-            # Remove dispatched commits
-            dispatched_keys = list(commits_to_scan.keys())[:commits_per_batch]
-            for k in dispatched_keys:
-                del commits_to_scan[k]
+    if total_commits == 0:
+        logger.info(f"{corr_prefix} No commits to scan for version {version_id[:8]}")
+        return {
+            "status": "completed",
+            "builds_scanned": builds_scanned,
+            "scans_total": 0,
+        }
 
-            # Rate limiting between batches
-            if batch_delay > 0:
-                time.sleep(batch_delay)
+    batches = [
+        all_commits[i : i + commits_per_batch]
+        for i in range(0, total_commits, commits_per_batch)
+    ]
+    total_batches = len(batches)
 
-            logger.info(
-                f"{corr_prefix} Dispatched batch {total_batches_dispatched}: "
-                f"{batch_count} scan tasks "
-                f"(scanned {builds_scanned} builds so far)"
-            )
+    logger.info(
+        f"{corr_prefix} Collected {total_commits} unique commits from {builds_scanned} builds, "
+        f"splitting into {total_batches} batches"
+    )
 
-    # Dispatch remaining commits
-    if commits_to_scan:
-        batch_count = _dispatch_scan_batch(
+    # Step 3: Build sequential chain of batch tasks
+    batch_tasks = [
+        process_scan_batch.si(
             version_id=version_id,
-            commits=list(commits_to_scan.values()),
-            dispatch_scan_for_commit=dispatch_scan_for_commit,
-            corr_prefix=corr_prefix,
+            commits_batch=batch,
+            batch_index=i,
+            total_batches=total_batches,
+            correlation_id=correlation_id,
         )
-        total_batches_dispatched += 1
-        logger.info(f"{corr_prefix} Dispatched final batch: {batch_count} scan tasks")
+        for i, batch in enumerate(batches)
+    ]
+
+    # Chain: batch_0 → batch_1 → batch_2 → ... → finalize
+    workflow = chain(
+        *batch_tasks,
+        finalize_scan_dispatch.si(
+            version_id=version_id,
+            builds_scanned=builds_scanned,
+            total_batches=total_batches,
+            has_sonar=has_sonar,
+            has_trivy=has_trivy,
+            correlation_id=correlation_id,
+        ),
+    )
+    workflow.apply_async()
+
+    logger.info(
+        f"{corr_prefix} Dispatched sequential scan chain with {total_batches} batches"
+    )
+
+    return {
+        "status": "dispatched",
+        "builds_scanned": builds_scanned,
+        "total_commits": total_commits,
+        "total_batches": total_batches,
+        "has_sonar": has_sonar,
+        "has_trivy": has_trivy,
+    }
+
+
+@celery_app.task(
+    bind=True,
+    base=PipelineTask,
+    name="app.tasks.enrichment_processing.process_scan_batch",
+    queue="dataset_processing",
+    soft_time_limit=600,
+    time_limit=900,
+)
+def process_scan_batch(
+    self: PipelineTask,
+    version_id: str,
+    commits_batch: List[Dict[str, Any]],
+    batch_index: int,
+    total_batches: int,
+    correlation_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Process a single batch of scan dispatches.
+
+    This task dispatches scans for all commits in the batch and
+    waits for them to complete using chord pattern.
+
+    Args:
+        version_id: DatasetVersion ID
+        commits_batch: List of commit info dicts to scan
+        batch_index: Current batch index (0-based)
+        total_batches: Total number of batches
+        correlation_id: Correlation ID for tracing
+    """
+    from celery import chord
+
+    from app.tasks.enrichment_scan_helpers import dispatch_scan_for_commit
+
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
+    logger.info(
+        f"{corr_prefix} Processing scan batch {batch_index + 1}/{total_batches} "
+        f"with {len(commits_batch)} commits"
+    )
+
+    if not commits_batch:
+        return {
+            "status": "completed",
+            "batch_index": batch_index,
+            "scans_dispatched": 0,
+        }
+
+    # Build scan tasks for this batch
+    scan_tasks = [
+        dispatch_scan_for_commit.s(
+            version_id=version_id,
+            raw_repo_id=commit_info["raw_repo_id"],
+            github_repo_id=commit_info["github_repo_id"],
+            commit_sha=commit_info["commit_sha"],
+            repo_full_name=commit_info["repo_full_name"],
+        )
+        for commit_info in commits_batch
+    ]
+
+    # Use chord to dispatch all scans in parallel and wait for completion
+    # The callback aggregates results and returns when all scans are done
+    result = chord(group(scan_tasks))(
+        aggregate_scan_batch_results.s(
+            version_id=version_id,
+            batch_index=batch_index,
+            total_batches=total_batches,
+            correlation_id=correlation_id,
+        )
+    )
+
+    # Wait for the chord to complete (blocking)
+    try:
+        batch_result = result.get(timeout=600)
+        logger.info(
+            f"{corr_prefix} Batch {batch_index + 1}/{total_batches} completed: "
+            f"{batch_result}"
+        )
+        return batch_result
+    except Exception as e:
+        logger.error(
+            f"{corr_prefix} Batch {batch_index + 1}/{total_batches} failed: {e}"
+        )
+        return {
+            "status": "failed",
+            "batch_index": batch_index,
+            "error": str(e),
+        }
+
+
+@celery_app.task(
+    bind=True,
+    base=PipelineTask,
+    name="app.tasks.enrichment_processing.aggregate_scan_batch_results",
+    queue="dataset_processing",
+    soft_time_limit=60,
+    time_limit=120,
+)
+def aggregate_scan_batch_results(
+    self: PipelineTask,
+    scan_results: List[Dict[str, Any]],
+    version_id: str,
+    batch_index: int,
+    total_batches: int,
+    correlation_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Aggregate results from a batch of scan dispatches.
+
+    Called as chord callback after all scans in a batch complete.
+    """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
+    dispatched = 0
+    skipped = 0
+    errors = 0
+
+    for result in scan_results:
+        if isinstance(result, dict):
+            status = result.get("status", "unknown")
+            if status == "dispatched":
+                dispatched += 1
+            elif status == "skipped":
+                skipped += 1
+            else:
+                errors += 1
+        else:
+            errors += 1
+
+    logger.info(
+        f"{corr_prefix} Batch {batch_index + 1}/{total_batches} aggregated: "
+        f"dispatched={dispatched}, skipped={skipped}, errors={errors}"
+    )
+
+    return {
+        "status": "completed",
+        "batch_index": batch_index,
+        "dispatched": dispatched,
+        "skipped": skipped,
+        "errors": errors,
+    }
+
+
+@celery_app.task(
+    bind=True,
+    base=PipelineTask,
+    name="app.tasks.enrichment_processing.finalize_scan_dispatch",
+    queue="dataset_processing",
+    soft_time_limit=60,
+    time_limit=120,
+)
+def finalize_scan_dispatch(
+    self: PipelineTask,
+    version_id: str,
+    builds_scanned: int,
+    total_batches: int,
+    has_sonar: bool,
+    has_trivy: bool,
+    correlation_id: str = "",
+) -> Dict[str, Any]:
+    """
+    Finalize scan dispatch after all batches complete.
+
+    Updates version with total scan counts.
+    """
+    corr_prefix = f"[corr={correlation_id[:8]}]" if correlation_id else ""
+
+    version_repo = DatasetVersionRepository(self.db)
 
     # Count actual scans from CommitScan collections
     from app.repositories.sonar_commit_scan import SonarCommitScanRepository
@@ -1051,42 +1245,17 @@ def dispatch_version_scans(
     version_repo.update_one(version_id, {"scans_total": scans_total})
 
     logger.info(
-        f"{corr_prefix} Scan dispatch complete: "
+        f"{corr_prefix} Scan dispatch finalized: "
         f"{builds_scanned} builds scanned, "
-        f"{total_batches_dispatched} batches dispatched, "
+        f"{total_batches} batches completed, "
         f"{scans_total} total scans ({trivy_count} trivy, {sonar_count} sonar)"
     )
 
     return {
-        "status": "dispatched",
+        "status": "completed",
         "builds_scanned": builds_scanned,
-        "batches_dispatched": total_batches_dispatched,
+        "batches_completed": total_batches,
         "scans_total": scans_total,
-        "has_sonar": has_sonar,
-        "has_trivy": has_trivy,
+        "trivy_count": trivy_count,
+        "sonar_count": sonar_count,
     }
-
-
-def _dispatch_scan_batch(
-    version_id: str,
-    commits: List[Dict[str, Any]],
-    dispatch_scan_for_commit,
-    corr_prefix: str,
-) -> int:
-    """Helper to dispatch a batch of scan tasks."""
-    scan_tasks = []
-    for commit_info in commits:
-        scan_tasks.append(
-            dispatch_scan_for_commit.si(
-                version_id=version_id,
-                raw_repo_id=commit_info["raw_repo_id"],
-                github_repo_id=commit_info["github_repo_id"],
-                commit_sha=commit_info["commit_sha"],
-                repo_full_name=commit_info["repo_full_name"],
-            )
-        )
-
-    if scan_tasks:
-        group(scan_tasks).apply_async()
-
-    return len(scan_tasks)

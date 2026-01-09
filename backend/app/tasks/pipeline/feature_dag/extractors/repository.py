@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # Performance limits
 MAX_FILES_TO_SCAN = 5000  # Limit files scanned for SLOC metrics
-MAX_COMMITS_FOR_COMMENTS = 10  # Limit commits checked for GitHub API calls
+MAX_COMMITS_FOR_COMMENTS = 30  # Limit commits checked for GitHub API calls
 
 
 @tag(group="repo")
@@ -68,8 +68,12 @@ def gh_repo_age(git_history: GitHistoryInput) -> Optional[float]:
             .split("\n")[0]
         )
 
-        latest_commit_date = datetime.fromtimestamp(int(latest_commit_ts), tz=timezone.utc)
-        first_commit_date = datetime.fromtimestamp(int(first_commit_ts), tz=timezone.utc)
+        latest_commit_date = datetime.fromtimestamp(
+            int(latest_commit_ts), tz=timezone.utc
+        )
+        first_commit_date = datetime.fromtimestamp(
+            int(first_commit_ts), tz=timezone.utc
+        )
 
         # Age = time from first commit to build commit
         age_days = (latest_commit_date - first_commit_date).days
@@ -132,7 +136,9 @@ def repo_code_metrics(
     worktree_path = git_worktree.worktree_path
     languages = tr_log_lan_all
 
-    src_lines, test_lines, test_cases, asserts = _count_code_metrics(worktree_path, languages)
+    src_lines, test_lines, test_cases, asserts = _count_code_metrics(
+        worktree_path, languages
+    )
 
     metrics = {
         "gh_sloc": src_lines,
@@ -150,7 +156,9 @@ def repo_code_metrics(
     return metrics
 
 
-def _count_code_metrics(worktree_path: Path, languages: List[str]) -> Tuple[int, int, int, int]:
+def _count_code_metrics(
+    worktree_path: Path, languages: List[str]
+) -> Tuple[int, int, int, int]:
     """
     Count source lines, test lines, test cases, and assertions.
 
@@ -279,7 +287,9 @@ def github_discussion_features(
     pr_created_at: Optional[datetime] = None
     if gh_pr_created_at:
         try:
-            pr_created_at = datetime.fromisoformat(gh_pr_created_at.replace("Z", "+00:00"))
+            pr_created_at = datetime.fromisoformat(
+                gh_pr_created_at.replace("Z", "+00:00")
+            )
         except (ValueError, AttributeError):
             pass
 
@@ -468,7 +478,9 @@ def gh_has_bug_label_feature(
 
         # Labels can be list of dicts with "name" key
         labels = pr_details.get("labels", [])
-        label_names = [lbl.get("name", "") if isinstance(lbl, dict) else str(lbl) for lbl in labels]
+        label_names = [
+            lbl.get("name", "") if isinstance(lbl, dict) else str(lbl) for lbl in labels
+        ]
 
         result["gh_has_bug_label"] = any(
             "bug" in label.lower() or "fix" in label.lower() for label in label_names

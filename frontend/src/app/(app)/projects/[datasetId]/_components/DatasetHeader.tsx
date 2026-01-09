@@ -5,24 +5,13 @@ import { ArrowLeft, FileSpreadsheet, RefreshCw, Trash2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { formatDateTime } from "@/lib/utils";
 import type { DatasetRecord } from "@/types";
 
 interface DatasetHeaderProps {
     dataset: DatasetRecord;
     onRefresh: () => void;
     onDelete: () => void;
-}
-
-function formatDate(value?: string | null) {
-    if (!value) return "—";
-    try {
-        return new Intl.DateTimeFormat(undefined, {
-            dateStyle: "medium",
-            timeStyle: "short",
-        }).format(new Date(value));
-    } catch {
-        return value;
-    }
 }
 
 export function DatasetHeader({ dataset, onRefresh, onDelete }: DatasetHeaderProps) {
@@ -69,22 +58,9 @@ export function DatasetHeader({ dataset, onRefresh, onDelete }: DatasetHeaderPro
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                         {dataset.file_name} • {dataset.rows.toLocaleString()} rows •
-                        Created {formatDate(dataset.created_at)}
+                        Created {formatDateTime(dataset.created_at)}
                     </p>
                 </div>
-            </div>
-            <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={onRefresh}>
-                    <RefreshCw className="mr-2 h-4 w-4" /> Refresh
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20"
-                    onClick={onDelete}
-                >
-                    <Trash2 className="mr-2 h-4 w-4" /> Delete
-                </Button>
             </div>
         </div>
     );

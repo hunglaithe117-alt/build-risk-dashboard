@@ -1240,7 +1240,7 @@ filtered_metrics = _filter_trivy_metrics(
             │   ├── VersionProcessingCard.tsx
             │   ├── AnalysisSection.tsx
             │   ├── ExportSection.tsx
-            │   ├── PreprocessingSection.tsx
+            
             │   ├── ScanMetricsSection.tsx
             │   ├── FeatureDistributionChart.tsx
             │   ├── FeatureDistributionCarousel.tsx
@@ -1347,7 +1347,7 @@ VersionBuildsPage (in builds/page.tsx)
 | Prediction | Yes (ML model) | No (feature extraction only) |
 | Scan Metrics | No | Yes (Trivy, SonarQube) |
 | Feature Analysis | No | Yes (distribution, correlation) |
-| Export | Basic | Advanced (preprocessing, format options) |
+| Export | Basic | Advanced (format options) |
 
 ---
 
@@ -1680,7 +1680,6 @@ INGESTION_LOGS_PER_CHUNK = 500  # Parallel chunks
 ```python
 SCAN_BUILDS_PER_QUERY = 1000
 SCAN_COMMITS_PER_BATCH = 100
-SCAN_BATCH_DELAY_SECONDS = 0.5
 ```
 
 ### 2. Caching

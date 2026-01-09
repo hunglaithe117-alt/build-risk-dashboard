@@ -41,6 +41,7 @@ import {
     XCircle,
 } from "lucide-react";
 import { SearchFilterBar } from "@/components/builds";
+import { formatDateTime } from "@/lib/utils";
 import type { DatasetVersion } from "../_hooks/useDatasetVersions";
 
 // Version status options for filter dropdown
@@ -118,22 +119,6 @@ export function VersionHistoryTable({
     const handleViewVersion = (versionId: string) => {
         router.push(`/projects/${datasetId}/versions/${versionId}`);
     };
-    // Format relative time
-    const formatRelativeTime = (dateStr: string | null): string => {
-        if (!dateStr) return "—";
-        const date = new Date(dateStr);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMs / 3600000);
-        const diffDays = Math.floor(diffMs / 86400000);
-
-        if (diffMins < 1) return "Just now";
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ago`;
-        if (diffDays < 7) return `${diffDays}d ago`;
-        return date.toLocaleDateString();
-    };
 
     // Status config
     const getStatusConfig = (status: string) => {
@@ -192,12 +177,12 @@ export function VersionHistoryTable({
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Name</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead className="text-center">Features</TableHead>
-                                    <TableHead className="text-right">Rows</TableHead>
-                                    <TableHead>Created</TableHead>
-                                    <TableHead className="text-right">Actions</TableHead>
+                                    <TableHead className="w-[30%]">Name</TableHead>
+                                    <TableHead className="w-[20%]">Status</TableHead>
+                                    <TableHead className="w-[15%] text-center">Features</TableHead>
+                                    <TableHead className="w-[15%] text-center">Scans</TableHead>
+                                    <TableHead className="w-[15%] text-right">Created</TableHead>
+                                    <TableHead className="w-[5%] text-right">Actions</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -216,7 +201,7 @@ export function VersionHistoryTable({
                                             </TableCell>
                                             <TableCell>
                                                 <div className="flex items-center gap-2">
-                                                    <StatusIcon className={`h-4 w-4 ${statusConfig.color}`} />
+                                                    <StatusIcon className={`h-4 w-4 ${statusConfig.color} ${["ingesting", "processing"].includes(version.status) ? "animate-spin" : ""}`} />
                                                     <span className="text-sm">{statusConfig.label}</span>
                                                 </div>
                                             </TableCell>
@@ -225,17 +210,24 @@ export function VersionHistoryTable({
                                                     {version.selected_features.length}
                                                 </Badge>
                                             </TableCell>
-                                            <TableCell className="text-right">
-                                                <span className="text-muted-foreground">
-                                                    {version.builds_features_extracted.toLocaleString()} /{" "}
-                                                    {version.builds_total.toLocaleString()}
-                                                </span>
+                                            <TableCell className="text-center">
+                                                {(() => {
+                                                    const sonarCount = version.scan_metrics?.sonarqube?.length || 0;
+                                                    const trivyCount = version.scan_metrics?.trivy?.length || 0;
+                                                    const total = sonarCount + trivyCount;
+                                                    if (total === 0) return <span className="text-muted-foreground">—</span>;
+                                                    return (
+                                                        <Badge variant="secondary" title={`SonarQube: ${sonarCount}, Trivy: ${trivyCount}`}>
+                                                            {total}
+                                                        </Badge>
+                                                    );
+                                                })()}
                                             </TableCell>
-                                            <TableCell>
-                                                <div className="flex items-center gap-1 text-muted-foreground">
+                                            <TableCell className="text-right">
+                                                <div className="flex items-center justify-end gap-1 text-muted-foreground">
                                                     <Clock className="h-3 w-3" />
                                                     <span className="text-sm">
-                                                        {formatRelativeTime(version.created_at)}
+                                                        {formatDateTime(version.created_at)}
                                                     </span>
                                                 </div>
                                             </TableCell>

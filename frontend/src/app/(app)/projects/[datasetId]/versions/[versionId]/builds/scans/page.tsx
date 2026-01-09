@@ -431,11 +431,11 @@ export default function ScansPage() {
                     <TabsList className="mb-4">
                         <TabsTrigger value="sonarqube" className="flex items-center gap-2">
                             <BarChart3 className="h-4 w-4 text-blue-600" />
-                            SonarQube ({sonarData?.total || 0})
+                            SonarQube
                         </TabsTrigger>
                         <TabsTrigger value="trivy" className="flex items-center gap-2">
                             <Shield className="h-4 w-4 text-green-600" />
-                            Trivy ({trivyData?.total || 0})
+                            Trivy
                         </TabsTrigger>
                     </TabsList>
 

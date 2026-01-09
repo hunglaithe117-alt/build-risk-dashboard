@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { tokensApi } from '@/lib/api'
+import { formatDateTime } from '@/lib/utils'
 import type { GithubToken, TokenPoolStatus } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -203,7 +204,7 @@ export function GitHubTokensTab() {
 
   const formatDate = (date: string | null) => {
     if (!date) return '-'
-    return new Date(date).toLocaleString()
+    return formatDateTime(date)
   }
 
   const quotaPercentage = poolStatus

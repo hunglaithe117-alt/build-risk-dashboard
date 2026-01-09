@@ -35,6 +35,7 @@ import {
     Trash2,
     XCircle,
 } from "lucide-react";
+import { formatDateTime } from "@/lib/utils";
 import type { DatasetVersion } from "../_hooks/useDatasetVersions";
 
 type ExportFormat = "csv" | "json";
@@ -302,23 +303,6 @@ function VersionCard({ version, onView, onDownload, onDelete, onRetryProcessing 
     const status = statusConfig[version.status] || { icon: Clock, color: "text-gray-400", label: version.status };
     const StatusIcon = status.icon;
 
-    // Format relative time
-    const formatTime = (dateStr: string | null): string => {
-        if (!dateStr) return "—";
-        const date = new Date(dateStr);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMs / 3600000);
-        const diffDays = Math.floor(diffMs / 86400000);
-
-        if (diffMins < 1) return "Just now";
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ago`;
-        if (diffDays < 7) return `${diffDays}d ago`;
-        return date.toLocaleDateString();
-    };
-
     const handleDownload = async (format: ExportFormat) => {
         setDownloading(true);
         try {
@@ -351,7 +335,7 @@ function VersionCard({ version, onView, onDownload, onDelete, onRetryProcessing 
                         </span>
                         <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3" />
-                            {formatTime(version.created_at)}
+                            {formatDateTime(version.created_at)}
                         </span>
                     </div>
                     {version.error_message && (

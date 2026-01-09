@@ -131,10 +131,10 @@ docker compose -f docker-compose.prod.yml logs -f
 
     ```bash
     # Create Webhook (để báo kết quả về backend)
-    curl -u "admin:YOUR_NEW_PASSWORD" -X POST \
+    curl -u "admin:Teopheono411@12" -X POST \
       "http://localhost:9000/api/webhooks/create" \
       -d "name=Build Risk Webhook" \
-      -d "url=http://backend:8000/api/integrations/webhooks/sonarqube/pipeline" \
+      -d "url=http://10.128.0.9:8000/api/integrations/webhooks/sonarqube/pipeline" \
       -d "secret=change-me-to-secure-secret"
     ```
 

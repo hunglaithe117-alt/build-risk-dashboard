@@ -16,19 +16,9 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { reposApi } from "@/lib/api";
+import { formatDateTime } from "@/lib/utils";
 import type { RepositoryRecord } from "@/types";
 
-function formatTimestamp(value?: string) {
-    if (!value) return "—";
-    try {
-        return new Intl.DateTimeFormat(undefined, {
-            dateStyle: "medium",
-            timeStyle: "short",
-        }).format(new Date(value));
-    } catch {
-        return value;
-    }
-}
 
 // Status badge component for pipeline status display
 function RepoStatusBadge({ status }: { status: string }) {
@@ -226,7 +216,7 @@ export default function UserReposPage() {
                                                 <RepoStatusBadge status={repo.status} />
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">
-                                                {formatTimestamp(repo.last_synced_at)}
+                                                {formatDateTime(repo.last_synced_at)}
                                             </td>
                                             <td className="px-6 py-4 text-muted-foreground">
                                                 {repo.builds_fetched.toLocaleString()}

@@ -199,11 +199,7 @@ export function ScanConfigPanel({
 
                         {/* Metrics Selection - show when a tool is enabled */}
                         {tools.sonarqube && (
-                            <div className="space-y-3 border-t pt-4">
-                                <div className="flex items-center gap-2">
-                                    <BarChart3 className="h-4 w-4 text-blue-600" />
-                                    <h5 className="text-sm font-medium">SonarQube Metrics</h5>
-                                </div>
+                            <div className="space-y-3 pt-4">
                                 <ScanMetricsSelector
                                     selectedSonarMetrics={selectedSonarMetrics}
                                     selectedTrivyMetrics={[]}
@@ -215,11 +211,7 @@ export function ScanConfigPanel({
                         )}
 
                         {tools.trivy && (
-                            <div className="space-y-3 border-t pt-4">
-                                <div className="flex items-center gap-2">
-                                    <Shield className="h-4 w-4 text-green-600" />
-                                    <h5 className="text-sm font-medium">Trivy Metrics</h5>
-                                </div>
+                            <div className="space-y-3 pt-4">
                                 <ScanMetricsSelector
                                     selectedSonarMetrics={[]}
                                     selectedTrivyMetrics={selectedTrivyMetrics}

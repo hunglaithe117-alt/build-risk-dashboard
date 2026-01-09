@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
 import { datasetsApi } from "@/lib/api";
+import { formatDateTime } from "@/lib/utils";
 import type {
   DatasetRecord,
   DatasetTemplateRecord
@@ -35,17 +36,6 @@ function formatNumber(value: number) {
   return value.toLocaleString("en-US");
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(value));
-  } catch (err) {
-    return value;
-  }
-}
 
 const PAGE_SIZE = 20;
 
@@ -336,7 +326,7 @@ export default function DatasetsPage() {
                         {dataset.versions_count || 0}
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">
-                        {formatDate(dataset.created_at)}
+                        {formatDateTime(dataset.created_at)}
                       </td>
                       <td className="px-6 py-4">
                         <Button

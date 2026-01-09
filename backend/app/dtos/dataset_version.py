@@ -35,6 +35,7 @@ class VersionResponse(BaseModel):
     description: Optional[str]
     selected_features: List[str]
     status: str
+    scan_metrics: Optional[Dict[str, List[str]]] = None
     builds_total: int
     builds_ingested: int
     builds_missing_resource: int

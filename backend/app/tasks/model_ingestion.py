@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.model_processing.start_model_processing",
+    name="app.tasks.model_ingestion.start_model_processing",
     queue="model_processing",
     soft_time_limit=120,
     time_limit=180,
@@ -1221,7 +1221,7 @@ def handle_ingestion_chord_error(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.ingestion.reingest_failed_builds",
+    name="app.tasks.model_ingestion.reingest_failed_builds",
     queue="model_ingestion",
     soft_time_limit=600,
     time_limit=900,

@@ -39,6 +39,7 @@
     "react-resizable-panels": "^2.0.19",
     "reactflow": "^11.11.4",
     "recharts": "^2.10.3",
+    "sharp": "^0.33.2",
     "tailwind-merge": "^2.1.0",
     "tailwindcss-animate": "^1.0.7"
   },

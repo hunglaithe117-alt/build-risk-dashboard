@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.start_enrichment",
+    name="app.tasks.enrichment_ingestion.start_enrichment",
     queue="dataset_ingestion",
     soft_time_limit=120,
     time_limit=180,
@@ -325,7 +325,7 @@ def start_enrichment(self: PipelineTask, version_id: str) -> Dict[str, Any]:
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.aggregate_ingestion_results",
+    name="app.tasks.enrichment_ingestion.aggregate_ingestion_results",
     queue="dataset_ingestion",
     soft_time_limit=30,
     time_limit=60,
@@ -478,7 +478,7 @@ def aggregate_ingestion_results(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.handle_enrichment_chord_error",
+    name="app.tasks.enrichment_ingestion.handle_enrichment_chord_error",
     queue="dataset_ingestion",
     soft_time_limit=60,
     time_limit=120,
@@ -580,7 +580,7 @@ def handle_enrichment_chord_error(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.version_enrichment.reingest_failed_builds",
+    name="app.tasks.enrichment_ingestion.reingest_failed_builds",
     queue="dataset_ingestion",
     soft_time_limit=300,
     time_limit=360,

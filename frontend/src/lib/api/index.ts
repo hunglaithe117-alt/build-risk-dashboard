@@ -27,15 +27,7 @@ export { settingsApi, notificationsApi } from './settings';
 export { datasetScanApi, datasetVersionApi } from './versions';
 export { qualityApi, userSettingsApi } from './quality';
 export { statisticsApi, enrichmentLogsApi } from './statistics';
-export { preprocessingApi } from './preprocessing';
 
-export type {
-    NormalizationMethod,
-    NormalizationPreviewRequest,
-    FeatureStats,
-    FeaturePreview,
-    NormalizationPreviewResponse,
-} from './preprocessing';
 
 export type {
     UserListResponse,

@@ -28,22 +28,12 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { useWebSocket } from "@/contexts/websocket-context";
 import { reposApi } from "@/lib/api";
+import { formatDateTime } from "@/lib/utils";
 import type {
   RepositoryRecord
 } from "@/types";
 import { ImportProgressDisplay } from "./_components/ImportProgressDisplay";
 
-function formatTimestamp(value?: string) {
-  if (!value) return "—";
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(value));
-  } catch (err) {
-    return value;
-  }
-}
 
 const PAGE_SIZE = 20;
 
@@ -297,7 +287,7 @@ export default function AdminReposPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 text-muted-foreground">
-                        {formatTimestamp(repo.last_synced_at)}
+                        {formatDateTime(repo.last_synced_at)}
                       </td>
                       <td className="px-6 py-4">
                         <ImportProgressDisplay

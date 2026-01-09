@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.model_ingestion.start_processing_phase",
+    name="app.tasks.model_processing.start_processing_phase",
     queue="model_processing",
     soft_time_limit=60,
     time_limit=120,
@@ -343,7 +343,7 @@ def dispatch_build_processing(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.processing.finalize_model_processing",
+    name="app.tasks.model_processing.finalize_model_processing",
     queue="model_processing",
     soft_time_limit=60,
     time_limit=120,
@@ -467,7 +467,7 @@ def finalize_model_processing(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.processing.finalize_prediction",
+    name="app.tasks.model_processing.finalize_prediction",
     queue="model_prediction",
     soft_time_limit=60,
     time_limit=120,
@@ -597,7 +597,7 @@ def finalize_prediction(
 @celery_app.task(
     bind=True,
     base=SafeTask,
-    name="app.tasks.processing.process_workflow_run",
+    name="app.tasks.model_processing.process_workflow_run",
     queue="model_processing",
     soft_time_limit=600,
     time_limit=900,
@@ -755,7 +755,7 @@ def process_workflow_run(
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.processing.retry_failed_builds",
+    name="app.tasks.model_processing.retry_failed_builds",
     queue="model_processing",
     soft_time_limit=300,
     time_limit=360,
@@ -924,7 +924,7 @@ def retry_failed_builds(self: PipelineTask, repo_config_id: str) -> Dict[str, An
 @celery_app.task(
     bind=True,
     base=PipelineTask,
-    name="app.tasks.processing.handle_processing_chain_error",
+    name="app.tasks.model_processing.handle_processing_chain_error",
     queue="model_processing",
     soft_time_limit=60,
     time_limit=120,
@@ -1042,7 +1042,7 @@ def handle_processing_chain_error(
 @celery_app.task(
     bind=True,
     base=SafeTask,
-    name="app.tasks.processing.predict_builds_batch",
+    name="app.tasks.model_processing.predict_builds_batch",
     queue="model_prediction",
     soft_time_limit=300,
     time_limit=360,

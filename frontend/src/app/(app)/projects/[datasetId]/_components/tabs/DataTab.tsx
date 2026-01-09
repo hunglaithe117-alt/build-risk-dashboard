@@ -19,6 +19,7 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { api } from "@/lib/api";
+import { formatDateTime } from "@/lib/utils";
 import { useDebounce } from "@/hooks/use-debounce";
 import type { DatasetRecord } from "@/types";
 import {
@@ -209,7 +210,7 @@ export function DataTab({ datasetId, dataset, onRefresh }: DataTabProps) {
                                                     {build.duration_seconds ? formatDuration(build.duration_seconds) : "-"}
                                                 </TableCell>
                                                 <TableCell className="text-xs text-muted-foreground">
-                                                    {build.created_at ? new Date(build.created_at).toLocaleString("en-GB", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" }) : "-"}
+                                                    {build.created_at ? formatDateTime(build.created_at) : "-"}
                                                 </TableCell>
                                                 <TableCell>
                                                     {build.web_url && (

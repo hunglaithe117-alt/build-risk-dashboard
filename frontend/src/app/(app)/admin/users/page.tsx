@@ -24,6 +24,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { toast } from '@/components/ui/use-toast'
 import { adminUsersApi, usersApi } from '@/lib/api'
+import { formatDateTime } from '@/lib/utils'
 import type { UserAccount } from '@/types'
 
 export default function AdminUsersPage() {
@@ -81,13 +82,7 @@ export default function AdminUsersPage() {
         }
     }
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('vi-VN', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-        })
-    }
+
 
     return (
         <div className="flex flex-col gap-6">
@@ -188,7 +183,7 @@ export default function AdminUsersPage() {
                                             </Badge>
                                         </TableCell>
                                         <TableCell className="text-muted-foreground text-sm">
-                                            {formatDate(user.created_at)}
+                                            {formatDateTime(user.created_at)}
                                         </TableCell>
                                         <TableCell className="text-right">
                                             {user.id !== currentUserId && (

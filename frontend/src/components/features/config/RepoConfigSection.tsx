@@ -425,25 +425,25 @@ export function RepoConfigSection({
                         </DialogDescription>
                     </DialogHeader>
 
-                    <div className="space-y-4 py-4">
+                    <div className="space-y-6 py-4">
                         {listFields.map(field => {
                             // Get filtered options for this specific repo
                             const repoLangs = editingRepo ? (effectiveRepoLanguages[editingRepo] || []) : [];
                             const filteredOptions = getFilteredOptions(field, repoLangs);
 
                             return (
-                                <div key={field.name} className="space-y-2">
+                                <div key={field.name} className="space-y-3">
                                     <label className="text-sm font-medium">{formatFieldName(field.name)}</label>
 
                                     {field.name === "test_frameworks" ? (
                                         // Grouped by language - filtered for this repo
-                                        <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                                        <div className="space-y-4 max-h-[300px] overflow-y-auto">
                                             {Object.entries(filteredOptions as Record<string, string[]>).map(([group, options]) => (
-                                                <div key={group} className="space-y-1">
+                                                <div key={group} className="space-y-2">
                                                     <span className="text-xs text-muted-foreground capitalize font-medium">
                                                         {group}
                                                     </span>
-                                                    <div className="flex flex-wrap gap-1.5">
+                                                    <div className="flex flex-wrap gap-2">
                                                         {options.map(option => {
                                                             const isSelected = (editValues[field.name] || []).includes(option);
                                                             return (
@@ -469,7 +469,7 @@ export function RepoConfigSection({
                                         </div>
                                     ) : field.name === "source_languages" ? (
                                         // Filtered source languages for this repo
-                                        <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto">
+                                        <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto">
                                             {(filteredOptions as string[]).map((option: string) => {
                                                 const isSelected = (editValues[field.name] || []).includes(option);
                                                 return (
@@ -492,8 +492,8 @@ export function RepoConfigSection({
                                         </div>
                                     ) : (
                                         // Flat list for other fields
-                                        <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto">
-                                            {(Array.isArray(field.options) ? field.options : []).map((option: string) => {
+                                        <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto">
+                                            {(Array.isArray(field.options) ? (field.options as string[]) : []).map((option: string) => {
                                                 const isSelected = (editValues[field.name] || []).includes(option);
                                                 return (
                                                     <Badge

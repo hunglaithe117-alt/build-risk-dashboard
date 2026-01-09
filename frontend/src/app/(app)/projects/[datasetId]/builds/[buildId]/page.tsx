@@ -43,10 +43,11 @@ import {
     FileCode,
 } from "lucide-react";
 import {
-    datasetVersionApi,
     type EnrichmentBuildDetailResponse,
     type NodeExecutionDetail,
+    datasetVersionApi,
 } from "@/lib/api";
+import { formatDateTime } from "@/lib/utils";
 import { CIProviderLabels } from "@/types";
 
 const getCIProviderLabel = (provider: string): string => {
@@ -65,22 +66,7 @@ const formatDuration = (seconds: number | null): string => {
     return `${hours}h ${remainMins}m`;
 };
 
-/** Format relative time */
-const formatRelativeTime = (dateStr: string | null): string => {
-    if (!dateStr) return "—";
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
-};
 
 /** Get status config */
 const getStatusConfig = (status: string) => {
@@ -223,7 +209,7 @@ export default function BuildDetailPage() {
                         </div>
                         <div>
                             <span className="text-muted-foreground">Created At:</span>
-                            <p className="font-medium">{formatRelativeTime(enrichment.created_at)}</p>
+                            <p className="font-medium">{formatDateTime(enrichment.created_at)}</p>
                         </div>
                     </div>
 

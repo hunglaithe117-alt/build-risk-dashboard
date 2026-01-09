@@ -72,27 +72,26 @@ export function ScanSelectionPanel({
 
                     {/* SonarQube Content */}
                     <TabsContent value="sonarqube" className="mt-0 flex-1 overflow-y-auto min-h-0 space-y-4 pr-1">
-                        <div className={cn(
-                            "flex items-start gap-3 p-4 rounded-lg border transition-all cursor-pointer",
-                            enabledTools.sonarqube ? "bg-blue-50/50 border-blue-200 dark:bg-blue-900/10 dark:border-blue-900" : "bg-card hover:bg-accent/50",
-                            disabled && "opacity-50 cursor-not-allowed"
-                        )}
-                            onClick={() => !disabled && toggleTool("sonarqube")}
-                        >
+                        <div className="flex items-center gap-2 px-1 mb-4">
                             <Checkbox
+                                id="enable-sonar"
                                 checked={enabledTools.sonarqube}
                                 onCheckedChange={() => !disabled && toggleTool("sonarqube")}
                                 disabled={disabled}
-                                className="mt-1 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                                className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                             />
-                            <div className="space-y-1">
-                                <div className="font-medium flex items-center gap-2">
-                                    Enable SonarQube Scan
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                    Analyzes code quality, bugs, and security vulnerabilities.
-                                </p>
-                            </div>
+                            <label
+                                htmlFor="enable-sonar"
+                                className={cn(
+                                    "font-medium cursor-pointer select-none flex items-center gap-2",
+                                    disabled && "opacity-50 cursor-not-allowed"
+                                )}
+                            >
+                                Enable SonarQube Scan
+                                <span className="text-sm font-normal text-muted-foreground hidden sm:inline-block">
+                                    - Analyzes code quality, bugs, and security vulnerabilities
+                                </span>
+                            </label>
                         </div>
 
                         {enabledTools.sonarqube ? (
@@ -120,27 +119,26 @@ export function ScanSelectionPanel({
 
                     {/* Trivy Content */}
                     <TabsContent value="trivy" className="mt-0 flex-1 overflow-y-auto min-h-0 space-y-4 pr-1">
-                        <div className={cn(
-                            "flex items-start gap-3 p-4 rounded-lg border transition-all cursor-pointer",
-                            enabledTools.trivy ? "bg-green-50/50 border-green-200 dark:bg-green-900/10 dark:border-green-900" : "bg-card hover:bg-accent/50",
-                            disabled && "opacity-50 cursor-not-allowed"
-                        )}
-                            onClick={() => !disabled && toggleTool("trivy")}
-                        >
+                        <div className="flex items-center gap-2 px-1 mb-4">
                             <Checkbox
+                                id="enable-trivy"
                                 checked={enabledTools.trivy}
                                 onCheckedChange={() => !disabled && toggleTool("trivy")}
                                 disabled={disabled}
-                                className="mt-1 data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
+                                className="data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
                             />
-                            <div className="space-y-1">
-                                <div className="font-medium flex items-center gap-2">
-                                    Enable Trivy Scan
-                                </div>
-                                <p className="text-sm text-muted-foreground">
-                                    Scans for container image vulnerabilities (CVEs) and filesystem issues.
-                                </p>
-                            </div>
+                            <label
+                                htmlFor="enable-trivy"
+                                className={cn(
+                                    "font-medium cursor-pointer select-none flex items-center gap-2",
+                                    disabled && "opacity-50 cursor-not-allowed"
+                                )}
+                            >
+                                Enable Trivy Scan
+                                <span className="text-sm font-normal text-muted-foreground hidden sm:inline-block">
+                                    - Scans for container image vulnerabilities (CVEs) and filesystem issues
+                                </span>
+                            </label>
                         </div>
 
                         {enabledTools.trivy ? (

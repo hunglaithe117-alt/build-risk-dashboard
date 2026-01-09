@@ -82,9 +82,14 @@ export function formatBytes(bytes?: number, decimals: number = 2): string {
  * @param dateStr - ISO date string
  * @returns Formatted string like "04/01/2026 03:17"
  */
-export const formatDateTime = (dateStr: string | null): string => {
+export const formatDateTime = (dateStr: string | null | undefined): string => {
   if (!dateStr) return "—";
-  const date = new Date(dateStr);
+  // Ensure UTC parsing: append 'Z' if no timezone indicator present
+  let isoStr = dateStr;
+  if (!dateStr.endsWith("Z") && !dateStr.includes("+") && !dateStr.includes("-", 10)) {
+    isoStr = dateStr + "Z";
+  }
+  const date = new Date(isoStr);
   return date.toLocaleString("vi-VN", {
     day: "2-digit",
     month: "2-digit",

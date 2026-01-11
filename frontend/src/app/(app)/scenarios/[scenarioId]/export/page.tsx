@@ -268,7 +268,7 @@ export default function ScenarioExportPage() {
                                     <TableCell className="text-right">
                                         <Button size="sm" variant="outline" asChild>
                                             <a
-                                                href={split.file_path}
+                                                href={`/api/training-scenarios/${scenarioId}/splits/${split.id}/download`}
                                                 download={`${split.split_type}.${split.file_format}`}
                                             >
                                                 <Download className="mr-2 h-4 w-4" />

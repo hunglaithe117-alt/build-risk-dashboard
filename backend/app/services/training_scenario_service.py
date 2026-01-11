@@ -499,6 +499,24 @@ class TrainingScenarioService:
             "generation_duration_seconds": split.generation_duration_seconds,
         }
 
+    def get_split_by_id(
+        self,
+        scenario_id: str,
+        split_id: str,
+        user_id: str,
+    ) -> Dict[str, Any]:
+        """Get a specific split file by ID."""
+        # Permission check
+        self.get_scenario(scenario_id, user_id)
+
+        split = self.split_repo.find_by_id(split_id)
+        if not split or str(split.scenario_id) != scenario_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Split {split_id} not found for scenario {scenario_id}",
+            )
+        return self._serialize_split(split)
+
     # =========================================================================
     # Build Listing Endpoints
     # =========================================================================

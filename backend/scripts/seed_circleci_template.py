@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 # NEW: DevOps Features (from Circle CI research)
 # =============================================================================
 FEATURES_DEVOPS = {
-    "num_of_devops_files",
-    "devops_change_size",
-    "devops_tools_used",
+    "devops_files_changed",
+    "devops_lines_changed",
+    "devops_tools_detected",
 }
 
 # =============================================================================
@@ -29,28 +29,28 @@ FEATURES_DEVOPS = {
 # =============================================================================
 FEATURES_BUILD_HISTORY = {
     # Time features
-    "day_week",
-    "time_of_day",
+    "build_day_of_week",
+    "build_hour",
     # Link to last build
-    "prev_built_result",
-    "same_committer",
-    "elapsed_days_last_build",
+    "history_prev_result",
+    "history_same_committer",
+    "history_days_since_prev",
     # Project history
-    "project_fail_history",
-    "project_fail_recent",
+    "history_project_fail_rate",
+    "history_project_fail_recent",
 }
 
 # NEW: Committer Experience Features (from Circle CI research)
 FEATURES_COMMITTER = {
-    "committer_fail_history",
-    "committer_recent_fail_history",
-    "committer_avg_exp",
+    "author_fail_rate",
+    "author_fail_rate_recent",
+    "author_experience",
 }
 
 # NEW: Cooperation Features (from Circle CI research)
 FEATURES_COOPERATION = {
-    "num_of_distinct_authors",
-    "total_number_of_revisions",
+    "team_distinct_authors",
+    "team_total_revisions",
 }
 
 # All features combined

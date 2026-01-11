@@ -3,11 +3,13 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.entities.base import PyObjectIdStr
+
 
 class DatasetTemplateResponse(BaseModel):
     """Response DTO for dataset template."""
 
-    id: Optional[str] = Field(None, alias="_id")
+    id: Optional[PyObjectIdStr] = Field(None, alias="_id")
     name: str
     description: Optional[str] = None
     feature_names: List[str] = Field(default_factory=list)

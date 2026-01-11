@@ -16,74 +16,74 @@ logger = logging.getLogger(__name__)
 
 # Build Log Features
 FEATURES_BUILD_LOG = {
-    "tr_jobs",
-    "tr_build_number",
-    "tr_duration",
-    "tr_status",
-    "tr_original_commit",
-    "tr_log_num_jobs",
-    "tr_log_lan_all",
-    "tr_log_tests_run_sum",
-    "tr_log_tests_failed_sum",
-    "tr_log_tests_skipped_sum",
-    "tr_log_tests_ok_sum",
-    "tr_log_tests_fail_rate",
-    "tr_log_testduration_sum",
-    "tr_log_frameworks_all",
+    "log_job_ids",
+    "build_number",
+    "build_duration_sec",
+    "build_status",
+    "build_trigger_sha",
+    "log_jobs_count",
+    "repo_languages_all",
+    "log_tests_run",
+    "log_tests_failed",
+    "log_tests_skipped",
+    "log_tests_passed",
+    "log_tests_fail_rate",
+    "log_test_duration_sec",
+    "log_test_frameworks",
 }
 
 # Git Features (from git/*.py)
 FEATURES_GIT = {
     # commit_info node
-    "git_all_built_commits",
-    "git_num_all_built_commits",
-    "git_prev_built_commit",
-    "git_prev_commit_resolution_status",
-    "tr_prev_build",
+    "git_built_commits",
+    "git_built_commits_count",
+    "git_prev_commit_sha",
+    "git_prev_commit_status",
+    "history_prev_build_id",
     # diff_features node
     "git_diff_src_churn",
     "git_diff_test_churn",
-    "gh_diff_files_added",
-    "gh_diff_files_deleted",
-    "gh_diff_files_modified",
-    "gh_diff_tests_added",
-    "gh_diff_tests_deleted",
-    "gh_diff_src_files",
-    "gh_diff_doc_files",
-    "gh_diff_other_files",
+    "git_diff_files_added",
+    "git_diff_files_deleted",
+    "git_diff_files_modified",
+    "git_diff_tests_added",
+    "git_diff_tests_deleted",
+    "git_diff_src_files",
+    "git_diff_doc_files",
+    "git_diff_other_files",
     # file_touch_history node
-    "gh_num_commits_on_files_touched",
+    "git_file_commit_density",
     # team_membership node
-    "gh_team_size",
-    "gh_by_core_team_member",
+    "team_size",
+    "team_is_core_member",
 }
 
 # GitHub Features (from github/discussion.py)
 FEATURES_GITHUB = {
-    "gh_num_issue_comments",
-    "gh_num_commit_comments",
-    "gh_num_pr_comments",
-    "gh_description_complexity",
+    "pr_issue_comments",
+    "pr_commit_comments",
+    "pr_review_comments",
+    "pr_description_words",
 }
 
 # Repo Snapshot Features (from repo/snapshot.py)
 FEATURES_REPO = {
-    "gh_repo_age",
-    "gh_repo_num_commits",
-    "gh_sloc",
-    "gh_test_lines_per_kloc",
-    "gh_test_cases_per_kloc",
-    "gh_asserts_cases_per_kloc",
+    "repo_age_days",
+    "repo_total_commits",
+    "repo_sloc",
+    "repo_test_lines_per_kloc",
+    "repo_test_cases_per_kloc",
+    "repo_asserts_per_kloc",
     # Metadata
-    "gh_project_name",
-    "gh_is_pr",
-    "gh_pr_created_at",
-    "gh_pull_req_num",
-    "gh_lang",
+    "repo_full_name",
+    "pr_is_triggered",
+    "pr_created_at",
+    "pr_number",
+    "repo_language",
     "git_branch",
-    "git_trigger_commit",
-    "ci_provider",
-    "gh_build_started_at",
+    "git_trigger_sha",
+    "build_ci_provider",
+    "build_started_at",
 }
 
 # All features combined

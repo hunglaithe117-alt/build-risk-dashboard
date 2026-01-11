@@ -26,61 +26,61 @@ logger = logging.getLogger(__name__)
 
 # Temporal features (used in LSTM sequence - build history patterns)
 TEMPORAL_FEATURES = {
-    "is_prev_failed",
-    "prev_fail_streak",
-    "fail_rate_last_10",
-    "avg_src_churn_last_5",
-    "time_since_prev_build",
+    "history_prev_failed",
+    "history_fail_streak",
+    "history_fail_rate_10",
+    "history_avg_churn_5",
+    "history_days_since_prev",
 }
 
 # Static features (point-in-time values for current build)
 STATIC_FEATURES = {
     # Code churn features
     "git_diff_src_churn",
-    "gh_diff_files_added",
-    "gh_diff_files_deleted",
-    "gh_diff_files_modified",
-    "gh_diff_tests_added",
-    "gh_diff_tests_deleted",
-    "gh_diff_src_files",
-    "gh_diff_doc_files",
-    "gh_diff_other_files",
-    "gh_num_commits_on_files_touched",
-    "files_modified_ratio",
-    "change_entropy",
-    "churn_ratio_vs_avg",
+    "git_diff_files_added",
+    "git_diff_files_deleted",
+    "git_diff_files_modified",
+    "git_diff_tests_added",
+    "git_diff_tests_deleted",
+    "git_diff_src_files",
+    "git_diff_doc_files",
+    "git_diff_other_files",
+    "git_file_commit_density",
+    "git_files_modified_ratio",
+    "git_change_entropy",
+    "git_churn_vs_avg",
     # Repository metrics
-    "gh_sloc",
-    "gh_repo_age",
-    "gh_repo_num_commits",
-    "gh_test_lines_per_kloc",
-    "gh_test_cases_per_kloc",
-    "gh_asserts_cases_per_kloc",  # Note: plural 'cases' to match model training
+    "repo_sloc",
+    "repo_age_days",
+    "repo_total_commits",
+    "repo_test_lines_per_kloc",
+    "repo_test_cases_per_kloc",
+    "repo_asserts_per_kloc",
     # Team features
-    "gh_team_size",
+    "team_size",
     "author_ownership",
-    "is_new_contributor",
-    "days_since_last_author_commit",
+    "author_is_new",
+    "author_days_since_commit",
     # Test metrics from build logs
-    "tr_log_num_jobs",
-    "tr_log_tests_run_sum",
-    "tr_log_tests_failed_sum",
-    "tr_log_tests_skipped_sum",
-    "tr_log_tests_ok_sum",
-    "tr_log_testduration_sum",
-    "tr_log_tests_fail_rate",
-    "tr_duration",
-    "tr_status_num",
+    "log_jobs_count",
+    "log_tests_run",
+    "log_tests_failed",
+    "log_tests_skipped",
+    "log_tests_passed",
+    "log_test_duration_sec",
+    "log_tests_fail_rate",
+    "build_duration_sec",
+    "build_status_num",
     # Time features
-    "build_time_sin",
-    "build_time_cos",
-    "build_hour_risk_score",
+    "build_hour_sin",
+    "build_hour_cos",
+    "build_hour_risk",
 }
 
 # Chain features needed for temporal resolution
 CHAIN_FEATURES = {
-    "tr_prev_build",  # Required for temporal feature chain
-    "tr_status",  # Build status (for tr_status_num derivation)
+    "history_prev_build_id",  # Required for temporal feature chain
+    "build_status",  # Build status (for tr_status_num derivation)
 }
 
 # All features for prediction

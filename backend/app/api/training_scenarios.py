@@ -265,6 +265,33 @@ def get_scenario_splits(
     return service.get_scenario_splits(scenario_id, str(current_user["_id"]))
 
 
+@router.get("/{scenario_id}/splits/{split_id}/download")
+def download_split_file(
+    scenario_id: str,
+    split_id: str,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
+):
+    """Download a dataset split file."""
+    from fastapi import HTTPException
+    from fastapi.responses import FileResponse
+
+    from app import paths
+
+    service = TrainingScenarioService(db)
+    split = service.get_split_by_id(scenario_id, split_id, str(current_user["_id"]))
+
+    file_path = paths.DATA_DIR / split["file_path"]
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Split file not found")
+
+    return FileResponse(
+        path=file_path,
+        filename=file_path.name,
+        media_type="application/octet-stream",
+    )
+
+
 # ============================================================================
 # Build Listing
 # ============================================================================

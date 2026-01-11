@@ -24,6 +24,10 @@ from .dashboard import (
     DashboardTrendPoint,
     RepoDistributionEntry,
 )
+from .dataset_template import (
+    DatasetTemplateListResponse,
+    DatasetTemplateResponse,
+)
 from .feature import (
     DAGEdgeResponse,
     DAGNodeResponse,
@@ -97,6 +101,9 @@ __all__ = [
     "DashboardSummaryResponse",
     "DashboardTrendPoint",
     "RepoDistributionEntry",
+    # Dataset Template
+    "DatasetTemplateListResponse",
+    "DatasetTemplateResponse",
     # GitHub
     "GithubAuthorizeResponse",
     "GithubOAuthInitRequest",

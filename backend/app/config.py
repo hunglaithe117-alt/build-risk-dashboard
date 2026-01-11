@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     CSV_DUPLICATE_WARN_THRESHOLD: float = 0.1  # Warn if >10% duplicates
     CSV_MISSING_WARN_THRESHOLD: float = 0.05  # Warn if >5% missing values
 
+    # --- Dataset Export (Training Scenarios) ---
+    DATASET_EXPORT_BATCH_THRESHOLD: int = 2000  # Use batch loading if builds > this
+    DATASET_EXPORT_FEATURE_VECTOR_BATCH_SIZE: int = 500  # FeatureVectors per batch load
+
     # --- Hamilton Pipeline Caching ---
     HAMILTON_CACHE_ENABLED: bool = True  # Enable/disable DAG result caching
     HAMILTON_CACHE_TYPE: str = "file"  # "file" (persistent) or "memory" (dev only)

@@ -292,6 +292,57 @@ def download_split_file(
     )
 
 
+@router.get("/{scenario_id}/splits/download-all")
+def download_all_splits(
+    scenario_id: str,
+    file_format: str = Query("parquet", description="Format: parquet or csv"),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
+):
+    """Download all split files (train/val/test) as a zip archive."""
+    import zipfile
+    from io import BytesIO
+
+    from fastapi import HTTPException
+    from fastapi.responses import StreamingResponse
+
+    from app import paths
+
+    service = TrainingScenarioService(db)
+    splits = service.get_scenario_splits(scenario_id, str(current_user["_id"]))
+
+    if not splits:
+        raise HTTPException(status_code=404, detail="No splits found for this scenario")
+
+    # Filter by requested format
+    filtered_splits = [s for s in splits if s["file_format"] == file_format]
+    if not filtered_splits:
+        raise HTTPException(status_code=404, detail=f"No {file_format} splits found")
+
+    # Create zip in memory
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for split in filtered_splits:
+            file_path = paths.DATA_DIR / split["file_path"]
+            if file_path.exists():
+                # Add file to zip with just the filename
+                zf.write(file_path, arcname=file_path.name)
+
+    zip_buffer.seek(0)
+
+    from datetime import datetime
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="scenario_{scenario_id}_{timestamp}_{file_format}.zip"'
+        },
+    )
+
+
 # ============================================================================
 # Build Listing
 # ============================================================================

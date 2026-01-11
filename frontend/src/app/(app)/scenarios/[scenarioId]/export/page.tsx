@@ -196,15 +196,29 @@ export default function ScenarioExportPage() {
                             Generated splits ready for download
                         </CardDescription>
                     </div>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleGenerateDataset}
-                        disabled={!canGenerate && !isCompleted}
-                    >
-                        <RefreshCw className="mr-2 h-4 w-4" />
-                        Regenerate
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                            <a href={`/api/training-scenarios/${scenarioId}/splits/download-all?file_format=parquet`}>
+                                <Download className="mr-2 h-4 w-4" />
+                                All (Parquet)
+                            </a>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                            <a href={`/api/training-scenarios/${scenarioId}/splits/download-all?file_format=csv`}>
+                                <Download className="mr-2 h-4 w-4" />
+                                All (CSV)
+                            </a>
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleGenerateDataset}
+                            disabled={!canGenerate && !isCompleted}
+                        >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Regenerate
+                        </Button>
+                    </div>
                 </CardHeader>
                 <CardContent>
                     <div className="grid gap-4 md:grid-cols-4">

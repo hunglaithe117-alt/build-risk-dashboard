@@ -238,28 +238,13 @@ export function ExportPanel({ repoId, repoName }: ExportPanelProps) {
                             </CardContent>
                         </Card>
 
-                        {/* Format Selection */}
+                        {/* Format Selection - Hardcoded to CSV */}
                         <div className="flex items-center gap-4">
                             <label className="text-sm font-medium">Format:</label>
-                            <Select value={format} onValueChange={(v) => setFormat(v as "csv" | "json")}>
-                                <SelectTrigger className="w-32">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="csv">
-                                        <div className="flex items-center gap-2">
-                                            <FileSpreadsheet className="h-4 w-4" />
-                                            CSV
-                                        </div>
-                                    </SelectItem>
-                                    <SelectItem value="json">
-                                        <div className="flex items-center gap-2">
-                                            <FileJson className="h-4 w-4" />
-                                            JSON
-                                        </div>
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
+                            <div className="flex items-center gap-2 px-3 py-2 border rounded-md bg-muted/50 text-sm">
+                                <FileSpreadsheet className="h-4 w-4" />
+                                CSV
+                            </div>
                         </div>
 
                         {/* Current Job Progress */}

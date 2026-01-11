@@ -104,7 +104,9 @@ def discover_repositories(
     return service.discover_repositories(user_id, q, limit)
 
 
-@router.get("/{repo_id}", response_model=RepoDetailResponse, response_model_by_alias=False)
+@router.get(
+    "/{repo_id}", response_model=RepoDetailResponse, response_model_by_alias=False
+)
 def get_repository_detail(
     repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
     db: Database = Depends(get_db),
@@ -257,7 +259,9 @@ def get_import_builds(
     repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    q: str | None = Query(default=None, description="Search query (commit SHA, build ID)"),
+    q: str | None = Query(
+        default=None, description="Search query (commit SHA, build ID)"
+    ),
     status: str | None = Query(
         default=None,
         description="Filter by ingestion status: pending, fetched, ingesting, ingested, failed",
@@ -284,7 +288,9 @@ def get_training_builds(
     repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    q: str | None = Query(default=None, description="Search query (build number, commit SHA)"),
+    q: str | None = Query(
+        default=None, description="Search query (build number, commit SHA)"
+    ),
     extraction_status: str | None = Query(
         default=None,
         description="Filter by extraction status: pending, completed, failed, partial",
@@ -311,7 +317,9 @@ def get_unified_builds(
     repo_id: str = Path(..., description="Repository id (Mongo ObjectId)"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    q: str | None = Query(default=None, description="Search query (build number, commit SHA)"),
+    q: str | None = Query(
+        default=None, description="Search query (build number, commit SHA)"
+    ),
     phase: str | None = Query(
         default=None,
         description="Filter by phase: ingestion, processing, prediction",
@@ -369,12 +377,14 @@ def get_export_preview(
 def export_builds_stream(
     repo_id: str = Path(..., description="Repository id"),
     format: str = Query(default="csv", description="Export format: csv or json"),
-    features: str | None = Query(default=None, description="Comma-separated feature names"),
+    features: str | None = Query(
+        default=None, description="Comma-separated feature names"
+    ),
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     """
-    Stream export builds as CSV or JSON.
+    Stream export builds as CSV.
 
     For small datasets. For large datasets (>1000 rows), use async export.
     """
@@ -383,14 +393,20 @@ def export_builds_stream(
     service = RepositoryService(db)
     feature_list = features.split(",") if features else None
 
+    # Enforce CSV format
+    format = "csv"
+
     content = service.export_builds_stream(
         repo_id=repo_id,
         format=format,
         features=feature_list,
     )
 
-    media_type = "text/csv" if format == "csv" else "application/json"
-    filename = f"builds_{repo_id}.{format}"
+    from datetime import datetime
+
+    media_type = "text/csv"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"builds_{repo_id}_{timestamp}.csv"
 
     return StreamingResponse(
         content,
@@ -403,7 +419,9 @@ def export_builds_stream(
 def create_async_export(
     repo_id: str = Path(..., description="Repository id"),
     format: str = Query(default="csv", description="Export format: csv or json"),
-    features: str | None = Query(default=None, description="Comma-separated feature names"),
+    features: str | None = Query(
+        default=None, description="Comma-separated feature names"
+    ),
     db: Database = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -414,6 +432,9 @@ def create_async_export(
     """
     service = RepositoryService(db)
     feature_list = features.split(",") if features else None
+
+    # Enforce CSV format
+    format = "csv"
 
     return service.create_export_job(
         repo_id=repo_id,

@@ -897,15 +897,10 @@ def generate_scenario_dataset(
         output_dir = paths.get_ml_dataset_dir(scenario_id)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Get output format
-        output_config = scenario.output_config
-        if isinstance(output_config, dict):
-            file_format = output_config.get("format", "parquet")
-        else:
-            file_format = getattr(output_config, "format", "parquet") or "parquet"
-
-        # Export split files
+        # Export split files in BOTH parquet and CSV formats
+        EXPORT_FORMATS = ["parquet", "csv"]
         split_stats = {}
+
         for split_type, indices in [
             ("train", result.train_indices),
             ("validation", result.val_indices),
@@ -915,37 +910,39 @@ def generate_scenario_dataset(
                 continue
 
             split_df = df.loc[indices]
-            file_path = paths.get_training_dataset_split_path(
-                scenario_id, split_type, file_format
-            )
+            split_stats[split_type] = {"count": len(split_df)}
 
-            start_time = datetime.utcnow()
-            if file_format == "parquet":
-                split_df.to_parquet(file_path, index=False)
-            elif file_format == "csv":
-                split_df.to_csv(file_path, index=False)
-            else:
-                split_df.to_pickle(file_path)
+            # Export in each format
+            for fmt in EXPORT_FORMATS:
+                file_path = paths.get_training_dataset_split_path(
+                    scenario_id, split_type, fmt
+                )
 
-            duration = (datetime.utcnow() - start_time).total_seconds()
-            file_size = file_path.stat().st_size
-            class_dist = split_df["outcome"].value_counts().to_dict()
+                start_time = datetime.utcnow()
+                if fmt == "parquet":
+                    split_df.to_parquet(file_path, index=False)
+                else:  # csv
+                    split_df.to_csv(file_path, index=False)
 
-            split_repo.create_split(
-                scenario_id=scenario_id,
-                split_type=split_type,
-                record_count=len(split_df),
-                feature_count=len(split_df.columns),
-                class_distribution={str(k): v for k, v in class_dist.items()},
-                group_distribution={},
-                file_path=str(file_path.relative_to(paths.DATA_DIR)),
-                file_size_bytes=file_size,
-                file_format=file_format,
-                feature_names=list(split_df.columns),
-                generation_duration_seconds=duration,
-            )
+                duration = (datetime.utcnow() - start_time).total_seconds()
+                file_size = file_path.stat().st_size
+                class_dist = split_df["outcome"].value_counts().to_dict()
 
-            split_stats[split_type] = {"count": len(split_df), "file_size": file_size}
+                split_repo.create_split(
+                    scenario_id=scenario_id,
+                    split_type=split_type,
+                    record_count=len(split_df),
+                    feature_count=len(split_df.columns),
+                    class_distribution={str(k): v for k, v in class_dist.items()},
+                    group_distribution={},
+                    file_path=str(file_path.relative_to(paths.DATA_DIR)),
+                    file_size_bytes=file_size,
+                    file_format=fmt,
+                    feature_names=list(split_df.columns),
+                    generation_duration_seconds=duration,
+                )
+
+                split_stats[split_type][fmt] = file_size
 
         # Update scenario - COMPLETED
         scenario_repo.update_one(
@@ -1266,13 +1263,48 @@ def _build_split_dataframe(
     raw_repos: Dict[str, Any],
     db,
 ) -> pd.DataFrame:
-    """Build DataFrame from enrichment builds with features."""
+    """
+    Build DataFrame from enrichment builds with features.
+
+    Uses batch loading for FeatureVectors when dataset exceeds threshold
+    to avoid N+1 query problem.
+    """
+    from app.config import settings
     from app.repositories.feature_vector import FeatureVectorRepository
 
     fv_repo = FeatureVectorRepository(db)
-    data = []
+    total_builds = len(enrichment_builds)
 
-    for eb in enrichment_builds:
+    # Determine if batch loading should be used
+    use_batch = total_builds > settings.DATASET_EXPORT_BATCH_THRESHOLD
+    batch_size = settings.DATASET_EXPORT_FEATURE_VECTOR_BATCH_SIZE
+
+    if use_batch:
+        logger.info(
+            f"Using batch loading for {total_builds} builds "
+            f"(threshold={settings.DATASET_EXPORT_BATCH_THRESHOLD})"
+        )
+
+    # Pre-load FeatureVectors in batches for large datasets
+    feature_vectors_cache: Dict[str, Any] = {}
+    if use_batch:
+        fv_ids = [
+            str(eb.feature_vector_id)
+            for eb in enrichment_builds
+            if eb.feature_vector_id
+        ]
+        # Batch load
+        for i in range(0, len(fv_ids), batch_size):
+            batch_ids = fv_ids[i : i + batch_size]
+            fvs = fv_repo.find_by_ids(batch_ids)
+            for fv in fvs:
+                feature_vectors_cache[str(fv.id)] = fv
+
+            if i % (batch_size * 5) == 0 and i > 0:
+                logger.info(f"Loaded {i}/{len(fv_ids)} FeatureVectors...")
+
+    data = []
+    for idx, eb in enumerate(enrichment_builds):
         raw_repo = raw_repos.get(str(eb.raw_repo_id))
         primary_language = (
             raw_repo.main_lang if raw_repo and raw_repo.main_lang else "other"
@@ -1287,7 +1319,13 @@ def _build_split_dataframe(
         }
 
         if eb.feature_vector_id:
-            fv = fv_repo.find_by_id(str(eb.feature_vector_id))
+            fv_id_str = str(eb.feature_vector_id)
+            # Use cache for batch mode, individual query otherwise
+            if use_batch:
+                fv = feature_vectors_cache.get(fv_id_str)
+            else:
+                fv = fv_repo.find_by_id(fv_id_str)
+
             if fv:
                 if fv.features:
                     row_data.update(fv.features)
@@ -1295,6 +1333,10 @@ def _build_split_dataframe(
                     row_data.update(fv.scan_metrics)
 
         data.append(row_data)
+
+        # Progress log for large datasets
+        if use_batch and idx % 1000 == 0 and idx > 0:
+            logger.info(f"Built {idx}/{total_builds} rows...")
 
     df = pd.DataFrame(data)
     df.index = range(len(df))

@@ -141,17 +141,19 @@ class ModelImportBuildUpdater:
 
 
 class DatasetImportBuildUpdater:
-    """Wrapper for DatasetImportBuildRepository implementing ProgressiveUpdaterProtocol.
+    """Wrapper for TrainingIngestionBuildRepository implementing ProgressiveUpdaterProtocol.
 
-    Dataset pipeline requires raw_repo_id because builds are scoped by both
-    version_id AND raw_repo_id (multi-repo datasets).
+    Adapts the new TrainingIngestionBuild flow (scenario_id) to the progressive updater interface.
     """
 
     def __init__(self, db: "Database", version_id: str, raw_repo_id: str):
-        from app.repositories.dataset_import_build import DatasetImportBuildRepository
+        # version_id here corresponds to scenario_id in the new flow
+        from app.repositories.training_ingestion_build import (
+            TrainingIngestionBuildRepository,
+        )
 
-        self.repo = DatasetImportBuildRepository(db)
-        self.version_id = version_id
+        self.repo = TrainingIngestionBuildRepository(db)
+        self.scenario_id = version_id
         self.raw_repo_id = raw_repo_id
 
     def update_resource_batch(
@@ -160,8 +162,8 @@ class DatasetImportBuildUpdater:
         status: "ResourceStatus",
         error: Optional[str] = None,
     ) -> int:
-        return self.repo.update_resource_status_for_repo(
-            version_id=self.version_id,
+        return self.repo.update_resource_batch(
+            scenario_id=self.scenario_id,
             raw_repo_id=self.raw_repo_id,
             resource=resource,
             status=status,
@@ -176,10 +178,10 @@ class DatasetImportBuildUpdater:
         error: Optional[str] = None,
     ) -> int:
         return self.repo.update_resource_by_commits(
-            version_id=self.version_id,
+            scenario_id=self.scenario_id,
             raw_repo_id=self.raw_repo_id,
             resource=resource,
-            failed_commits=commits,
+            commits=commits,
             status=status,
             error=error,
         )
@@ -192,7 +194,7 @@ class DatasetImportBuildUpdater:
         error: Optional[str] = None,
     ) -> int:
         return self.repo.update_resource_by_ci_run_ids(
-            version_id=self.version_id,
+            scenario_id=self.scenario_id,
             raw_repo_id=self.raw_repo_id,
             resource=resource,
             ci_run_ids=ci_run_ids,

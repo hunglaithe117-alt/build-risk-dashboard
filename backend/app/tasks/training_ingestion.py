@@ -21,15 +21,15 @@ from bson import ObjectId
 from celery import chord, group
 
 from app.celery_app import celery_app
-from app.entities.training_scenario import TrainingScenario, ScenarioStatus
 from app.entities.training_ingestion_build import (
-    TrainingIngestionBuild,
     IngestionStatus,
+    TrainingIngestionBuild,
 )
-from app.repositories.training_scenario import TrainingScenarioRepository
-from app.repositories.training_ingestion_build import TrainingIngestionBuildRepository
+from app.entities.training_scenario import ScenarioStatus, TrainingScenario
 from app.repositories.raw_build_run import RawBuildRunRepository
 from app.repositories.raw_repository import RawRepositoryRepository
+from app.repositories.training_ingestion_build import TrainingIngestionBuildRepository
+from app.repositories.training_scenario import TrainingScenarioRepository
 from app.tasks.base import PipelineTask
 from app.tasks.shared.events import publish_scenario_update
 

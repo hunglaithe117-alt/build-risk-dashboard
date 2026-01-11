@@ -60,11 +60,10 @@ class FeatureCompleteness(BaseModel):
 
 
 class VersionStatisticsResponse(BaseModel):
-    """Complete statistics response for a version."""
+    """Complete statistics response for a scenario."""
 
-    version_id: str
-    dataset_id: str
-    version_name: str
+    scenario_id: str
+    scenario_name: str
     status: str
 
     # Summary statistics
@@ -137,7 +136,7 @@ class CategoricalDistribution(BaseModel):
 class FeatureDistributionResponse(BaseModel):
     """Response for feature distribution endpoint."""
 
-    version_id: str
+    scenario_id: str
     distributions: Dict[str, Any] = Field(
         default_factory=dict,
         description="Map of feature_name -> NumericDistribution or CategoricalDistribution",
@@ -157,9 +156,11 @@ class CorrelationPair(BaseModel):
 class CorrelationMatrixResponse(BaseModel):
     """Response for correlation matrix endpoint."""
 
-    version_id: str
+    scenario_id: str
     features: List[str]  # Feature names in order
-    matrix: List[List[Optional[float]]]  # 2D correlation matrix (None for non-numeric pairs)
+    matrix: List[
+        List[Optional[float]]
+    ]  # 2D correlation matrix (None for non-numeric pairs)
     significant_pairs: List[CorrelationPair] = Field(
         default_factory=list,
         description="Pairs with |correlation| > 0.7",

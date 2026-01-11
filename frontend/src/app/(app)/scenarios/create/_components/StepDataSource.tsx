@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import {
     Calendar,
     Check,
+    FileCode,
     Filter,
     Loader2,
     Search,
+    Upload,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -138,8 +140,97 @@ export function StepDataSource() {
     const totalBuilds = previewStats?.total_builds ?? 0;
     const totalPages = Math.max(1, Math.ceil(totalBuilds / PAGE_SIZE));
 
+    // YAML Import state
+    const [yamlFile, setYamlFile] = useState<File | null>(null);
+    const [yamlError, setYamlError] = useState<string | null>(null);
+    const [yamlLoaded, setYamlLoaded] = useState(false);
+
+    // Get loadFromYaml from context
+    const { loadFromYaml } = useWizard();
+
+    const handleYamlUploadReal = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        setYamlFile(file);
+        setYamlError(null);
+        setYamlLoaded(false);
+
+        try {
+            const yaml = await import("js-yaml");
+            const text = await file.text();
+            const parsed = yaml.load(text) as any;
+
+            // Validate required fields
+            if (!parsed.scenario?.name) {
+                setYamlError("Missing required field: scenario.name");
+                return;
+            }
+
+            // Load into wizard state
+            loadFromYaml(parsed);
+            setYamlLoaded(true);
+
+            // Trigger preview with loaded filters
+            setTimeout(() => applyFilters(1), 100);
+        } catch (err) {
+            setYamlError(`YAML parse error: ${(err as Error).message}`);
+        }
+    };
+
+    const handleSkipToReview = () => {
+        setStep(5);
+    };
+
     return (
         <div className="space-y-6">
+            {/* YAML Import Card */}
+            <Card className="border-dashed border-purple-500/50">
+                <CardHeader className="pb-3">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                        <FileCode className="h-5 w-5 text-purple-500" />
+                        Import from YAML
+                    </CardTitle>
+                    <CardDescription>
+                        Upload a YAML config file to auto-fill all settings
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex items-center gap-4">
+                        <label className="flex-1">
+                            <input
+                                type="file"
+                                accept=".yaml,.yml"
+                                onChange={handleYamlUploadReal}
+                                className="hidden"
+                            />
+                            <div className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed rounded-lg cursor-pointer hover:border-purple-500 hover:bg-purple-500/5 transition-colors">
+                                <Upload className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-sm text-muted-foreground">
+                                    {yamlFile ? yamlFile.name : "Choose YAML file..."}
+                                </span>
+                            </div>
+                        </label>
+                        {yamlLoaded && (
+                            <Button
+                                onClick={handleSkipToReview}
+                                className="bg-purple-600 hover:bg-purple-700"
+                            >
+                                Skip to Review
+                            </Button>
+                        )}
+                    </div>
+                    {yamlError && (
+                        <p className="mt-2 text-sm text-red-500">{yamlError}</p>
+                    )}
+                    {yamlLoaded && (
+                        <p className="mt-2 text-sm text-green-500">
+                            ✓ YAML loaded successfully! Review preview below or skip to review.
+                        </p>
+                    )}
+                </CardContent>
+            </Card>
+
             {/* Filters Panel */}
             <Card>
                 <CardHeader>

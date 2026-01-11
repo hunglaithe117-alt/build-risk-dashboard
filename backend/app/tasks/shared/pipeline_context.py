@@ -169,10 +169,10 @@ class PipelineContext:
         """
         if self.pipeline_type == PipelineType.TRAINING_SCENARIO:
             from app.services.notification_service import (
-                check_and_notify_scenario_completed,
+                check_and_notify_enrichment_completed,
             )
 
-            return check_and_notify_scenario_completed(
+            return check_and_notify_enrichment_completed(
                 db=self.db, scenario_id=self.context_id
             )
         else:

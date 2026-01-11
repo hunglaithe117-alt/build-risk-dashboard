@@ -92,8 +92,8 @@ export default function ScenariosPage() {
                     limit: PAGE_SIZE,
                     q: debouncedSearchQuery || undefined,
                 });
-                setScenarios(data || []);
-                setTotal(data.length);
+                setScenarios(data.items || []);
+                setTotal(data.total);
                 setPage(pageNumber);
             } catch (err) {
                 console.error(err);
@@ -209,56 +209,31 @@ export default function ScenariosPage() {
 
     return (
         <div className="space-y-6">
-            {/* Page Header */}
-            <div className="flex items-center gap-3">
-                <Database className="h-8 w-8 text-blue-500" />
-                <div>
-                    <h1 className="text-2xl font-bold">Dataset Enrichments</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Build and manage training datasets from your build data
-                    </p>
+            {/* Page Header with Action Buttons */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                    <div>
+                        <h1 className="text-2xl font-bold">Dataset Enrichments</h1>
+                        <p className="text-sm text-muted-foreground">
+                            Build and manage training datasets from your build data
+                        </p>
+                    </div>
                 </div>
-            </div>
-
-            {/* Action Cards - Compact */}
-            <div className="grid gap-4 md:grid-cols-2">
-                {/* Upload CSV Card */}
-                <Card className="hover:border-blue-500/50 transition-colors">
-                    <CardContent className="flex items-center justify-between py-4">
-                        <div>
-                            <h3 className="font-semibold">Upload CSV</h3>
-                            <p className="text-xs text-muted-foreground">
-                                Import build data from CSV file
-                            </p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => router.push("/scenarios/upload")}
-                        >
-                            Upload
-                        </Button>
-                    </CardContent>
-                </Card>
-
-                {/* Create Dataset Version Card */}
-                <Card className="hover:border-emerald-500/50 transition-colors">
-                    <CardContent className="flex items-center justify-between py-4">
-                        <div>
-                            <h3 className="font-semibold">Create Dataset Version</h3>
-                            <p className="text-xs text-muted-foreground">
-                                Configure filters, features, and splitting
-                            </p>
-                        </div>
-                        <Button
-                            size="sm"
-                            onClick={() => router.push("/scenarios/create")}
-                            className="bg-emerald-600 hover:bg-emerald-700"
-                        >
-                            New Version
-                        </Button>
-                    </CardContent>
-                </Card>
+                <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={() => router.push("/scenarios/upload")}
+                    >
+                        Upload CSV
+                    </Button>
+                    <Button
+                        onClick={() => router.push("/scenarios/create")}
+                        className="bg-emerald-600 hover:bg-emerald-700"
+                    >
+                        <Plus className="h-4 w-4 mr-2" />
+                        New Version
+                    </Button>
+                </div>
             </div>
 
             {/* Statistics Bar */}

@@ -45,7 +45,7 @@ class QualityReportSummaryResponse(BaseModel):
     """Summary of a quality report (for listings)."""
 
     id: str
-    version_id: str
+    scenario_id: str
     status: str
     quality_score: float
     completeness_score: float
@@ -64,8 +64,7 @@ class QualityReportResponse(BaseModel):
     """Full quality report with details."""
 
     id: str
-    dataset_id: str
-    version_id: str
+    scenario_id: str
     status: str
     error_message: Optional[str] = None
 

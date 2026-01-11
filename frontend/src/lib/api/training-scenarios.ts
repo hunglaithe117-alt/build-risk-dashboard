@@ -238,8 +238,8 @@ export const trainingScenariosApi = {
         limit?: number;
         status?: string;
         q?: string;
-    }): Promise<TrainingScenarioRecord[]> => {
-        const response = await api.get<TrainingScenarioRecord[]>("/training-scenarios", { params });
+    }): Promise<TrainingScenarioListResponse> => {
+        const response = await api.get<TrainingScenarioListResponse>("/training-scenarios", { params });
         return response.data;
     },
 

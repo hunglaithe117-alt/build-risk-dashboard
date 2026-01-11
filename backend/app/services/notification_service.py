@@ -496,7 +496,7 @@ def notify_dataset_enrichment_completed(
     db: Database,
     user_id: ObjectId,
     dataset_name: str,
-    dataset_id: str,
+    scenario_id: str,
     builds_features_extracted: int,
     builds_total: int,
 ) -> Notification:
@@ -507,9 +507,9 @@ def notify_dataset_enrichment_completed(
         type=NotificationType.DATASET_ENRICHMENT_COMPLETED,
         title="Dataset Enrichment Completed",
         message=f"Enrichment for '{dataset_name}' completed. {builds_features_extracted}/{builds_total} builds processed.",
-        link=f"/admin/datasets/{dataset_id}",
+        link=f"/scenarios/{scenario_id}",
         metadata={
-            "dataset_id": dataset_id,
+            "dataset_id": scenario_id,
             "builds_features_extracted": builds_features_extracted,
             "builds_total": builds_total,
         },
@@ -986,73 +986,29 @@ def notify_pipeline_failed_to_admins(
 # =============================================================================
 
 
-def notify_enrichment_completed_to_admin(
+def notify_dataset_enrichment_failed(
     db: Database,
-    user_id: ObjectId,
-    dataset_name: str,
-    version_id: str,
-    builds_features_extracted: int,
-    builds_total: int,
-    features_count: int = 0,
-    scan_metrics_count: int = 0,
-) -> Notification:
-    """
-    Notify admin when dataset enrichment fully completes (features + scans).
-
-    Called from check_and_notify_enrichment_completed when all data is ready.
-    """
-    message = f"{dataset_name}: {builds_features_extracted}/{builds_total} builds."
-    if features_count > 0:
-        message += f" {features_count} features."
-    if scan_metrics_count > 0:
-        message += f" {scan_metrics_count} scan metrics."
-
-    return create_notification(
-        db=db,
-        user_id=user_id,
-        type=NotificationType.DATASET_ENRICHMENT_COMPLETED,
-        title="🔧 Enrichment Complete",
-        message=message,
-        link=f"/projects/{version_id.split('/')[0] if '/' in version_id else version_id}",
-        metadata={
-            "dataset_name": dataset_name,
-            "version_id": version_id,
-            "builds_features_extracted": builds_features_extracted,
-            "builds_total": builds_total,
-            "features_count": features_count,
-            "scan_metrics_count": scan_metrics_count,
-        },
-    )
-
-
-def notify_enrichment_failed_to_admin(
-    db: Database,
-    version_id: str,
+    scenario_id: str,
     error_message: str,
     completed_count: int = 0,
     failed_count: int = 0,
 ) -> None:
     """
-    Notify dataset creator when enrichment processing chain fails.
-
-    Called from handle_enrichment_processing_chain_error.
+    Notify scenario creator when enrichment processing chain fails.
     """
-    from app.repositories.dataset_repository import DatasetRepository
-    from app.repositories.dataset_version import DatasetVersionRepository
+    from app.repositories.training_scenario import TrainingScenarioRepository
 
-    version_repo = DatasetVersionRepository(db)
-    version = version_repo.find_by_id(version_id)
-    if not version:
-        logger.warning(f"Version {version_id} not found for failure notification")
+    scenario_repo = TrainingScenarioRepository(db)
+    scenario = scenario_repo.find_by_id(scenario_id)
+    if not scenario:
+        logger.warning(f"Scenario {scenario_id} not found for failure notification")
         return
 
-    dataset_repo = DatasetRepository(db)
-    dataset = dataset_repo.find_by_id(version.dataset_id)
-    if not dataset:
-        logger.warning(f"Dataset not found for version {version_id}")
+    if not scenario.created_by:
+        logger.warning(f"Scenario {scenario_id} has no creator to notify")
         return
 
-    message = f"{dataset.name}: {completed_count} completed, {failed_count} failed."
+    message = f"{scenario.name}: {completed_count} completed, {failed_count} failed."
     if error_message:
         # Truncate long error messages
         short_error = (
@@ -1062,14 +1018,14 @@ def notify_enrichment_failed_to_admin(
 
     create_notification(
         db=db,
-        user_id=dataset.user_id,
+        user_id=scenario.created_by,
         type=NotificationType.DATASET_ENRICHMENT_FAILED,
         title="⚠️ Enrichment Failed",
         message=message,
-        link=f"/projects/{str(dataset.id)}",
+        link=f"/scenarios/{scenario_id}",
         metadata={
-            "dataset_name": dataset.name,
-            "version_id": version_id,
+            "dataset_name": scenario.name,
+            "dataset_id": scenario_id,
             "completed_count": completed_count,
             "failed_count": failed_count,
             "error": error_message,
@@ -1080,153 +1036,42 @@ def notify_enrichment_failed_to_admin(
 
 def check_and_notify_enrichment_completed(
     db: Database,
-    version_id: str,
+    scenario_id: str,
 ) -> bool:
     """
     Check if enrichment is fully complete (features + scan metrics) and send notification.
 
-    Called from:
-    1. finalize_enrichment - after features complete
-    2. start_trivy_scan_for_version_commit - after each Trivy scan
-    3. export_metrics_from_webhook - after each SonarQube webhook
-
     Returns True if notification was sent, False if still pending.
     """
-    from app.repositories.dataset_version import DatasetVersionRepository
+    from app.repositories.training_scenario import TrainingScenarioRepository
 
-    version_repo = DatasetVersionRepository(db)
-    version = version_repo.find_by_id(version_id)
-
-    if not version:
-        logger.warning(
-            f"Version {version_id} not found for enrichment notification check"
-        )
-        return False
-
-    # Check 1: Already notified? (avoid duplicates)
-    if getattr(version, "enrichment_notified", False):
-        logger.debug(f"Version {version_id} already notified")
-        return False
-
-    # Check 2: Features extraction complete?
-    if not getattr(version, "feature_extraction_completed", False):
-        logger.debug(f"Version {version_id} features not complete yet")
-        return False
-
-    # Check 3: All builds processed?
-    builds_features_extracted = version.builds_features_extracted or 0
-    builds_total = version.builds_total or 0
-    if builds_total > 0 and builds_features_extracted < builds_total:
-        logger.debug(
-            f"Version {version_id} not all builds processed: "
-            f"{builds_features_extracted}/{builds_total}"
-        )
-        return False
-
-    # Check 4: Do we have any scans configured?
-    scans_total = getattr(version, "scans_total", 0) or 0
-    scans_completed = getattr(version, "scans_completed", 0) or 0
-    scans_failed = getattr(version, "scans_failed", 0) or 0
-
-    # If scans are configured, check if all done
-    if scans_total > 0:
-        scans_done = scans_completed + scans_failed
-        if scans_done < scans_total:
-            logger.debug(
-                f"Version {version_id} scans not complete: "
-                f"{scans_done}/{scans_total}"
-            )
-            return False
-
-        # Mark scan extraction as complete
-        if not getattr(version, "scan_extraction_completed", False):
-            version_repo.mark_scan_extraction_completed(str(version_id))
-
-    # All done! Send notification
-    logger.info(f"Version {version_id} enrichment complete - sending notification")
-
-    # Get dataset info for notification
-    from app.repositories.dataset_repository import DatasetRepository
-
-    dataset_repo = DatasetRepository(db)
-    dataset = dataset_repo.find_by_id(version.dataset_id)
-
-    if dataset:
-        notify_enrichment_completed_to_admin(
-            db=db,
-            user_id=dataset.user_id,
-            dataset_name=dataset.name,
-            version_id=str(version_id),
-            builds_features_extracted=version.builds_features_extracted or 0,
-            builds_total=version.builds_total or 0,
-            scan_metrics_count=scans_completed,
-        )
-
-        # Mark as notified using repository method
-        version_repo.mark_enrichment_notified(str(version_id))
-
-    return True
-
-
-def check_and_notify_scenario_completed(
-    db: Database,
-    scenario_id: str,
-) -> bool:
-    """
-    Check if ML scenario processing is fully complete and send notification.
-
-    Called from:
-    1. split_scenario_dataset - after scenario completes
-    2. start_trivy_scan_for_version_commit - after each Trivy scan (via PipelineContext)
-    3. export_metrics_from_webhook - after each SonarQube webhook (via PipelineContext)
-
-    Returns True if notification was sent, False if still pending.
-    """
-    from app.repositories.ml_scenario import MLScenarioRepository
-
-    scenario_repo = MLScenarioRepository(db)
+    scenario_repo = TrainingScenarioRepository(db)
     scenario = scenario_repo.find_by_id(scenario_id)
 
     if not scenario:
-        logger.warning(f"Scenario {scenario_id} not found for notification check")
+        logger.warning(f"Scenario {scenario_id} not found for completion check")
         return False
 
-    # Check 1: Already completed?
-    if scenario.status != "completed":
-        logger.debug(
-            f"Scenario {scenario_id} not in completed status: {scenario.status}"
+    # Check if all parts are done
+    # 1. Feature extraction
+    features_done = scenario.feature_extraction_completed
+
+    # 2. Scans (if any configured)
+    scans_done = scenario.scan_extraction_completed
+
+    if features_done and scans_done:
+        # Check if already notified/completed status to avoid spam if called multiple times?
+        # The calling task usually handles state transitions.
+        # But we can send the notification.
+
+        notify_dataset_enrichment_completed(
+            db=db,
+            user_id=scenario.created_by,
+            dataset_name=scenario.name,
+            scenario_id=scenario_id,
+            builds_features_extracted=scenario.builds_features_extracted,
+            builds_total=scenario.builds_total,
         )
-        return False
+        return True
 
-    # Check 2: Features extraction complete?
-    if not getattr(scenario, "feature_extraction_completed", False):
-        logger.debug(f"Scenario {scenario_id} features not complete yet")
-        return False
-
-    # Check 3: Do we have any scans configured?
-    scans_total = getattr(scenario, "scans_total", 0) or 0
-    scans_completed = getattr(scenario, "scans_completed", 0) or 0
-    scans_failed = getattr(scenario, "scans_failed", 0) or 0
-
-    # If scans are configured, check if all done
-    if scans_total > 0:
-        scans_done = scans_completed + scans_failed
-        if scans_done < scans_total:
-            logger.debug(
-                f"Scenario {scenario_id} scans not complete: "
-                f"{scans_done}/{scans_total}"
-            )
-            return False
-
-        # Mark scan extraction as complete
-        if not getattr(scenario, "scan_extraction_completed", False):
-            scenario_repo.mark_scan_extraction_completed(str(scenario_id))
-
-    # All done! Log completion (no email notification for scenarios yet)
-    logger.info(
-        f"Scenario {scenario_id} fully complete: "
-        f"{scenario.builds_features_extracted}/{scenario.builds_total} builds, "
-        f"{scans_completed}/{scans_total} scans"
-    )
-
-    return True
+    return False

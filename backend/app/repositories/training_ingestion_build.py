@@ -11,9 +11,9 @@ from typing import Any, Dict, List, Optional
 from pymongo.database import Database
 
 from app.entities.training_ingestion_build import (
-    TrainingIngestionBuild,
     IngestionStatus,
     ResourceStatus,
+    TrainingIngestionBuild,
 )
 
 from .base import BaseRepository
@@ -199,3 +199,106 @@ class TrainingIngestionBuildRepository(BaseRepository[TrainingIngestionBuild]):
     def delete_by_scenario(self, scenario_id: str) -> int:
         """Delete all ingestion builds for a scenario."""
         return self.delete_many({"scenario_id": self._to_object_id(scenario_id)})
+
+    def update_resource_batch(
+        self,
+        scenario_id: str,
+        raw_repo_id: str,
+        resource: str,
+        status: ResourceStatus,
+        error: Optional[str] = None,
+    ) -> int:
+        """
+        Update resource status for all ingestion builds in a scenario/repo.
+        Used when updating status for the whole batch (e.g., git_worktree checkout).
+        """
+        now = datetime.utcnow()
+        query = {
+            "scenario_id": self._to_object_id(scenario_id),
+            "raw_repo_id": raw_repo_id,
+            "status": IngestionStatus.INGESTING.value,
+        }
+
+        update_fields = {
+            f"resource_status.{resource}.status": status.value,
+        }
+        if status == ResourceStatus.IN_PROGRESS:
+            update_fields[f"resource_status.{resource}.started_at"] = now
+        elif status in (ResourceStatus.COMPLETED, ResourceStatus.FAILED):
+            update_fields[f"resource_status.{resource}.completed_at"] = now
+
+        if error:
+            update_fields[f"resource_status.{resource}.error"] = error
+
+        result = self.collection.update_many(query, {"$set": update_fields})
+        return result.modified_count
+
+    def update_resource_by_commits(
+        self,
+        scenario_id: str,
+        raw_repo_id: str,
+        resource: str,
+        commits: List[str],
+        status: ResourceStatus,
+        error: Optional[str] = None,
+    ) -> int:
+        """Update resource status for builds matching specific commits."""
+        if not commits:
+            return 0
+
+        now = datetime.utcnow()
+        query = {
+            "scenario_id": self._to_object_id(scenario_id),
+            "raw_repo_id": raw_repo_id,
+            "commit_sha": {"$in": commits},
+            "status": IngestionStatus.INGESTING.value,
+        }
+
+        update_fields = {
+            f"resource_status.{resource}.status": status.value,
+        }
+        if status == ResourceStatus.IN_PROGRESS:
+            update_fields[f"resource_status.{resource}.started_at"] = now
+        elif status in (ResourceStatus.COMPLETED, ResourceStatus.FAILED):
+            update_fields[f"resource_status.{resource}.completed_at"] = now
+
+        if error:
+            update_fields[f"resource_status.{resource}.error"] = error
+
+        result = self.collection.update_many(query, {"$set": update_fields})
+        return result.modified_count
+
+    def update_resource_by_ci_run_ids(
+        self,
+        scenario_id: str,
+        raw_repo_id: str,
+        resource: str,
+        ci_run_ids: List[str],
+        status: ResourceStatus,
+        error: Optional[str] = None,
+    ) -> int:
+        """Update resource status for builds matching specific CI run IDs."""
+        if not ci_run_ids:
+            return 0
+
+        now = datetime.utcnow()
+        query = {
+            "scenario_id": self._to_object_id(scenario_id),
+            "raw_repo_id": raw_repo_id,
+            "ci_run_id": {"$in": ci_run_ids},
+            "status": IngestionStatus.INGESTING.value,
+        }
+
+        update_fields = {
+            f"resource_status.{resource}.status": status.value,
+        }
+        if status == ResourceStatus.IN_PROGRESS:
+            update_fields[f"resource_status.{resource}.started_at"] = now
+        elif status in (ResourceStatus.COMPLETED, ResourceStatus.FAILED):
+            update_fields[f"resource_status.{resource}.completed_at"] = now
+
+        if error:
+            update_fields[f"resource_status.{resource}.error"] = error
+
+        result = self.collection.update_many(query, {"$set": update_fields})
+        return result.modified_count

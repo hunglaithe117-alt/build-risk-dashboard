@@ -153,7 +153,21 @@ interface WizardContextValue {
     updateOutput: (updates: Partial<OutputConfig>) => void;
     setIsPreviewLoading: (loading: boolean) => void;
     setIsSubmitting: (submitting: boolean) => void;
+    loadFromYaml: (config: YamlConfigInput) => void;
     resetState: () => void;
+}
+
+// Input type for YAML config (matches sample YAML structure)
+export interface YamlConfigInput {
+    scenario?: { name?: string; description?: string };
+    data_source?: {
+        repositories?: { filter_by?: string; languages?: string[]; repo_names?: string[] };
+        builds?: { date_range?: { start?: string; end?: string }; conclusions?: string[] };
+        ci_provider?: string;
+    };
+    features?: { dag_features?: string[]; scan_metrics?: { sonarqube?: string[]; trivy?: string[] }; exclude?: string[] };
+    splitting?: { strategy?: string; group_by?: string; config?: { ratios?: { train?: number; val?: number; test?: number }; stratify_by?: string } };
+    output?: { format?: string; include_metadata?: boolean };
 }
 
 // =============================================================================
@@ -266,6 +280,49 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     const setIsSubmitting = (submitting: boolean) =>
         setState((s) => ({ ...s, isSubmitting: submitting }));
 
+    const loadFromYaml = (config: YamlConfigInput) => {
+        setState((s) => ({
+            ...s,
+            name: config.scenario?.name || s.name,
+            description: config.scenario?.description || s.description,
+            dataSource: {
+                ...s.dataSource,
+                filter_by: (config.data_source?.repositories?.filter_by as any) || s.dataSource.filter_by,
+                languages: config.data_source?.repositories?.languages || s.dataSource.languages,
+                repo_names: config.data_source?.repositories?.repo_names || s.dataSource.repo_names,
+                date_start: config.data_source?.builds?.date_range?.start || s.dataSource.date_start,
+                date_end: config.data_source?.builds?.date_range?.end || s.dataSource.date_end,
+                conclusions: config.data_source?.builds?.conclusions || s.dataSource.conclusions,
+                ci_provider: (config.data_source?.ci_provider as any) || s.dataSource.ci_provider,
+            },
+            features: {
+                ...s.features,
+                dag_features: config.features?.dag_features || s.features.dag_features,
+                scan_metrics: {
+                    sonarqube: config.features?.scan_metrics?.sonarqube || s.features.scan_metrics.sonarqube,
+                    trivy: config.features?.scan_metrics?.trivy || s.features.scan_metrics.trivy,
+                },
+                exclude: config.features?.exclude || s.features.exclude,
+            },
+            splitting: {
+                ...s.splitting,
+                strategy: config.splitting?.strategy || s.splitting.strategy,
+                group_by: config.splitting?.group_by || s.splitting.group_by,
+                ratios: {
+                    train: config.splitting?.config?.ratios?.train ?? s.splitting.ratios.train,
+                    val: config.splitting?.config?.ratios?.val ?? s.splitting.ratios.val,
+                    test: config.splitting?.config?.ratios?.test ?? s.splitting.ratios.test,
+                },
+                stratify_by: config.splitting?.config?.stratify_by || s.splitting.stratify_by,
+            },
+            output: {
+                ...s.output,
+                format: (config.output?.format as any) || s.output.format,
+                include_metadata: config.output?.include_metadata ?? s.output.include_metadata,
+            },
+        }));
+    };
+
     const resetState = () => setState(initialState);
 
     return (
@@ -286,6 +343,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
                 updateOutput,
                 setIsPreviewLoading,
                 setIsSubmitting,
+                loadFromYaml,
                 resetState,
             }}
         >

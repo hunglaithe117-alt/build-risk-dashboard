@@ -126,3 +126,10 @@ class TrainingScenarioResponse(BaseModel):
     # Flags
     feature_extraction_completed: bool = False
     scan_extraction_completed: bool = False
+
+
+class TrainingScenarioListResponse(BaseModel):
+    items: List[TrainingScenarioResponse]
+    total: int
+    skip: int
+    limit: int

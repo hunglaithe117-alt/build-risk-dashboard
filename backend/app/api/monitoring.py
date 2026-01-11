@@ -39,40 +39,6 @@ def get_system_stats(
     return service.get_system_stats()
 
 
-@router.get("/audit-logs")
-def get_feature_audit_logs(
-    limit: int = Query(50, ge=1, le=200),
-    skip: int = Query(0, ge=0),
-    status: Optional[str] = Query(None, description="Filter by status"),
-    db: Database = Depends(get_db),
-    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
-):
-    """
-    Get recent feature extraction audit logs with pagination.
-
-    Shows feature extraction history with timing and status.
-    """
-    service = MonitoringService(db)
-    return service.get_feature_audit_logs(limit=limit, skip=skip, status=status)
-
-
-@router.get("/audit-logs/cursor")
-def get_feature_audit_logs_cursor(
-    limit: int = Query(20, ge=1, le=100),
-    cursor: Optional[str] = Query(None, description="Cursor from previous page"),
-    status: Optional[str] = Query(None, description="Filter by status"),
-    db: Database = Depends(get_db),
-    _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
-):
-    """
-    Get audit logs with cursor-based pagination for infinite scroll.
-
-    Returns logs with enriched repository and build information.
-    """
-    service = MonitoringService(db)
-    return service.get_feature_audit_logs_cursor(limit=limit, cursor=cursor, status=status)
-
-
 @router.get("/queues")
 def get_queue_stats(
     db: Database = Depends(get_db),
@@ -143,7 +109,9 @@ def export_system_logs(
 @router.get("/metrics")
 def get_log_metrics(
     hours: int = Query(24, ge=1, le=168, description="Hours to look back (max 7 days)"),
-    bucket_minutes: int = Query(60, ge=15, le=360, description="Bucket size in minutes"),
+    bucket_minutes: int = Query(
+        60, ge=15, le=360, description="Bucket size in minutes"
+    ),
     db: Database = Depends(get_db),
     _admin: dict = Depends(RequirePermission(Permission.ADMIN_FULL)),
 ):

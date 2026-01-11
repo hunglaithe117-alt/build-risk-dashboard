@@ -131,7 +131,7 @@ def preview_builds(
     }
 
 
-@router.get("/", response_model=List[TrainingScenarioResponse])
+@router.get("/", response_model=Dict[str, Any])
 def list_scenarios(
     skip: int = 0,
     limit: int = 20,
@@ -139,7 +139,7 @@ def list_scenarios(
     q: Optional[str] = None,
     current_user: User = Depends(get_current_user),  # noqa: B008
     db=Depends(get_db),  # noqa: B008
-) -> List[TrainingScenarioResponse]:
+) -> Dict[str, Any]:
     """List training scenarios."""
     service = TrainingScenarioService(db)
 
@@ -151,13 +151,18 @@ def list_scenarios(
         except ValueError:
             pass  # Ignore invalid status or handle error
 
-    scenarios, _ = service.list_scenarios(
+    scenarios, total = service.list_scenarios(
         skip=skip,
         limit=limit,
         status_filter=status_enum,
         q=q,
     )
-    return scenarios
+    return {
+        "items": scenarios,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    }
 
 
 @router.post("/", response_model=TrainingScenarioResponse)

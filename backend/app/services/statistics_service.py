@@ -57,30 +57,26 @@ class StatisticsService:
         self.quality_repo = DataQualityRepository(db)
         self.feature_service = FeatureService()
 
-    def get_version_statistics(
-        self, dataset_id: str, version_id: str
-    ) -> VersionStatisticsResponse:
+    def get_scenario_statistics(self, scenario_id: str) -> VersionStatisticsResponse:
         """
         Get comprehensive statistics for a scenario.
 
         Args:
-            dataset_id: Ignored (legacy param) or User ID owner
-            version_id: Scenario ID
+            scenario_id: Scenario ID
 
         Returns:
             VersionStatisticsResponse with all statistics
         """
-        # Get scenario (formerly version)
-        scenario = self.scenario_repo.find_by_id(version_id)
+        # Get scenario
+        scenario = self.scenario_repo.find_by_id(scenario_id)
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
         # Get all enrichment builds with features from FeatureVector (as dicts)
-        builds = self.build_repo.find_by_scenario_with_features(version_id)
+        builds = self.build_repo.find_by_scenario_with_features(scenario_id)
 
         # Calculate statistics
-        # Note: scenario passed as version, logic adapted below
-        stats = self._calculate_version_stats(scenario, builds)
+        stats = self._calculate_scenario_stats(scenario, builds)
 
         # Get build status breakdown
         status_breakdown = self._calculate_status_breakdown(builds)
@@ -92,7 +88,7 @@ class StatisticsService:
 
         # Get quality scores if available
         # Update DataQualityRepository to support TrainingScenario
-        quality_report = self.quality_repo.find_by_scenario(version_id)
+        quality_report = self.quality_repo.find_by_scenario(scenario_id)
         if quality_report and quality_report.status == "completed":
             stats.quality_score = quality_report.quality_score
             stats.completeness_score = quality_report.completeness_score
@@ -101,9 +97,8 @@ class StatisticsService:
             stats.coverage_score = quality_report.coverage_score
 
         return VersionStatisticsResponse(
-            version_id=version_id,
-            dataset_id=dataset_id,
-            version_name=scenario.name,
+            scenario_id=scenario_id,
+            scenario_name=scenario.name,
             status=(
                 scenario.status
                 if isinstance(scenario.status, str)
@@ -119,8 +114,7 @@ class StatisticsService:
 
     def get_feature_distributions(
         self,
-        dataset_id: str,
-        version_id: str,
+        scenario_id: str,
         features: Optional[List[str]] = None,
         bins: int = 20,
         top_n: int = 20,
@@ -129,8 +123,7 @@ class StatisticsService:
         Get value distributions for selected features.
 
         Args:
-            dataset_id: Ignored (legacy param) or User ID owner
-            version_id: Scenario ID
+            scenario_id: Scenario ID
             features: Optional list of features (defaults to all selected)
             bins: Number of histogram bins for numeric features
             top_n: Max categorical values to return
@@ -138,17 +131,19 @@ class StatisticsService:
         Returns:
             FeatureDistributionResponse with distribution data
         """
-        scenario = self.scenario_repo.find_by_id(version_id)
+        scenario = self.scenario_repo.find_by_id(scenario_id)
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
         # Get features to analyze
         target_features = features or scenario.feature_config.dag_features
         if not target_features:
-            return FeatureDistributionResponse(version_id=version_id, distributions={})
+            return FeatureDistributionResponse(
+                scenario_id=scenario_id, distributions={}
+            )
 
         # Get all builds with features from FeatureVector (as dicts)
-        builds = self.build_repo.find_by_scenario_with_features(version_id)
+        builds = self.build_repo.find_by_scenario_with_features(scenario_id)
 
         distributions: Dict[str, Any] = {}
 
@@ -180,27 +175,25 @@ class StatisticsService:
             distributions[feature_name] = dist.model_dump()
 
         return FeatureDistributionResponse(
-            version_id=version_id, distributions=distributions
+            scenario_id=scenario_id, distributions=distributions
         )
 
     def get_correlation_matrix(
         self,
-        dataset_id: str,
-        version_id: str,
+        scenario_id: str,
         features: Optional[List[str]] = None,
     ) -> CorrelationMatrixResponse:
         """
         Calculate correlation matrix between numeric features.
 
         Args:
-            dataset_id: Ignored (legacy param) or User ID owner
-            version_id: Scenario ID
+            scenario_id: Scenario ID
             features: Optional list of features (defaults to all numeric)
 
         Returns:
             CorrelationMatrixResponse with matrix and significant pairs
         """
-        scenario = self.scenario_repo.find_by_id(version_id)
+        scenario = self.scenario_repo.find_by_id(scenario_id)
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
@@ -215,11 +208,11 @@ class StatisticsService:
 
         if not numeric_features:
             return CorrelationMatrixResponse(
-                version_id=version_id, features=[], matrix=[], significant_pairs=[]
+                scenario_id=scenario_id, features=[], matrix=[], significant_pairs=[]
             )
 
         # Get all builds with features from FeatureVector (as dicts)
-        builds = self.build_repo.find_by_scenario_with_features(version_id)
+        builds = self.build_repo.find_by_scenario_with_features(scenario_id)
 
         # Build value matrix
         feature_values: Dict[str, List[Optional[float]]] = {
@@ -272,7 +265,7 @@ class StatisticsService:
         significant_pairs.sort(key=lambda p: abs(p.correlation), reverse=True)
 
         return CorrelationMatrixResponse(
-            version_id=version_id,
+            scenario_id=scenario_id,
             features=numeric_features,
             matrix=matrix,
             significant_pairs=significant_pairs,
@@ -280,8 +273,7 @@ class StatisticsService:
 
     def get_scan_metrics_statistics(
         self,
-        dataset_id: str,
-        version_id: str,
+        scenario_id: str,
     ) -> ScanMetricsStatisticsResponse:
         """
         Get aggregated scan metrics statistics for a scenario.
@@ -289,18 +281,17 @@ class StatisticsService:
         Aggregates Trivy and SonarQube scan metrics from FeatureVector.scan_metrics.
 
         Args:
-            dataset_id: Ignored (legacy param) or User ID owner
-            version_id: Scenario ID
+            scenario_id: Scenario ID
 
         Returns:
             ScanMetricsStatisticsResponse with Trivy and SonarQube summaries
         """
-        scenario = self.scenario_repo.find_by_id(version_id)
+        scenario = self.scenario_repo.find_by_id(scenario_id)
         if not scenario:
             raise HTTPException(status_code=404, detail="Scenario not found")
 
         # Get all builds with scan_metrics from FeatureVector (as dicts)
-        builds = self.build_repo.find_by_scenario_with_features(version_id)
+        builds = self.build_repo.find_by_scenario_with_features(scenario_id)
 
         # Initialize summaries
         scan_summary = ScanSummary(total_builds=len(builds))
@@ -490,8 +481,7 @@ class StatisticsService:
         sonar_summary.total_scans = scan_summary.builds_with_sonar
 
         return ScanMetricsStatisticsResponse(
-            version_id=version_id,
-            dataset_id=dataset_id,
+            scenario_id=scenario_id,
             scan_summary=scan_summary,
             trivy_summary=trivy_summary,
             sonar_summary=sonar_summary,
@@ -579,7 +569,7 @@ class StatisticsService:
         # Otherwise categorical
         return "categorical"
 
-    def _calculate_version_stats(
+    def _calculate_scenario_stats(
         self, scenario, builds: List[Dict[str, Any]]
     ) -> VersionStatistics:
         """Calculate aggregate scenario statistics."""

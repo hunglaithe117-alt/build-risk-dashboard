@@ -351,6 +351,17 @@ def dispatch_enrichment_batches(
                 "error_message": f"Processing dispatch failed: {error_msg}",
             },
         )
+
+        # Notify failure
+        from app.services.notification_service import notify_dataset_enrichment_failed
+
+        notify_dataset_enrichment_failed(
+            db=self.db,
+            scenario_id=scenario_id,
+            error_message=error_msg,
+            completed_count=0,
+            failed_count=0,
+        )
         raise
 
 
@@ -419,14 +430,32 @@ def handle_processing_chain_error(
                 "feature_extraction_completed": True,
             },
         )
-        # NOTE: User triggers generate_scenario_dataset manually
+
+        # Check and notify enrichment completion (if scans also done)
+        from app.services.notification_service import (
+            check_and_notify_enrichment_completed,
+        )
+
+        check_and_notify_enrichment_completed(self.db, scenario_id)
     else:
+        # No builds completed - mark as FAILED and notify
         scenario_repo.update_one(
             scenario_id,
             {
                 "status": ScenarioStatus.FAILED.value,
                 "error_message": error_msg,
             },
+        )
+
+        # Notify failure
+        from app.services.notification_service import notify_dataset_enrichment_failed
+
+        notify_dataset_enrichment_failed(
+            db=self.db,
+            scenario_id=scenario_id,
+            error_message=error_msg,
+            completed_count=completed_count,
+            failed_count=failed_count,
         )
 
     return {
@@ -626,6 +655,11 @@ def finalize_scenario_processing(
         f"{corr_prefix} Completed: {completed + partial}/{total}, failed: {failed}. "
         f"Waiting for user to trigger dataset generation."
     )
+
+    # Check if enrichment is fully complete (features + scans) and send notification
+    from app.services.notification_service import check_and_notify_enrichment_completed
+
+    check_and_notify_enrichment_completed(self.db, scenario_id)
 
     # NOTE: Split is NOT auto-dispatched. User triggers via generate_scenario_dataset.
 
@@ -937,6 +971,20 @@ def generate_scenario_dataset(
             current_phase="Dataset generation completed",
         )
 
+        # Send completion notification
+        from app.services.notification_service import (
+            notify_dataset_enrichment_completed,
+        )
+
+        notify_dataset_enrichment_completed(
+            db=self.db,
+            user_id=scenario.created_by,
+            dataset_name=scenario.name,
+            scenario_id=scenario_id,
+            builds_features_extracted=scenario.builds_features_extracted or 0,
+            builds_total=scenario.builds_total or 0,
+        )
+
         logger.info(
             f"{corr_prefix} Completed: train={len(result.train_indices)}, "
             f"val={len(result.val_indices)}, test={len(result.test_indices)}"
@@ -959,6 +1007,17 @@ def generate_scenario_dataset(
                 "status": ScenarioStatus.FAILED.value,
                 "error_message": f"Splitting failed: {error_msg}",
             },
+        )
+
+        # Notify failure
+        from app.services.notification_service import notify_dataset_enrichment_failed
+
+        notify_dataset_enrichment_failed(
+            db=self.db,
+            scenario_id=scenario_id,
+            error_message=error_msg,
+            completed_count=0,
+            failed_count=0,
         )
         raise
 

@@ -15,8 +15,8 @@ from app.database.mongo import get_database
 from app.integrations.tools.sonarqube.exporter import MetricsExporter
 from app.integrations.tools.sonarqube.tool import SonarQubeTool
 from app.paths import get_worktree_path
-from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.sonar_commit_scan import SonarCommitScanRepository
+from app.repositories.training_scenario import TrainingScenarioRepository
 from app.tasks.base import PipelineTask, SafeTask, TaskState
 from app.tasks.shared.events import publish_scan_update
 
@@ -181,7 +181,7 @@ def export_metrics_from_webhook(
     """
     Handle SonarQube webhook callback when analysis completes.
 
-    Fetches metrics, filters by version config, and backfills to builds.
+    Fetches metrics, filters by scenario config, and backfills to builds.
 
     Args:
         component_key: SonarQube component/project key
@@ -193,7 +193,7 @@ def export_metrics_from_webhook(
 
     db = get_database()
     scan_repo = SonarCommitScanRepository(db)
-    version_repo = DatasetVersionRepository(db)
+    scenario_repo = TrainingScenarioRepository(db)
 
     # Find scan record
     scan_record = scan_repo.find_by_component_key(component_key)
@@ -201,10 +201,17 @@ def export_metrics_from_webhook(
         logger.warning(f"No scan record found for {component_key}")
         return {"status": "no_scan_record", "component_key": component_key}
 
+    scenario_id = scan_record.scenario_id
+    if not scenario_id:
+        logger.error(f"Scan record {scan_record.id} has no scenario_id")
+        return {"status": "invalid_record", "component_key": component_key}
+
+    scenario_id_str = str(scenario_id)
+
     # Detect pipeline type for context-aware operations
     from app.tasks.shared.pipeline_context import PipelineContext
 
-    pipeline_ctx = PipelineContext.detect(db, str(scan_record.dataset_version_id))
+    pipeline_ctx = PipelineContext.detect(db, scenario_id_str)
 
     try:
         # Handle failed analysis
@@ -214,7 +221,7 @@ def export_metrics_from_webhook(
 
             # Publish failed status
             publish_scan_update(
-                version_id=str(scan_record.dataset_version_id),
+                scenario_id=scenario_id_str,
                 scan_id=str(scan_record.id),
                 commit_sha=scan_record.commit_sha,
                 tool_type="sonarqube",
@@ -228,8 +235,8 @@ def export_metrics_from_webhook(
                 increment_scan_failed,
             )
 
-            increment_scan_failed(db, str(scan_record.dataset_version_id))
-            check_and_mark_scans_completed(db, str(scan_record.dataset_version_id))
+            increment_scan_failed(db, scenario_id_str)
+            check_and_mark_scans_completed(db, scenario_id_str)
 
             # Context-aware notification (works for both DatasetVersion and MLScenario)
             try:
@@ -240,15 +247,20 @@ def export_metrics_from_webhook(
 
             return {"status": "failed", "component_key": component_key}
 
-        # Get version to determine which metrics to fetch
-        version = version_repo.find_by_id(str(scan_record.dataset_version_id))
-        if not version:
-            logger.error(f"Version {scan_record.dataset_version_id} not found")
-            scan_repo.mark_failed(scan_record.id, "Version not found")
-            return {"status": "version_not_found", "component_key": component_key}
+        # Get scenario to determine which metrics to fetch
+        scenario = scenario_repo.find_by_id(scenario_id_str)
+        if not scenario:
+            logger.error(f"Scenario {scenario_id_str} not found")
+            scan_repo.mark_failed(scan_record.id, "Scenario not found")
+            return {"status": "scenario_not_found", "component_key": component_key}
 
         # Get user's selected metrics (only fetch these from SonarQube API)
-        selected_metrics = version.scan_metrics.get("sonarqube", [])
+        # Check both feature_config.scan_metrics (schema) and root scan_metrics (legacy) if needed
+        scan_metrics_config = getattr(scenario.feature_config, "scan_metrics", {})
+        if not scan_metrics_config and hasattr(scenario, "scan_metrics"):
+            scan_metrics_config = scenario.scan_metrics
+
+        selected_metrics = scan_metrics_config.get("sonarqube", [])
 
         # Export only selected metrics from SonarQube API (not all then filter)
         exporter = MetricsExporter()
@@ -263,9 +275,6 @@ def export_metrics_from_webhook(
             return {"status": "no_metrics", "component_key": component_key}
 
         # Context-aware backfill (works for both DatasetVersion and MLScenario)
-        from app.tasks.shared.pipeline_context import PipelineContext
-
-        pipeline_ctx = PipelineContext.detect(db, str(scan_record.dataset_version_id))
         updated_count = 0
         if pipeline_ctx:
             updated_count = pipeline_ctx.backfill_scan_metrics_by_commit(
@@ -284,7 +293,7 @@ def export_metrics_from_webhook(
 
         # Publish completed status
         publish_scan_update(
-            version_id=str(scan_record.dataset_version_id),
+            scenario_id=scenario_id_str,
             scan_id=str(scan_record.id),
             commit_sha=scan_record.commit_sha,
             tool_type="sonarqube",
@@ -299,8 +308,8 @@ def export_metrics_from_webhook(
             increment_scan_completed,
         )
 
-        increment_scan_completed(db, str(scan_record.dataset_version_id))
-        check_and_mark_scans_completed(db, str(scan_record.dataset_version_id))
+        increment_scan_completed(db, scenario_id_str)
+        check_and_mark_scans_completed(db, scenario_id_str)
 
         # Context-aware notification (works for both DatasetVersion and MLScenario)
         try:
@@ -321,7 +330,7 @@ def export_metrics_from_webhook(
 
         # Publish failed status
         publish_scan_update(
-            version_id=str(scan_record.dataset_version_id),
+            scenario_id=scenario_id_str,
             scan_id=str(scan_record.id),
             commit_sha=scan_record.commit_sha,
             tool_type="sonarqube",

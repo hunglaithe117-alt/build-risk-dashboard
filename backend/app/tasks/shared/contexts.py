@@ -136,7 +136,7 @@ class TrainingPipelineContext:
 
     @property
     def pipeline_type(self) -> str:
-        return "training"
+        return "dataset"
 
     def get_import_build_repo(self, db: Any) -> Any:
         from app.repositories.training_ingestion_build import (
@@ -208,13 +208,13 @@ class TrainingPipelineContext:
             self.scenario_id,
             build_id,
             status,
-            pipeline_type="training",
+            pipeline_type="dataset",
             **kwargs,
         )
 
     def to_dict(self) -> Dict[str, Any]:
         return {
-            "type": "training",
+            "type": "dataset",
             "scenario_id": self.scenario_id,
             "correlation_id": self.correlation_id,
             "raw_repo_id": self._raw_repo_id,
@@ -252,7 +252,7 @@ def deserialize_context(
 
     if pipeline_type == "model":
         return ModelPipelineContext.from_dict(data)
-    elif pipeline_type == "training":
+    elif pipeline_type == "dataset":
         return TrainingPipelineContext.from_dict(data)
     else:
         raise ValueError(f"Unknown pipeline type: {pipeline_type}")

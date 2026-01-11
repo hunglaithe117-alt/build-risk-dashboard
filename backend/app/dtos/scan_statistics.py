@@ -84,8 +84,7 @@ class ScanSummary(BaseModel):
 class ScanMetricsStatisticsResponse(BaseModel):
     """Complete scan metrics statistics response."""
 
-    version_id: str
-    dataset_id: str
+    scenario_id: str
     scan_summary: ScanSummary = Field(default_factory=ScanSummary)
     trivy_summary: TrivySummary = Field(default_factory=TrivySummary)
     sonar_summary: SonarSummary = Field(default_factory=SonarSummary)

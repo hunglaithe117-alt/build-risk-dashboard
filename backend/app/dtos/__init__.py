@@ -24,27 +24,6 @@ from .dashboard import (
     DashboardTrendPoint,
     RepoDistributionEntry,
 )
-from .dataset import (
-    DatasetCreateRequest,
-    DatasetListResponse,
-    DatasetResponse,
-    RepoValidationItem,
-    RepoValidationResponse,
-)
-from .dataset_repo import (
-    DatasetRepoListResponse,
-    DatasetRepoSummary,
-)
-from .dataset_template import (
-    DatasetTemplateListResponse,
-    DatasetTemplateResponse,
-)
-from .dataset_version import (
-    CreateVersionRequest,
-    IngestionProgressResponse,
-    VersionListResponse,
-    VersionResponse,
-)
 from .feature import (
     DAGEdgeResponse,
     DAGNodeResponse,
@@ -91,6 +70,12 @@ from .token import (
     TokenResponse,
     TokenUpdateRequest,
     TokenVerifyResponse,
+)
+from .training_scenario import (
+    TrainingScenarioCreate,
+    TrainingScenarioListResponse,
+    TrainingScenarioResponse,
+    TrainingScenarioUpdate,
 )
 from .user import (
     OAuthIdentityResponse,
@@ -139,15 +124,9 @@ __all__ = [
     # Training Builds (Processing)
     "TrainingBuildSummary",
     "TrainingBuildListResponse",
-    # Dataset
-    "DatasetResponse",
-    "DatasetListResponse",
-    "DatasetCreateRequest",
-    "RepoValidationItem",
-    "RepoValidationResponse",
-    # Dataset templates
-    "DatasetTemplateResponse",
-    "DatasetTemplateListResponse",
+    # Training Builds (Processing)
+    "TrainingBuildSummary",
+    "TrainingBuildListResponse",
     # Token
     "TokenCreateRequest",
     "TokenUpdateRequest",
@@ -164,14 +143,11 @@ __all__ = [
     "DAGEdgeResponse",
     "ExecutionLevelResponse",
     "DAGResponse",
-    # Dataset Version
-    "CreateVersionRequest",
-    "IngestionProgressResponse",
-    "VersionResponse",
-    "VersionListResponse",
-    # Dataset Repo
-    "DatasetRepoSummary",
-    "DatasetRepoListResponse",
+    # Training Scenario
+    "TrainingScenarioCreate",
+    "TrainingScenarioUpdate",
+    "TrainingScenarioResponse",
+    "TrainingScenarioListResponse",
     # Settings
     "ApplicationSettingsResponse",
     "ApplicationSettingsUpdateRequest",

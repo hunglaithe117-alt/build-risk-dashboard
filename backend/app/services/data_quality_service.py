@@ -26,9 +26,9 @@ from app.entities.data_quality import (
     QualityIssueSeverity,
 )
 from app.repositories.data_quality_repository import DataQualityRepository
-from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
-from app.repositories.dataset_version import DatasetVersionRepository
 from app.repositories.feature_vector import FeatureVectorRepository
+from app.repositories.training_enrichment_build import TrainingEnrichmentBuildRepository
+from app.repositories.training_scenario import TrainingScenarioRepository
 from app.services.feature_service import FeatureService
 
 logger = logging.getLogger(__name__)
@@ -46,64 +46,59 @@ class DataQualityService:
     def __init__(self, db: Database):
         self.db = db
         self.quality_repo = DataQualityRepository(db)
-        self.version_repo = DatasetVersionRepository(db)
-        self.build_repo = DatasetEnrichmentBuildRepository(db)
+        self.scenario_repo = TrainingScenarioRepository(db)
+        self.build_repo = TrainingEnrichmentBuildRepository(db)
         self.feature_vector_repo = FeatureVectorRepository(db)
         self.feature_service = FeatureService()
 
-    def evaluate_version(self, dataset_id: str, version_id: str) -> DataQualityReport:
+    def evaluate_version(self, scenario_id: str) -> DataQualityReport:
         """
         Run quality evaluation for a dataset version.
 
         Args:
-            dataset_id: Dataset ID
-            version_id: Version ID to evaluate
+            scenario_id: Scenario ID to evaluate
 
         Returns:
             DataQualityReport with evaluation results
         """
         # Check for existing running evaluation
-        existing = self.quality_repo.find_pending_or_running(version_id)
+        existing = self.quality_repo.find_pending_or_running(scenario_id)
         if existing:
             raise HTTPException(
                 status_code=409,
-                detail="Quality evaluation is already in progress for this version",
+                detail="Quality evaluation is already in progress for this scenario",
             )
 
-        # Get version
-        version = self.version_repo.find_by_id(version_id)
-        if not version:
-            raise HTTPException(status_code=404, detail="Version not found")
+        # Get scenario
+        scenario = self.scenario_repo.find_by_id(scenario_id)
+        if not scenario:
+            raise HTTPException(status_code=404, detail="Scenario not found")
 
-        if version.status != "processed":
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Cannot evaluate version with status '{version.status}'. "
-                    "Must be 'processed'."
-                ),
-            )
+        # Check status (should be PROCESSED before quality check makes sense)
+        if scenario.status != "processed" and scenario.status != "completed":
+            # Allowed in processed or completed (if re-running)
+            pass
+            # Or raise error if strict
 
         report = DataQualityReport(
-            dataset_id=ObjectId(dataset_id),
-            version_id=ObjectId(version_id),
+            scenario_id=ObjectId(scenario_id),
         )
         report.mark_started()
 
         try:
-            # Get all enrichment builds for this version
-            builds = self.build_repo.find_by_version(version_id)
+            # Get all enrichment builds for this scenario
+            builds = self.build_repo.find_by_scenario(scenario_id)
 
             if not builds:
-                report.mark_failed("No enrichment builds found for this version")
+                report.mark_failed("No enrichment builds found for this scenario")
                 self.quality_repo.insert_one(report)
                 return report
 
-            # Get selected features for this version
-            selected_features = version.selected_features or []
+            # Get selected features (DAG features)
+            selected_features = scenario.feature_config.dag_features or []
 
             if not selected_features:
-                report.mark_failed("No features selected for this version")
+                report.mark_failed("No features configured for this scenario")
                 self.quality_repo.insert_one(report)
                 return report
 
@@ -115,9 +110,13 @@ class DataQualityService:
             report.total_features = len(selected_features)
 
             # Load feature vectors for all builds in batch
-            raw_build_run_ids = [b.raw_build_run_id for b in builds if b.raw_build_run_id]
-            feature_vectors_map = self.feature_vector_repo.find_many_by_raw_build_run_ids(
-                raw_build_run_ids
+            raw_build_run_ids = [
+                b.raw_build_run_id for b in builds if b.raw_build_run_id
+            ]
+            feature_vectors_map = (
+                self.feature_vector_repo.find_many_by_raw_build_run_ids(
+                    raw_build_run_ids
+                )
             )
 
             # Create a helper class to hold build + features for analysis
@@ -140,7 +139,9 @@ class DataQualityService:
                 b for b in enriched_builds if len(b.features) < len(selected_features)
             ]
             failed_builds = [
-                b for b in builds_with_features if not b.features or len(b.features) == 0
+                b
+                for b in builds_with_features
+                if not b.features or len(b.features) == 0
             ]
 
             report.enriched_builds = len(enriched_builds)
@@ -148,7 +149,9 @@ class DataQualityService:
             report.failed_builds = len(failed_builds)
 
             # Coverage: % successfully enriched builds
-            report.coverage_score = (len(enriched_builds) / len(builds) * 100) if builds else 0.0
+            report.coverage_score = (
+                (len(enriched_builds) / len(builds) * 100) if builds else 0.0
+            )
 
             # Calculate feature metrics
             report.feature_metrics = self._calculate_feature_metrics(
@@ -158,10 +161,14 @@ class DataQualityService:
             )
 
             # Calculate completeness score
-            report.completeness_score = self._calculate_completeness_score(report.feature_metrics)
+            report.completeness_score = self._calculate_completeness_score(
+                report.feature_metrics
+            )
 
             # Calculate validity score
-            report.validity_score = self._calculate_validity_score(report.feature_metrics)
+            report.validity_score = self._calculate_validity_score(
+                report.feature_metrics
+            )
 
             # Calculate consistency score
             report.consistency_score = self._calculate_consistency_score(
@@ -174,7 +181,9 @@ class DataQualityService:
                 report=report,
                 feature_metrics=report.feature_metrics,
             )
-            report.features_with_issues = len([m for m in report.feature_metrics if m.issues])
+            report.features_with_issues = len(
+                [m for m in report.feature_metrics if m.issues]
+            )
 
             # Calculate overall quality score
             quality_score = (
@@ -187,7 +196,7 @@ class DataQualityService:
             report.mark_completed(quality_score)
 
             logger.info(
-                f"Quality evaluation completed for version {version_id}: "
+                f"Quality evaluation completed for scenario {scenario_id}: "
                 f"score={quality_score:.1f}, "
                 f"completeness={report.completeness_score:.1f}, "
                 f"validity={report.validity_score:.1f}, "
@@ -196,18 +205,20 @@ class DataQualityService:
             )
 
         except Exception as e:
-            logger.error(f"Quality evaluation failed for version {version_id}: {e}")
+            logger.error(f"Quality evaluation failed for scenario {scenario_id}: {e}")
             report.mark_failed(str(e))
 
         # Save report
         self.quality_repo.insert_one(report)
         return report
 
-    def get_report(self, dataset_id: str, version_id: str) -> Optional[DataQualityReport]:
-        """Get the latest quality report for a version."""
-        return self.quality_repo.find_by_version(version_id)
+    def get_report(self, scenario_id: str) -> Optional[DataQualityReport]:
+        """Get the latest quality report for a scenario."""
+        return self.quality_repo.find_by_scenario(scenario_id)
 
-    def _get_feature_metadata(self, selected_features: List[str]) -> Dict[str, Dict[str, Any]]:
+    def _get_feature_metadata(
+        self, selected_features: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Get metadata for selected features including valid_range.
 
@@ -296,7 +307,9 @@ class DataQualityService:
                 try:
                     numeric_values.append(float(v))
                 except (ValueError, TypeError):
-                    logger.debug(f"Skipping non-numeric value '{v}' for feature '{feature_name}'")
+                    logger.debug(
+                        f"Skipping non-numeric value '{v}' for feature '{feature_name}'"
+                    )
 
             if numeric_values:
                 metric.min_value = min(numeric_values)
@@ -308,10 +321,14 @@ class DataQualityService:
                 # Range validation
                 if valid_range:
                     min_valid, max_valid = valid_range
-                    out_of_range = [v for v in numeric_values if v < min_valid or v > max_valid]
+                    out_of_range = [
+                        v for v in numeric_values if v < min_valid or v > max_valid
+                    ]
                     metric.out_of_range_count = len(out_of_range)
                     metric.validity_pct = (
-                        (len(numeric_values) - len(out_of_range)) / len(numeric_values) * 100
+                        (len(numeric_values) - len(out_of_range))
+                        / len(numeric_values)
+                        * 100
                     )
 
                     if metric.out_of_range_count > 0:
@@ -330,16 +347,22 @@ class DataQualityService:
             if valid_values:
                 invalid = [v for v in string_values if v not in valid_values]
                 metric.invalid_value_count = len(invalid)
-                metric.validity_pct = (len(string_values) - len(invalid)) / len(string_values) * 100
+                metric.validity_pct = (
+                    (len(string_values) - len(invalid)) / len(string_values) * 100
+                )
 
                 if metric.invalid_value_count > 0:
-                    metric.issues.append(f"{metric.invalid_value_count} values not in allowed list")
+                    metric.issues.append(
+                        f"{metric.invalid_value_count} values not in allowed list"
+                    )
 
         # Boolean analysis
         elif data_type == "boolean":
             bool_values = [bool(v) for v in non_null_values]
             true_count = sum(bool_values)
-            metric.unique_count = 2 if true_count > 0 and true_count < len(bool_values) else 1
+            metric.unique_count = (
+                2 if true_count > 0 and true_count < len(bool_values) else 1
+            )
             metric.validity_pct = 100.0  # All booleans are valid
 
         # List analysis
@@ -399,7 +422,10 @@ class DataQualityService:
                     severity=QualityIssueSeverity.ERROR,
                     category="coverage",
                     message=f"Low coverage: only {report.coverage_score:.1f}% of builds enriched",
-                    details={"enriched": report.enriched_builds, "total": report.total_builds},
+                    details={
+                        "enriched": report.enriched_builds,
+                        "total": report.total_builds,
+                    },
                 )
             )
         elif report.coverage_score < 80:

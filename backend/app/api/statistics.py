@@ -20,20 +20,19 @@ from app.services.statistics_service import StatisticsService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/datasets/{dataset_id}/versions/{version_id}/statistics",
+    prefix="/scenarios/{scenario_id}/statistics",
     tags=["Statistics"],
 )
 
 
 @router.get("", response_model=VersionStatisticsResponse)
-async def get_version_statistics(
-    dataset_id: str,
-    version_id: str,
+async def get_scenario_statistics(
+    scenario_id: str,
     db=Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
     """
-    Get comprehensive statistics for a dataset version.
+    Get comprehensive statistics for a scenario.
 
     Returns:
     - Build counts and rates (total, enriched, failed, partial)
@@ -43,13 +42,12 @@ async def get_version_statistics(
     - Per-feature completeness metrics
     """
     service = StatisticsService(db)
-    return service.get_version_statistics(dataset_id, version_id)
+    return service.get_scenario_statistics(scenario_id=scenario_id)
 
 
 @router.get("/distributions", response_model=FeatureDistributionResponse)
 async def get_feature_distributions(
-    dataset_id: str,
-    version_id: str,
+    scenario_id: str,
     features: Optional[List[str]] = Query(
         None, description="Features to analyze (defaults to all selected)"
     ),
@@ -73,8 +71,7 @@ async def get_feature_distributions(
     """
     service = StatisticsService(db)
     return service.get_feature_distributions(
-        dataset_id=dataset_id,
-        version_id=version_id,
+        scenario_id=scenario_id,
         features=features,
         bins=bins,
         top_n=top_n,
@@ -83,8 +80,7 @@ async def get_feature_distributions(
 
 @router.get("/correlation", response_model=CorrelationMatrixResponse)
 async def get_correlation_matrix(
-    dataset_id: str,
-    version_id: str,
+    scenario_id: str,
     features: Optional[List[str]] = Query(
         None, description="Numeric features to include (defaults to all numeric)"
     ),
@@ -106,21 +102,19 @@ async def get_correlation_matrix(
     """
     service = StatisticsService(db)
     return service.get_correlation_matrix(
-        dataset_id=dataset_id,
-        version_id=version_id,
+        scenario_id=scenario_id,
         features=features,
     )
 
 
 @router.get("/scans", response_model=ScanMetricsStatisticsResponse)
 async def get_scan_metrics_statistics(
-    dataset_id: str,
-    version_id: str,
+    scenario_id: str,
     db=Depends(get_db),
     current_user: dict = Depends(RequirePermission(Permission.VIEW_DATASETS)),
 ):
     """
-    Get aggregated scan metrics statistics for a dataset version.
+    Get aggregated scan metrics statistics for a scenario.
 
     Returns:
     - Scan summary (coverage rates)
@@ -134,6 +128,5 @@ async def get_scan_metrics_statistics(
     """
     service = StatisticsService(db)
     return service.get_scan_metrics_statistics(
-        dataset_id=dataset_id,
-        version_id=version_id,
+        scenario_id=scenario_id,
     )

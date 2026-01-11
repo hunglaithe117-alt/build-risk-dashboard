@@ -43,7 +43,7 @@ from app.repositories.source_build import SourceBuildRepository
 from app.repositories.source_repo_stats import SourceRepoStatsRepository
 from app.services.github.github_client import get_public_github_client
 from app.tasks.base import SafeTask
-from app.tasks.dataset_validation_helpers import (
+from app.tasks.validation_helpers import (
     calculate_progress,
     chunk_dict,
     chunk_list,

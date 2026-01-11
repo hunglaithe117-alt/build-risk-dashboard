@@ -30,14 +30,14 @@ interface UseStep1UploadReturn {
     handleClearFile: () => void;
     resetStep1: () => void;
     resetMappings: () => void;
-    loadFromExistingDataset: (dataset: {
+    loadFromExistingSource: (source: {
         name?: string;
         description?: string | null;
         columns?: string[];
         rows?: number;
-        file_name?: string;
+        file_name?: string | null;
         size_bytes?: number;
-        preview?: Record<string, unknown>[];
+        preview?: Record<string, string | number>[];
         mapped_fields?: { build_id?: string | null; repo_name?: string | null };
         ci_provider?: string | null;
     }) => void;
@@ -177,34 +177,34 @@ export function useStep1Upload(): UseStep1UploadReturn {
         setPreview(null);
     }, []);
 
-    const loadFromExistingDataset = useCallback(
-        (dataset: {
+    const loadFromExistingSource = useCallback(
+        (source: {
             name?: string;
             description?: string | null;
             columns?: string[];
             rows?: number;
-            file_name?: string;
+            file_name?: string | null;
             size_bytes?: number;
-            preview?: Record<string, unknown>[];
+            preview?: Record<string, string | number>[];
             mapped_fields?: { build_id?: string | null; repo_name?: string | null };
             ci_provider?: string | null;
         }) => {
-            setName(dataset.name || "");
-            setDescription(dataset.description || "");
+            setName(source.name || "");
+            setDescription(source.description || "");
 
-            if (dataset.mapped_fields) {
+            if (source.mapped_fields) {
                 setMappings({
-                    build_id: dataset.mapped_fields.build_id || "",
-                    repo_name: dataset.mapped_fields.repo_name || "",
+                    build_id: source.mapped_fields.build_id || "",
+                    repo_name: source.mapped_fields.repo_name || "",
                 });
             }
 
-            if (dataset.ci_provider) {
-                setCiProvider(dataset.ci_provider);
+            if (source.ci_provider) {
+                setCiProvider(source.ci_provider);
             }
 
-            if (dataset.columns?.length) {
-                const previewRows = (dataset.preview || []).map((row) => {
+            if (source.columns?.length) {
+                const previewRows = (source.preview || []).map((row) => {
                     const converted: Record<string, string> = {};
                     Object.entries(row).forEach(([key, value]) => {
                         converted[key] = String(value ?? "");
@@ -212,11 +212,11 @@ export function useStep1Upload(): UseStep1UploadReturn {
                     return converted;
                 });
                 setPreview({
-                    columns: dataset.columns,
+                    columns: source.columns,
                     rows: previewRows,
-                    totalRows: dataset.rows || 0,
-                    fileName: dataset.file_name || "dataset.csv",
-                    fileSize: dataset.size_bytes || 0,
+                    totalRows: source.rows || 0,
+                    fileName: source.file_name || "dataset.csv",
+                    fileSize: source.size_bytes || 0,
                 });
             }
         },
@@ -248,6 +248,6 @@ export function useStep1Upload(): UseStep1UploadReturn {
         handleClearFile,
         resetStep1,
         resetMappings,
-        loadFromExistingDataset,
+        loadFromExistingSource,
     };
 }

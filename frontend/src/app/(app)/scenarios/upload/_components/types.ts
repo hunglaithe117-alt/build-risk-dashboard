@@ -1,15 +1,15 @@
-import { CIProviderOption, DatasetRecord, ValidationStats } from "@/types";
+import { CIProviderOption, BuildSourceRecord, ValidationStats } from "@/types";
 
 export type MappingKey = "build_id" | "repo_name";
 export type Step = 1 | 2;
 export type CIProviderMode = "single" | "column";
 
-export interface UploadDatasetModalProps {
+export interface UploadBuildSourceModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onSuccess: (dataset: DatasetRecord) => void;
-    onDatasetCreated?: (dataset: DatasetRecord) => void;
-    existingDataset?: DatasetRecord;
+    onSuccess: (source: BuildSourceRecord) => void;
+    onSourceCreated?: (source: BuildSourceRecord) => void;
+    existingSource?: BuildSourceRecord;
 }
 
 export interface CSVPreview {
@@ -31,7 +31,7 @@ export interface StepUploadProps {
     ciProviders: CIProviderOption[];
     mappings: Record<MappingKey, string>;
     isMappingValid: boolean;
-    isDatasetCreated: boolean;
+    isSourceCreated: boolean;
     fileInputRef: React.RefObject<HTMLInputElement | null>;
     onFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void;
     onNameChange: (value: string) => void;

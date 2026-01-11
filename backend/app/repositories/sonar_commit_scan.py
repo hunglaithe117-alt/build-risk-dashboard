@@ -18,76 +18,6 @@ class SonarCommitScanRepository(BaseRepository[SonarCommitScan]):
     def __init__(self, db: Database):
         super().__init__(db, "sonar_commit_scans", SonarCommitScan)
 
-    def find_by_version(
-        self,
-        version_id: ObjectId,
-        status: Optional[SonarScanStatus] = None,
-    ) -> List[SonarCommitScan]:
-        """Find all scans for a version, optionally filtered by status."""
-        query = {"dataset_version_id": version_id}
-        if status:
-            query["status"] = status.value
-        return self.find_many(query, sort=[("created_at", -1)])
-
-    def list_by_version(
-        self,
-        version_id: ObjectId,
-        skip: int = 0,
-        limit: int = 10,
-        status: Optional[SonarScanStatus] = None,
-    ) -> tuple[List[SonarCommitScan], int]:
-        """List scans for a version with pagination. Returns (items, total)."""
-        query = {"dataset_version_id": version_id}
-        if status:
-            query["status"] = status.value
-        total = self.collection.count_documents(query)
-        items = list(
-            self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
-        )
-        return [SonarCommitScan(**doc) for doc in items], total
-
-    def count_by_version(self, version_id: ObjectId) -> int:
-        """Count all scans for a version."""
-        return self.collection.count_documents({"dataset_version_id": version_id})
-
-    def count_by_version_and_status(
-        self, version_id: ObjectId, status: SonarScanStatus
-    ) -> int:
-        """Count scans for a version filtered by status."""
-        return self.collection.count_documents(
-            {
-                "dataset_version_id": version_id,
-                "status": status.value,
-            }
-        )
-
-    def count_pending_or_scanning(self, version_id: ObjectId) -> int:
-        """Count scans that are still pending or in progress."""
-        return self.collection.count_documents(
-            {
-                "dataset_version_id": version_id,
-                "status": {
-                    "$in": [
-                        SonarScanStatus.PENDING.value,
-                        SonarScanStatus.SCANNING.value,
-                    ]
-                },
-            }
-        )
-
-    def find_by_version_and_commit(
-        self,
-        version_id: ObjectId,
-        commit_sha: str,
-    ) -> Optional[SonarCommitScan]:
-        """Find scan for specific version + commit."""
-        return self.find_one(
-            {
-                "dataset_version_id": version_id,
-                "commit_sha": commit_sha,
-            }
-        )
-
     def find_by_component_key(self, component_key: str) -> Optional[SonarCommitScan]:
         """Find scan by component key."""
         return self.find_one({"component_key": component_key})
@@ -108,33 +38,6 @@ class SonarCommitScanRepository(BaseRepository[SonarCommitScan]):
                 },
             }
         )
-
-    def create_or_get(
-        self,
-        version_id: ObjectId,
-        commit_sha: str,
-        repo_full_name: str,
-        raw_repo_id: ObjectId,
-        component_key: str,
-        scan_config: Optional[dict] = None,
-        selected_metrics: Optional[list] = None,
-    ) -> SonarCommitScan:
-        """Create new scan record or return existing."""
-        existing = self.find_by_version_and_commit(version_id, commit_sha)
-        if existing:
-            return existing
-
-        scan = SonarCommitScan(
-            dataset_version_id=version_id,
-            commit_sha=commit_sha,
-            repo_full_name=repo_full_name,
-            raw_repo_id=raw_repo_id,
-            component_key=component_key,
-            scan_config=scan_config,
-            selected_metrics=selected_metrics,
-            status=SonarScanStatus.PENDING,
-        )
-        return self.insert_one(scan)
 
     def mark_scanning(self, scan_id: ObjectId) -> None:
         """Mark scan as in progress."""
@@ -196,15 +99,6 @@ class SonarCommitScanRepository(BaseRepository[SonarCommitScan]):
             },
         )
 
-    def get_failed_by_version(self, version_id: ObjectId) -> List[SonarCommitScan]:
-        """Get all failed scans for a version."""
-        return self.find_many(
-            {
-                "dataset_version_id": version_id,
-                "status": SonarScanStatus.FAILED.value,
-            }
-        )
-
     def delete_old_scans(self, days: int = 30) -> int:
         """Delete completed scans older than specified days."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -222,7 +116,98 @@ class SonarCommitScanRepository(BaseRepository[SonarCommitScan]):
         return result.deleted_count
 
     def delete_by_version(self, version_id: ObjectId | str, session=None) -> int:
-        """Delete all scans for a version."""
+        """Delete all scans for a version (legacy cleanup)."""
         if isinstance(version_id, str):
             version_id = ObjectId(version_id)
         return self.delete_many({"dataset_version_id": version_id}, session=session)
+
+    # ========================================================================
+    # Scenario-based methods (Training Scenario flow)
+    # ========================================================================
+
+    def list_by_scenario(
+        self,
+        scenario_id: ObjectId,
+        skip: int = 0,
+        limit: int = 10,
+        status: Optional[SonarScanStatus] = None,
+    ) -> tuple[List[SonarCommitScan], int]:
+        """List scans for a scenario with pagination. Returns (items, total)."""
+        query = {"scenario_id": scenario_id}
+        if status:
+            query["status"] = status.value
+        total = self.collection.count_documents(query)
+        items = list(
+            self.collection.find(query).sort("created_at", -1).skip(skip).limit(limit)
+        )
+        return [SonarCommitScan(**doc) for doc in items], total
+
+    def count_by_scenario(self, scenario_id: ObjectId) -> int:
+        """Count all scans for a scenario."""
+        return self.collection.count_documents({"scenario_id": scenario_id})
+
+    def count_by_scenario_and_status(
+        self, scenario_id: ObjectId, status: SonarScanStatus
+    ) -> int:
+        """Count scans for a scenario filtered by status."""
+        return self.collection.count_documents(
+            {
+                "scenario_id": scenario_id,
+                "status": status.value,
+            }
+        )
+
+    def find_by_scenario_and_commit(
+        self,
+        scenario_id: ObjectId,
+        commit_sha: str,
+    ) -> Optional[SonarCommitScan]:
+        """Find scan for specific scenario + commit."""
+        return self.find_one(
+            {
+                "scenario_id": scenario_id,
+                "commit_sha": commit_sha,
+            }
+        )
+
+    def create_or_get_for_scenario(
+        self,
+        scenario_id: ObjectId,
+        commit_sha: str,
+        repo_full_name: str,
+        raw_repo_id: ObjectId,
+        component_key: str,
+        scan_config: Optional[dict] = None,
+        selected_metrics: Optional[list] = None,
+    ) -> SonarCommitScan:
+        """Create new scan record for scenario or return existing."""
+        existing = self.find_by_scenario_and_commit(scenario_id, commit_sha)
+        if existing:
+            return existing
+
+        scan = SonarCommitScan(
+            scenario_id=scenario_id,
+            commit_sha=commit_sha,
+            repo_full_name=repo_full_name,
+            raw_repo_id=raw_repo_id,
+            component_key=component_key,
+            scan_config=scan_config,
+            selected_metrics=selected_metrics,
+            status=SonarScanStatus.PENDING,
+        )
+        return self.insert_one(scan)
+
+    def get_failed_by_scenario(self, scenario_id: ObjectId) -> List[SonarCommitScan]:
+        """Get all failed scans for a scenario."""
+        return self.find_many(
+            {
+                "scenario_id": scenario_id,
+                "status": SonarScanStatus.FAILED.value,
+            }
+        )
+
+    def delete_by_scenario(self, scenario_id: ObjectId | str, session=None) -> int:
+        """Delete all scans for a scenario."""
+        if isinstance(scenario_id, str):
+            scenario_id = ObjectId(scenario_id)
+        return self.delete_many({"scenario_id": scenario_id}, session=session)

@@ -36,7 +36,7 @@ const navigation = [
   },
   {
     label: "Data Enrichments",
-    href: "/projects",
+    href: "/scenarios",
     icon: Database,
     adminOnly: true, // Admin only
     userOnly: false,

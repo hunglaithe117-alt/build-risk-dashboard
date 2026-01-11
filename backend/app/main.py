@@ -12,9 +12,6 @@ from app.api import (
     auth,
     build_sources,
     dashboard,
-    dataset_validation,
-    dataset_versions,
-    datasets,
     features,
     health,
     integrations,
@@ -98,7 +95,6 @@ app.include_router(webhook.router, prefix="/api", tags=["Webhooks"])
 app.include_router(sse.router, prefix="/api", tags=["SSE"])
 app.include_router(logs.router, prefix="/api", tags=["Logs"])
 app.include_router(features.router, prefix="/api", tags=["Feature Definitions"])
-app.include_router(datasets.router, prefix="/api", tags=["Datasets"])
 
 app.include_router(
     training_scenarios.router,
@@ -106,10 +102,6 @@ app.include_router(
     tags=["Training Scenarios"],
 )
 app.include_router(tokens.router, prefix="/api", tags=["GitHub Tokens"])
-app.include_router(
-    dataset_validation.router, prefix="/api", tags=["Dataset Validation"]
-)
-app.include_router(dataset_versions.router, prefix="/api", tags=["Dataset Versions"])
 app.include_router(templates.router, prefix="/api", tags=["Templates"])
 app.include_router(settings.router, prefix="/api", tags=["Settings"])
 app.include_router(monitoring.router, prefix="/api", tags=["Monitoring"])

@@ -2,8 +2,8 @@
 PipelineContext - Unified context for scan and enrichment pipelines.
 
 Provides a single abstraction to work with either:
-- Dataset Enrichment pipeline (DatasetVersion)
-- ML Scenario pipeline (MLScenario)
+- Model Pipeline (Repository processing)
+- Training Scenario Pipeline (TrainingScenario)
 
 Auto-detection determines the correct pipeline type from context_id.
 """
@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 class PipelineType(str, Enum):
     """Supported pipeline types."""
 
-    DATASET_ENRICHMENT = "dataset_enrichment"
-    ML_SCENARIO = "ml_scenario"
+    MODEL_PIPELINE = "model_pipeline"
+    TRAINING_SCENARIO = "training_scenario"
 
 
 @dataclass
@@ -33,11 +33,11 @@ class PipelineContext:
     Unified context for pipeline operations.
 
     Provides common interface for operations that work across
-    Dataset Enrichment and ML Scenario pipelines.
+    Model Pipeline and Training Scenario pipelines.
     """
 
     pipeline_type: PipelineType
-    context_id: str  # version_id for enrichment, scenario_id for ML
+    context_id: str  # repo_id for model, scenario_id for training
     db: Database
 
     @classmethod
@@ -46,11 +46,11 @@ class PipelineContext:
         Auto-detect pipeline type from context_id.
 
         Checks MongoDB collections to determine if the ID belongs to
-        a DatasetVersion or MLScenario.
+        a Repository (model pipeline) or TrainingScenario.
 
         Args:
             db: MongoDB database instance
-            context_id: The ID to detect (version_id or scenario_id)
+            context_id: The ID to detect (repo_id or scenario_id)
 
         Returns:
             PipelineContext if found, None if context_id not found in either collection.
@@ -61,26 +61,26 @@ class PipelineContext:
             logger.warning(f"Invalid ObjectId for context detection: {context_id}")
             return None
 
-        # Check DatasetVersion collection first
-        version_doc = db.dataset_versions.find_one({"_id": oid}, {"_id": 1})
-        if version_doc:
+        # Check TrainingScenario collection first (new primary pipeline)
+        scenario_doc = db.training_scenarios.find_one({"_id": oid}, {"_id": 1})
+        if scenario_doc:
             return cls(
-                pipeline_type=PipelineType.DATASET_ENRICHMENT,
+                pipeline_type=PipelineType.TRAINING_SCENARIO,
                 context_id=context_id,
                 db=db,
             )
 
-        # Check MLScenario collection
-        scenario_doc = db.ml_scenarios.find_one({"_id": oid}, {"_id": 1})
-        if scenario_doc:
+        # Check Repository collection (model pipeline)
+        repo_doc = db.repositories.find_one({"_id": oid}, {"_id": 1})
+        if repo_doc:
             return cls(
-                pipeline_type=PipelineType.ML_SCENARIO,
+                pipeline_type=PipelineType.MODEL_PIPELINE,
                 context_id=context_id,
                 db=db,
             )
 
         logger.warning(
-            f"Context {context_id} not found in DatasetVersion or MLScenario"
+            f"Context {context_id} not found in TrainingScenario or Repository"
         )
         return None
 
@@ -89,20 +89,18 @@ class PipelineContext:
         Get the appropriate enrichment build repository for this pipeline.
 
         Returns:
-            DatasetEnrichmentBuildRepository or MLScenarioEnrichmentBuildRepository
+            TrainingEnrichmentBuildRepository or ModelEnrichmentBuildRepository
         """
-        if self.pipeline_type == PipelineType.DATASET_ENRICHMENT:
-            from app.repositories.dataset_enrichment_build import (
-                DatasetEnrichmentBuildRepository,
+        if self.pipeline_type == PipelineType.TRAINING_SCENARIO:
+            from app.repositories.training_enrichment_build import (
+                TrainingEnrichmentBuildRepository,
             )
 
-            return DatasetEnrichmentBuildRepository(self.db)
+            return TrainingEnrichmentBuildRepository(self.db)
         else:
-            from app.repositories.ml_scenario_enrichment_build import (
-                MLScenarioEnrichmentBuildRepository,
-            )
-
-            return MLScenarioEnrichmentBuildRepository(self.db)
+            # Model pipeline uses BuildRun for predictions, not enrichment builds
+            # Return None as model pipeline doesn't have enrichment builds
+            return None
 
     def backfill_scan_metrics_by_commit(
         self,
@@ -123,23 +121,18 @@ class PipelineContext:
         Returns:
             Number of FeatureVector documents updated.
         """
-        enrichment_build_repo = self.get_enrichment_build_repo()
-
-        if self.pipeline_type == PipelineType.DATASET_ENRICHMENT:
-            return enrichment_build_repo.backfill_by_commit_in_version(
-                version_id=ObjectId(self.context_id),
-                commit_sha=commit_sha,
-                scan_features=scan_features,
-                prefix=prefix,
-            )
-        else:
-            # ML Scenario uses same pattern but different method
+        if self.pipeline_type == PipelineType.TRAINING_SCENARIO:
+            enrichment_build_repo = self.get_enrichment_build_repo()
             return enrichment_build_repo.backfill_by_commit_in_scenario(
                 scenario_id=ObjectId(self.context_id),
                 commit_sha=commit_sha,
                 scan_features=scan_features,
                 prefix=prefix,
             )
+        else:
+            # Model pipeline doesn't use enrichment builds for backfill
+            logger.warning("Model pipeline does not support scan backfill")
+            return 0
 
     def increment_scans_completed(self) -> bool:
         """Increment scans_completed counter for this context."""
@@ -168,21 +161,13 @@ class PipelineContext:
         """
         Check if processing is fully complete and send notification if needed.
 
-        For DatasetVersion: checks features + scans complete, sends email notification.
-        For MLScenario: checks features + scans complete, logs completion.
+        For TrainingScenario: checks features + scans complete, sends notification.
+        For Model Pipeline: checks processing complete, logs completion.
 
         Returns:
             True if notification was sent/logged, False if still pending.
         """
-        if self.pipeline_type == PipelineType.DATASET_ENRICHMENT:
-            from app.services.notification_service import (
-                check_and_notify_enrichment_completed,
-            )
-
-            return check_and_notify_enrichment_completed(
-                db=self.db, version_id=self.context_id
-            )
-        else:
+        if self.pipeline_type == PipelineType.TRAINING_SCENARIO:
             from app.services.notification_service import (
                 check_and_notify_scenario_completed,
             )
@@ -190,3 +175,7 @@ class PipelineContext:
             return check_and_notify_scenario_completed(
                 db=self.db, scenario_id=self.context_id
             )
+        else:
+            # Model pipeline has its own notification flow
+            logger.info(f"Model pipeline {self.context_id} completion check skipped")
+            return False

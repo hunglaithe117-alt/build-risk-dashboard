@@ -144,7 +144,9 @@ def publish_scenario_update(
         round((builds_ingested / builds_total) * 100, 1) if builds_total > 0 else 0
     )
     processing_progress = (
-        round((builds_features_extracted / builds_total) * 100, 1) if builds_total > 0 else 0
+        round((builds_features_extracted / builds_total) * 100, 1)
+        if builds_total > 0
+        else 0
     )
     scan_progress = (
         round((scans_completed / scans_total) * 100, 1) if scans_total > 0 else 0
@@ -248,7 +250,7 @@ def publish_enrichment_update(
 
 
 def publish_scan_update(
-    version_id: str,
+    scenario_id: str,
     scan_id: str,
     commit_sha: str,
     tool_type: str,
@@ -261,7 +263,7 @@ def publish_scan_update(
     Publish scan status update for real-time UI updates.
 
     Args:
-        version_id: DatasetVersion ID
+        scenario_id: TrainingScenario ID
         scan_id: Scan record ID (TrivyCommitScan or SonarCommitScan)
         commit_sha: The commit SHA being scanned
         tool_type: "trivy" or "sonarqube"
@@ -274,7 +276,7 @@ def publish_scan_update(
         True if published successfully, False otherwise
     """
     payload = {
-        "version_id": version_id,
+        "scenario_id": scenario_id,
         "scan_id": scan_id,
         "commit_sha": commit_sha,
         "tool_type": tool_type,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ArrowRight,
     ArrowLeft,
@@ -40,6 +40,46 @@ const DEFAULT_ENABLED_TOOLS: EnabledTools = {
     sonarqube: false,
     trivy: false,
 };
+
+// Hook to detect languages for repos
+function useRepoLanguages(repos: Array<{ id: string; full_name: string }>) {
+    const [repoLanguages, setRepoLanguages] = useState<Record<string, string[]>>({});
+    const [loading, setLoading] = useState<Record<string, boolean>>({});
+
+    useEffect(() => {
+        if (repos.length === 0) return;
+
+        const detectLanguagesForRepos = async () => {
+            for (const repo of repos) {
+                // Skip if already loaded or loading
+                if (repoLanguages[repo.id] !== undefined || loading[repo.id]) {
+                    continue;
+                }
+
+                setLoading(prev => ({ ...prev, [repo.id]: true }));
+                try {
+                    // Import dynamically to avoid circular deps
+                    const { reposApi } = await import("@/lib/api");
+                    const result = await reposApi.detectLanguages(repo.full_name);
+                    setRepoLanguages(prev => ({
+                        ...prev,
+                        [repo.id]: result.languages.map((l: string) => l.toLowerCase()),
+                    }));
+                } catch (err) {
+                    console.error(`Failed to detect languages for ${repo.full_name}:`, err);
+                    setRepoLanguages(prev => ({ ...prev, [repo.id]: [] }));
+                } finally {
+                    setLoading(prev => ({ ...prev, [repo.id]: false }));
+                }
+            }
+        };
+
+        detectLanguagesForRepos();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [repos]);
+
+    return { repoLanguages, loading };
+}
 
 export function StepFeatures() {
     const {
@@ -110,6 +150,13 @@ export function StepFeatures() {
             ? state.featureConfigs as FeatureConfigsData
             : { global: {}, repos: {} }
     );
+
+    // Fetch repo languages for feature config
+    const repoLangInput = useMemo(() => previewRepos?.map(r => ({
+        id: r.id,
+        full_name: r.full_name,
+    })) || [], [previewRepos]);
+    const { repoLanguages } = useRepoLanguages(repoLangInput);
 
     const handleNext = () => {
         if (selectedFeatures.size === 0 && !enabledTools.sonarqube && !enabledTools.trivy) {
@@ -347,6 +394,7 @@ export function StepFeatures() {
                                             value={featureConfigs}
                                             onChange={setFeatureConfigs}
                                             repos={previewRepos}
+                                            repoLanguages={repoLanguages}
                                             showValidationStatusColumn={false}
                                         />
                                     </TabsContent>

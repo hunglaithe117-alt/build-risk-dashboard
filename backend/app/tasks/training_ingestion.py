@@ -63,7 +63,7 @@ def start_scenario_ingestion(
     User triggers processing (Phase 2) manually via start_scenario_processing.
     """
     from app.tasks.pipeline.resource_dag import get_ingestion_tasks_by_level
-    from app.tasks.shared import build_ingestion_workflow
+    from app.tasks.shared import TrainingPipelineContext, build_workflow_with_context
 
     correlation_id = str(uuid.uuid4())
     logger.info(
@@ -177,18 +177,25 @@ def start_scenario_ingestion(
             if not build_ids:
                 continue
 
+            # Create context for this repo
+            ctx = TrainingPipelineContext(
+                scenario_id=scenario_id,
+                correlation_id=correlation_id,
+                _raw_repo_id=raw_repo_id,
+                _github_repo_id=raw_repo.github_repo_id,
+                _full_name=raw_repo.full_name,
+            )
+
             # Build ingestion chain for this repo
-            repo_chain = build_ingestion_workflow(
+            repo_chain = build_workflow_with_context(
                 tasks_by_level=tasks_by_level,
+                ctx=ctx,
                 raw_repo_id=raw_repo_id,
                 github_repo_id=raw_repo.github_repo_id,
                 full_name=raw_repo.full_name,
                 build_ids=build_ids,
                 commit_shas=commit_shas,
                 ci_provider="github_actions",
-                correlation_id=correlation_id,
-                pipeline_id=scenario_id,
-                pipeline_type="training_scenario",
             )
 
             if repo_chain:

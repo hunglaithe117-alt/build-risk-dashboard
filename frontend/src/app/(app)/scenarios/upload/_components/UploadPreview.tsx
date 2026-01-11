@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { StepUploadProps } from "./types";
 
-interface UploadPreviewProps extends Pick<StepUploadProps, "preview" | "isDatasetCreated" | "onClearFile"> { }
+interface UploadPreviewProps extends Pick<StepUploadProps, "preview" | "isSourceCreated" | "onClearFile"> { }
 
 export function UploadPreview({
     preview,
-    isDatasetCreated,
+    isSourceCreated,
     onClearFile,
 }: UploadPreviewProps) {
     if (!preview) return null;
@@ -24,7 +24,7 @@ export function UploadPreview({
                         {preview.totalRows.toLocaleString()} rows • {preview.columns.length} columns
                     </p>
                 </div>
-                {!isDatasetCreated && (
+                {!isSourceCreated && (
                     <Button variant="ghost" size="sm" onClick={onClearFile}>
                         <X className="h-4 w-4" />
                     </Button>

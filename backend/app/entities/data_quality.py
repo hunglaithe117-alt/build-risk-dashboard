@@ -89,8 +89,7 @@ class DataQualityReport(BaseEntity):
         use_enum_values = True
 
     # References
-    dataset_id: PyObjectId
-    version_id: PyObjectId
+    scenario_id: PyObjectId = Field(..., description="Reference to training_scenarios")
 
     # Overall scores (0-100)
     # Formula: 0.4*completeness + 0.3*validity + 0.2*consistency + 0.1*coverage
@@ -126,7 +125,11 @@ class DataQualityReport(BaseEntity):
         """Get count of issues by severity level."""
         counts = {"info": 0, "warning": 0, "error": 0}
         for issue in self.issues:
-            severity = issue.severity if isinstance(issue.severity, str) else issue.severity.value
+            severity = (
+                issue.severity
+                if isinstance(issue.severity, str)
+                else issue.severity.value
+            )
             if severity in counts:
                 counts[severity] += 1
         return counts

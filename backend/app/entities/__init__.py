@@ -2,13 +2,6 @@
 from app.ci_providers.models import CIProvider
 
 from .base import BaseEntity, PyObjectId
-from .data_quality import (
-    DataQualityMetric,
-    DataQualityReport,
-    QualityEvaluationStatus,
-    QualityIssue,
-    QualityIssueSeverity,
-)
 
 # === NEW ENTITIES (Architecture Merge) ===
 # Build Source (data collection layer)
@@ -18,48 +11,16 @@ from .build_source import (
     ValidationStats,
     ValidationStatus,
 )
-from .source_build import SourceBuild, SourceBuildStatus
-from .source_repo_stats import SourceRepoStats
-
-# Training Pipeline (training layer)
-from .training_scenario import (
-    DataSourceConfig,
-    FeatureConfig,
-    GroupByDimension,
-    OutputConfig,
-    PreprocessingConfig,
-    ScenarioStatus,
-    SplitStrategy,
-    SplittingConfig,
-    TrainingScenario,
+from .data_quality import (
+    DataQualityMetric,
+    DataQualityReport,
+    QualityEvaluationStatus,
+    QualityIssue,
+    QualityIssueSeverity,
 )
-from .training_ingestion_build import (
-    TrainingIngestionBuild,
-    IngestionStatus,
-    ResourceStatus,
-    ResourceStatusEntry,
-)
-from .training_enrichment_build import TrainingEnrichmentBuild
-from .training_dataset_split import TrainingDatasetSplit
 
-# === LEGACY ENTITIES (to be removed after migration) ===
-# Dataset entities (legacy - use BuildSource instead)
-from .dataset import (
-    DatasetMapping,
-    DatasetProject,
-    DatasetStats,
-    DatasetValidationStatus,
-    ValidationStats as LegacyValidationStats,
-)
-from .dataset_build import DatasetBuild, DatasetBuildStatus
-from .dataset_repo_stats import DatasetRepoStats
-
-# Dataset enrichment flow entities (legacy - use unified entities)
-from .dataset_enrichment_build import DatasetEnrichmentBuild
-from .dataset_import_build import DatasetImportBuild, DatasetImportBuildStatus
+# Dataset template (kept for upload presets)
 from .dataset_template import DatasetTemplate
-from .dataset_version import DatasetVersion, VersionStatus
-
 
 # Shared enums
 from .enums import (
@@ -86,6 +47,29 @@ from .raw_build_run import RawBuildRun
 
 # Raw data entities (shared across flows)
 from .raw_repository import RawRepository
+from .source_build import SourceBuild, SourceBuildStatus
+from .source_repo_stats import SourceRepoStats
+from .training_dataset_split import TrainingDatasetSplit
+from .training_enrichment_build import TrainingEnrichmentBuild
+from .training_ingestion_build import (
+    IngestionStatus,
+    ResourceStatus,
+    ResourceStatusEntry,
+    TrainingIngestionBuild,
+)
+
+# Training Pipeline (training layer)
+from .training_scenario import (
+    DataSourceConfig,
+    FeatureConfig,
+    GroupByDimension,
+    OutputConfig,
+    PreprocessingConfig,
+    ScenarioStatus,
+    SplitStrategy,
+    SplittingConfig,
+    TrainingScenario,
+)
 from .user import User
 
 __all__ = [
@@ -118,7 +102,6 @@ __all__ = [
     "ResourceStatusEntry",
     "TrainingEnrichmentBuild",
     "TrainingDatasetSplit",
-    # === LEGACY ENTITIES ===
     # Enums
     "TestFramework",
     "ExtractionStatus",
@@ -130,26 +113,6 @@ __all__ = [
     "ModelImportBuild",
     "ModelImportBuildStatus",
     "ModelTrainingBuild",
-    # Legacy dataset
-    "DatasetEnrichmentBuild",
-    "DatasetImportBuild",
-    "DatasetImportBuildStatus",
-    "DatasetProject",
-    "DatasetMapping",
-    "DatasetStats",
-    "DatasetValidationStatus",
-    "DatasetBuild",
-    "DatasetBuildStatus",
-    "DatasetRepoStats",
-    "DatasetVersion",
-    "VersionStatus",
-    # Legacy ML Scenario
-    "MLScenario",
-    "MLScenarioStatus",
-    "MLScenarioImportBuild",
-    "MLScenarioImportBuildStatus",
-    "MLScenarioEnrichmentBuild",
-    "MLDatasetSplit",
     # Other
     "OAuthIdentity",
     "User",

@@ -113,18 +113,13 @@ export const buildSourcesApi = {
             formData.append("description", options.description);
         }
 
-        const response = await fetch("/api/build-sources", {
-            method: "POST",
-            body: formData,
-            credentials: "include",
+        const response = await api.post<BuildSourceRecord>("/build-sources", formData, {
+            headers: {
+                "Content-Type": "multipart/form-data",
+            },
         });
 
-        if (!response.ok) {
-            const error = await response.json().catch(() => ({}));
-            throw new Error(error.detail || "Failed to upload file");
-        }
-
-        return response.json();
+        return response.data;
     },
 
     /**
@@ -162,7 +157,7 @@ export const buildSourcesApi = {
             name?: string;
             description?: string;
             mapped_fields?: Partial<SourceMapping>;
-            ci_provider?: string;
+            ci_provider?: string | null;
         }
     ): Promise<BuildSourceRecord> {
         const response = await api.patch<BuildSourceRecord>(`/build-sources/${sourceId}`, data);

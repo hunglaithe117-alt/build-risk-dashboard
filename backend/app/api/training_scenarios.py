@@ -36,8 +36,8 @@ def preview_builds(
     exclude_bots: bool = Query(True, description="Exclude bot commits"),
     skip: int = 0,
     limit: int = 20,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ) -> Dict[str, Any]:
     """
     Preview builds matching filter criteria.
@@ -137,8 +137,8 @@ def list_scenarios(
     limit: int = 20,
     status: Optional[str] = None,
     q: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ) -> List[TrainingScenarioResponse]:
     """List training scenarios."""
     service = TrainingScenarioService(db)
@@ -164,8 +164,8 @@ def list_scenarios(
 @router.post("/", response_model=TrainingScenarioResponse)
 def create_scenario(
     data: TrainingScenarioCreate,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ) -> TrainingScenarioResponse:
     """Create a new training scenario."""
     service = TrainingScenarioService(db)
@@ -175,8 +175,8 @@ def create_scenario(
 @router.get("/{scenario_id}", response_model=TrainingScenarioResponse)
 def get_scenario(
     scenario_id: str,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ) -> TrainingScenarioResponse:
     """Get training scenario details."""
     service = TrainingScenarioService(db)
@@ -187,8 +187,8 @@ def get_scenario(
 def update_scenario(
     scenario_id: str,
     data: TrainingScenarioUpdate,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ) -> TrainingScenarioResponse:
     """Update training scenario."""
     service = TrainingScenarioService(db)
@@ -198,8 +198,8 @@ def update_scenario(
 @router.delete("/{scenario_id}")
 def delete_scenario(
     scenario_id: str,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ) -> Dict[str, bool]:
     """Delete training scenario."""
     service = TrainingScenarioService(db)
@@ -215,8 +215,8 @@ def delete_scenario(
 @router.post("/{scenario_id}/ingest")
 def start_ingestion(
     scenario_id: str,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ) -> Dict[str, Any]:
     """Start ingestion phase (Phase 1)."""
     service = TrainingScenarioService(db)
@@ -226,8 +226,8 @@ def start_ingestion(
 @router.post("/{scenario_id}/process")
 def start_processing(
     scenario_id: str,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ) -> Dict[str, Any]:
     """Start processing phase (Phase 2)."""
     service = TrainingScenarioService(db)
@@ -237,8 +237,8 @@ def start_processing(
 @router.post("/{scenario_id}/generate")
 def generate_dataset(
     scenario_id: str,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ) -> Dict[str, Any]:
     """Generate dataset (Phase 3 - Split & Export)."""
     service = TrainingScenarioService(db)
@@ -253,8 +253,8 @@ def generate_dataset(
 @router.get("/{scenario_id}/splits")
 def get_scenario_splits(
     scenario_id: str,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ):
     """Get generated split files."""
     service = TrainingScenarioService(db)
@@ -275,8 +275,8 @@ def get_ingestion_builds(
         None,
         description="Filter by status: pending, ingesting, ingested, missing_resource",
     ),
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ):
     """
     List ingestion builds for a scenario (Phase 1).
@@ -302,8 +302,8 @@ def get_enrichment_builds(
         None,
         description="Filter by status: pending, completed, failed, partial",
     ),
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ):
     """
     List enrichment builds for a scenario (Phase 2).
@@ -323,8 +323,8 @@ def get_enrichment_builds(
 @router.get("/{scenario_id}/scan-status")
 def get_scan_status(
     scenario_id: str,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ):
     """
     Get scan status summary for a scenario.
@@ -346,8 +346,8 @@ def get_scan_status(
 @router.post("/{scenario_id}/retry-ingestion")
 def retry_ingestion(
     scenario_id: str,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ):
     """Retry failed ingestion builds."""
     service = TrainingScenarioService(db)
@@ -357,9 +357,154 @@ def retry_ingestion(
 @router.post("/{scenario_id}/retry-processing")
 def retry_processing(
     scenario_id: str,
-    current_user: User = Depends(get_current_user),
-    db=Depends(get_db),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
 ):
     """Retry failed processing builds."""
     service = TrainingScenarioService(db)
     return service.retry_processing(scenario_id, str(current_user.id))
+
+
+# ============================================================================
+# Commit Scans
+# ============================================================================
+
+
+@router.get("/{scenario_id}/commit-scans")
+def get_commit_scans(
+    scenario_id: str,
+    tool_type: Optional[str] = Query(
+        None, description="Filter by tool: trivy or sonarqube"
+    ),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
+) -> Dict[str, Any]:
+    """
+    List commit scans for a scenario.
+
+    Returns paginated list of scans for Trivy and/or SonarQube.
+    """
+    from bson import ObjectId
+    from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
+    from app.repositories.sonar_commit_scan import SonarCommitScanRepository
+
+    # Verify scenario access
+    service = TrainingScenarioService(db)
+    service.get_scenario(scenario_id, str(current_user.id))
+
+    scenario_oid = ObjectId(scenario_id)
+    result = {}
+
+    # Fetch Trivy scans
+    if tool_type is None or tool_type == "trivy":
+        trivy_repo = TrivyCommitScanRepository(db)
+        trivy_items, trivy_total = trivy_repo.list_by_scenario(
+            scenario_oid, skip, limit
+        )
+        result["trivy"] = {
+            "items": [
+                {
+                    "id": str(scan.id),
+                    "commit_sha": scan.commit_sha,
+                    "repo_full_name": scan.repo_full_name,
+                    "status": (
+                        scan.status.value
+                        if hasattr(scan.status, "value")
+                        else scan.status
+                    ),
+                    "error_message": scan.error_message,
+                    "builds_affected": scan.builds_affected,
+                    "retry_count": scan.retry_count,
+                    "started_at": (
+                        scan.started_at.isoformat() if scan.started_at else None
+                    ),
+                    "completed_at": (
+                        scan.completed_at.isoformat() if scan.completed_at else None
+                    ),
+                }
+                for scan in trivy_items
+            ],
+            "total": trivy_total,
+            "skip": skip,
+            "limit": limit,
+        }
+
+    # Fetch SonarQube scans
+    if tool_type is None or tool_type == "sonarqube":
+        sonar_repo = SonarCommitScanRepository(db)
+        sonar_items, sonar_total = sonar_repo.list_by_scenario(
+            scenario_oid, skip, limit
+        )
+        result["sonarqube"] = {
+            "items": [
+                {
+                    "id": str(scan.id),
+                    "commit_sha": scan.commit_sha,
+                    "repo_full_name": scan.repo_full_name,
+                    "status": (
+                        scan.status.value
+                        if hasattr(scan.status, "value")
+                        else scan.status
+                    ),
+                    "error_message": scan.error_message,
+                    "builds_affected": scan.builds_affected,
+                    "retry_count": scan.retry_count,
+                    "started_at": (
+                        scan.started_at.isoformat() if scan.started_at else None
+                    ),
+                    "completed_at": (
+                        scan.completed_at.isoformat() if scan.completed_at else None
+                    ),
+                }
+                for scan in sonar_items
+            ],
+            "total": sonar_total,
+            "skip": skip,
+            "limit": limit,
+        }
+
+    return result
+
+
+@router.post("/{scenario_id}/commit-scans/{commit_sha}/retry")
+def retry_commit_scan(
+    scenario_id: str,
+    commit_sha: str,
+    tool_type: str = Query(..., description="Tool to retry: trivy or sonarqube"),
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db=Depends(get_db),  # noqa: B008
+) -> Dict[str, Any]:
+    """
+    Retry a failed commit scan.
+    """
+    from bson import ObjectId
+    from app.repositories.trivy_commit_scan import TrivyCommitScanRepository
+    from app.repositories.sonar_commit_scan import SonarCommitScanRepository
+
+    # Verify scenario access
+    service = TrainingScenarioService(db)
+    service.get_scenario(scenario_id, str(current_user.id))
+
+    scenario_oid = ObjectId(scenario_id)
+
+    if tool_type == "trivy":
+        repo = TrivyCommitScanRepository(db)
+        scan = repo.find_by_scenario_and_commit(scenario_oid, commit_sha)
+        if not scan:
+            return {"success": False, "message": "Scan not found"}
+        repo.increment_retry(scan.id)
+        # TODO: Dispatch scan task
+        return {"success": True, "message": "Trivy scan queued for retry"}
+
+    elif tool_type == "sonarqube":
+        repo = SonarCommitScanRepository(db)
+        scan = repo.find_by_scenario_and_commit(scenario_oid, commit_sha)
+        if not scan:
+            return {"success": False, "message": "Scan not found"}
+        repo.increment_retry(scan.id)
+        # TODO: Dispatch scan task
+        return {"success": True, "message": "SonarQube scan queued for retry"}
+
+    return {"success": False, "message": f"Unknown tool type: {tool_type}"}

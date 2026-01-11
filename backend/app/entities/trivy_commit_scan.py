@@ -34,7 +34,12 @@ class TrivyCommitScan(BaseEntity):
     """
 
     # Version and commit reference
-    dataset_version_id: PyObjectId = Field(..., description="DatasetVersion ID")
+    dataset_version_id: Optional[PyObjectId] = Field(
+        None, description="DatasetVersion ID (legacy)"
+    )
+    scenario_id: Optional[PyObjectId] = Field(
+        None, description="TrainingScenario ID (new flow)"
+    )
     commit_sha: str = Field(..., description="Git commit SHA")
     repo_full_name: str = Field(..., description="Repository full name (owner/repo)")
 

@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 )
 def start_sonar_scan_for_version_commit(
     self: SafeTask,
-    version_id: str,
+    scenario_id: str,
     commit_sha: str,
     repo_full_name: str,
     raw_repo_id: str,
@@ -45,7 +45,7 @@ def start_sonar_scan_for_version_commit(
     correlation_id: str = "",
 ) -> dict:
     """
-    Start SonarQube scan for a commit using SafeTask.run_safe() pattern.
+    Start SonarQube scan for a commit in training scenario using SafeTask.run_safe() pattern.
 
     Phases:
     - START: Create scan record, validate worktree
@@ -62,8 +62,8 @@ def start_sonar_scan_for_version_commit(
     scan_repo = SonarCommitScanRepository(db)
 
     # Pre-validation: Create or get scan record
-    scan_record = scan_repo.create_or_get(
-        version_id=ObjectId(version_id),
+    scan_record = scan_repo.create_or_get_for_scenario(
+        scenario_id=ObjectId(scenario_id),
         commit_sha=commit_sha,
         repo_full_name=repo_full_name,
         raw_repo_id=ObjectId(raw_repo_id),
@@ -80,7 +80,7 @@ def start_sonar_scan_for_version_commit(
         error_msg = str(exc)
         scan_repo.mark_failed(scan_record.id, error_msg)
         publish_scan_update(
-            version_id=version_id,
+            scenario_id=scenario_id,
             scan_id=str(scan_record.id),
             commit_sha=commit_sha,
             tool_type="sonarqube",
@@ -99,7 +99,7 @@ def start_sonar_scan_for_version_commit(
         if state.phase == "START":
             logger.info(
                 f"{corr_prefix} Starting SonarQube scan for {commit_sha[:8]} "
-                f"in version {version_id[:8]}"
+                f"in scenario {scenario_id[:8]}"
             )
 
             worktree_path = get_worktree_path(github_repo_id, commit_sha)
@@ -116,7 +116,7 @@ def start_sonar_scan_for_version_commit(
             # Mark as scanning
             scan_repo.mark_scanning(scan_record.id)
             publish_scan_update(
-                version_id=version_id,
+                scenario_id=scenario_id,
                 scan_id=str(scan_record.id),
                 commit_sha=commit_sha,
                 tool_type="sonarqube",
@@ -155,7 +155,7 @@ def start_sonar_scan_for_version_commit(
         return state.meta.get("result", {"status": "completed"})
 
     return self.run_safe(
-        job_id=f"sonar:{version_id}:{commit_sha[:8]}",
+        job_id=f"sonar:{scenario_id}:{commit_sha[:8]}",
         work=_work,
         mark_failed_fn=_mark_failed,
         cleanup_fn=_cleanup,
@@ -295,8 +295,8 @@ def export_metrics_from_webhook(
 
         # Increment scans_completed (context-aware for version or scenario)
         from app.tasks.shared.scan_context_helpers import (
-            increment_scan_completed,
             check_and_mark_scans_completed,
+            increment_scan_completed,
         )
 
         increment_scan_completed(db, str(scan_record.dataset_version_id))

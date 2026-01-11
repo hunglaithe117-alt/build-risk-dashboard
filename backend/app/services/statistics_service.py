@@ -37,10 +37,10 @@ from app.dtos.statistics import (
     VersionStatistics,
     VersionStatisticsResponse,
 )
-from app.entities.dataset_enrichment_build import DatasetEnrichmentBuild
+from app.entities.training_enrichment_build import TrainingEnrichmentBuild
 from app.repositories.data_quality_repository import DataQualityRepository
-from app.repositories.dataset_enrichment_build import DatasetEnrichmentBuildRepository
-from app.repositories.dataset_version import DatasetVersionRepository
+from app.repositories.training_enrichment_build import TrainingEnrichmentBuildRepository
+from app.repositories.training_scenario import TrainingScenarioRepository
 from app.services.feature_service import FeatureService
 from app.tasks.pipeline.feature_dag._feature_definitions import get_feature_data_type
 
@@ -48,12 +48,12 @@ logger = logging.getLogger(__name__)
 
 
 class StatisticsService:
-    """Service for calculating dataset version statistics."""
+    """Service for calculating scenario statistics (replaces dataset version stats)."""
 
     def __init__(self, db: Database):
         self.db = db
-        self.version_repo = DatasetVersionRepository(db)
-        self.build_repo = DatasetEnrichmentBuildRepository(db)
+        self.scenario_repo = TrainingScenarioRepository(db)
+        self.build_repo = TrainingEnrichmentBuildRepository(db)
         self.quality_repo = DataQualityRepository(db)
         self.feature_service = FeatureService()
 
@@ -61,39 +61,38 @@ class StatisticsService:
         self, dataset_id: str, version_id: str
     ) -> VersionStatisticsResponse:
         """
-        Get comprehensive statistics for a dataset version.
+        Get comprehensive statistics for a scenario.
 
         Args:
-            dataset_id: Dataset ID
-            version_id: Version ID
+            dataset_id: Ignored (legacy param) or User ID owner
+            version_id: Scenario ID
 
         Returns:
             VersionStatisticsResponse with all statistics
         """
-        # Get version
-        version = self.version_repo.find_by_id(version_id)
-        if not version:
-            raise HTTPException(status_code=404, detail="Version not found")
+        # Get scenario (formerly version)
+        scenario = self.scenario_repo.find_by_id(version_id)
+        if not scenario:
+            raise HTTPException(status_code=404, detail="Scenario not found")
 
-        if str(version.dataset_id) != dataset_id:
-            raise HTTPException(status_code=404, detail="Version not found in dataset")
-
-        # Get all enrichment builds with features from FeatureVector
-        builds = self.build_repo.find_by_version_with_features(version_id)
+        # Get all enrichment builds with features from FeatureVector (as dicts)
+        builds = self.build_repo.find_by_scenario_with_features(version_id)
 
         # Calculate statistics
-        stats = self._calculate_version_stats(version, builds)
+        # Note: scenario passed as version, logic adapted below
+        stats = self._calculate_version_stats(scenario, builds)
 
         # Get build status breakdown
         status_breakdown = self._calculate_status_breakdown(builds)
 
         # Get feature completeness
         feature_completeness = self._calculate_feature_completeness(
-            builds, version.selected_features
+            builds, scenario.feature_config.dag_features
         )
 
         # Get quality scores if available
-        quality_report = self.quality_repo.find_by_version(version_id)
+        # Update DataQualityRepository to support TrainingScenario
+        quality_report = self.quality_repo.find_by_scenario(version_id)
         if quality_report and quality_report.status == "completed":
             stats.quality_score = quality_report.quality_score
             stats.completeness_score = quality_report.completeness_score
@@ -104,18 +103,18 @@ class StatisticsService:
         return VersionStatisticsResponse(
             version_id=version_id,
             dataset_id=dataset_id,
-            version_name=version.name or f"v{version.version_number}",
+            version_name=scenario.name,
             status=(
-                version.status
-                if isinstance(version.status, str)
-                else version.status.value
+                scenario.status
+                if isinstance(scenario.status, str)
+                else scenario.status.value
             ),
             statistics=stats,
             build_status_breakdown=status_breakdown,
             feature_completeness=feature_completeness,
-            started_at=version.started_at,
-            completed_at=version.completed_at,
-            evaluated_at=quality_report.completed_at if quality_report else None,
+            started_at=scenario.processing_started_at,
+            completed_at=scenario.processing_completed_at,
+            evaluated_at=None,
         )
 
     def get_feature_distributions(
@@ -130,8 +129,8 @@ class StatisticsService:
         Get value distributions for selected features.
 
         Args:
-            dataset_id: Dataset ID
-            version_id: Version ID
+            dataset_id: Ignored (legacy param) or User ID owner
+            version_id: Scenario ID
             features: Optional list of features (defaults to all selected)
             bins: Number of histogram bins for numeric features
             top_n: Max categorical values to return
@@ -139,17 +138,17 @@ class StatisticsService:
         Returns:
             FeatureDistributionResponse with distribution data
         """
-        version = self.version_repo.find_by_id(version_id)
-        if not version:
-            raise HTTPException(status_code=404, detail="Version not found")
+        scenario = self.scenario_repo.find_by_id(version_id)
+        if not scenario:
+            raise HTTPException(status_code=404, detail="Scenario not found")
 
         # Get features to analyze
-        target_features = features or version.selected_features
+        target_features = features or scenario.feature_config.dag_features
         if not target_features:
             return FeatureDistributionResponse(version_id=version_id, distributions={})
 
-        # Get all builds with features from FeatureVector
-        builds = self.build_repo.find_by_version_with_features(version_id)
+        # Get all builds with features from FeatureVector (as dicts)
+        builds = self.build_repo.find_by_scenario_with_features(version_id)
 
         distributions: Dict[str, Any] = {}
 
@@ -157,9 +156,9 @@ class StatisticsService:
             # Collect all values for this feature
             values = []
             for build in builds:
-                features = build.get("features", {})
-                if features and feature_name in features:
-                    values.append(features[feature_name])
+                build_features = build.get("features", {})
+                if build_features and feature_name in build_features:
+                    values.append(build_features[feature_name])
 
             if not values:
                 continue
@@ -194,16 +193,16 @@ class StatisticsService:
         Calculate correlation matrix between numeric features.
 
         Args:
-            dataset_id: Dataset ID
-            version_id: Version ID
+            dataset_id: Ignored (legacy param) or User ID owner
+            version_id: Scenario ID
             features: Optional list of features (defaults to all numeric)
 
         Returns:
             CorrelationMatrixResponse with matrix and significant pairs
         """
-        version = self.version_repo.find_by_id(version_id)
-        if not version:
-            raise HTTPException(status_code=404, detail="Version not found")
+        scenario = self.scenario_repo.find_by_id(version_id)
+        if not scenario:
+            raise HTTPException(status_code=404, detail="Scenario not found")
 
         # Get feature metadata
         all_features = self.feature_service.list_features()
@@ -211,7 +210,7 @@ class StatisticsService:
             f["name"]
             for f in all_features
             if f["data_type"] in ("integer", "float", "numeric")
-            and f["name"] in (features or version.selected_features)
+            and f["name"] in (features or scenario.feature_config.dag_features)
         ]
 
         if not numeric_features:
@@ -219,8 +218,8 @@ class StatisticsService:
                 version_id=version_id, features=[], matrix=[], significant_pairs=[]
             )
 
-        # Get all builds with features from FeatureVector
-        builds = self.build_repo.find_by_version_with_features(version_id)
+        # Get all builds with features from FeatureVector (as dicts)
+        builds = self.build_repo.find_by_scenario_with_features(version_id)
 
         # Build value matrix
         feature_values: Dict[str, List[Optional[float]]] = {
@@ -230,10 +229,10 @@ class StatisticsService:
         for build in builds:
             for feature in numeric_features:
                 value = None
-                features = build.get("features", {})
-                if features and feature in features:
+                build_features = build.get("features", {})
+                if build_features and feature in build_features:
                     try:
-                        value = float(features[feature])
+                        value = float(build_features[feature])
                     except (ValueError, TypeError):
                         pass
                 feature_values[feature].append(value)
@@ -285,26 +284,23 @@ class StatisticsService:
         version_id: str,
     ) -> ScanMetricsStatisticsResponse:
         """
-        Get aggregated scan metrics statistics for a dataset version.
+        Get aggregated scan metrics statistics for a scenario.
 
         Aggregates Trivy and SonarQube scan metrics from FeatureVector.scan_metrics.
 
         Args:
-            dataset_id: Dataset ID
-            version_id: Version ID
+            dataset_id: Ignored (legacy param) or User ID owner
+            version_id: Scenario ID
 
         Returns:
             ScanMetricsStatisticsResponse with Trivy and SonarQube summaries
         """
-        version = self.version_repo.find_by_id(version_id)
-        if not version:
-            raise HTTPException(status_code=404, detail="Version not found")
+        scenario = self.scenario_repo.find_by_id(version_id)
+        if not scenario:
+            raise HTTPException(status_code=404, detail="Scenario not found")
 
-        if str(version.dataset_id) != dataset_id:
-            raise HTTPException(status_code=404, detail="Version not found in dataset")
-
-        # Get all builds with scan_metrics from FeatureVector
-        builds = self.build_repo.find_by_version_with_features(version_id)
+        # Get all builds with scan_metrics from FeatureVector (as dicts)
+        builds = self.build_repo.find_by_scenario_with_features(version_id)
 
         # Initialize summaries
         scan_summary = ScanSummary(total_builds=len(builds))
@@ -347,6 +343,7 @@ class StatisticsService:
         alert_status_error = 0
 
         for build in builds:
+            # Note: "scan_metrics" is flattened in repository aggregation
             scan_metrics = build.get("scan_metrics", {})
             if not scan_metrics:
                 continue
@@ -583,14 +580,14 @@ class StatisticsService:
         return "categorical"
 
     def _calculate_version_stats(
-        self, version, builds: List[DatasetEnrichmentBuild]
+        self, scenario, builds: List[Dict[str, Any]]
     ) -> VersionStatistics:
-        """Calculate aggregate version statistics."""
+        """Calculate aggregate scenario statistics."""
         total = len(builds)
 
         if total == 0:
             return VersionStatistics(
-                total_features_selected=len(version.selected_features or [])
+                total_features_selected=len(scenario.feature_config.dag_features or [])
             )
 
         enriched = sum(
@@ -601,7 +598,9 @@ class StatisticsService:
             1
             for b in builds
             if b.get("features")
-            and 0 < len(b.get("features", {})) < len(version.selected_features or [])
+            and 0
+            < len(b.get("features", {}))
+            < len(scenario.feature_config.dag_features or [])
         )
 
         # Calculate feature stats
@@ -612,8 +611,10 @@ class StatisticsService:
 
         # Processing duration
         duration = None
-        if version.started_at and version.completed_at:
-            duration = (version.completed_at - version.started_at).total_seconds()
+        if scenario.processing_started_at and scenario.processing_completed_at:
+            duration = (
+                scenario.processing_completed_at - scenario.processing_started_at
+            ).total_seconds()
 
         return VersionStatistics(
             total_builds=total,
@@ -624,14 +625,14 @@ class StatisticsService:
             success_rate=(
                 enriched / (enriched + failed) * 100 if (enriched + failed) > 0 else 0
             ),
-            total_features_selected=len(version.selected_features or []),
+            total_features_selected=len(scenario.feature_config.dag_features or []),
             avg_features_per_build=round(avg_features, 2),
             total_feature_values_extracted=total_features,
             processing_duration_seconds=duration,
         )
 
     def _calculate_status_breakdown(
-        self, builds: List[DatasetEnrichmentBuild]
+        self, builds: List[Dict[str, Any]]
     ) -> List[BuildStatusBreakdown]:
         """Calculate build status breakdown."""
         total = len(builds)
@@ -642,10 +643,9 @@ class StatisticsService:
 
         for build in builds:
             status = build.get("extraction_status", "pending")
-            if isinstance(status, str):
-                status_counts[status] += 1
-            else:
-                status_counts[status.value] += 1
+            # Handle if status is Enum in list of dicts (unlikely with aggregate pymongo return, but possible if manual logic used before)
+            # PyMongo returns strings for Enum fields stored as values
+            status_counts[status] += 1
 
         return [
             BuildStatusBreakdown(
@@ -659,7 +659,7 @@ class StatisticsService:
         ]
 
     def _calculate_feature_completeness(
-        self, builds: List[DatasetEnrichmentBuild], selected_features: List[str]
+        self, builds: List[Dict[str, Any]], selected_features: List[str]
     ) -> List[FeatureCompleteness]:
         """Calculate completeness for each feature."""
         if not builds or not selected_features:
@@ -798,20 +798,32 @@ class StatisticsService:
             )
 
         # Count values
-        value_counts = Counter(string_values)
-        unique_count = len(value_counts)
-        total_non_null = len(string_values)
+        counts = Counter(string_values)
+        unique_count = len(counts)
 
         # Get top N values
-        top_values = value_counts.most_common(top_n)
+        top_values = counts.most_common(top_n)
+
         categorical_values = [
             CategoricalValue(
-                value=value,
+                value=val,
                 count=count,
-                percentage=round(count / total_non_null * 100, 1),
+                percentage=round(count / len(string_values) * 100, 1),
             )
-            for value, count in top_values
+            for val, count in top_values
         ]
+
+        # Add "Other" category if needed
+        if unique_count > top_n:
+            shown_count = sum(v.count for v in categorical_values)
+            other_count = len(string_values) - shown_count
+            categorical_values.append(
+                CategoricalValue(
+                    value="Other",
+                    count=other_count,
+                    percentage=round(other_count / len(string_values) * 100, 1),
+                )
+            )
 
         return CategoricalDistribution(
             feature_name=feature_name,
@@ -819,50 +831,35 @@ class StatisticsService:
             null_count=null_count,
             unique_count=unique_count,
             values=categorical_values,
-            truncated=unique_count > top_n,
         )
 
     def _calculate_correlation(
-        self, x: List[Optional[float]], y: List[Optional[float]]
+        self, values_1: List[Optional[float]], values_2: List[Optional[float]]
     ) -> Optional[float]:
-        """Calculate Pearson correlation between two value lists."""
-        # Filter to pairs where both values are not None
-        pairs = [
-            (xi, yi)
-            for xi, yi in zip(x, y, strict=False)
-            if xi is not None and yi is not None
-        ]
-
-        if len(pairs) < 3:
+        """Calculate Pearson correlation coefficient."""
+        if not values_1 or not values_2 or len(values_1) != len(values_2):
             return None
 
-        x_vals = [p[0] for p in pairs]
-        y_vals = [p[1] for p in pairs]
+        # Filter to pairs where both are not None
+        v1_clean, v2_clean = [], []
+        for x, y in zip(values_1, values_2):
+            if x is not None and y is not None:
+                v1_clean.append(x)
+                v2_clean.append(y)
 
-        n = len(pairs)
-        sum_x = sum(x_vals)
-        sum_y = sum(y_vals)
-        sum_xy = sum(xi * yi for xi, yi in pairs)
-        sum_x2 = sum(xi**2 for xi in x_vals)
-        sum_y2 = sum(yi**2 for yi in y_vals)
-
-        # Pearson correlation formula
-        numerator = n * sum_xy - sum_x * sum_y
-        denominator_x = n * sum_x2 - sum_x**2
-        denominator_y = n * sum_y2 - sum_y**2
-
-        if denominator_x <= 0 or denominator_y <= 0:
+        if len(v1_clean) < 2:
             return None
 
-        denominator = (denominator_x * denominator_y) ** 0.5
+        # Check for zero variance
+        if len(set(v1_clean)) == 1 or len(set(v2_clean)) == 1:
+            return 0.0
 
-        if denominator == 0:
+        try:
+            correlation = statistics.correlation(v1_clean, v2_clean)
+            # Clamp to [-1, 1] due to floating point errors
+            return round(max(-1, min(1, correlation)), 4)
+        except (statistics.StatisticsError, ValueError):
             return None
-
-        correlation = numerator / denominator
-
-        # Clamp to [-1, 1] due to floating point errors
-        return round(max(-1, min(1, correlation)), 4)
 
     def _get_correlation_strength(self, corr: float) -> str:
         """Get human-readable correlation strength."""

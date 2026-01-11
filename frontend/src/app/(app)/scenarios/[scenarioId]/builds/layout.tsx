@@ -2,45 +2,122 @@
 
 import { useParams, usePathname } from "next/navigation";
 import Link from "next/link";
-import { ReactNode } from "react";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileInput, FileOutput, Shield } from "lucide-react";
+import { ReactNode, useState, useEffect } from "react";
+import { Lock, Loader2, FileInput, FileOutput, Shield } from "lucide-react";
+import { trainingScenariosApi } from "@/lib/api/training-scenarios";
+import { useSSE } from "@/contexts/sse-context";
+import { cn } from "@/lib/utils";
+
+// Statuses that allow viewing processing/scans tabs
+const PROCESSING_STATUSES = ["processing", "processed", "splitting", "completed", "failed"];
 
 export default function BuildsLayout({ children }: { children: ReactNode }) {
     const params = useParams<{ scenarioId: string }>();
     const pathname = usePathname();
+    const { subscribe } = useSSE();
     const scenarioId = params.scenarioId;
+
+    const [scenarioStatus, setScenarioStatus] = useState<string>("queued");
+    const [loading, setLoading] = useState(true);
+
+    // Fetch scenario status
+    useEffect(() => {
+        async function fetchScenario() {
+            try {
+                const response = await trainingScenariosApi.get(scenarioId);
+                setScenarioStatus(response.status);
+            } catch (err) {
+                console.error("Failed to fetch scenario:", err);
+            } finally {
+                setLoading(false);
+            }
+        }
+        fetchScenario();
+    }, [scenarioId]);
+
+    // Subscribe to SSE SCENARIO_UPDATE for real-time status updates
+    useEffect(() => {
+        const unsubscribe = subscribe("SCENARIO_UPDATE", (data: any) => {
+            if (data.scenario_id === scenarioId && data.status) {
+                setScenarioStatus(data.status);
+            }
+        });
+        return () => unsubscribe();
+    }, [subscribe, scenarioId]);
 
     // Determine active sub-tab
     const getActiveTab = () => {
-        if (pathname.includes("/processing")) return "processing";
+        if (pathname.endsWith("/processing")) return "processing";
+        if (pathname.endsWith("/scans")) return "scans";
         return "ingestion";
     };
     const activeTab = getActiveTab();
 
+    const canViewProcessing = PROCESSING_STATUSES.includes(scenarioStatus.toLowerCase());
+    const canViewScans = PROCESSING_STATUSES.includes(scenarioStatus.toLowerCase());
+
     const basePath = `/scenarios/${scenarioId}/builds`;
+
+    const TabButton = ({ tab, label, icon: Icon, disabled, href }: {
+        tab: string;
+        label: string;
+        icon: any;
+        disabled?: boolean;
+        href: string
+    }) => {
+        const isActive = activeTab === tab;
+        return (
+            <Link
+                href={disabled ? "#" : href}
+                onClick={(e) => disabled && e.preventDefault()}
+                className={cn(
+                    "px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-2",
+                    isActive && !disabled
+                        ? "bg-background text-foreground shadow-sm"
+                        : disabled
+                            ? "text-muted-foreground/50 cursor-not-allowed"
+                            : "text-muted-foreground hover:text-foreground"
+                )}
+            >
+                {disabled && <Lock className="h-3 w-3" />}
+                <Icon className="h-4 w-4" />
+                {label}
+            </Link>
+        );
+    };
+
+    if (loading) {
+        return (
+            <div className="flex min-h-[200px] items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-4">
-            {/* Sub-navigation */}
-            <Tabs value={activeTab}>
-                <TabsList>
-                    <TabsTrigger value="ingestion" asChild>
-                        <Link href={`${basePath}/ingestion`} className="gap-2">
-                            <FileInput className="h-4 w-4" />
-                            Ingestion
-                        </Link>
-                    </TabsTrigger>
-                    <TabsTrigger value="processing" asChild>
-                        <Link href={`${basePath}/processing`} className="gap-2">
-                            <FileOutput className="h-4 w-4" />
-                            Processing
-                        </Link>
-                    </TabsTrigger>
-                </TabsList>
-            </Tabs>
+            {/* Sub-tabs Navigation */}
+            <div className="flex items-center justify-between">
+                <div className="flex gap-1 rounded-lg bg-muted p-1">
+                    <TabButton tab="ingestion" label="Data Collection" icon={FileInput} href={`${basePath}/ingestion`} />
+                    <TabButton
+                        tab="processing"
+                        label="Feature Extraction"
+                        icon={FileOutput}
+                        disabled={!canViewProcessing}
+                        href={`${basePath}/processing`}
+                    />
+                    <TabButton
+                        tab="scans"
+                        label="Integration Scans"
+                        icon={Shield}
+                        disabled={!canViewScans}
+                        href={`${basePath}/scans`}
+                    />
+                </div>
+            </div>
 
-            {/* Content */}
+            {/* Page Content */}
             {children}
         </div>
     );

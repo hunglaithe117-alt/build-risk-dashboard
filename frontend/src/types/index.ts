@@ -118,16 +118,17 @@ export interface BuildSourceRecord {
   preview: Record<string, string | number>[];
   ci_provider?: string | null;
   // Validation
+  // Validation
   validation_status: SourceValidationStatus;
-  validation_task_id?: string;
-  validation_started_at?: string;
-  validation_completed_at?: string;
+  validation_task_id?: string | null;
+  validation_started_at: string | null;
+  validation_completed_at: string | null;
   validation_progress: number;
   validation_stats: SourceValidationStats;
-  validation_error?: string;
+  validation_error: string | null;
   setup_step: number;
-  created_at?: string;
-  updated_at?: string;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface BuildSourceListResponse {

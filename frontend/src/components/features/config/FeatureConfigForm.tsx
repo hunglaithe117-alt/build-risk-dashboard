@@ -14,7 +14,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { featuresApi, datasetsApi, reposApi } from "@/lib/api";
+import { featuresApi, reposApi } from "@/lib/api";
 import { RepoConfigSection } from "./RepoConfigSection";
 
 /** Config field spec from API */
@@ -44,8 +44,9 @@ export interface FeatureConfigsData {
 }
 
 interface FeatureConfigFormProps {
-    datasetId?: string; // Optional if repos provided directly
-    repos?: RepoInfo[]; // Direct shuffle for ImportRepoModal
+    datasetId?: string; // Deprecated - repos should be passed directly
+    repos?: RepoInfo[]; // Direct repos list
+    repoLanguages?: Record<string, string[]>; // Pre-fetched languages per repo (key = repo id)
     selectedFeatures: Set<string>;
     value?: FeatureConfigsData;
     onChange: (configs: FeatureConfigsData) => void;
@@ -56,6 +57,7 @@ interface FeatureConfigFormProps {
 export function FeatureConfigForm({
     datasetId,
     repos: providedRepos,
+    repoLanguages: providedRepoLanguages,
     selectedFeatures,
     value,
     onChange,
@@ -71,9 +73,8 @@ export function FeatureConfigForm({
     const [isLoadingRepos, setIsLoadingRepos] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Language detection state (moved from Child for persistence)
-    const [repoLanguages, setRepoLanguages] = useState<Record<string, string[]>>({});
-    const [languageLoading, setLanguageLoading] = useState<Record<string, boolean>>({});
+    // Use provided languages or fallback to empty (no internal fetching)
+    const repoLanguages = providedRepoLanguages || {};
 
     // Update repos if provided directly
     useEffect(() => {
@@ -95,66 +96,8 @@ export function FeatureConfigForm({
         return { globalFields: global, repoFields: repo };
     }, [configFields]);
 
-    // Fetch repos from dataset (only if datasetId used and no direct repos)
-    useEffect(() => {
-        if (!datasetId || providedRepos) return;
-
-        let isCancelled = false;
-
-        async function fetchRepos() {
-            setIsLoadingRepos(true);
-            try {
-                const summary = await datasetsApi.getValidationSummary(datasetId!);
-                if (!isCancelled && summary.repos) {
-                    setRepos(summary.repos.map(r => ({
-                        id: String(r.github_repo_id),
-                        full_name: r.full_name,
-                        validation_status: r.validation_status,
-                    })));
-                }
-            } catch (err) {
-                console.error("Failed to fetch repos:", err);
-                // Non-blocking error - repos section just won't show
-            } finally {
-                if (!isCancelled) setIsLoadingRepos(false);
-            }
-        }
-
-        fetchRepos();
-        return () => { isCancelled = true; };
-    }, [datasetId, providedRepos]);
-
-    // Detect languages for repos when they change
-    useEffect(() => {
-        if (repos.length === 0) return;
-
-        const detectLanguagesForRepos = async () => {
-            for (const repo of repos) {
-                // Skip if already loaded or loading
-                if (repoLanguages[repo.id] !== undefined || languageLoading[repo.id]) {
-                    continue;
-                }
-
-                setLanguageLoading(prev => ({ ...prev, [repo.id]: true }));
-                try {
-                    const result = await reposApi.detectLanguages(repo.full_name);
-                    setRepoLanguages(prev => ({
-                        ...prev,
-                        [repo.id]: result.languages.map(l => l.toLowerCase()),
-                    }));
-                } catch (err) {
-                    console.error(`Failed to detect languages for ${repo.full_name}:`, err);
-                    // Set empty array to prevent re-fetching
-                    setRepoLanguages(prev => ({ ...prev, [repo.id]: [] }));
-                } finally {
-                    setLanguageLoading(prev => ({ ...prev, [repo.id]: false }));
-                }
-            }
-        };
-
-        detectLanguagesForRepos();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [repos]);
+    // Note: Language detection has been moved to parent components
+    // Parent should pass repoLanguages prop with pre-fetched language data
 
     // Fetch config requirements when selected features change
     useEffect(() => {
@@ -403,7 +346,6 @@ export function FeatureConfigForm({
                             disabled={disabled}
                             isLoading={isLoadingRepos}
                             repoLanguages={repoLanguages}
-                            languageLoading={languageLoading}
                             showValidationStatusColumn={showValidationStatusColumn}
                         />
                     )}

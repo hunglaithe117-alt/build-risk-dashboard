@@ -110,12 +110,12 @@ export function StepDataSource() {
         }
     }, [dataSource, setIsPreviewLoading, setPreviewStats, setPreviewRepos]);
 
-    // Auto-load on mount
+    // Auto-load on mount only if not applied yet
     useEffect(() => {
         if (!hasApplied) {
             applyFilters(1);
         }
-    }, []);
+    }, [hasApplied, applyFilters]);
 
     const handleLanguageToggle = (lang: string) => {
         const current = dataSource.languages;
@@ -145,10 +145,10 @@ export function StepDataSource() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Filter className="h-5 w-5" />
-                        Build Filters
+                        Data Source Filters
                     </CardTitle>
                     <CardDescription>
-                        Configure filters to select builds from the database (bot commits are always excluded)
+                        Configure filters to select builds from the database for your scenario
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -264,123 +264,125 @@ export function StepDataSource() {
                 </CardContent>
             </Card>
 
-            {/* Preview Stats */}
+            {/* Preview Table for DB */}
             {previewStats && (
-                <div className="grid gap-4 md:grid-cols-4">
-                    <Card>
-                        <CardContent className="pt-6">
-                            <div className="text-2xl font-bold">{formatNumber(previewStats.total_builds)}</div>
-                            <p className="text-xs text-muted-foreground">Total Builds</p>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardContent className="pt-6">
-                            <div className="text-2xl font-bold">{formatNumber(previewStats.total_repos)}</div>
-                            <p className="text-xs text-muted-foreground">Repositories</p>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardContent className="pt-6">
-                            <div className="text-2xl font-bold text-green-600">
-                                {formatNumber(previewStats.outcome_distribution.success)}
-                            </div>
-                            <p className="text-xs text-muted-foreground">Success</p>
-                        </CardContent>
-                    </Card>
-                    <Card>
-                        <CardContent className="pt-6">
-                            <div className="text-2xl font-bold text-red-600">
-                                {formatNumber(previewStats.outcome_distribution.failure)}
-                            </div>
-                            <p className="text-xs text-muted-foreground">Failure</p>
-                        </CardContent>
-                    </Card>
-                </div>
-            )}
-
-            {/* Preview Table */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Build Preview</CardTitle>
-                    <CardDescription>
-                        Sample of builds matching your filters
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
-                            <thead className="bg-slate-50 dark:bg-slate-900/40">
-                                <tr>
-                                    <th className="px-4 py-3 text-left font-semibold text-slate-500">Repository</th>
-                                    <th className="px-4 py-3 text-left font-semibold text-slate-500">Branch</th>
-                                    <th className="px-4 py-3 text-left font-semibold text-slate-500">Commit</th>
-                                    <th className="px-4 py-3 text-left font-semibold text-slate-500">Conclusion</th>
-                                    <th className="px-4 py-3 text-left font-semibold text-slate-500">Date</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                                {isPreviewLoading ? (
-                                    <tr>
-                                        <td colSpan={5} className="px-4 py-8 text-center">
-                                            <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
-                                        </td>
-                                    </tr>
-                                ) : previewBuilds.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                                            No builds match your filters
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    previewBuilds.map((build) => (
-                                        <tr key={build.id}>
-                                            <td className="px-4 py-3 font-medium">{build.repo_name}</td>
-                                            <td className="px-4 py-3 text-muted-foreground">{build.branch}</td>
-                                            <td className="px-4 py-3 font-mono text-xs">{build.commit_sha}</td>
-                                            <td className="px-4 py-3">{getConclusionBadge(build.conclusion)}</td>
-                                            <td className="px-4 py-3 text-muted-foreground">
-                                                {formatDateTime(build.run_started_at)}
-                                            </td>
-                                        </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+                <>
+                    <div className="grid gap-4 md:grid-cols-4">
+                        <Card>
+                            <CardContent className="pt-6">
+                                <div className="text-2xl font-bold">{formatNumber(previewStats.total_builds)}</div>
+                                <p className="text-xs text-muted-foreground">Total Builds</p>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="pt-6">
+                                <div className="text-2xl font-bold">{formatNumber(previewStats.total_repos)}</div>
+                                <p className="text-xs text-muted-foreground">Repositories</p>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="pt-6">
+                                <div className="text-2xl font-bold text-green-600">
+                                    {formatNumber(previewStats.outcome_distribution.success)}
+                                </div>
+                                <p className="text-xs text-muted-foreground">Success</p>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="pt-6">
+                                <div className="text-2xl font-bold text-red-600">
+                                    {formatNumber(previewStats.outcome_distribution.failure)}
+                                </div>
+                                <p className="text-xs text-muted-foreground">Failure</p>
+                            </CardContent>
+                        </Card>
                     </div>
-                    {/* Pagination */}
-                    {totalBuilds > PAGE_SIZE && (
-                        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 dark:border-slate-800">
-                            <span className="text-sm text-muted-foreground">
-                                Page {page} of {totalPages}
-                            </span>
-                            <div className="flex gap-2">
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => applyFilters(page - 1)}
-                                    disabled={page === 1 || isPreviewLoading}
-                                >
-                                    Previous
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => applyFilters(page + 1)}
-                                    disabled={page >= totalPages || isPreviewLoading}
-                                >
-                                    Next
-                                </Button>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Build Preview</CardTitle>
+                            <CardDescription>
+                                Sample of builds matching your filters
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-slate-200 text-sm dark:divide-slate-800">
+                                    <thead className="bg-slate-50 dark:bg-slate-900/40">
+                                        <tr>
+                                            <th className="px-4 py-3 text-left font-semibold text-slate-500">Repository</th>
+                                            <th className="px-4 py-3 text-left font-semibold text-slate-500">Branch</th>
+                                            <th className="px-4 py-3 text-left font-semibold text-slate-500">Commit</th>
+                                            <th className="px-4 py-3 text-left font-semibold text-slate-500">Conclusion</th>
+                                            <th className="px-4 py-3 text-left font-semibold text-slate-500">Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                                        {isPreviewLoading ? (
+                                            <tr>
+                                                <td colSpan={5} className="px-4 py-8 text-center">
+                                                    <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+                                                </td>
+                                            </tr>
+                                        ) : previewBuilds.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                                                    No builds match your filters
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            previewBuilds.map((build) => (
+                                                <tr key={build.id}>
+                                                    <td className="px-4 py-3 font-medium">{build.repo_name}</td>
+                                                    <td className="px-4 py-3 text-muted-foreground">{build.branch}</td>
+                                                    <td className="px-4 py-3 font-mono text-xs">{build.commit_sha}</td>
+                                                    <td className="px-4 py-3">{getConclusionBadge(build.conclusion)}</td>
+                                                    <td className="px-4 py-3 text-muted-foreground">
+                                                        {formatDateTime(build.run_started_at)}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+                            {totalBuilds > PAGE_SIZE && (
+                                <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 dark:border-slate-800">
+                                    <span className="text-sm text-muted-foreground">
+                                        Page {page} of {totalPages}
+                                    </span>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => applyFilters(page - 1)}
+                                            disabled={page === 1 || isPreviewLoading}
+                                        >
+                                            Previous
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => applyFilters(page + 1)}
+                                            disabled={page >= totalPages || isPreviewLoading}
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </>
+            )}
 
             {/* Navigation */}
             <div className="flex justify-end">
                 <Button
                     onClick={() => setStep(2)}
-                    disabled={!previewStats || previewStats.total_builds === 0}
+                    disabled={
+                        !previewStats || previewStats.total_builds === 0 || isPreviewLoading
+                    }
                     className="gap-2"
                 >
                     Next: Feature Config

@@ -40,8 +40,8 @@ def _save_audit_log(
     category: AuditLogCategory,
     output_build_id: Optional[str] = None,
     correlation_id: Optional[str] = None,
-    version_id: Optional[str] = None,
-    dataset_id: Optional[str] = None,
+    scenario_id: Optional[str] = None,
+    model_repo_config_id: Optional[str] = None,
 ) -> None:
     """
     Save pipeline execution results to database.
@@ -53,11 +53,11 @@ def _save_audit_log(
         pipeline: HamiltonPipeline instance (with execution results)
         features: List of extracted feature names
         errors: List of error messages
-        category: Pipeline category (model_training or dataset_enrichment)
-        output_build_id: ID of the output entity (ModelTrainingBuild or DatasetEnrichmentBuild)
+        category: Pipeline category (model_training or training_scenario)
+        output_build_id: ID of the output entity (ModelTrainingBuild or TrainingEnrichmentBuild)
         correlation_id: Correlation ID for tracing
-        version_id: DatasetVersion ID (for dataset_enrichment category)
-        dataset_id: Dataset ID (for dataset_enrichment category)
+        scenario_id: TrainingScenario ID (for training_scenario category)
+        model_repo_config_id: ModelRepoConfig ID (for model_training category)
     """
     try:
         # Get correlation_id from context if not provided
@@ -86,11 +86,11 @@ def _save_audit_log(
             else:
                 audit_log.enrichment_build_id = ObjectId(output_build_id)
 
-        # Set version_id and dataset_id for enrichment category
-        if version_id:
-            audit_log.version_id = ObjectId(version_id)
-        if dataset_id:
-            audit_log.dataset_id = ObjectId(dataset_id)
+        # Set context references based on category
+        if scenario_id:
+            audit_log.scenario_id = ObjectId(scenario_id)
+        if model_repo_config_id:
+            audit_log.model_repo_config_id = ObjectId(model_repo_config_id)
 
         if execution_result:
             audit_log.started_at = execution_result.started_at
@@ -122,7 +122,9 @@ def _save_audit_log(
                 if node_info.success and node_info.node_name in features:
                     node_result.features_extracted = [node_info.node_name]
                     if hasattr(node_info, "result") and node_info.result is not None:
-                        node_result.feature_values = {node_info.node_name: node_info.result}
+                        node_result.feature_values = {
+                            node_info.node_name: node_info.result
+                        }
 
                 audit_log.add_node_result(node_result)
         else:
@@ -153,8 +155,7 @@ def extract_features_for_build(
     save_run: bool = True,
     category: AuditLogCategory = AuditLogCategory.MODEL_TRAINING,
     output_build_id: Optional[str] = None,
-    version_id: Optional[str] = None,
-    dataset_id: Optional[str] = None,
+    scenario_id: Optional[str] = None,
     model_repo_config_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -181,8 +182,7 @@ def extract_features_for_build(
         save_run: Whether to save pipeline run to database (default: True)
         category: Pipeline category for tracking (default: MODEL_TRAINING)
         output_build_id: ID of the output entity
-        version_id: DatasetVersion ID (for DATASET_ENRICHMENT category)
-        dataset_id: Dataset ID (for DATASET_ENRICHMENT category)
+        scenario_id: TrainingScenario ID (for TRAINING_SCENARIO category)
         model_repo_config_id: ModelRepoConfig ID (for MODEL_TRAINING category)
 
     Returns:
@@ -197,10 +197,10 @@ def extract_features_for_build(
     scope = FeatureVectorScope.MODEL.value
     config_id = None
 
-    if category == AuditLogCategory.DATASET_ENRICHMENT:
+    if category == AuditLogCategory.TRAINING_SCENARIO:
         scope = FeatureVectorScope.DATASET.value
-        if version_id:
-            config_id = ObjectId(version_id)
+        if scenario_id:
+            config_id = ObjectId(scenario_id)
     elif category == AuditLogCategory.MODEL_TRAINING:
         scope = FeatureVectorScope.MODEL.value
         if model_repo_config_id:
@@ -211,7 +211,9 @@ def extract_features_for_build(
         from app.tasks.pipeline.feature_dag._inputs import GitHubClientInput
 
         client = get_public_github_client()
-        github_client_input = GitHubClientInput(client=client, full_name=raw_repo.full_name)
+        github_client_input = GitHubClientInput(
+            client=client, full_name=raw_repo.full_name
+        )
 
         # Prepare all inputs and filter features by available resources
         prepared = prepare_pipeline_input(
@@ -234,7 +236,10 @@ def extract_features_for_build(
 
         # Validate required model features are present
         try:
-            from app.services.risk_model.inference import STATIC_FEATURES, TEMPORAL_FEATURES
+            from app.services.risk_model.inference import (
+                STATIC_FEATURES,
+                TEMPORAL_FEATURES,
+            )
 
             required_features = set(TEMPORAL_FEATURES + STATIC_FEATURES)
             extracted_features = set(formatted_features.keys())
@@ -258,7 +263,9 @@ def extract_features_for_build(
         # Get tr_prev_build for temporal chain indexing
         # Ensure it's a string (MongoDB may return Int64 for numeric-looking values)
         tr_prev_build_raw = formatted_features.get("tr_prev_build")
-        tr_prev_build = str(tr_prev_build_raw) if tr_prev_build_raw is not None else None
+        tr_prev_build = (
+            str(tr_prev_build_raw) if tr_prev_build_raw is not None else None
+        )
 
         # Save to FeatureVector (single source of truth)
         feature_vector = feature_vector_repo.upsert_features(
@@ -301,7 +308,9 @@ def extract_features_for_build(
             )
 
         if not prepared.is_commit_available:
-            result["warnings"].append(f"Commit {raw_build_run.commit_sha} not found in repo")
+            result["warnings"].append(
+                f"Commit {raw_build_run.commit_sha} not found in repo"
+            )
 
         # Save audit log to database
         if save_run and pipeline:
@@ -314,8 +323,8 @@ def extract_features_for_build(
                 errors=[],
                 category=category,
                 output_build_id=output_build_id,
-                version_id=version_id,
-                dataset_id=dataset_id,
+                scenario_id=scenario_id,
+                model_repo_config_id=model_repo_config_id,
             )
 
         return result
@@ -354,8 +363,8 @@ def extract_features_for_build(
                 errors=[str(e)],
                 category=category,
                 output_build_id=output_build_id,
-                version_id=version_id,
-                dataset_id=dataset_id,
+                scenario_id=scenario_id,
+                model_repo_config_id=model_repo_config_id,
             )
 
         return {

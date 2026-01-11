@@ -17,86 +17,50 @@ class DataQualityRepository(BaseRepository[DataQualityReport]):
     def __init__(self, db):
         super().__init__(db, "data_quality_reports", DataQualityReport)
 
-    def find_by_version(self, version_id: str) -> Optional[DataQualityReport]:
+    def find_by_scenario(self, scenario_id: str) -> Optional[DataQualityReport]:
         """
-        Get the latest quality report for a version.
+        Get the latest quality report for a scenario.
 
         Args:
-            version_id: Dataset version ID
+            scenario_id: Scenario ID
 
         Returns:
             Latest DataQualityReport or None
         """
         return self.find_one(
-            {"version_id": self._to_object_id(version_id)},
+            {"scenario_id": self._to_object_id(scenario_id)},
         )
 
-    def find_by_dataset(
-        self, dataset_id: str, limit: int = 50
-    ) -> List[DataQualityReport]:
+    def delete_by_scenario(self, scenario_id: str, session=None) -> int:
         """
-        Get all quality reports for a dataset.
+        Delete all reports for a scenario (cleanup).
 
         Args:
-            dataset_id: Dataset ID
-            limit: Maximum number of reports
-
-        Returns:
-            List of DataQualityReport ordered by created_at desc
-        """
-        return self.find_many(
-            {"dataset_id": self._to_object_id(dataset_id)},
-            sort=[("created_at", -1)],
-            limit=limit,
-        )
-
-    def delete_by_version(self, version_id: str, session=None) -> int:
-        """
-        Delete all reports for a version (cleanup).
-
-        Args:
-            version_id: Dataset version ID
+            scenario_id: Scenario ID
             session: Optional MongoDB session for transactions
 
         Returns:
             Number of deleted documents
         """
         result = self.collection.delete_many(
-            {"version_id": ObjectId(version_id)},
+            {"scenario_id": ObjectId(scenario_id)},
             session=session,
         )
         return result.deleted_count
 
-    def find_pending_or_running(self, version_id: str) -> Optional[DataQualityReport]:
+    def find_pending_or_running(self, scenario_id: str) -> Optional[DataQualityReport]:
         """
-        Find any pending or running evaluation for a version.
+        Find any pending or running evaluation for a scenario.
 
         Args:
-            version_id: Dataset version ID
+            scenario_id: Scenario ID
 
         Returns:
             DataQualityReport if found, None otherwise
         """
         return self.find_one(
             {
-                "version_id": self._to_object_id(version_id),
+                "scenario_id": self._to_object_id(scenario_id),
                 "status": {"$in": ["pending", "running"]},
             }
         )
-
-    def delete_by_dataset(self, dataset_id: str, session=None) -> int:
-        """
-        Delete all quality reports for a dataset (cleanup).
-
-        Args:
-            dataset_id: Dataset ID
-            session: Optional MongoDB session for transactions
-
-        Returns:
-            Number of deleted documents
-        """
-        result = self.collection.delete_many(
-            {"dataset_id": ObjectId(dataset_id)},
-            session=session,
-        )
-        return result.deleted_count

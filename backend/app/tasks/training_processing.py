@@ -515,7 +515,8 @@ def process_single_enrichment(
             raw_build_run=raw_build_run,
             selected_features=selected_features,
             output_build_id=enrichment_build_id,
-            category=AuditLogCategory.DATASET_ENRICHMENT,
+            category=AuditLogCategory.TRAINING_SCENARIO,
+            scenario_id=scenario_id,
         )
 
         # Update enrichment build with result
@@ -880,7 +881,7 @@ def generate_scenario_dataset(
                 continue
 
             split_df = df.loc[indices]
-            file_path = paths.get_ml_dataset_split_path(
+            file_path = paths.get_training_dataset_split_path(
                 scenario_id, split_type, file_format
             )
 

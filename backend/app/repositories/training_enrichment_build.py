@@ -235,6 +235,51 @@ class TrainingEnrichmentBuildRepository(BaseRepository[TrainingEnrichmentBuild])
             sort=[("created_at", 1)],
         )
 
+    def find_by_scenario_with_features(
+        self,
+        scenario_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get all enrichment builds joined with their FeatureVector data.
+
+        Returns:
+            List of dictionaries containing build data + 'features' + 'scan_metrics' from FeatureVector.
+        """
+        pipeline = [
+            {"$match": {"scenario_id": self._to_object_id(scenario_id)}},
+            # Only join if feature_vector_id exists
+            {
+                "$lookup": {
+                    "from": "feature_vectors",
+                    "localField": "feature_vector_id",
+                    "foreignField": "_id",
+                    "as": "fv",
+                }
+            },
+            {"$unwind": {"path": "$fv", "preserveNullAndEmptyArrays": True}},
+            {
+                "$project": {
+                    "_id": 1,
+                    "scenario_id": 1,
+                    "ingestion_build_id": 1,
+                    "raw_repo_id": 1,
+                    "raw_build_run_id": 1,
+                    "ci_run_id": 1,
+                    "commit_sha": 1,
+                    "repo_full_name": 1,
+                    "outcome": 1,
+                    "group_value": 1,
+                    "extraction_status": 1,
+                    "build_started_at": 1,
+                    "created_at": 1,
+                    # Flatten fields from FeatureVector
+                    "features": "$fv.features",
+                    "scan_metrics": "$fv.scan_metrics",
+                }
+            },
+        ]
+        return list(self.collection.aggregate(pipeline))
+
     def count_by_extraction_status(self, scenario_id: str) -> Dict[str, int]:
         """Get count of builds by extraction status."""
         pipeline = [

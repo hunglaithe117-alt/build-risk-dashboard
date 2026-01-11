@@ -45,7 +45,7 @@ from app.repositories.raw_repository import RawRepositoryRepository
 from app.tasks.base import PipelineTask, SafeTask, TransientError
 from app.tasks.model_processing import publish_status
 from app.tasks.pipeline.resource_dag import get_ingestion_tasks_by_level
-from app.tasks.shared import build_ingestion_workflow
+from app.tasks.shared import build_workflow_with_context, ModelPipelineContext
 from app.tasks.shared.events import publish_ingestion_build_update
 
 logger = logging.getLogger(__name__)
@@ -895,18 +895,25 @@ def dispatch_ingestion(
         f"{log_ctx} Resources={sorted(required_resources)}, tasks={tasks_by_level}"
     )
 
+    # Create context for this repo
+    ctx = ModelPipelineContext(
+        repo_config_id=repo_config_id,
+        correlation_id=correlation_id,
+        _raw_repo_id=raw_repo_id,
+        _github_repo_id=github_repo_id,
+        _full_name=full_name,
+    )
+
     # Build ingestion workflow
-    ingestion_workflow = build_ingestion_workflow(
+    ingestion_workflow = build_workflow_with_context(
         tasks_by_level=tasks_by_level,
+        ctx=ctx,
         raw_repo_id=raw_repo_id,
         github_repo_id=github_repo_id,
         full_name=full_name,
         build_ids=ci_run_ids,
         commit_shas=commit_shas,
         ci_provider=ci_provider,
-        correlation_id=correlation_id,
-        pipeline_id=repo_config_id,
-        pipeline_type="model",
     )
 
     # Callback only marks builds as INGESTED and sets final ingestion status

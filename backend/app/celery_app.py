@@ -16,16 +16,14 @@ celery_app = Celery(
     include=[
         "app.tasks.model_ingestion",
         "app.tasks.model_processing",
-        "app.tasks.dataset_validation",
-        "app.tasks.enrichment_ingestion",
-        "app.tasks.enrichment_processing",
-        "app.tasks.enrichment_scan_helpers",
+        "app.tasks.source_validation",
+        "app.tasks.training_ingestion",
+        "app.tasks.training_processing",
+        "app.tasks.training_scan_helpers",
         "app.tasks.export",
         "app.tasks.sonar",
         "app.tasks.trivy",
         "app.tasks.shared.ingestion_tasks",
-        "app.tasks.ml_scenario_tasks",  # ML Scenario Builder
-        "app.tasks.ml_scenario_scan_helpers",  # ML Scenario Scan Dispatch
     ],
 )
 
@@ -64,23 +62,7 @@ celery_app.conf.update(
             Exchange("buildguard"),
             routing_key="pipeline.model_prediction",
         ),
-        # Dataset Enrichment Pipeline Queues
-        Queue(
-            "dataset_ingestion",
-            Exchange("buildguard"),
-            routing_key="pipeline.dataset_ingestion",
-        ),
-        Queue(
-            "dataset_processing",
-            Exchange("buildguard"),
-            routing_key="pipeline.dataset_processing",
-        ),
-        Queue(
-            "dataset_validation",
-            Exchange("buildguard"),
-            routing_key="pipeline.dataset_validation",
-        ),
-        # ML Scenario Pipeline Queues (separate from dataset enrichment)
+        # ML Scenario Pipeline Queues (replaced old Dataset Enrichment flow)
         Queue(
             "scenario_ingestion",
             Exchange("buildguard"),

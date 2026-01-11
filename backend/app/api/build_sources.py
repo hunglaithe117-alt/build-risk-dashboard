@@ -4,8 +4,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from app.auth.dependencies import get_current_user
-from app.database import get_database
+from app.database.mongo import get_database
 from app.dtos.build_source import (
     BuildSourceListResponse,
     BuildSourceResponse,
@@ -14,6 +13,7 @@ from app.dtos.build_source import (
     SourceRepoStatsResponse,
 )
 from app.entities.build_source import BuildSource
+from app.middleware.auth import get_current_user
 from app.repositories.build_source import BuildSourceRepository
 from app.repositories.source_build import SourceBuildRepository
 from app.repositories.source_repo_stats import SourceRepoStatsRepository

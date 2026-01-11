@@ -48,7 +48,9 @@ class SonarWebhookService:
 
         # Check for HMAC signature
         if signature:
-            computed = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+            computed = hmac.new(
+                secret.encode("utf-8"), body, hashlib.sha256
+            ).hexdigest()
             if not hmac.compare_digest(computed, signature):
                 raise HTTPException(status_code=401, detail="Invalid webhook signature")
         else:
@@ -130,41 +132,14 @@ class SonarWebhookService:
             ),
             "commit_sha": scan_record.commit_sha,
             "repo_full_name": scan_record.repo_full_name,
-            "started_at": (scan_record.started_at.isoformat() if scan_record.started_at else None),
+            "started_at": (
+                scan_record.started_at.isoformat() if scan_record.started_at else None
+            ),
             "completed_at": (
-                scan_record.completed_at.isoformat() if scan_record.completed_at else None
+                scan_record.completed_at.isoformat()
+                if scan_record.completed_at
+                else None
             ),
             "has_metrics": scan_record.metrics is not None,
             "error_message": scan_record.error_message,
         }
-
-    def get_version_scans(self, version_id: str) -> Dict[str, Any]:
-        """
-        Get all scans for a dataset version.
-
-        Args:
-            version_id: DatasetVersion ID.
-
-        Returns:
-            Dict with list of scans.
-        """
-        from bson import ObjectId
-
-        scans = self.scan_repo.find_by_version(ObjectId(version_id))
-
-        items = []
-        for scan in scans:
-            items.append(
-                {
-                    "component_key": scan.component_key,
-                    "status": scan.status.value if hasattr(scan.status, "value") else scan.status,
-                    "commit_sha": scan.commit_sha,
-                    "repo_full_name": scan.repo_full_name,
-                    "started_at": (scan.started_at.isoformat() if scan.started_at else None),
-                    "completed_at": (scan.completed_at.isoformat() if scan.completed_at else None),
-                    "has_metrics": scan.metrics is not None,
-                    "error_message": scan.error_message,
-                }
-            )
-
-        return {"items": items}

@@ -29,7 +29,6 @@ import {
     ChevronRight,
     Loader2,
     XCircle,
-    AlertTriangle,
     Clock,
     RefreshCw,
     RotateCcw,
@@ -59,11 +58,6 @@ interface ScanListResponse {
     limit: number;
 }
 
-interface CommitScansResponse {
-    trivy?: ScanListResponse;
-    sonarqube?: ScanListResponse;
-}
-
 function formatDuration(startedAt: string | null, completedAt: string | null): string {
     if (!startedAt || !completedAt) return "-";
     const diff = new Date(completedAt).getTime() - new Date(startedAt).getTime();
@@ -72,9 +66,8 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
 }
 
 export default function ScansPage() {
-    const params = useParams<{ datasetId: string; versionId: string }>();
-    const datasetId = params.datasetId;
-    const versionId = params.versionId;
+    const params = useParams<{ scenarioId: string }>();
+    const scenarioId = params.scenarioId;
     const searchParams = useSearchParams();
     const router = useRouter();
     const pathname = usePathname();
@@ -106,7 +99,6 @@ export default function ScansPage() {
 
     const fetchScans = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
-        console.log("Fetching scans for:", activeTab, "dataset:", datasetId, "version:", versionId);
 
         try {
             let currentData: ScanListResponse | null = null;
@@ -114,8 +106,7 @@ export default function ScansPage() {
             if (activeTab === "trivy") {
                 // Fetch trivy scans
                 const trivySkip = (trivyPage - 1) * ITEMS_PER_PAGE;
-                const url = `${API_BASE}/datasets/${datasetId}/versions/${versionId}/commit-scans?tool_type=trivy&skip=${trivySkip}&limit=${ITEMS_PER_PAGE}`;
-                console.log("Request URL:", url);
+                const url = `${API_BASE}/training-scenarios/${scenarioId}/commit-scans?tool_type=trivy&skip=${trivySkip}&limit=${ITEMS_PER_PAGE}`;
                 const trivyRes = await fetch(url, { credentials: "include" });
 
                 if (trivyRes.ok) {
@@ -128,8 +119,7 @@ export default function ScansPage() {
             } else {
                 // Fetch sonarqube scans
                 const sonarSkip = (sonarPage - 1) * ITEMS_PER_PAGE;
-                const url = `${API_BASE}/datasets/${datasetId}/versions/${versionId}/commit-scans?tool_type=sonarqube&skip=${sonarSkip}&limit=${ITEMS_PER_PAGE}`;
-                console.log("Request URL:", url);
+                const url = `${API_BASE}/training-scenarios/${scenarioId}/commit-scans?tool_type=sonarqube&skip=${sonarSkip}&limit=${ITEMS_PER_PAGE}`;
                 const sonarRes = await fetch(url, { credentials: "include" });
 
                 if (sonarRes.ok) {
@@ -147,7 +137,6 @@ export default function ScansPage() {
             );
 
             if (hasRunning && !pollingRef.current) {
-                // Polling triggers silent fetch
                 pollingRef.current = setInterval(() => fetchScans(true), 5000);
             } else if (!hasRunning && pollingRef.current) {
                 clearInterval(pollingRef.current);
@@ -158,27 +147,27 @@ export default function ScansPage() {
         } finally {
             if (!silent) setLoading(false);
         }
-    }, [datasetId, versionId, trivyPage, sonarPage, activeTab]);
+    }, [scenarioId, trivyPage, sonarPage, activeTab]);
 
     useEffect(() => {
-        if (versionId) fetchScans();
+        if (scenarioId) fetchScans();
         return () => {
             if (pollingRef.current) clearInterval(pollingRef.current);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [versionId, trivyPage, sonarPage, activeTab]);
+    }, [scenarioId, trivyPage, sonarPage, activeTab]);
 
     // Listen for real-time SCAN_UPDATE events
     useEffect(() => {
         const handleScanUpdate = (event: CustomEvent<{
-            version_id: string;
+            scenario_id?: string;
+            version_id?: string;
             scan_id: string;
             commit_sha: string;
             tool_type: string;
             status: string;
         }>) => {
-            if (event.detail.version_id === versionId) {
-                // Refresh scans when we receive an update for this version
+            if (event.detail.scenario_id === scenarioId || event.detail.version_id === scenarioId) {
                 fetchScans(true);
             }
         };
@@ -187,12 +176,12 @@ export default function ScansPage() {
         return () => {
             window.removeEventListener("SCAN_UPDATE", handleScanUpdate as EventListener);
         };
-    }, [versionId, fetchScans]);
+    }, [scenarioId, fetchScans]);
 
-    // Subscribe to SSE for enrichment scan progress updates
+    // Subscribe to SSE for scenario scan progress updates
     useEffect(() => {
-        const unsubscribe = subscribe("ENRICHMENT_UPDATE", (data: any) => {
-            if (data.version_id === versionId) {
+        const unsubscribe = subscribe("SCENARIO_UPDATE", (data: any) => {
+            if (data.scenario_id === scenarioId) {
                 setScanProgress({
                     scans_total: data.scans_total ?? 0,
                     scans_completed: data.scans_completed ?? 0,
@@ -202,20 +191,20 @@ export default function ScansPage() {
             }
         });
         return () => unsubscribe();
-    }, [subscribe, versionId]);
+    }, [subscribe, scenarioId]);
 
-    // Listen for SCAN_ERROR events (max retries exhausted)
+    // Listen for SCAN_ERROR events
     useEffect(() => {
         const handleScanError = (event: CustomEvent<{
-            version_id: string;
+            scenario_id?: string;
+            version_id?: string;
             scan_id: string;
             commit_sha: string;
             tool_type: string;
             error: string;
             retry_count: number;
         }>) => {
-            if (event.detail.version_id === versionId) {
-                // Refresh when scan permanently fails
+            if (event.detail.scenario_id === scenarioId || event.detail.version_id === scenarioId) {
                 fetchScans(true);
             }
         };
@@ -224,13 +213,13 @@ export default function ScansPage() {
         return () => {
             window.removeEventListener("SCAN_ERROR", handleScanError as EventListener);
         };
-    }, [versionId, fetchScans]);
+    }, [scenarioId, fetchScans]);
 
     const handleRetry = async (commitSha: string, toolType: string) => {
         setRetrying(`${toolType}-${commitSha}`);
         try {
             await fetch(
-                `${API_BASE}/datasets/${datasetId}/versions/${versionId}/commit-scans/${commitSha}/retry?tool_type=${toolType}`,
+                `${API_BASE}/training-scenarios/${scenarioId}/commit-scans/${commitSha}/retry?tool_type=${toolType}`,
                 { method: "POST", credentials: "include" }
             );
             await fetchScans();
@@ -254,11 +243,10 @@ export default function ScansPage() {
             trivyData?.items?.forEach(s => s.status === "failed" && allFailed.push({ sha: s.commit_sha, tool: "trivy" }));
             sonarData?.items?.forEach(s => s.status === "failed" && allFailed.push({ sha: s.commit_sha, tool: "sonarqube" }));
 
-            // Retry in parallel batches
             await Promise.allSettled(
                 allFailed.map(({ sha, tool }) =>
                     fetch(
-                        `${API_BASE}/datasets/${datasetId}/versions/${versionId}/commit-scans/${sha}/retry?tool_type=${tool}`,
+                        `${API_BASE}/training-scenarios/${scenarioId}/commit-scans/${sha}/retry?tool_type=${tool}`,
                         { method: "POST", credentials: "include" }
                     )
                 )
@@ -403,20 +391,8 @@ export default function ScansPage() {
         );
     };
 
-
-
     const hasTrivyScans = trivyData && trivyData.total > 0;
     const hasSonarScans = sonarData && sonarData.total > 0;
-
-    if (!hasTrivyScans && !hasSonarScans) {
-        return (
-            <Card>
-                <CardContent className="py-8 text-center text-muted-foreground">
-                    No integration scans for this version
-                </CardContent>
-            </Card>
-        );
-    }
 
     return (
         <div className="space-y-4">

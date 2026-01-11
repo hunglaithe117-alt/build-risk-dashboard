@@ -2,7 +2,6 @@
 
 from .base import BaseRepository
 from .data_quality_repository import DataQualityRepository
-from .dataset_build_repository import DatasetBuildRepository
 
 # === NEW REPOSITORIES (Architecture Merge) ===
 # Build Source repositories
@@ -16,11 +15,7 @@ from .training_ingestion_build import TrainingIngestionBuildRepository
 from .training_enrichment_build import TrainingEnrichmentBuildRepository
 from .training_dataset_split import TrainingDatasetSplitRepository
 
-# === LEGACY REPOSITORIES (to be removed after migration) ===
-# Dataset enrichment flow repositories
-from .dataset_enrichment_build import DatasetEnrichmentBuildRepository
-from .dataset_import_build import DatasetImportBuildRepository
-from .dataset_repository import DatasetRepository
+# Dataset template (kept for upload presets)
 from .dataset_template_repository import DatasetTemplateRepository
 from .feature_audit_log import FeatureAuditLogRepository
 
@@ -28,9 +23,6 @@ from .feature_audit_log import FeatureAuditLogRepository
 from .model_repo_config import ModelRepoConfigRepository
 from .model_training_build import ModelTrainingBuildRepository
 from .notification import NotificationRepository
-
-# ML Scenario Builder repositories (legacy)
-# DELETED
 
 # Other repositories
 from .oauth_identity import OAuthIdentityRepository
@@ -52,18 +44,13 @@ __all__ = [
     "TrainingIngestionBuildRepository",
     "TrainingEnrichmentBuildRepository",
     "TrainingDatasetSplitRepository",
-    # === LEGACY REPOSITORIES ===
     # Raw data (shared)
     "RawRepositoryRepository",
     "RawBuildRunRepository",
     # Model training flow
     "ModelRepoConfigRepository",
     "ModelTrainingBuildRepository",
-    # Dataset enrichment flow
-    "DatasetEnrichmentBuildRepository",
-    "DatasetImportBuildRepository",
-    "DatasetRepository",
-    "DatasetBuildRepository",
+    # Other
     "OAuthIdentityRepository",
     "UserRepository",
     "DatasetTemplateRepository",

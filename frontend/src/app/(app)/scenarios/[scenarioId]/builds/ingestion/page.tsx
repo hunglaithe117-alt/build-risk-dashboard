@@ -13,12 +13,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import {
     trainingScenariosApi,
     TrainingIngestionBuildRecord,
     PaginatedResponse,
 } from "@/lib/api/training-scenarios";
+import { useSSE } from "@/contexts/sse-context";
 
 const statusColors: Record<string, string> = {
     pending: "bg-slate-100 text-slate-700",
@@ -31,6 +32,7 @@ const statusColors: Record<string, string> = {
 export default function IngestionBuildsPage() {
     const params = useParams<{ scenarioId: string }>();
     const scenarioId = params.scenarioId;
+    const { subscribe } = useSSE();
 
     const [data, setData] = useState<PaginatedResponse<TrainingIngestionBuildRecord> | null>(null);
     const [loading, setLoading] = useState(true);
@@ -56,11 +58,33 @@ export default function IngestionBuildsPage() {
         fetchBuilds();
     }, [fetchBuilds]);
 
+    // SSE subscription - refetch on scenario updates
+    useEffect(() => {
+        const unsubscribe = subscribe("SCENARIO_UPDATE", (payload: { scenario_id?: string }) => {
+            if (payload.scenario_id === scenarioId) {
+                fetchBuilds();
+            }
+        });
+        return () => unsubscribe();
+    }, [subscribe, scenarioId, fetchBuilds]);
+
     const totalPages = data ? Math.ceil(data.total / pageSize) : 0;
 
     return (
         <div className="space-y-4">
+            {/* Header with refresh */}
+            <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                    {data?.total ?? 0} builds
+                </h3>
+                <Button variant="outline" size="sm" onClick={fetchBuilds} disabled={loading}>
+                    <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
+                    Refresh
+                </Button>
+            </div>
+
             <div className="border rounded-lg">
+
                 <Table>
                     <TableHeader>
                         <TableRow>

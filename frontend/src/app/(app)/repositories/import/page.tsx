@@ -40,13 +40,50 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog";
 import { useDebounce } from "@/hooks/use-debounce";
-import { datasetsApi, featuresApi, reposApi } from "@/lib/api";
+import { featuresApi, reposApi, templatesApi } from "@/lib/api";
 import {
     CIProvider,
     FeatureDefinitionSummary,
     RepoImportPayload,
     RepoSuggestion
 } from "@/types";
+
+// Hook to detect languages for repos
+function useRepoLanguages(repos: Array<{ id: string; full_name: string }>) {
+    const [repoLanguages, setRepoLanguages] = useState<Record<string, string[]>>({});
+    const [loading, setLoading] = useState<Record<string, boolean>>({});
+
+    useEffect(() => {
+        if (repos.length === 0) return;
+
+        const detectLanguagesForRepos = async () => {
+            for (const repo of repos) {
+                if (repoLanguages[repo.id] !== undefined || loading[repo.id]) {
+                    continue;
+                }
+
+                setLoading(prev => ({ ...prev, [repo.id]: true }));
+                try {
+                    const result = await reposApi.detectLanguages(repo.full_name);
+                    setRepoLanguages(prev => ({
+                        ...prev,
+                        [repo.id]: result.languages.map((l: string) => l.toLowerCase()),
+                    }));
+                } catch (err) {
+                    console.error(`Failed to detect languages for ${repo.full_name}:`, err);
+                    setRepoLanguages(prev => ({ ...prev, [repo.id]: [] }));
+                } finally {
+                    setLoading(prev => ({ ...prev, [repo.id]: false }));
+                }
+            }
+        };
+
+        detectLanguagesForRepos();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [repos]);
+
+    return { repoLanguages, loading };
+}
 
 type FeatureCategoryGroup = {
     category: string;
@@ -90,6 +127,7 @@ export default function ImportRepositoriesPage() {
 
     // Templates state
     const [templatesLoading, setTemplatesLoading] = useState(false);
+
 
     // DAG state
     const [dagData, setDagData] = useState<FeatureDAGData | null>(null);
@@ -159,7 +197,7 @@ export default function ImportRepositoriesPage() {
         if (selectedFeatures.length > 0) return;
         setTemplatesLoading(true);
         try {
-            const template = await datasetsApi.getTemplateByName("Risk Prediction");
+            const template = await templatesApi.getByName("Risk Prediction");
             setSelectedFeatures(template.feature_names || []);
         } catch (err) {
             console.error("Failed to load selected template:", err);
@@ -283,6 +321,9 @@ export default function ImportRepositoriesPage() {
         return map;
     }, [featuresData]);
 
+    // Detect languages for selected repos
+    const { repoLanguages } = useRepoLanguages(featureFormRepos);
+
     return (
         <div className="flex flex-col h-full min-h-0">
             {/* Header */}
@@ -355,6 +396,7 @@ export default function ImportRepositoriesPage() {
                             featureFormFeatures={featureFormFeatures}
                             featureFormRepos={featureFormRepos}
                             setFeatureConfigs={setFeatureConfigs}
+                            repoLanguages={repoLanguages}
                         />
                     )}
                 </div>
@@ -522,6 +564,7 @@ interface Step2Props {
     featureFormFeatures: Set<string>;
     featureFormRepos: { id: string; full_name: string; validation_status: string }[];
     setFeatureConfigs: React.Dispatch<React.SetStateAction<FeatureConfigsData>>;
+    repoLanguages: Record<string, string[]>;
 }
 
 function Step2Content({
@@ -533,6 +576,7 @@ function Step2Content({
     featureFormFeatures,
     featureFormRepos,
     setFeatureConfigs,
+    repoLanguages,
 }: Step2Props) {
     return (
         <div className="space-y-6 max-w-3xl">
@@ -614,6 +658,7 @@ function Step2Content({
                     <FeatureConfigForm
                         selectedFeatures={featureFormFeatures}
                         repos={featureFormRepos}
+                        repoLanguages={repoLanguages}
                         onChange={setFeatureConfigs}
                         showValidationStatusColumn={false}
                     />

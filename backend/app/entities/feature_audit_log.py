@@ -18,8 +18,7 @@ class AuditLogCategory(str, Enum):
     """Audit log category."""
 
     MODEL_TRAINING = "model_training"
-    DATASET_ENRICHMENT = "dataset_enrichment"
-    ML_SCENARIO = "ml_scenario"
+    TRAINING_SCENARIO = "training_scenario"
 
 
 class NodeExecutionStatus(str, Enum):
@@ -80,7 +79,7 @@ class FeatureAuditLog(BaseEntity):
     # Audit log category
     category: AuditLogCategory = Field(
         default=AuditLogCategory.MODEL_TRAINING,
-        description="Type of pipeline: model_training or dataset_enrichment",
+        description="Type of pipeline: model_training or training_scenario",
     )
 
     # References to raw data
@@ -100,17 +99,17 @@ class FeatureAuditLog(BaseEntity):
     )
     enrichment_build_id: Optional[PyObjectId] = Field(
         None,
-        description="Reference to dataset_enrichment_builds (for DATASET_ENRICHMENT)",
+        description="Reference to training_enrichment_builds (for TRAINING_SCENARIO)",
     )
 
-    # Direct references for easier querying (denormalized from enrichment_build)
-    version_id: Optional[PyObjectId] = Field(
+    # Direct references for easier querying (denormalized)
+    scenario_id: Optional[PyObjectId] = Field(
         None,
-        description="DatasetVersion ID (for DATASET_ENRICHMENT category)",
+        description="TrainingScenario ID (for TRAINING_SCENARIO category)",
     )
-    dataset_id: Optional[PyObjectId] = Field(
+    model_repo_config_id: Optional[PyObjectId] = Field(
         None,
-        description="Dataset ID (for DATASET_ENRICHMENT category)",
+        description="ModelRepoConfig ID (for MODEL_TRAINING category)",
     )
 
     # Execution metadata

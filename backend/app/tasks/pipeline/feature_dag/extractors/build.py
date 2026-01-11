@@ -189,12 +189,30 @@ def repo_language(repo: RepoInput) -> Optional[str]:
         "default": [],
     }
 )
-def repo_languages_all(feature_config: FeatureConfigInput) -> List[str]:
-    """All source languages for the repository."""
-    return [
+def repo_languages_all(
+    feature_config: FeatureConfigInput, repo: RepoInput
+) -> List[str]:
+    """All source languages for the repository.
+
+    Fallback priority:
+    1. User-provided source_languages config
+    2. Repository's main_lang from RawRepository
+    3. Empty string (unknown)
+    """
+    # Try user config first
+    user_languages = [
         lang.lower()
         for lang in feature_config.get("source_languages", [], scope="repo")
-    ] or [""]
+    ]
+    if user_languages:
+        return user_languages
+
+    # Fallback to repo's main language
+    if repo.main_lang:
+        return [repo.main_lang.lower()]
+
+    # Last resort: unknown
+    return [""]
 
 
 # === PR Info ===

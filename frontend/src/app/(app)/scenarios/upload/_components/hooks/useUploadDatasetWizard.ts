@@ -1,35 +1,35 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import type { DatasetRecord, CIProvider, ValidationStats } from "@/types";
-import { datasetsApi } from "@/lib/api";
+import type { BuildSourceRecord, ValidationStats } from "@/types";
+import { buildSourcesApi } from "@/lib/api";
 import type { Step } from "../types";
 import { useStep1Upload } from "./useStep1Upload";
 
-interface UseUploadDatasetWizardProps {
+interface UseUploadBuildSourceWizardProps {
     open: boolean;
-    existingDataset?: DatasetRecord;
-    onSuccess: (dataset: DatasetRecord) => void;
+    existingSource?: BuildSourceRecord;
+    onSuccess: (source: BuildSourceRecord) => void;
     onOpenChange: (open: boolean) => void;
-    onDatasetCreated?: (dataset: DatasetRecord) => void;
+    onSourceCreated?: (source: BuildSourceRecord) => void;
 }
 
 /**
  * Simplified 2-step upload wizard.
  *
  * Step 1: Upload CSV + Map columns + Select CI Provider
- * Step 2: Validate repos + builds (unified task)
+ * Step 2: Validation status + Repo stats
  */
-export function useUploadDatasetWizard({
+export function useUploadBuildSourceWizard({
     open,
-    existingDataset,
+    existingSource,
     onSuccess,
     onOpenChange,
-    onDatasetCreated,
-}: UseUploadDatasetWizardProps) {
+    onSourceCreated,
+}: UseUploadBuildSourceWizardProps) {
     const [step, setStep] = useState<Step>(1);
-    const [createdDataset, setCreatedDataset] = useState<DatasetRecord | null>(null);
-    const [datasetId, setDatasetId] = useState<string | null>(null);
+    const [createdSource, setCreatedSource] = useState<BuildSourceRecord | null>(null);
+    const [sourceId, setSourceId] = useState<string | null>(null);
     const [isResuming, setIsResuming] = useState(false);
     const [uploading, setUploading] = useState(false);
 
@@ -57,8 +57,8 @@ export function useUploadDatasetWizard({
 
     const resetAll = useCallback(() => {
         setStep(1);
-        setCreatedDataset(null);
-        setDatasetId(null);
+        setCreatedSource(null);
+        setSourceId(null);
         setIsResuming(false);
         setUploading(false);
         setValidationStatus("pending");
@@ -77,21 +77,21 @@ export function useUploadDatasetWizard({
     }, [stopPolling]);
 
     // Poll validation status
-    const pollValidationStatus = useCallback(async (dsId: string) => {
+    const pollValidationStatus = useCallback(async (id: string) => {
         try {
-            const dataset = await datasetsApi.get(dsId);
-            setValidationStatus(dataset.validation_status || "pending");
-            setValidationProgress(dataset.validation_progress || 0);
-            if (dataset.validation_stats) {
-                setValidationStats(dataset.validation_stats);
+            const source = await buildSourcesApi.get(id);
+            setValidationStatus(source.validation_status || "pending");
+            setValidationProgress(source.validation_progress || 0);
+            if (source.validation_stats) {
+                setValidationStats(source.validation_stats);
             }
-            if (dataset.validation_error) {
-                setValidationError(dataset.validation_error);
+            if (source.validation_error) {
+                setValidationError(source.validation_error);
             }
-            setCreatedDataset(dataset);
+            setCreatedSource(source);
 
             // Stop polling on completion
-            if (["completed", "failed"].includes(dataset.validation_status || "")) {
+            if (["completed", "failed"].includes(source.validation_status || "")) {
                 stopPolling();
             }
         } catch (err) {
@@ -100,62 +100,63 @@ export function useUploadDatasetWizard({
     }, [stopPolling]);
 
     // Start polling for validation status
-    const startValidationPolling = useCallback((dsId: string) => {
+    const startValidationPolling = useCallback((id: string) => {
         // Clear existing interval
         stopPolling();
 
         // Initial poll
-        pollValidationStatus(dsId);
+        pollValidationStatus(id);
 
         // Start interval
         const interval = setInterval(() => {
-            pollValidationStatus(dsId);
+            pollValidationStatus(id);
         }, 2000);
 
         pollingIntervalRef.current = interval;
     }, [pollValidationStatus, stopPolling]);
 
-    // Load existing dataset when modal opens in resume mode
+    // Load existing source when modal opens in resume mode
     useEffect(() => {
         if (!open) {
             resetAll();
             return;
         }
 
-        if (!existingDataset) return;
+        if (!existingSource) return;
 
         setIsResuming(true);
-        setCreatedDataset(existingDataset);
-        setDatasetId(existingDataset.id);
-        step1.loadFromExistingDataset(existingDataset);
+        setCreatedSource(existingSource);
+        setSourceId(existingSource.id);
+        step1.loadFromExistingSource(existingSource);
 
-        const validationStatus = existingDataset.validation_status;
+        const validationStatus = existingSource.validation_status;
 
         if (validationStatus && ["validating", "completed", "failed"].includes(validationStatus)) {
             setStep(2);
             setValidationStatus(validationStatus as typeof validationStatus);
-            setValidationProgress(existingDataset.validation_progress || 0);
-            if (existingDataset.validation_stats) {
-                setValidationStats(existingDataset.validation_stats);
+            setValidationProgress(existingSource.validation_progress || 0);
+            if (existingSource.validation_stats) {
+                setValidationStats(existingSource.validation_stats);
             }
             if (validationStatus === "validating") {
-                startValidationPolling(existingDataset.id);
+                startValidationPolling(existingSource.id);
             }
         } else {
             setStep(1);
         }
-    }, [open, existingDataset]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open, existingSource]);
 
     // Step 1 -> Step 2: Upload/Update and start validation
     const proceedToStep2 = async () => {
-        if (!step1.file && !createdDataset) return;
+        if (!step1.file && !createdSource) return;
         if (!step1.isMappingValid) return;
 
         setUploading(true);
         step1.setError(null);
 
         try {
-            let dataset: DatasetRecord;
+            let source: BuildSourceRecord;
 
             // Prepare mapped fields based on CI provider mode
             const mappedFields = {
@@ -167,43 +168,43 @@ export function useUploadDatasetWizard({
             // Only set ci_provider (single mode) if not using column mapping
             const ciProviderValue = step1.ciProviderMode === "single" ? step1.ciProvider : null;
 
-            if (createdDataset?.id) {
-                // Update existing dataset with mappings and CI provider
-                dataset = await datasetsApi.update(createdDataset.id, {
+            if (createdSource?.id) {
+                // Update existing source with mappings and CI provider
+                source = await buildSourcesApi.update(createdSource.id, {
                     mapped_fields: mappedFields,
                     ci_provider: ciProviderValue,
                 });
-                setCreatedDataset(dataset);
+                setCreatedSource(source);
             } else if (step1.file) {
-                // Upload new dataset - backend triggers validation automatically
-                dataset = await datasetsApi.upload(step1.file, {
+                // Upload new source - backend triggers validation automatically
+                source = await buildSourcesApi.upload(step1.file, {
                     name: step1.name || step1.file.name.replace(/\.csv$/i, ""),
                     description: step1.description || undefined,
                 });
 
-                // Update with mappings and CI provider
-                dataset = await datasetsApi.update(dataset.id, {
+                // Update with mappings and CI provider (upload doesn't take mappings directly in current API impl in build-sources.ts line 105)
+                source = await buildSourcesApi.update(source.id, {
                     mapped_fields: mappedFields,
                     ci_provider: ciProviderValue,
                 });
 
-                setCreatedDataset(dataset);
-                setDatasetId(dataset.id);
-                onDatasetCreated?.(dataset);
+                setCreatedSource(source);
+                setSourceId(source.id);
+                onSourceCreated?.(source);
             } else {
                 throw new Error("No file to upload");
             }
 
             // Start the validation process explicitly
-            await datasetsApi.startValidation(dataset.id);
+            await buildSourcesApi.startValidation(source.id);
 
             // Move to Step 2 and start polling
             setStep(2);
             setValidationStatus("validating");
-            startValidationPolling(dataset.id);
+            startValidationPolling(source.id);
         } catch (err) {
             console.error("Upload failed:", err);
-            step1.setError(err instanceof Error ? err.message : "Failed to upload dataset");
+            step1.setError(err instanceof Error ? err.message : "Failed to upload build source");
         } finally {
             setUploading(false);
         }
@@ -211,52 +212,52 @@ export function useUploadDatasetWizard({
 
     // Final submission - close modal on success
     const handleSubmit = async () => {
-        if (!createdDataset) return;
+        if (!createdSource) return;
 
         if (validationStatus !== "completed") {
             step1.setError("Validation must complete before submitting");
             return;
         }
 
-        onSuccess(createdDataset);
+        onSuccess(createdSource);
         onOpenChange(false);
         resetAll();
     };
 
     // Retry validation
     const retryValidation = useCallback(async () => {
-        if (!datasetId) return;
+        if (!sourceId) return;
 
         try {
             // Call API to restart validation
-            await datasetsApi.startValidation(datasetId);
+            await buildSourcesApi.startValidation(sourceId);
             setValidationStatus("validating");
             setValidationProgress(0);
             setValidationError(null);
-            startValidationPolling(datasetId);
+            startValidationPolling(sourceId);
         } catch (err) {
             console.error("Failed to retry validation:", err);
             setValidationError(err instanceof Error ? err.message : "Failed to retry validation");
         }
-    }, [datasetId, startValidationPolling]);
+    }, [sourceId, startValidationPolling]);
 
-    // Delete dataset and close
-    const deleteDataset = useCallback(async () => {
-        if (!datasetId) {
+    // Delete source and close
+    const deleteSource = useCallback(async () => {
+        if (!sourceId) {
             resetAll();
             onOpenChange(false);
             return;
         }
 
         try {
-            await datasetsApi.delete(datasetId);
+            await buildSourcesApi.delete(sourceId);
             resetAll();
             onOpenChange(false);
         } catch (err) {
-            console.error("Failed to delete dataset:", err);
-            step1.setError("Failed to delete dataset.");
+            console.error("Failed to delete source:", err);
+            step1.setError("Failed to delete source.");
         }
-    }, [datasetId, resetAll, onOpenChange, step1]);
+    }, [sourceId, resetAll, onOpenChange, step1]);
 
     // Go back to Step 1
     const goBackToStep1 = useCallback(() => {
@@ -271,8 +272,8 @@ export function useUploadDatasetWizard({
     return {
         // Current state
         step,
-        createdDataset,
-        datasetId,
+        createdSource,
+        sourceId,
         isResuming,
         uploading,
         error: step1.error,
@@ -290,7 +291,7 @@ export function useUploadDatasetWizard({
         proceedToStep2,
         handleSubmit,
         retryValidation,
-        deleteDataset,
+        deleteSource,
         goBackToStep1,
         resetAll,
     };

@@ -16,7 +16,6 @@ export { buildApi } from './builds';
 export { dashboardApi } from './dashboard';
 export { integrationApi, usersApi } from './auth';
 export { reposApi } from './repos';
-export { datasetsApi } from './datasets';
 export { tokensApi } from './tokens';
 export { featuresApi, sonarApi } from './features';
 export { adminUsersApi, adminReposApi } from './admin';
@@ -29,6 +28,7 @@ export { qualityApi, userSettingsApi } from './quality';
 export { statisticsApi, enrichmentLogsApi } from './statistics';
 export { trainingScenariosApi } from './training-scenarios';
 export { buildSourcesApi } from './build-sources';
+export { templatesApi } from './templates';
 
 export type {
     BuildSourceRecord,

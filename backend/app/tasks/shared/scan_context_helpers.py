@@ -1,9 +1,8 @@
 """
 Context-aware scan tracking helpers.
 
-Provides functions to increment scan counters for either:
-- DatasetVersion (version_id from Dataset Enrichment)
-- MLScenario (scenario_id from ML Scenario pipeline)
+Provides functions to increment scan counters for:
+- TrainingScenario (scenario_id from Training Scenario pipeline)
 
 Detection is done by checking which collection the ID belongs to.
 """
@@ -19,7 +18,7 @@ def increment_scan_completed(db: Database, context_id: str) -> bool:
     """
     Increment scans_completed counter for the correct context.
 
-    Detects whether context_id is a DatasetVersion or MLScenario
+    Detects whether context_id is a TrainingScenario
     and calls the appropriate repository method.
     """
     from bson import ObjectId
@@ -31,25 +30,16 @@ def increment_scan_completed(db: Database, context_id: str) -> bool:
         logger.warning(f"Invalid context_id for scan increment: {context_id}")
         return False
 
-    # Check if it's a DatasetVersion
-    from app.repositories.dataset_version import DatasetVersionRepository
+    # Check if it's a TrainingScenario
+    from app.repositories.training_scenario import TrainingScenarioRepository
 
-    version_repo = DatasetVersionRepository(db)
-    version = version_repo.find_by_id(context_id)
-    if version:
-        version_repo.increment_scans_completed(context_id)
-        return True
-
-    # Check if it's an MLScenario
-    from app.repositories.ml_scenario import MLScenarioRepository
-
-    scenario_repo = MLScenarioRepository(db)
+    scenario_repo = TrainingScenarioRepository(db)
     scenario = scenario_repo.find_by_id(context_id)
     if scenario:
         scenario_repo.increment_scans_completed(context_id)
         return True
 
-    logger.warning(f"Context {context_id} not found in DatasetVersion or MLScenario")
+    logger.warning(f"Context {context_id} not found in TrainingScenario")
     return False
 
 
@@ -66,25 +56,16 @@ def increment_scan_failed(db: Database, context_id: str) -> bool:
         logger.warning(f"Invalid context_id for scan increment: {context_id}")
         return False
 
-    # Check if it's a DatasetVersion
-    from app.repositories.dataset_version import DatasetVersionRepository
+    # Check if it's a TrainingScenario
+    from app.repositories.training_scenario import TrainingScenarioRepository
 
-    version_repo = DatasetVersionRepository(db)
-    version = version_repo.find_by_id(context_id)
-    if version:
-        version_repo.increment_scans_failed(context_id)
-        return True
-
-    # Check if it's an MLScenario
-    from app.repositories.ml_scenario import MLScenarioRepository
-
-    scenario_repo = MLScenarioRepository(db)
+    scenario_repo = TrainingScenarioRepository(db)
     scenario = scenario_repo.find_by_id(context_id)
     if scenario:
         scenario_repo.increment_scans_failed(context_id)
         return True
 
-    logger.warning(f"Context {context_id} not found in DatasetVersion or MLScenario")
+    logger.warning(f"Context {context_id} not found in TrainingScenario")
     return False
 
 
@@ -102,27 +83,10 @@ def check_and_mark_scans_completed(db: Database, context_id: str) -> bool:
     except InvalidId:
         return False
 
-    # Check if it's a DatasetVersion
-    from app.repositories.dataset_version import DatasetVersionRepository
+    # Check if it's a TrainingScenario
+    from app.repositories.training_scenario import TrainingScenarioRepository
 
-    version_repo = DatasetVersionRepository(db)
-    version = version_repo.find_by_id(context_id)
-    if version:
-        scans_total = getattr(version, "scans_total", 0) or 0
-        scans_completed = getattr(version, "scans_completed", 0) or 0
-        scans_failed = getattr(version, "scans_failed", 0) or 0
-
-        if scans_total > 0 and (scans_completed + scans_failed) >= scans_total:
-            if not getattr(version, "scan_extraction_completed", False):
-                version_repo.mark_scan_extraction_completed(context_id)
-                logger.info(f"DatasetVersion {context_id} scan extraction completed")
-            return True
-        return False
-
-    # Check if it's an MLScenario
-    from app.repositories.ml_scenario import MLScenarioRepository
-
-    scenario_repo = MLScenarioRepository(db)
+    scenario_repo = TrainingScenarioRepository(db)
     scenario = scenario_repo.find_by_id(context_id)
     if scenario:
         scans_total = getattr(scenario, "scans_total", 0) or 0
@@ -132,8 +96,9 @@ def check_and_mark_scans_completed(db: Database, context_id: str) -> bool:
         if scans_total > 0 and (scans_completed + scans_failed) >= scans_total:
             if not getattr(scenario, "scan_extraction_completed", False):
                 scenario_repo.mark_scan_extraction_completed(context_id)
-                logger.info(f"MLScenario {context_id} scan extraction completed")
+                logger.info(f"TrainingScenario {context_id} scan extraction completed")
             return True
         return False
 
+    logger.warning(f"Context {context_id} not found in TrainingScenario")
     return False

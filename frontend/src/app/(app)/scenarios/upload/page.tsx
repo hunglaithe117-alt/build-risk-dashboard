@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, RotateCcw, CheckCircle2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { useUploadDatasetWizard } from "./_components/hooks/useUploadDatasetWizard";
+import { useUploadBuildSourceWizard } from "./_components/hooks/useUploadDatasetWizard";
 import { UploadForm } from "./_components/UploadForm";
 import { UploadPreview } from "./_components/UploadPreview";
 import { ValidationView } from "./_components/ValidationView";
@@ -14,14 +14,14 @@ export default function UploadBuildDataPage() {
     const router = useRouter();
 
     // Initialize wizard with open=true always for page
-    const wizard = useUploadDatasetWizard({
+    const wizard = useUploadBuildSourceWizard({
         open: true,
         onOpenChange: () => { }, // Not needed for page
-        onSuccess: (dataset) => {
+        onSuccess: (source) => {
             // Navigate back to scenarios list after upload completes
             router.push("/scenarios");
         },
-        onDatasetCreated: () => {
+        onSourceCreated: () => {
             // Optional: Refresh list if needed
         },
     });
@@ -108,8 +108,8 @@ export default function UploadBuildDataPage() {
                                         <span className="font-medium capitalize">{validationStatus.replace('_', ' ')}</span>
                                     </div>
                                     <div className="flex justify-between text-sm">
-                                        <span className="text-muted-foreground">Dataset ID</span>
-                                        <span className="font-mono text-xs">{wizard.datasetId}</span>
+                                        <span className="text-muted-foreground">Source ID</span>
+                                        <span className="font-mono text-xs">{wizard.sourceId}</span>
                                     </div>
                                 </div>
                             </div>
@@ -185,7 +185,7 @@ export default function UploadBuildDataPage() {
                                 <div className="w-full h-full">
                                     <UploadPreview
                                         preview={step1.preview}
-                                        isDatasetCreated={!!wizard.datasetId}
+                                        isSourceCreated={!!wizard.sourceId}
                                         onClearFile={step1.handleClearFile}
                                     />
                                 </div>

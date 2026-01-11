@@ -33,11 +33,11 @@ SCAN_CONFIG_DIR = DATA_DIR / "scan-config"
 # Export job output files (CSV, JSON exports)
 EXPORTS_DIR = DATA_DIR / "exports"
 
-# ML Scenario configs (YAML files uploaded by users)
-ML_SCENARIOS_DIR = DATA_DIR / "ml_scenarios"
+# Training Scenario configs (YAML files uploaded by users)
+TRAINING_SCENARIOS_DIR = DATA_DIR / "training_scenarios"
 
-# ML Dataset splits (generated parquet/csv files)
-ML_DATASETS_DIR = DATA_DIR / "ml_datasets"
+# Training Dataset splits (generated parquet/csv files)
+TRAINING_DATASETS_DIR = DATA_DIR / "training_datasets"
 
 
 def ensure_data_dirs() -> None:
@@ -50,8 +50,8 @@ def ensure_data_dirs() -> None:
         HAMILTON_CACHE_DIR,
         SCAN_CONFIG_DIR,
         EXPORTS_DIR,
-        ML_SCENARIOS_DIR,
-        ML_DATASETS_DIR,
+        TRAINING_SCENARIOS_DIR,
+        TRAINING_DATASETS_DIR,
     ]:
         d.mkdir(parents=True, exist_ok=True)
 
@@ -126,59 +126,59 @@ def get_trivy_config_path(version_id: str, github_repo_id: int) -> Path:
 
 
 # =============================================================================
-# ML Scenario Path Helpers
+# Training Scenario Path Helpers
 # =============================================================================
 
 
-def get_ml_scenario_dir(scenario_id: str) -> Path:
+def get_training_scenario_dir(scenario_id: str) -> Path:
     """Get directory for a scenario's config and metadata."""
-    return ML_SCENARIOS_DIR / scenario_id
+    return TRAINING_SCENARIOS_DIR / scenario_id
 
 
-def get_ml_scenario_config_path(scenario_id: str) -> Path:
+def get_training_scenario_config_path(scenario_id: str) -> Path:
     """Get YAML config file path for a scenario."""
-    return get_ml_scenario_dir(scenario_id) / "config.yaml"
+    return get_training_scenario_dir(scenario_id) / "config.yaml"
 
 
-def get_ml_dataset_dir(scenario_id: str) -> Path:
+def get_training_dataset_dir(scenario_id: str) -> Path:
     """Get directory for a scenario's generated datasets."""
-    return ML_DATASETS_DIR / scenario_id
+    return TRAINING_DATASETS_DIR / scenario_id
 
 
-def get_ml_dataset_split_path(
+def get_training_dataset_split_path(
     scenario_id: str, split_type: str, format: str = "parquet"
 ) -> Path:
     """
     Get generated split file path.
 
     Args:
-        scenario_id: MLScenario ID
+        scenario_id: TrainingScenario ID
         split_type: train | validation | test | fold_N
         format: parquet | csv | pickle
 
     Returns:
-        Path like: ml_datasets/{scenario_id}/train.parquet
+        Path like: training_datasets/{scenario_id}/train.parquet
     """
-    return get_ml_dataset_dir(scenario_id) / f"{split_type}.{format}"
+    return get_training_dataset_dir(scenario_id) / f"{split_type}.{format}"
 
 
-def cleanup_ml_scenario_files(scenario_id: str) -> None:
+def cleanup_training_scenario_files(scenario_id: str) -> None:
     """
     Delete all files for a scenario (cleanup on scenario delete).
     """
     import shutil
 
     # Cleanup config
-    config_dir = get_ml_scenario_dir(scenario_id)
+    config_dir = get_training_scenario_dir(scenario_id)
     if config_dir.exists():
         shutil.rmtree(config_dir, ignore_errors=True)
-        logger.info(f"Cleaned up ML scenario config for {scenario_id}")
+        logger.info(f"Cleaned up training scenario config for {scenario_id}")
 
     # Cleanup datasets
-    dataset_dir = get_ml_dataset_dir(scenario_id)
+    dataset_dir = get_training_dataset_dir(scenario_id)
     if dataset_dir.exists():
         shutil.rmtree(dataset_dir, ignore_errors=True)
-        logger.info(f"Cleaned up ML datasets for {scenario_id}")
+        logger.info(f"Cleaned up training datasets for {scenario_id}")
 
 
 def cleanup_version_scan_configs(version_id: str) -> None:

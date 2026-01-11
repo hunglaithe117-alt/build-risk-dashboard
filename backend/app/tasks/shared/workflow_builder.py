@@ -9,7 +9,7 @@ IMPORTANT: For worktrees and logs, we build the FULL chunk signatures directly
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 from celery import chain, chord, group
 from celery.canvas import Signature
@@ -22,7 +22,52 @@ from app.tasks.shared.ingestion_tasks import (
     download_logs_chunk,
 )
 
+if TYPE_CHECKING:
+    from app.tasks.shared.contexts import ModelPipelineContext, TrainingPipelineContext
+
 logger = logging.getLogger(__name__)
+
+
+def build_workflow_with_context(
+    tasks_by_level: Dict[int, List[str]],
+    ctx: Union["ModelPipelineContext", "TrainingPipelineContext"],
+    raw_repo_id: str,
+    github_repo_id: int,
+    full_name: str,
+    build_ids: List[str],
+    commit_shas: List[str],
+    ci_provider: str,
+) -> Optional[Signature]:
+    """
+    Build ingestion workflow using PipelineContext.
+
+    This is a convenience wrapper that extracts params from context.
+
+    Args:
+        tasks_by_level: Dict mapping level number to list of task names
+        ctx: Pipeline context (Model or Training)
+        raw_repo_id: MongoDB ID of raw repo
+        github_repo_id: GitHub's internal repository ID for paths
+        full_name: Repository full name (owner/repo)
+        build_ids: List of build IDs for log download
+        commit_shas: List of commit SHAs for worktree creation
+        ci_provider: CI provider string
+
+    Returns:
+        Celery workflow signature or None
+    """
+    return build_ingestion_workflow(
+        tasks_by_level=tasks_by_level,
+        raw_repo_id=raw_repo_id,
+        github_repo_id=github_repo_id,
+        full_name=full_name,
+        build_ids=build_ids,
+        commit_shas=commit_shas,
+        ci_provider=ci_provider,
+        correlation_id=ctx.correlation_id,
+        pipeline_id=ctx.pipeline_id,
+        pipeline_type=ctx.pipeline_type,
+    )
 
 
 def build_ingestion_workflow(
@@ -183,7 +228,9 @@ def _build_worktree_chain(
     unique_shas = list(dict.fromkeys(commit_shas))
 
     chunk_size = settings.INGESTION_WORKTREES_PER_CHUNK
-    chunks = [unique_shas[i : i + chunk_size] for i in range(0, len(unique_shas), chunk_size)]
+    chunks = [
+        unique_shas[i : i + chunk_size] for i in range(0, len(unique_shas), chunk_size)
+    ]
     total_chunks = len(chunks)
 
     logger.info(
@@ -232,7 +279,8 @@ def _build_logs_chord(
     unique_build_ids = list(dict.fromkeys(build_ids))
     chunk_size = settings.INGESTION_LOGS_PER_CHUNK
     chunks = [
-        unique_build_ids[i : i + chunk_size] for i in range(0, len(unique_build_ids), chunk_size)
+        unique_build_ids[i : i + chunk_size]
+        for i in range(0, len(unique_build_ids), chunk_size)
     ]
     total_chunks = len(chunks)
 

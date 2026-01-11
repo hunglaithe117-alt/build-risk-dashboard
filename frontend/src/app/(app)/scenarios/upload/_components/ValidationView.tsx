@@ -14,10 +14,9 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { datasetsApi } from "@/lib/api";
+import { buildSourcesApi } from "@/lib/api";
 import { useCallback, useEffect, useState } from "react";
-import type { UploadDatasetModalProps } from "../_components/types";
-import { useUploadDatasetWizard } from "../_components/hooks/useUploadDatasetWizard";
+import { useUploadBuildSourceWizard } from "../_components/hooks/useUploadDatasetWizard";
 
 // Logic repurposed from UploadDatasetModal/index.tsx
 
@@ -33,12 +32,12 @@ interface RepoStatItem {
 const REPOS_PER_PAGE = 20;
 
 interface ValidationViewProps {
-    wizard: ReturnType<typeof useUploadDatasetWizard>;
+    wizard: ReturnType<typeof useUploadBuildSourceWizard>;
 }
 
 export function ValidationView({ wizard }: ValidationViewProps) {
     const {
-        datasetId,
+        sourceId,
         validationStatus,
         validationProgress,
         validationStats,
@@ -52,15 +51,27 @@ export function ValidationView({ wizard }: ValidationViewProps) {
     const [repoStatsLoading, setRepoStatsLoading] = useState(false);
 
     // Fetch repo stats when validation completes
-    const fetchRepoStats = useCallback(async (dId: string, page: number = 0) => {
+    const fetchRepoStats = useCallback(async (sId: string, page: number = 0) => {
         setRepoStatsLoading(true);
         try {
-            const result = await datasetsApi.getRepoStats(dId, {
-                skip: page * REPOS_PER_PAGE,
-                limit: REPOS_PER_PAGE,
-            });
-            setRepoStats(result.items);
-            setRepoStatsTotal(result.total);
+            const result = await buildSourcesApi.getRepoStats(sId);
+            if (Array.isArray(result)) {
+                setRepoStats(result.map(r => ({
+                    id: r.raw_repo_id,
+                    full_name: r.full_name,
+                    builds_total: r.builds_total,
+                    builds_found: r.builds_found,
+                    builds_not_found: r.builds_not_found,
+                    builds_filtered: r.builds_filtered || 0
+                })));
+                setRepoStatsTotal(result.length);
+            } else {
+                // Fallback if it returns object with items
+                // @ts-ignore
+                setRepoStats(result.items || []);
+                // @ts-ignore
+                setRepoStatsTotal(result.total || 0);
+            }
         } catch (err) {
             console.error("Failed to fetch repo stats:", err);
         } finally {
@@ -70,10 +81,10 @@ export function ValidationView({ wizard }: ValidationViewProps) {
 
     // Effect to fetch stats
     useEffect(() => {
-        if (validationStatus === "completed" && datasetId) {
-            fetchRepoStats(datasetId, repoStatsPage);
+        if (validationStatus === "completed" && sourceId) {
+            fetchRepoStats(sourceId, repoStatsPage);
         }
-    }, [validationStatus, datasetId, repoStatsPage, fetchRepoStats]);
+    }, [validationStatus, sourceId, repoStatsPage, fetchRepoStats]);
 
     // Reset stats on unmount or status change?
     // Actually, we want to keep them if completed.

@@ -56,6 +56,7 @@ export interface DataSourceConfig {
     date_end: string;
     conclusions: string[];
     ci_provider: CIProviderKey | "all";
+
 }
 
 export interface FeatureConfig {

@@ -16,7 +16,7 @@ from app.entities.user_dashboard_layout import (
     UserDashboardLayout,
     WidgetConfig,
 )
-from app.repositories.dataset_repository import DatasetRepository
+from app.repositories.training_scenario import TrainingScenarioRepository
 from app.repositories.user_dashboard_layout import UserDashboardLayoutRepository
 
 
@@ -26,7 +26,7 @@ class DashboardService:
         self.build_collection = db["model_builds"]
         self.repo_collection = db["repositories"]
         self.layout_repo = UserDashboardLayoutRepository(db)
-        self._dataset_repo = DatasetRepository(db)
+        self._scenario_repo = TrainingScenarioRepository(db)
 
     def get_summary(
         self, current_user: Optional[dict] = None
@@ -91,13 +91,9 @@ class DashboardService:
         # Sort by builds desc
         repo_distribution.sort(key=lambda x: x.builds, reverse=True)
 
-        # 6. Count datasets (admin sees all, user sees only their own)
-        user_id_for_filter = None
-        if user_role != "admin" and current_user:
-            user_id = current_user.get("_id")
-            if user_id:
-                user_id_for_filter = str(user_id)
-        dataset_count = self._dataset_repo.count_by_filter(user_id=user_id_for_filter)
+        # 6. Count build sources (shared resource - all users see total count)
+        # Per RBAC: only admins manage build_sources, users don't have VIEW_DATASETS permission
+        dataset_count = self.db["build_sources"].count_documents({})
 
         # 7. Admin extras (only for admin role)
         admin_extras = None
@@ -116,18 +112,28 @@ class DashboardService:
             admin_extras=admin_extras,
         )
 
+    # TODO: Update implement it not meaningful
     def _get_admin_extras(self) -> AdminDashboardExtras:
         """Get admin-only dashboard extras: dataset enrichment stats and monitoring."""
-        # Dataset Enrichment stats
-        dataset_project_collection = self.db["dataset_projects"]
-        dataset_version_collection = self.db["dataset_versions"]
-        enrichment_build_collection = self.db["dataset_enrichment_builds"]
+        # Dataset Enrichment stats (Now mapped to Training Scenarios)
+        scenario_collection = self.db["training_scenarios"]
+        source_build_collection = self.db["source_builds"]
 
-        active_projects = dataset_project_collection.count_documents({})
-        processing_versions = dataset_version_collection.count_documents(
-            {"status": {"$in": ["processing", "ingesting", "validating"]}}
+        active_projects = scenario_collection.count_documents({})
+        processing_versions = scenario_collection.count_documents(
+            {
+                "status": {
+                    "$in": [
+                        "queued",
+                        "filtering",
+                        "ingesting",
+                        "processing",
+                        "splitting",
+                    ]
+                }
+            }
         )
-        total_enriched_builds = enrichment_build_collection.count_documents({})
+        total_enriched_builds = source_build_collection.count_documents({})
 
         # Monitoring stats - queue depth and workers
         # We'll use simplified stats here, real stats come from monitoring API
